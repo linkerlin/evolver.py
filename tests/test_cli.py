@@ -17,6 +17,7 @@ def isolated_evolver_env(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
     monkeypatch.setenv("GEP_ASSETS_DIR", str(tmp_path / "gep"))
     monkeypatch.setenv("EVOLVER_NO_PARENT_GIT", "1")
     monkeypatch.setenv("OPENCLAW_WORKSPACE", str(tmp_path))
+    monkeypatch.setenv("EVOLVER_USER_LOCK", str(tmp_path / "user.lock"))
     yield tmp_path
 
 

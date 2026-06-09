@@ -21,13 +21,17 @@ def isolated_evolver_env(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
     monkeypatch.setenv("GEP_ASSETS_DIR", str(tmp_path / "gep"))
     monkeypatch.setenv("EVOLVER_NO_PARENT_GIT", "1")
     monkeypatch.setenv("OPENCLAW_WORKSPACE", str(tmp_path))
+    monkeypatch.setenv("EVOLVER_USER_LOCK", str(tmp_path / "user.lock"))
     yield tmp_path
 
 
-def test_root_html(client: TestClient) -> None:
+def test_root_html(client: TestClient, isolated_evolver_env: Path) -> None:
     response = client.get("/")
     assert response.status_code == 200
-    assert "Evolver WebUI" in response.text
+    assert "Evolver Dashboard" in response.text
+    assert "Genes" in response.text
+    assert "Capsules" in response.text
+    assert "Recent Events" in response.text
 
 
 def test_status_empty(client: TestClient, isolated_evolver_env: Path) -> None:

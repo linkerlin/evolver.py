@@ -22,26 +22,14 @@ from evolver.gep.paths import (
     get_evolution_dir,
     get_solidify_state_path,
 )
+from evolver.webui.dashboard import render_dashboard
 
 app = FastAPI(title="Evolver WebUI", version="1.8.0")
 
 
 @app.get("/", response_class=HTMLResponse)
 async def root() -> str:
-    return """<!doctype html>
-<html>
-<head><title>Evolver WebUI</title></head>
-<body>
-<h1>Evolver WebUI v1.8.0</h1>
-<ul>
-<li><a href="/status">/status</a></li>
-<li><a href="/events">/events</a></li>
-<li><a href="/genes">/genes</a></li>
-<li><a href="/capsules">/capsules</a></li>
-</ul>
-</body>
-</html>
-"""
+    return render_dashboard()
 
 
 @app.get("/status")

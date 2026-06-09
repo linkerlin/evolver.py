@@ -74,20 +74,38 @@ def _build_parser() -> argparse.ArgumentParser:
     webui_p = sub.add_parser("webui", help="Launch the WebUI dashboard")
     webui_p.add_argument("--host", default="127.0.0.1", help="Bind host")
     webui_p.add_argument("--port", type=int, default=8080, help="Bind port")
-    sub.add_parser("login", help="OAuth device-code login")
+    login_p = sub.add_parser("login", help="OAuth device-code login")
+    login_p.add_argument("--hub-url", default=None, help="Override Hub URL")
+    login_p.add_argument("--mock", action="store_true", help="Generate a mock token (dev mode)")
     sub.add_parser("logout", help="Clear local OAuth tokens")
     hooks_p = sub.add_parser("setup-hooks", help="Install IDE hooks")
     hooks_p.add_argument("--platform", default="auto", help="IDE platform: cursor, claude-code, vscode, generic, auto")
     hooks_p.add_argument("--project-dir", default=".", help="Target project directory")
     hooks_p.add_argument("--force", action="store_true", help="Overwrite existing hook files")
     hooks_p.add_argument("--dry-run", action="store_true", help="Preview changes without writing")
-    sub.add_parser("reset-local-secret", help="Reset local node secret")
+    reset_p = sub.add_parser("reset-local-secret", help="Reset local node secret")
+    reset_p.add_argument("--project-dir", default=".", help="Project directory containing .env")
+    reset_p.add_argument("--also-node-id", action="store_true", help="Also regenerate A2A_NODE_ID")
+    reset_p.add_argument("--dry-run", action="store_true", help="Preview without writing")
     sub.add_parser("atp-complete", help="Complete an ATP task")
     sub.add_parser("buy", help="Place an ATP order")
     sub.add_parser("orders", help="List ATP orders")
     sub.add_parser("verify", help="Verify an ATP delivery")
     sub.add_parser("atp", help="ATP marketplace controls")
-    sub.add_parser("recipe", help="Recipe Hub commands")
+    proxy_p = sub.add_parser("proxy", help="Start the A2A proxy server")
+    proxy_p.add_argument("--host", default="127.0.0.1", help="Bind host")
+    proxy_p.add_argument("--port", type=int, default=8081, help="Bind port")
+    recipe_p = sub.add_parser("recipe", help="Recipe Hub commands")
+    recipe_sub = recipe_p.add_subparsers(dest="recipe_action")
+    recipe_list = recipe_sub.add_parser("list", help="List available recipes")
+    recipe_list.add_argument("--tag", default=None, help="Filter by tag")
+    recipe_list.add_argument("--limit", type=int, default=20, help="Max recipes to list")
+    recipe_show = recipe_sub.add_parser("show", help="Show recipe details")
+    recipe_show.add_argument("recipe-id", help="Recipe ID")
+    recipe_apply = recipe_sub.add_parser("apply", help="Apply a recipe")
+    recipe_apply.add_argument("recipe-id", help="Recipe ID")
+    recipe_apply.add_argument("--target-dir", default=".", help="Target directory")
+    recipe_apply.add_argument("--dry-run", action="store_true", help="Preview without writing")
 
     return parser
 
@@ -141,6 +159,36 @@ def main(argv: Sequence[str] | None = None) -> int:
 
     if command == "setup-hooks":
         return _cmd_setup_hooks(args)
+
+    if command == "reset-local-secret":
+        return _cmd_reset_local_secret(args)
+
+    if command == "login":
+        return asyncio.run(_cmd_login(args))
+
+    if command == "logout":
+        return _cmd_logout(args)
+
+    if command == "proxy":
+        return _cmd_proxy(args)
+
+    if command == "buy":
+        return asyncio.run(_cmd_buy(args))
+
+    if command == "orders":
+        return asyncio.run(_cmd_orders(args))
+
+    if command == "verify":
+        return asyncio.run(_cmd_verify(args))
+
+    if command == "atp-complete":
+        return asyncio.run(_cmd_atp_complete(args))
+
+    if command == "atp":
+        return asyncio.run(_cmd_atp(args))
+
+    if command == "recipe":
+        return asyncio.run(_cmd_recipe(args))
 
     # Placeholder for other commands.
     print(f"Command '{command}' is not yet implemented in this port.", file=sys.stderr)
@@ -489,6 +537,167 @@ def _cmd_setup_hooks(args: argparse.Namespace) -> int:
     for msg in result.get("messages", []):
         print(f"  {msg}")
     return 0
+
+
+def _cmd_reset_local_secret(args: argparse.Namespace) -> int:
+    """Reset the local A2A_NODE_SECRET."""
+    from evolver.adapters.reset_secret import reset_local_secret
+
+    try:
+        result = reset_local_secret(
+            project_dir=args.project_dir,
+            also_node_id=args.also_node_id,
+            dry_run=args.dry_run,
+        )
+    except Exception as exc:
+        print(f"Reset failed: {exc}", file=sys.stderr)
+        return 1
+
+    if not result.get("ok"):
+        print(f"Reset failed: {result.get('error')}", file=sys.stderr)
+        return 1
+
+    if result.get("dry_run"):
+        print("DRY RUN — no files modified")
+    print(f"Updated: {result['env_path']}")
+    print(f"A2A_NODE_SECRET={result['secret']}")
+    if result.get("node_id"):
+        print(f"A2A_NODE_ID={result['node_id']}")
+    return 0
+
+
+def _cmd_login(args: argparse.Namespace) -> int:
+    """OAuth device-code login."""
+    from evolver.adapters.auth import login
+
+    try:
+        result = login(hub_url=args.hub_url, mock=args.mock)
+    except Exception as exc:
+        print(f"Login failed: {exc}", file=sys.stderr)
+        return 1
+
+    if not result.get("ok"):
+        print(f"Login failed: {result.get('error')}", file=sys.stderr)
+        return 1
+
+    print(f"Login successful. Token saved to ~/.evolver/auth.json")
+    print(f"Expires at: {result.get('expires_at')}")
+    return 0
+
+
+def _cmd_logout(_args: argparse.Namespace) -> int:
+    """Clear local OAuth tokens."""
+    from evolver.adapters.auth import logout
+
+    result = logout()
+    if result.get("was_present"):
+        print("Local auth credentials cleared.")
+    else:
+        print("No local auth credentials found.")
+    return 0
+
+
+def _cmd_proxy(args: argparse.Namespace) -> int:
+    """Launch the A2A proxy server."""
+    import uvicorn
+
+    from evolver.proxy.server import app
+
+    host = getattr(args, "host", "127.0.0.1")
+    port = getattr(args, "port", 8081)
+    print(f"Starting Evolver A2A Proxy at http://{host}:{port}/")
+    uvicorn.run(app, host=host, port=port, log_level="info")
+    return 0
+
+
+async def _cmd_buy(args: argparse.Namespace) -> int:
+    from evolver.atp.client import buy
+    result = await buy(skill_id=getattr(args, "skill_id", getattr(args, "skill-id", "")), quantity=args.quantity)
+    if not result.get("ok"):
+        print(f"Buy failed: {result.get('error')}", file=sys.stderr)
+        return 1
+    print(f"Order placed: {result.get('order')}")
+    return 0
+
+
+async def _cmd_orders(args: argparse.Namespace) -> int:
+    from evolver.atp.client import list_orders
+    result = await list_orders(status=args.status, limit=args.limit)
+    if not result.get("ok"):
+        print(f"Orders failed: {result.get('error')}", file=sys.stderr)
+        return 1
+    orders = result.get("orders", [])
+    print(f"{len(orders)} order(s)")
+    for o in orders:
+        print(f"  {o.get('id')}  {o.get('status')}  {o.get('skill_id')}")
+    return 0
+
+
+async def _cmd_verify(args: argparse.Namespace) -> int:
+    from evolver.atp.client import verify_delivery
+    result = await verify_delivery(
+        order_id=getattr(args, "order_id", getattr(args, "order-id", "")),
+        approval=not args.reject,
+    )
+    if not result.get("ok"):
+        print(f"Verify failed: {result.get('error')}", file=sys.stderr)
+        return 1
+    print(f"Verification submitted.")
+    return 0
+
+
+async def _cmd_atp_complete(args: argparse.Namespace) -> int:
+    from evolver.atp.client import complete_task
+    result = await complete_task(task_id=getattr(args, "task_id", getattr(args, "task-id", "")))
+    if not result.get("ok"):
+        print(f"Complete failed: {result.get('error')}", file=sys.stderr)
+        return 1
+    print(f"Task completed.")
+    return 0
+
+
+async def _cmd_atp(args: argparse.Namespace) -> int:
+    print(f"ATP action: {args.action}")
+    return 0
+
+
+async def _cmd_recipe(args: argparse.Namespace) -> int:
+    from evolver.recipe.client import list_recipes, get_recipe, apply_recipe
+
+    action = args.recipe_action
+    if action is None or action == "list":
+        result = await list_recipes(tag=getattr(args, "tag", None), limit=getattr(args, "limit", 20))
+        if not result.get("ok"):
+            print(f"Recipe list failed: {result.get('error')}", file=sys.stderr)
+            return 1
+        recipes = result.get("recipes", [])
+        print(f"{len(recipes)} recipe(s) available")
+        for r in recipes:
+            print(f"  {r.get('id')}  {r.get('name', '')}")
+        return 0
+
+    if action == "show":
+        rid = getattr(args, "recipe_id", getattr(args, "recipe-id", ""))
+        result = await get_recipe(rid)
+        if not result.get("ok"):
+            print(f"Recipe show failed: {result.get('error')}", file=sys.stderr)
+            return 1
+        print(result.get("recipe"))
+        return 0
+
+    if action == "apply":
+        rid = getattr(args, "recipe_id", getattr(args, "recipe-id", ""))
+        result = await apply_recipe(rid, target_dir=args.target_dir, dry_run=args.dry_run)
+        if not result.get("ok"):
+            print(f"Recipe apply failed: {result.get('error')}", file=sys.stderr)
+            return 1
+        if result.get("dry_run"):
+            print("DRY RUN — no files modified")
+        print(f"Recipe {rid} applied.")
+        return 0
+
+    print(f"Unknown recipe action: {action}", file=sys.stderr)
+    return 2
 
 
 if __name__ == "__main__":

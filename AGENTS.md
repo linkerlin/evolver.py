@@ -1,184 +1,184 @@
 # AGENTS.md — evolver.py
 
-> Python 3.12+ port of [`@evomap/evolver`](https://github.com/EvoMap/evolver), a GEP-powered self-evolution engine for AI agents.
+> Python 3.12+ 之移植也，源于 [`@evomap/evolver`](https://github.com/EvoMap/evolver)，乃以 GEP 为驱动之 AI 智能体自进化引擎。
 
-## Commands
+## 命令篇
 
-| Action | Command |
+| 操作 | 命令 |
 |---|---|
-| Install deps | `uv sync` |
-| Run one evolution cycle | `uv run evolver` (or `uv run evolver run`) |
-| Daemon loop | `uv run evolver --loop` |
-| Review mode | `uv run evolver --review` |
-| Apply pending mutation | `uv run evolver solidify` |
-| Distill LLM response | `uv run evolver distill --response-file=<path>` |
-| Fetch skill from Hub | `uv run evolver fetch <query>` |
-| Sync assets | `uv run evolver sync [--scope=...]` |
-| Launch WebUI | `uv run evolver webui [--port=8080]` |
-| Run tests | `uv run pytest` |
-| Run tests (no slow) | `uv run pytest -m "not slow"` |
-| Lint | `uv run ruff check src tests` |
-| Format check | `uv run ruff format --check src tests` |
-| Auto-format | `uv run ruff format src tests` |
-| Type check | `uv run mypy src` |
-| Run via python | `uv run python -m evolver` |
+| 安装依赖 | `uv sync` |
+| 运行一进化周期 | `uv run evolver`（或 `uv run evolver run`） |
+| 守护进程循环 | `uv run evolver --loop` |
+| 审查模式 | `uv run evolver --review` |
+| 应用待定变异 | `uv run evolver solidify` |
+| 蒸馏 LLM 响应 | `uv run evolver distill --response-file=<path>` |
+| 从 Hub 获取技能 | `uv run evolver fetch <query>` |
+| 同步资源 | `uv run evolver sync [--scope=...]` |
+| 启动 WebUI | `uv run evolver webui [--port=8080]` |
+| 运行测试 | `uv run pytest` |
+| 运行测试（排除慢速） | `uv run pytest -m "not slow"` |
+| 代码检查 | `uv run ruff check src tests` |
+| 格式检查 | `uv run ruff format --check src tests` |
+| 自动格式化 | `uv run ruff format src tests` |
+| 类型检查 | `uv run mypy src` |
+| 通过 python 运行 | `uv run python -m evolver` |
 
-## Architecture
+## 架构篇
 
-This is a **port from Node.js** — the original source files at `@evomap/evolver` are heavily obfuscated with `javascript-obfuscator`. The Python implementation is a **behavioral-equivalence reimplementation** based on test contracts and public API surfaces, not a line-by-line translation.
+此乃 **从 Node.js 移植**之作也。原代码 `@evomap/evolver` 为 `javascript-obfuscator` 重度混淆，不可直读。Python 实现乃基于测试契约与公开 API 表面之**行为等价重实现**，非逐行翻译者也。
 
-### Source Layout (`src/evolver/`)
-
-```
-cli.py              CLI entry (argparse), .env loading, command dispatch
-config.py           All runtime thresholds/timeouts, env-var overrides
-canary.py           Fork-canary: verifies CLI loads without crash
-gep/                GEP (Genome Evolution Protocol) core
-  schemas/          Pydantic models: Gene, Capsule, Task, Protocol
-  asset_store.py    JSON/JSONL persistence with overlay semantics
-  paths.py          Central path resolution with env overrides
-  a2a_protocol.py   Agent-to-Agent Hub protocol (HTTP)
-  bridge.py         Git worktree bridge for mutations
-  content_hash.py   SHA-256 content-addressable asset IDs
-  crypto.py         Local secret management
-  distill.py        Extract Gene/Capsule from LLM text output
-  fetch.py          Download & install assets from Hub
-  git_ops.py        Git diff/rollback/status helpers
-  instance_lock.py  FileLock-based single-instance guard
-  memory_graph.py   JSONL memory graph store & signal-key queries
-  mutation.py       Mutation engine: category selection, variant generation
-  personality.py    Personality profile (rigor, risk tolerance)
-  prompt.py         GEP prompt assembly
-  sanitize.py       Input sanitization for asset fields
-  selector.py       Gene/capsule matching against signals
-  signals.py        Signal collection & classification
-  solidify.py       Apply gene → validate → persist → publish
-  strategy.py       Evolution strategy selection
-  sync.py           Hub sync: fetch tasks, download assets
-evolve/             Evolution pipeline
-  runner.py         Orchestrator: single cycle + daemon loop
-  guards.py         Preflight checks (load, RSS, cooldown)
-  pipeline/         6-stage pipeline (each is an async fn taking/returning ctx)
-    collect.py      Scan memory/ for runtime logs & error patterns
-    signals.py      Classify signals from collected data
-    hub.py          Query Hub for matching assets & tasks
-    enrich.py       Enrich context with Hub data
-    select.py       Select best Gene/Capsule
-    dispatch.py     Generate GEP prompt, write dispatch output
-proxy/              Local HTTP proxy (127.0.0.1:19820)
-webui/              FastAPI read-only dashboard
-ops/                Health check, cleanup, narrative logging
-adapters/           IDE hook generators (Cursor, Claude Code, etc.)
-atp/                Agent Transaction Protocol marketplace
-```
-
-### Data Flow (Single Cycle)
+### 源码布局（`src/evolver/`）
 
 ```
-Preflight → Collect → Signals → Hub → Enrich → Select → Dispatch
-                                                          ↓
-                                                     [GEP Prompt]
-                                                          ↓
-                                                     Solidify
+cli.py              CLI 入口（argparse）、.env 加载、命令分发
+config.py           全部运行时阈值/超时、环境变量覆盖
+canary.py           Fork-canary：验证 CLI 加载不出崩溃
+gep/                GEP（基因组进化协议）核心
+  schemas/          Pydantic 模型：Gene、Capsule、Task、Protocol
+  asset_store.py    JSON/JSONL 持久化，叠加语义
+  paths.py          中心化路径解析，支持环境变量覆盖
+  a2a_protocol.py   Agent 间 Hub 协议（HTTP）
+  bridge.py         Git worktree 变异桥接
+  content_hash.py   SHA-256 内容寻址资源 ID
+  crypto.py         本地密钥管理
+  distill.py        从 LLM 文本输出中提取 Gene/Capsule
+  fetch.py          从 Hub 下载并安装资源
+  git_ops.py        Git diff/回滚/状态辅助函数
+  instance_lock.py  基于 FileLock 之单实例守护
+  memory_graph.py   JSONL 记忆图谱存储与信号键查询
+  mutation.py       变异引擎：类别选择、变体生成
+  personality.py    人格配置文件（严谨度、风险容忍度）
+  prompt.py         GEP 提示词组装
+  sanitize.py       资源字段输入净化
+  selector.py       Gene/Capsule 与信号匹配
+  signals.py        信号收集与分类
+  solidify.py       应用基因 → 验证 → 持久化 → 发布
+  strategy.py       进化策略选择
+  sync.py           Hub 同步：获取任务、下载资源
+evolve/             进化流水线
+  runner.py         编排器：单周期 + 守护循环
+  guards.py         起飞前检查（负载、RSS、冷却）
+  pipeline/         六阶段流水线（各为 async 函数，取/返 ctx）
+    collect.py      扫描 memory/ 之运行时日志与错误模式
+    signals.py      从收集数据中分类信号
+    hub.py          向 Hub 查询匹配之资源与任务
+    enrich.py       以 Hub 数据丰富上下文
+    select.py       选择最佳 Gene/Capsule
+    dispatch.py     生成 GEP 提示词，写入分发输出
+proxy/              本地 HTTP 代理（127.0.0.1:19820）
+webui/              FastAPI 只读仪表盘
+ops/                健康检查、清理、叙事日志
+adapters/           IDE 钩子生成器（Cursor、Claude Code 等）
+atp/                Agent 交易协议市场
 ```
 
-Context is a plain `dict[str, Any]` threaded through each pipeline stage.
+### 数据流（单周期）
 
-### GEP Asset Storage
+```
+起飞前检查 → 收集 → 信号 → Hub → 丰富 → 选择 → 分发
+                                                   ↓
+                                              [GEP 提示词]
+                                                   ↓
+                                                 固化
+```
 
-Located at `<GEP_ASSETS_DIR>` (default `<workspace>/.evolver/gep/`):
+上下文为一纯 `dict[str, Any]`，贯穿各流水线阶段。
 
-- `genes.json` + `genes.jsonl` — base + overlay (JSONL entries override by ID)
-- `capsules.json` + `capsules.jsonl` — same pattern
-- `events.jsonl` — append-only evolution event log
-- `candidates.jsonl`, `external_candidates.jsonl`
+### GEP 资源存储
+
+位于 `<GEP_ASSETS_DIR>`（默认 `<workspace>/.evolver/gep/`）：
+
+- `genes.json` + `genes.jsonl`——基础 + 叠加层（JSONL 条目按 ID 覆盖）
+- `capsules.json` + `capsules.jsonl`——同例
+- `events.jsonl`——仅追加之进化事件日志
+- `candidates.jsonl`、`external_candidates.jsonl`
 - `failed_capsules.json`
 - `pending_signals.json`
 
-Asset integrity is verified via `sha256:` content hashes stored in `asset_id`.
+资源完整性通过存于 `asset_id` 中之 `sha256:` 内容哈希验证之。
 
-## Conventions
+## 规范篇
 
-### Code Style
+### 代码风格
 
-- Python 3.12+ syntax throughout: `from __future__ import annotations`, `X | None` unions, `list[str]` generics
-- Pydantic v2 models with `ConfigDict(extra="forbid")` — unknown fields cause validation errors
-- `from __future__ import annotations` at top of every file
-- Double quotes (`ruff format` default)
-- 100 char line limit
-- 4-space indent
-- All `async` functions are `async def`, no `@asyncio.coroutine`
-- Type hints on all public functions
-- `Final` for module-level constants from config
-- No `typing.TypedDict` — use `dict[str, Any]` for pipeline context, Pydantic for schemas
+- 全项目用 Python 3.12+ 语法：`from __future__ import annotations`、`X | None` 联合类型、`list[str]` 泛型
+- Pydantic v2 模型配 `ConfigDict(extra="forbid")`——未知字段致验证错误
+- 每文件顶部书 `from __future__ import annotations`
+- 双引号（`ruff format` 默认）
+- 行宽限 100 字符
+- 四空格缩进
+- 所有 `async` 函数皆为 `async def`，不用 `@asyncio.coroutine`
+- 所有公开函数皆有类型注解
+- 模块级常量来自配置者，用 `Final`
+- 不用 `typing.TypedDict`——流水线上下文用 `dict[str, Any]`，模式用 Pydantic
 
-### Naming
+### 命名
 
-- Modules: `snake_case.py`
-- Classes: `PascalCase` (Pydantic models, dataclasses)
-- Functions: `snake_case`
-- Constants: `UPPER_SNAKE_CASE` with `Final` type
-- Internal helpers: leading underscore `_helper_fn`
-- GEP terms preserved as-is: `Gene`, `Capsule`, `solidify`, `dispatch`, `distill`
-- Each source file has a docstring referencing its Node.js equivalent
+- 模块：`snake_case.py`
+- 类：`PascalCase`（Pydantic 模型、dataclasses）
+- 函数：`snake_case`
+- 常量：`UPPER_SNAKE_CASE`，配 `Final` 类型
+- 内部辅助函数：前导下划线 `_helper_fn`
+- GEP 术语原样保留：`Gene`、`Capsule`、`solidify`、`dispatch`、`distill`
+- 每源文件皆有 docstring，指向其 Node.js 等价物
 
-### Import Pattern
+### 导入模式
 
-- Lazy imports inside functions are used deliberately in `cli.py` and `guards.py` to avoid pulling heavy modules before `.env` is loaded
-- `config.py` is imported early — it only reads env vars, no side effects
-- Pipeline stages import from `evolver.gep.*` submodules, not from each other
+- `cli.py` 与 `guards.py` 中刻意用函数内惰性导入，以免在 `.env` 加载之前拉入重型模块
+- `config.py` 早导入——其只读取环境变量，无副作用
+- 流水线阶段从 `evolver.gep.*` 子模块导入，不互相导入
 
-### Testing
+### 测试
 
-- `pytest` with `pytest-asyncio` in `"auto"` mode (no `@pytest.mark.asyncio` needed)
-- `respx` for mocking `httpx` calls
-- `freezegun` for time-dependent tests
-- Test files map 1:1 to source: `test_<module>.py` tests `evolver.<module>`
-- `temp_workspace` fixture in `conftest.py` isolates all path env vars
-- `isolated_evolver_env` fixture in `test_cli.py` adds `EVOLVER_NO_PARENT_GIT=1`
-- `monkeypatch.setenv("GEP_ASSETS_DIR", ...)` for store tests
-- `subprocess.run(["git", "init", ...])` for git-dependent tests
+- `pytest` 配 `pytest-asyncio` 之 `"auto"` 模式（无需 `@pytest.mark.asyncio`）
+- `respx` 用于 mock `httpx` 调用
+- `freezegun` 用于时间相关测试
+- 测试文件与源码一一对应：`test_<module>.py` 测试 `evolver.<module>`
+- `conftest.py` 中之 `temp_workspace` fixture 隔离所有路径环境变量
+- `test_cli.py` 中之 `isolated_evolver_env` fixture 加 `EVOLVER_NO_PARENT_GIT=1`
+- 资源存储测试用 `monkeypatch.setenv("GEP_ASSETS_DIR", ...)`
+- Git 相关测试用 `subprocess.run(["git", "init", ...])`
 
-### Ruff Rules
+### Ruff 规则
 
-Full lint set: `E, F, W, I, N, UP, B, C4, SIM, ARG, PL, RUF`
+全套 lint：`E, F, W, I, N, UP, B, C4, SIM, ARG, PL, RUF`
 
-Intentionally suppressed:
-- `PLR2004` — magic value comparisons are useful in a port
-- `PLR0913` — many arguments inherited from Node API design
+有意抑制者：
+- `PLR2004`——魔法值比较于此移植中颇有裨益
+- `PLR0913`——多参数乃继承自 Node API 设计
 
 ### mypy
 
-`strict = true`, `ignore_missing_imports = true`, `warn_return_any`, `warn_unused_ignores`.
+`strict = true`，`ignore_missing_imports = true`，`warn_return_any`，`warn_unused_ignores`。
 
-## Key Environment Variables
+## 要紧环境变量
 
-Tests must isolate these. The most important ones:
+测试须隔离此诸项。最重要者：
 
-| Variable | Default | Purpose |
+| 变量 | 默认 | 用途 |
 |---|---|---|
-| `OPENCLAW_WORKSPACE` | (none) | Workspace root override |
-| `EVOLVER_REPO_ROOT` | auto-detect via `.git` | Repo root override |
-| `EVOLVER_HOME` | `~/.evomap` | Per-user state dir |
-| `GEP_ASSETS_DIR` | `<ws>/.evolver/gep/` | GEP asset storage |
-| `EVOLUTION_DIR` | `<ws>/memory/evolution/` | Evolution state |
-| `MEMORY_DIR` | `<ws>/memory/` | Memory logs |
-| `EVOLVER_NO_PARENT_GIT` | (none) | Set to `1` to disable `.git` walk |
-| `A2A_HUB_URL` | `https://evomap.ai` | Hub endpoint |
-| `EVOLVE_STRATEGY` | `balanced` | Evolution strategy |
-| `EVOLVE_BRIDGE` | auto | Git worktree mutation |
-| `EVOLVER_ROLLBACK_MODE` | `stash` | Rollback strategy |
+| `OPENCLAW_WORKSPACE` | （无） | 工作区根覆盖 |
+| `EVOLVER_REPO_ROOT` | 通过 `.git` 自动检测 | 仓库根覆盖 |
+| `EVOLVER_HOME` | `~/.evomap` | 每用户状态目录 |
+| `GEP_ASSETS_DIR` | `<ws>/.evolver/gep/` | GEP 资源存储 |
+| `EVOLUTION_DIR` | `<ws>/memory/evolution/` | 进化状态 |
+| `MEMORY_DIR` | `<ws>/memory/` | 记忆日志 |
+| `EVOLVER_NO_PARENT_GIT` | （无） | 设为 `1` 以禁用 `.git` 遍历 |
+| `A2A_HUB_URL` | `https://evomap.ai` | Hub 端点 |
+| `EVOLVE_STRATEGY` | `balanced` | 进化策略 |
+| `EVOLVE_BRIDGE` | auto | Git worktree 变异 |
+| `EVOLVER_ROLLBACK_MODE` | `stash` | 回滚策略 |
 
-## Pitfalls
+## 坑阱篇
 
-- **`.env` load order matters**: `cli.py:_load_dotenv()` loads `.env` from cwd first, then from repo root. Internal imports happen after. Adding top-level imports of heavy modules in `cli.py` will break env-var precedence.
-- **JSONL overlay semantics**: `genes.jsonl` entries override `genes.json` by ID. Deleting a gene from `.json` but not `.jsonl` will resurrect it. Always test with both files.
-- **Content hash verification**: `asset_store.load_genes()` silently skips entries whose `asset_id` hash doesn't match content. A gene that "disappears" on load likely has a corrupted hash.
-- **Windows `os.getloadavg()` missing**: `guards.py:get_system_load()` catches `AttributeError` on Windows and returns zeros. Don't rely on load values in tests on Windows.
-- **`--mad-dog` is `--loop`**: CLI alias, not a separate mode.
-- **`asyncio_mode = "auto"`**: All `async def test_*` are automatically treated as async tests. No marker needed.
-- **`from __future__ import annotations`**: All annotations are strings at runtime. Don't use annotations for `isinstance()` checks.
-- **Atomic writes**: `asset_store.atomic_write_json` uses temp file + `os.replace`. On Windows, this can fail if the target is open by another process (e.g., daemon loop).
-- **`canary.py` is subprocessed**: It's run in a child process before `solidify` commits. Don't import from it directly in tests.
-- **Seed data**: `src/evolver/assets/gep/genes.seed.json` is bundled default genes. Tests should not modify it — use `GEP_ASSETS_DIR` override.
-- **Test isolation**: Always use `monkeypatch.setenv` for env vars, never `os.environ` directly. The `temp_workspace` fixture handles this for common paths.
+- **`.env` 加载次序攸关**：`cli.py:_load_dotenv()` 先加载 cwd 之 `.env`，后加载仓库根之 `.env`。内部导入在其后。若在 `cli.py` 中添加顶层重型模块导入，将破坏环境变量优先级。
+- **JSONL 叠加语义**：`genes.jsonl` 条目按 ID 覆盖 `genes.json`。从 `.json` 中删除一基因而未从 `.jsonl` 中删除，将使其复活。须以二文件同测之。
+- **内容哈希验证**：`asset_store.load_genes()` 静默跳过 `asset_id` 哈希与内容不符之条目。加载时"消失"之基因，其哈希大概率为损坏者。
+- **Windows 无 `os.getloadavg()`**：`guards.py:get_system_load()` 在 Windows 上捕获 `AttributeError` 并返回零。勿于 Windows 测试中依赖负载值。
+- **`--mad-dog` 即 `--loop`**：CLI 别名也，非独立模式。
+- **`asyncio_mode = "auto"`**：所有 `async def test_*` 自动视为异步测试。无需标记。
+- **`from __future__ import annotations`**：所有注解在运行时皆为字符串。勿将注解用于 `isinstance()` 检查。
+- **原子写入**：`asset_store.atomic_write_json` 用临时文件 + `os.replace`。在 Windows 上，若目标被另一进程打开（如守护循环），此操作将败。
+- **`canary.py` 为子进程运行**：其在 `solidify` 提交之前于子进程中运行。测试中勿直接从中导入。
+- **种子数据**：`src/evolver/assets/gep/genes.seed.json` 为捆绑之默认基因。测试不应修改之——用 `GEP_ASSETS_DIR` 覆盖。
+- **测试隔离**：环境变量总是用 `monkeypatch.setenv`，勿直接用 `os.environ`。`temp_workspace` fixture 为此常用路径处理之。
