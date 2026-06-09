@@ -1,0 +1,29 @@
+{
+  "last_run": {
+    "run_id": "run_1781016445120_f6f3e90a",
+    "signals": [
+      "stable_success_plateau"
+    ],
+    "selected_gene_id": "gene_innovate_basic",
+    "selected_capsule_id": null,
+    "mutation": {
+      "type": "Mutation",
+      "id": "mut_1781016445174_493bdb0f",
+      "category": "innovate",
+      "trigger_signals": [
+        "stable_success_plateau"
+      ],
+      "target": "gene_innovate_basic",
+      "expected_effect": "Address signals: stable_success_plateau",
+      "risk_level": "low",
+      "drift_enabled": false,
+      "gene_id": "gene_innovate_basic"
+    },
+    "personality_state": {
+      "rigor": 0.5,
+      "creativity": 0.5,
+      "risk_tolerance": 0.3
+    },
+    "parent_event_id": null
+  }
+}

@@ -1,0 +1,72 @@
+{
+  "genes": [
+    {
+      "type": "Gene",
+      "id": "gene_repair_basic",
+      "category": "repair",
+      "signals_match": [
+        "log_error",
+        "errsig",
+        "recurring_errsig",
+        "error",
+        "exception",
+        "failed"
+      ],
+      "strategy": [
+        "Inspect the most recent error traceback or stderr output.",
+        "Locate the file and line causing the failure.",
+        "Write a minimal patch that fixes the root cause.",
+        "Add or update a regression test that reproduces the failure.",
+        "Run the test suite to confirm the fix."
+      ],
+      "validation": [
+        "python -m pytest tests/ -x -q"
+      ]
+    },
+    {
+      "type": "Gene",
+      "id": "gene_optimize_basic",
+      "category": "optimize",
+      "signals_match": [
+        "perf_bottleneck",
+        "protocol",
+        "prompt",
+        "audit",
+        "refactor",
+        "cleanup"
+      ],
+      "strategy": [
+        "Profile or inspect the slow / noisy code path.",
+        "Identify a low-risk refactor or caching opportunity.",
+        "Apply the change and keep the public API stable.",
+        "Run existing tests and a targeted benchmark.",
+        "Summarize the measured improvement."
+      ],
+      "validation": [
+        "python -m pytest tests/ -x -q"
+      ]
+    },
+    {
+      "type": "Gene",
+      "id": "gene_innovate_basic",
+      "category": "innovate",
+      "signals_match": [
+        "user_feature_request",
+        "user_improvement_suggestion",
+        "capability_gap",
+        "stable_success_plateau",
+        "external_opportunity"
+      ],
+      "strategy": [
+        "Understand the feature request in the current codebase context.",
+        "Design the smallest vertical slice that demonstrates value.",
+        "Add the new behavior behind a clear API or CLI surface.",
+        "Write tests that exercise the happy path and edge cases.",
+        "Update README / USER.md if user-facing behavior changed."
+      ],
+      "validation": [
+        "python -m pytest tests/ -x -q"
+      ]
+    }
+  ]
+}

@@ -1,0 +1,265 @@
+"""Centralized configuration for evolver runtime thresholds and timeouts.
+
+Equivalent to evolver/src/config.js.
+All values support environment variable override where specified.
+Groups: network, solidify, evolution, ops, limits.
+"""
+
+from __future__ import annotations
+
+import os
+import warnings
+from typing import Final
+
+
+_ENV_WARNED: set[str] = set()
+
+
+def env_int(key: str, fallback: int) -> int:
+    v = os.environ.get(key)
+    if v is None or v == "":
+        return fallback
+    try:
+        return int(v)
+    except ValueError:
+        return fallback
+
+
+def env_positive_int(key: str, fallback: int) -> int:
+    """Strict variant for timers/intervals: must be positive and < 2**31."""
+    v = os.environ.get(key)
+    if v is None or v == "":
+        return fallback
+    try:
+        n = int(v)
+    except ValueError:
+        n = None
+    valid = n is not None and 0 < n < 2**31
+    if not valid:
+        if key not in _ENV_WARNED:
+            _ENV_WARNED.add(key)
+            warnings.warn(
+                f"[config] {key}={v!r} is not a positive integer; "
+                f"falling back to {fallback}. Set a value in (0, 2^31) ms.",
+                stacklevel=2,
+            )
+        return fallback
+    return n
+
+
+def env_float(key: str, fallback: float) -> float:
+    v = os.environ.get(key)
+    if v is None or v == "":
+        return fallback
+    try:
+        return float(v)
+    except ValueError:
+        return fallback
+
+
+def env_str(key: str, fallback: str) -> str:
+    v = os.environ.get(key)
+    return v if v is not None and v != "" else fallback
+
+
+def env_bool(key: str, fallback: bool) -> bool:
+    v = os.environ.get(key)
+    if v is None:
+        return fallback
+    s = v.lower().strip()
+    if s in ("",):
+        return fallback
+    if s in ("false", "0", "off", "no"):
+        return False
+    if s in ("true", "1", "on", "yes"):
+        return True
+    return fallback
+
+
+# --- Network & A2A ---
+HELLO_TIMEOUT_MS: Final = env_positive_int("EVOLVER_HELLO_TIMEOUT_MS", 15_000)
+HEARTBEAT_TIMEOUT_MS: Final = env_positive_int("EVOLVER_HEARTBEAT_TIMEOUT_MS", 10_000)
+HEARTBEAT_INTERVAL_MS: Final = env_positive_int("HEARTBEAT_INTERVAL_MS", 360_000)
+HEARTBEAT_FIRST_DELAY_MS: Final = env_positive_int("EVOLVER_HEARTBEAT_FIRST_DELAY_MS", 30_000)
+EVENT_POLL_TIMEOUT_MS: Final = env_positive_int("EVOLVER_EVENT_POLL_TIMEOUT_MS", 60_000)
+HTTP_TRANSPORT_TIMEOUT_MS: Final = env_positive_int("EVOLVER_HTTP_TRANSPORT_TIMEOUT_MS", 15_000)
+SECRET_CACHE_TTL_MS: Final = env_positive_int("EVOLVER_SECRET_CACHE_TTL_MS", 60_000)
+HUB_SEARCH_TIMEOUT_MS: Final = env_positive_int("EVOLVER_HUB_SEARCH_TIMEOUT_MS", 8_000)
+
+PUBLIC_DEFAULT_HUB_URL: Final = "https://evomap.ai"
+
+
+def resolve_hub_url() -> str:
+    """Hub URL resolution with TLS enforcement.
+
+    Precedence:
+      1. A2A_HUB_URL
+      2. EVOMAP_HUB_URL (backward compat)
+      3. EVOLVER_DEFAULT_HUB_URL
+      4. PUBLIC_DEFAULT_HUB_URL
+    """
+    raw = (
+        os.environ.get("A2A_HUB_URL")
+        or os.environ.get("EVOMAP_HUB_URL")
+        or os.environ.get("EVOLVER_DEFAULT_HUB_URL")
+        or PUBLIC_DEFAULT_HUB_URL
+    )
+    if os.environ.get("EVOMAP_HUB_ALLOW_INSECURE") != "1":
+        from urllib.parse import urlparse
+
+        parsed = urlparse(raw)
+        if parsed.scheme != "https":
+            raise ValueError(
+                f"[config] Hub URL must use https:// — got {raw!r}. "
+                "Set EVOMAP_HUB_ALLOW_INSECURE=1 to bypass (local dev / mock hub only)."
+            )
+    return raw
+
+
+# --- Solidify & Validation ---
+BLAST_RADIUS_HARD_CAP_FILES: Final = env_int("EVOLVER_HARD_CAP_FILES", 60)
+BLAST_RADIUS_HARD_CAP_LINES: Final = env_int("EVOLVER_HARD_CAP_LINES", 20_000)
+VALIDATION_TIMEOUT_MS: Final = env_int("EVOLVER_VALIDATION_TIMEOUT_MS", 180_000)
+CANARY_TIMEOUT_MS: Final = env_int("EVOLVER_CANARY_TIMEOUT_MS", 30_000)
+CAPSULE_CONTENT_MAX_CHARS: Final = env_int("EVOLVER_CAPSULE_MAX_CHARS", 8_000)
+SOLIDIFY_MAX_RETRIES: Final = env_int("SOLIDIFY_MAX_RETRIES", 2)
+SOLIDIFY_RETRY_INTERVAL_MS: Final = env_int("EVOLVER_SOLIDIFY_RETRY_INTERVAL_MS", 1_000)
+MIN_PUBLISH_SCORE: Final = env_float("EVOLVER_MIN_PUBLISH_SCORE", 0.78)
+BROADCAST_SCORE_THRESHOLD: Final = 0.7
+BROADCAST_SUCCESS_STREAK: Final = 2
+MAX_REGEX_PATTERN_LEN: Final = 1_024
+
+# --- Evolution Loop ---
+REPAIR_LOOP_THRESHOLD: Final = env_int("EVOLVER_REPAIR_LOOP_THRESHOLD", 3)
+GENE_BAN_PER_KEY_ATTEMPTS: Final = env_int("EVOLVER_GENE_BAN_PER_KEY_ATTEMPTS", 4)
+GENE_BAN_BEST_THRESHOLD: Final = env_float("EVOLVER_GENE_BAN_BEST_THRESHOLD", 0.15)
+GENE_INERT_BAN_STREAK: Final = env_int("EVOLVER_GENE_INERT_BAN_STREAK", 8)
+GENE_EPIGENETIC_HARD_BOOST: Final = env_float("EVOLVER_GENE_EPIGENETIC_HARD_BOOST", -0.3)
+SESSION_ARCHIVE_TRIGGER: Final = env_int("EVOLVER_SESSION_ARCHIVE_TRIGGER", 100)
+SESSION_ARCHIVE_KEEP: Final = env_int("EVOLVER_SESSION_ARCHIVE_KEEP", 50)
+MEMORY_FRAGMENT_MAX_CHARS: Final = env_int("EVOLVER_MEMORY_FRAGMENT_MAX_CHARS", 50_000)
+IDLE_FETCH_INTERVAL_MS: Final = env_int("EVOLVER_IDLE_FETCH_INTERVAL_MS", 600_000)
+PROMPT_MAX_CHARS: Final = env_int("EVOLVER_PROMPT_MAX_CHARS", 24_000)
+ACTIVE_WINDOW_MS: Final = 24 * 60 * 60 * 1_000
+TARGET_BYTES: Final = 120_000
+PER_FILE_BYTES: Final = 20_000
+PER_SESSION_BYTES: Final = 20_000
+RECENCY_GUARD_MS: Final = 30 * 1_000
+DORMANT_TTL_MS: Final = 3_600 * 1_000
+PACKAGE_DESC_CACHE_TTL_MS: Final = 6 * 60 * 60 * 1_000
+MEMORY_GRAPH_READ_LIMIT: Final = 1_000
+NARRATIVE_SUMMARY_MAX_CHARS: Final = 3_000
+
+# --- Ops ---
+MAX_SILENCE_MS: Final = env_int("EVOLVER_MAX_SILENCE_MS", 30 * 60 * 1_000)
+CLEANUP_MAX_AGE_MS: Final = env_int("EVOLVER_CLEANUP_MAX_AGE_MS", 24 * 60 * 60 * 1_000)
+CLEANUP_MIN_KEEP: Final = env_int("EVOLVER_CLEANUP_MIN_KEEP", 10)
+CLEANUP_MAX_FILES: Final = env_int("EVOLVER_CLEANUP_MAX_FILES", 10)
+LOCK_MAX_AGE_MS: Final = env_int("EVOLVER_LOCK_MAX_AGE_MS", 10 * 60 * 1_000)
+
+# --- Self-PR ---
+SELF_PR_MIN_SCORE: Final = env_float("EVOLVER_SELF_PR_MIN_SCORE", 0.85)
+SELF_PR_MIN_STREAK: Final = env_int("EVOLVER_SELF_PR_MIN_STREAK", 3)
+SELF_PR_MAX_FILES: Final = env_int("EVOLVER_SELF_PR_MAX_FILES", 3)
+SELF_PR_MAX_LINES: Final = env_int("EVOLVER_SELF_PR_MAX_LINES", 100)
+SELF_PR_COOLDOWN_MS: Final = env_int("EVOLVER_SELF_PR_COOLDOWN_MS", 24 * 60 * 60 * 1_000)
+SELF_PR_REPO: Final = env_str("EVOLVER_SELF_PR_REPO", "EvoMap/evolver")
+SELF_PR_TIMEOUT_MS: Final = env_int("EVOLVER_SELF_PR_TIMEOUT_MS", 30_000)
+
+# --- Leak Check ---
+LEAK_CHECK_MODE: Final = env_str("EVOLVER_LEAK_CHECK", "strict")
+
+# --- Reuse attribution (P4-a Slice A) ---
+REUSE_ATTRIBUTION_MODE: Final = env_str("EVOLVER_REUSE_ATTRIBUTION", "off")
+
+
+def reuse_attribution_mode() -> str:
+    v = (os.environ.get("EVOLVER_REUSE_ATTRIBUTION") or REUSE_ATTRIBUTION_MODE or "off").lower().strip()
+    return "shadow" if v == "shadow" else "off"
+
+
+# --- Validator mode (opt-out) ---
+def _validator_enabled() -> bool:
+    v = (os.environ.get("EVOLVER_VALIDATOR_ENABLED") or "").lower().strip()
+    return v in ("1", "true", "yes", "on")
+
+
+VALIDATOR_ENABLED: Final = _validator_enabled()
+VALIDATOR_STAKE_AMOUNT: Final = env_int("EVOLVER_VALIDATOR_STAKE_AMOUNT", 100)
+VALIDATOR_MAX_TASKS_PER_CYCLE: Final = env_int("EVOLVER_VALIDATOR_MAX_TASKS_PER_CYCLE", 2)
+VALIDATOR_FETCH_TIMEOUT_MS: Final = env_int("EVOLVER_VALIDATOR_FETCH_TIMEOUT_MS", 8_000)
+VALIDATOR_REPORT_TIMEOUT_MS: Final = env_int("EVOLVER_VALIDATOR_REPORT_TIMEOUT_MS", 10_000)
+VALIDATOR_STAKE_TIMEOUT_MS: Final = env_int("EVOLVER_VALIDATOR_STAKE_TIMEOUT_MS", 10_000)
+VALIDATOR_CMD_TIMEOUT_MS: Final = env_int("EVOLVER_VALIDATOR_CMD_TIMEOUT_MS", 60_000)
+VALIDATOR_BATCH_TIMEOUT_MS: Final = env_int("EVOLVER_VALIDATOR_BATCH_TIMEOUT_MS", 180_000)
+
+__all__ = [
+    "env_int",
+    "env_positive_int",
+    "env_float",
+    "env_str",
+    "env_bool",
+    "resolve_hub_url",
+    "HELLO_TIMEOUT_MS",
+    "HEARTBEAT_TIMEOUT_MS",
+    "HEARTBEAT_INTERVAL_MS",
+    "HEARTBEAT_FIRST_DELAY_MS",
+    "EVENT_POLL_TIMEOUT_MS",
+    "HTTP_TRANSPORT_TIMEOUT_MS",
+    "SECRET_CACHE_TTL_MS",
+    "HUB_SEARCH_TIMEOUT_MS",
+    "PUBLIC_DEFAULT_HUB_URL",
+    "BLAST_RADIUS_HARD_CAP_FILES",
+    "BLAST_RADIUS_HARD_CAP_LINES",
+    "VALIDATION_TIMEOUT_MS",
+    "CANARY_TIMEOUT_MS",
+    "CAPSULE_CONTENT_MAX_CHARS",
+    "SOLIDIFY_MAX_RETRIES",
+    "SOLIDIFY_RETRY_INTERVAL_MS",
+    "MIN_PUBLISH_SCORE",
+    "BROADCAST_SCORE_THRESHOLD",
+    "BROADCAST_SUCCESS_STREAK",
+    "MAX_REGEX_PATTERN_LEN",
+    "REPAIR_LOOP_THRESHOLD",
+    "GENE_BAN_PER_KEY_ATTEMPTS",
+    "GENE_BAN_BEST_THRESHOLD",
+    "GENE_INERT_BAN_STREAK",
+    "GENE_EPIGENETIC_HARD_BOOST",
+    "SESSION_ARCHIVE_TRIGGER",
+    "SESSION_ARCHIVE_KEEP",
+    "MEMORY_FRAGMENT_MAX_CHARS",
+    "IDLE_FETCH_INTERVAL_MS",
+    "PROMPT_MAX_CHARS",
+    "ACTIVE_WINDOW_MS",
+    "TARGET_BYTES",
+    "PER_FILE_BYTES",
+    "PER_SESSION_BYTES",
+    "RECENCY_GUARD_MS",
+    "DORMANT_TTL_MS",
+    "PACKAGE_DESC_CACHE_TTL_MS",
+    "MEMORY_GRAPH_READ_LIMIT",
+    "NARRATIVE_SUMMARY_MAX_CHARS",
+    "MAX_SILENCE_MS",
+    "CLEANUP_MAX_AGE_MS",
+    "CLEANUP_MIN_KEEP",
+    "CLEANUP_MAX_FILES",
+    "LOCK_MAX_AGE_MS",
+    "SELF_PR_MIN_SCORE",
+    "SELF_PR_MIN_STREAK",
+    "SELF_PR_MAX_FILES",
+    "SELF_PR_MAX_LINES",
+    "SELF_PR_COOLDOWN_MS",
+    "SELF_PR_REPO",
+    "SELF_PR_TIMEOUT_MS",
+    "LEAK_CHECK_MODE",
+    "REUSE_ATTRIBUTION_MODE",
+    "reuse_attribution_mode",
+    "VALIDATOR_ENABLED",
+    "VALIDATOR_STAKE_AMOUNT",
+    "VALIDATOR_MAX_TASKS_PER_CYCLE",
+    "VALIDATOR_FETCH_TIMEOUT_MS",
+    "VALIDATOR_REPORT_TIMEOUT_MS",
+    "VALIDATOR_STAKE_TIMEOUT_MS",
+    "VALIDATOR_CMD_TIMEOUT_MS",
+    "VALIDATOR_BATCH_TIMEOUT_MS",
+]
