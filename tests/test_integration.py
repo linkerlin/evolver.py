@@ -81,13 +81,16 @@ class TestFullRunSolidifyCycle:
         state = json.loads(get_solidify_state_path().read_text())
         assert "last_solidify" in state
 
-    def test_run_appends_events(self, isolated_evolver_env: Path) -> None:
+    def test_run_then_solidify_appends_events(self, isolated_evolver_env: Path) -> None:
+        _init_git_repo(isolated_evolver_env)
         from evolver.gep.asset_store import read_all_events
         before = len(read_all_events())
         code = main(["run"])
         assert code == 0
+        code = main(["solidify"])
+        assert code == 0
         after = len(read_all_events())
-        assert after > before, "Run should append at least one event"
+        assert after > before, "Solidify should append at least one event"
 
 
 # ---------------------------------------------------------------------------
@@ -110,16 +113,21 @@ class TestWebUIFullPipeline:
         assert "genes" in data
         assert len(data["genes"]) >= 3  # seed genes always present
 
-    def test_events_endpoint_after_run(self, client: TestClient, isolated_evolver_env: Path) -> None:
+    def test_events_endpoint_after_run_and_solidify(self, client: TestClient, isolated_evolver_env: Path) -> None:
+        _init_git_repo(isolated_evolver_env)
         main(["run"])
+        main(["solidify"])
         response = client.get("/events")
         assert response.status_code == 200
         data = response.json()
         assert "events" in data
         assert len(data["events"]) > 0
 
-    def test_events_replay_api_after_run(self, client: TestClient, isolated_evolver_env: Path) -> None:
+    def test_events_replay_api_after_run_and_solidify(self, client: TestClient, isolated_evolver_env: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+        _init_git_repo(isolated_evolver_env)
+        monkeypatch.setenv("EVOLVER_SQLITE_STORE", "1")
         main(["run"])
+        main(["solidify"])
         response = client.get("/events/replay?since_id=0&limit=100")
         assert response.status_code == 200
         data = response.json()
@@ -140,21 +148,26 @@ class TestWebUIFullPipeline:
 # ---------------------------------------------------------------------------
 
 class TestSQLiteStoreFullPipeline:
-    def test_sqlite_events_after_run(self, isolated_evolver_env: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    def test_sqlite_events_after_run_and_solidify(self, isolated_evolver_env: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+        _init_git_repo(isolated_evolver_env)
         monkeypatch.setenv("EVOLVER_SQLITE_STORE", "1")
         from evolver.ops import sqlite_store
 
         before = sqlite_store.event_count()
         code = main(["run"])
         assert code == 0
+        code = main(["solidify"])
+        assert code == 0
         after = sqlite_store.event_count()
-        assert after > before, "SQLite should contain events after run"
+        assert after > before, "SQLite should contain events after solidify"
 
-    def test_sqlite_replay_after_run(self, isolated_evolver_env: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    def test_sqlite_replay_after_run_and_solidify(self, isolated_evolver_env: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+        _init_git_repo(isolated_evolver_env)
         monkeypatch.setenv("EVOLVER_SQLITE_STORE", "1")
         from evolver.ops import sqlite_store
 
         main(["run"])
+        main(["solidify"])
         events = sqlite_store.read_events_replay(since_id=0, limit=100)
         assert len(events) > 0
         assert all("id" in e or "event_id" in e for e in events)
@@ -246,6 +259,7 @@ class TestAuthWebSocketFullFlow:
 
 class TestRecipeCacheAndApply:
     def test_cache_recipe_and_apply(self, isolated_evolver_env: Path) -> None:
+        import asyncio
         from evolver.recipe.cache import cache_recipe, get_cached_recipe
         from evolver.recipe.client import apply_recipe
 
@@ -264,7 +278,7 @@ class TestRecipeCacheAndApply:
         assert cached["id"] == "test-recipe"
 
         target = isolated_evolver_env / "recipe_output"
-        result = apply_recipe("test-recipe", target_dir=str(target), use_cache=True)
+        result = asyncio.run(apply_recipe("test-recipe", target_dir=str(target), use_cache=True))
         assert result["ok"] is True
         assert "README.md" in result["applied"]
         assert "src/main.py" in result["applied"]
@@ -273,6 +287,7 @@ class TestRecipeCacheAndApply:
         assert "# Hello world" in readme
 
     def test_apply_recipe_conflict_detection(self, isolated_evolver_env: Path) -> None:
+        import asyncio
         from evolver.recipe.cache import cache_recipe
         from evolver.recipe.client import apply_recipe
 
@@ -287,7 +302,7 @@ class TestRecipeCacheAndApply:
         target.mkdir(parents=True, exist_ok=True)
         (target / "existing.txt").write_text("old content")
 
-        result = apply_recipe("conflict-recipe", target_dir=str(target), use_cache=True)
+        result = asyncio.run(apply_recipe("conflict-recipe", target_dir=str(target), use_cache=True))
         assert result["ok"] is True
         assert "existing.txt" in result.get("conflicts", [])
         assert "existing.txt" not in result.get("applied", [])
@@ -365,17 +380,21 @@ class TestPeerLifecycle:
 # ---------------------------------------------------------------------------
 
 class TestCrossSubsystemWorkflow:
-    def test_run_then_webui_then_replay(self, client: TestClient, isolated_evolver_env: Path) -> None:
+    def test_run_then_webui_then_replay(self, client: TestClient, isolated_evolver_env: Path, monkeypatch: pytest.MonkeyPatch) -> None:
         """Most comprehensive integration: run cycle → WebUI state → event replay → auth."""
-        # 1. Run cycle
+        _init_git_repo(isolated_evolver_env)
+        monkeypatch.setenv("EVOLVER_SQLITE_STORE", "1")
+        # 1. Run + solidify cycle
         code = main(["run"])
         assert code == 0
+        code = main(["solidify"])
+        assert code == 0
 
-        # 2. WebUI status shows pending solidify
+        # 2. WebUI status shows no pending solidify
         response = client.get("/status")
         assert response.status_code == 200
         status = response.json()
-        assert status["solidify_pending"] is True
+        assert status["solidify_pending"] is False
         assert status["total_events"] > 0
 
         # 3. Events endpoint has data
@@ -384,7 +403,7 @@ class TestCrossSubsystemWorkflow:
         events_data = response.json()
         assert len(events_data["events"]) > 0
 
-        # 4. Replay API returns same events
+        # 4. Replay API returns same events (SQLite only)
         response = client.get("/events/replay?since_id=0&limit=100")
         assert response.status_code == 200
         replay_data = response.json()

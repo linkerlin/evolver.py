@@ -1,6 +1,6 @@
 # 🧬 evolver.py
 
-Python 3.12+ 之移植也，源于 [`@evomap/evolver`](https://github.com/EvoMap/evolver)，乃以 GEP 为驱动之 AI 智能体自进化引擎。
+适配 Python 3.12+ 之移植也，源于 [`@evomap/evolver`](https://github.com/EvoMap/evolver)，乃以 GEP 为驱动之 AI 智能体自进化引擎。
 
 此移植之旨，在於与 Node.js 参考实现达成**完全行为等价**，同时采用现代 Python 工具链：
 
