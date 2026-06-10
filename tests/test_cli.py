@@ -60,3 +60,22 @@ def test_cli_solidify_after_run_in_git_repo(isolated_evolver_env: Path, capsys: 
     assert code == 0
     captured = capsys.readouterr()
     assert "Solidify succeeded" in captured.out
+
+
+def test_cli_webui_token_generate_and_revoke(isolated_evolver_env: Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("EVOLVER_HOME", str(isolated_evolver_env / ".evolver"))
+    code = main(["webui-token", "--generate", "--role", "admin"])
+    assert code == 0
+    captured = capsys.readouterr()
+    assert "Token (admin):" in captured.out
+    token = captured.out.split(": ")[1].strip()
+
+    code = main(["webui-token"])
+    assert code == 0
+    captured = capsys.readouterr()
+    assert "1 token(s)" in captured.out
+
+    code = main(["webui-token", "--revoke", token])
+    assert code == 0
+    captured = capsys.readouterr()
+    assert "Revoked." in captured.out

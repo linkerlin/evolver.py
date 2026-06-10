@@ -71,6 +71,9 @@ def _build_parser() -> argparse.ArgumentParser:
     sync_p.add_argument("--dry-run", action="store_true", help="Show what would be synced")
     sync_p.add_argument("--scope", default=None, help="Sync scope filter")
     sub.add_parser("asset-log", help="Show asset call log")
+    replay_p = sub.add_parser("replay", help="Replay events from SQLite store")
+    replay_p.add_argument("--since-id", type=int, default=0, help="Start after this row id")
+    replay_p.add_argument("--limit", type=int, default=100, help="Max events to replay")
     webui_p = sub.add_parser("webui", help="Launch the WebUI dashboard")
     webui_p.add_argument("--host", default="127.0.0.1", help="Bind host")
     webui_p.add_argument("--port", type=int, default=8080, help="Bind port")
@@ -106,6 +109,8 @@ def _build_parser() -> argparse.ArgumentParser:
     recipe_apply.add_argument("recipe-id", help="Recipe ID")
     recipe_apply.add_argument("--target-dir", default=".", help="Target directory")
     recipe_apply.add_argument("--dry-run", action="store_true", help="Preview without writing")
+    recipe_sub.add_parser("cache-list", help="List cached recipes")
+    recipe_sub.add_parser("cache-clear", help="Clear local recipe cache")
 
     return parser
 
@@ -148,6 +153,9 @@ def main(argv: Sequence[str] | None = None) -> int:
     if command == "asset-log":
         return _cmd_asset_log(args)
 
+    if command == "replay":
+        return _cmd_replay(args)
+
     if command == "sync":
         return asyncio.run(_cmd_sync(args))
 
@@ -159,6 +167,9 @@ def main(argv: Sequence[str] | None = None) -> int:
 
     if command == "setup-hooks":
         return _cmd_setup_hooks(args)
+
+    if command == "webui-token":
+        return _cmd_webui_token(args)
 
     if command == "reset-local-secret":
         return _cmd_reset_local_secret(args)
@@ -358,6 +369,18 @@ def _cmd_review(_args: argparse.Namespace) -> int:
     return 0
 
 
+def _cmd_replay(args: argparse.Namespace) -> int:
+    from evolver.ops.sqlite_store import read_events_replay
+    events = read_events_replay(args.since_id, args.limit)
+    print(f"Replay {len(events)} event(s) since id={args.since_id}")
+    for evt in events:
+        eid = evt.get("id", "?")
+        ts = evt.get("timestamp", "?")
+        gid = evt.get("gene_id", "?")
+        print(f"  {eid}  {ts}  {gid}")
+    return 0
+
+
 def _cmd_asset_log(_args: argparse.Namespace) -> int:
     """Show the asset call log (events)."""
     import json
@@ -539,6 +562,24 @@ def _cmd_setup_hooks(args: argparse.Namespace) -> int:
     return 0
 
 
+def _cmd_webui_token(args: argparse.Namespace) -> int:
+    from evolver.ops.auth_middleware import create_token, load_auth_db, revoke_token
+
+    if args.revoke:
+        ok = revoke_token(args.revoke)
+        print("Revoked." if ok else "Token not found.")
+        return 0
+
+    if args.generate:
+        token = create_token(role=args.role)
+        print(f"Token ({args.role}): {token}")
+        return 0
+
+    db = load_auth_db()
+    print(f"{len(db.get('tokens', {}))} token(s)")
+    return 0
+
+
 def _cmd_reset_local_secret(args: argparse.Namespace) -> int:
     """Reset the local A2A_NODE_SECRET."""
     from evolver.adapters.reset_secret import reset_local_secret
@@ -657,8 +698,38 @@ async def _cmd_atp_complete(args: argparse.Namespace) -> int:
 
 
 async def _cmd_atp(args: argparse.Namespace) -> int:
-    print(f"ATP action: {args.action}")
-    return 0
+    from evolver.atp.settlement import credit, debit, get_balance, history
+
+    action = args.atp_action
+    if action is None or action == "balance":
+        result = get_balance()
+        print(f"Balance: {result['balance']}")
+        return 0
+
+    if action == "deposit":
+        result = credit(args.amount, reason=args.reason)
+        if not result.get("ok"):
+            print(f"Deposit failed: {result.get('error')}", file=sys.stderr)
+            return 1
+        print(f"Deposited {args.amount}. New balance: {result['balance']}")
+        return 0
+
+    if action == "withdraw":
+        result = debit(args.amount, reason=args.reason)
+        if not result.get("ok"):
+            print(f"Withdraw failed: {result.get('error')}", file=sys.stderr)
+            return 1
+        print(f"Withdrew {args.amount}. New balance: {result['balance']}")
+        return 0
+
+    if action == "history":
+        result = history(limit=args.limit)
+        for tx in result.get("transactions", []):
+            print(f"{tx['timestamp']}  {tx['kind']:8}  {tx['amount']:10.4f}  {tx['reason']}")
+        return 0
+
+    print(f"Unknown ATP action: {action}", file=sys.stderr)
+    return 2
 
 
 async def _cmd_recipe(args: argparse.Namespace) -> int:
@@ -694,6 +765,20 @@ async def _cmd_recipe(args: argparse.Namespace) -> int:
         if result.get("dry_run"):
             print("DRY RUN — no files modified")
         print(f"Recipe {rid} applied.")
+        return 0
+
+    if action == "cache-list":
+        from evolver.recipe.cache import list_cached_recipes
+        recipes = list_cached_recipes()
+        print(f"{len(recipes)} cached recipe(s)")
+        for r in recipes:
+            print(f"  {r.get('id')}  {r.get('name', '')}")
+        return 0
+
+    if action == "cache-clear":
+        from evolver.recipe.cache import clear_cache
+        count = clear_cache()
+        print(f"Cleared {count} cached recipe(s).")
         return 0
 
     print(f"Unknown recipe action: {action}", file=sys.stderr)

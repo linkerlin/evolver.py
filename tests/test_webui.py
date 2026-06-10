@@ -22,6 +22,7 @@ def isolated_evolver_env(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
     monkeypatch.setenv("EVOLVER_NO_PARENT_GIT", "1")
     monkeypatch.setenv("OPENCLAW_WORKSPACE", str(tmp_path))
     monkeypatch.setenv("EVOLVER_USER_LOCK", str(tmp_path / "user.lock"))
+    monkeypatch.setenv("EVOLVER_HOME", str(tmp_path / ".evolver"))
     yield tmp_path
 
 
@@ -57,8 +58,52 @@ def test_capsules_endpoint(client: TestClient, isolated_evolver_env: Path) -> No
     assert "capsules" in data
 
 
+def test_peers_endpoint(client: TestClient, isolated_evolver_env: Path) -> None:
+    response = client.get("/api/peers")
+    assert response.status_code == 200
+    data = response.json()
+    assert "peers" in data
+
+
 def test_events_endpoint(client: TestClient, isolated_evolver_env: Path) -> None:
     response = client.get("/events")
     assert response.status_code == 200
     data = response.json()
     assert "events" in data
+
+
+def test_events_stream(client: TestClient, isolated_evolver_env: Path) -> None:
+    response = client.get("/events/stream", headers={"X-Test-Mode": "1"})
+    assert response.status_code == 200
+    assert "text/event-stream" in response.headers.get("content-type", "")
+    body = response.text
+    assert ":ping" in body
+
+
+def test_websocket_ping(client: TestClient, isolated_evolver_env: Path) -> None:
+    with client.websocket_connect("/ws") as ws:
+        data = ws.receive_json()
+        assert data["type"] == "connected"
+        ws.send_json({"action": "ping"})
+        data = ws.receive_json()
+        assert data["type"] == "pong"
+
+
+def test_websocket_status(client: TestClient, isolated_evolver_env: Path) -> None:
+    with client.websocket_connect("/ws") as ws:
+        ws.receive_json()  # connected
+        ws.send_json({"action": "status"})
+        data = ws.receive_json()
+        assert data["type"] == "status"
+        assert "solidify_pending" in data
+
+
+def test_websocket_run(client: TestClient, isolated_evolver_env: Path) -> None:
+    from evolver.ops.auth_middleware import create_token
+
+    token = create_token(role="admin")
+    with client.websocket_connect("/ws", headers={"Authorization": f"Bearer {token}"}) as ws:
+        ws.receive_json()  # connected
+        ws.send_json({"action": "run"})
+        data = ws.receive_json()
+        assert data["type"] == "status"

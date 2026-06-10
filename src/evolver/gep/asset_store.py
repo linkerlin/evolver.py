@@ -18,6 +18,10 @@ from evolver.gep.content_hash import compute_asset_id, verify_asset_id
 from evolver.gep.paths import get_bundled_gep_assets_dir, get_gep_assets_dir
 
 
+def _sqlite_enabled() -> bool:
+    return os.environ.get("EVOLVER_SQLITE_STORE", "").lower() in ("1", "true", "yes", "on")
+
+
 def _safe_json_loads(raw: str) -> Any:
     try:
         return json.loads(raw)
@@ -220,6 +224,9 @@ def upsert_capsule(capsule: dict) -> None:
 
 
 def read_all_events() -> list[dict]:
+    if _sqlite_enabled():
+        from evolver.ops.sqlite_store import read_all_events as _sqlite_read
+        return _sqlite_read()
     return read_jsonl_all(events_path())
 
 
@@ -232,6 +239,10 @@ def get_last_event_id() -> str | None:
 
 
 def append_event_jsonl(record: dict) -> None:
+    if _sqlite_enabled():
+        from evolver.ops.sqlite_store import append_event as _sqlite_append
+        _sqlite_append(record)
+        return
     with with_file_lock():
         append_jsonl(events_path(), record)
 

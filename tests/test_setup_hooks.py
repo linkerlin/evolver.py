@@ -62,6 +62,10 @@ class TestInstallHooks:
         content = target.read_text()
         assert "GEP Coding Rules" in content
         assert "Minimal changes" in content
+        mcp = tmp_path / ".cursor" / "mcp.json"
+        assert mcp.exists()
+        data = json.loads(mcp.read_text())
+        assert "evolver" in data.get("mcpServers", {})
 
     def test_claude_hook(self, tmp_path: Path) -> None:
         result = install_hooks(platform="claude-code", project_dir=tmp_path)
@@ -71,6 +75,10 @@ class TestInstallHooks:
         assert target.exists()
         content = target.read_text()
         assert "Evolver Project Context" in content
+        cmd = tmp_path / ".claude" / "commands" / "evolver-run.json"
+        assert cmd.exists()
+        data = json.loads(cmd.read_text())
+        assert data["name"] == "evolver-run"
 
     def test_vscode_hook(self, tmp_path: Path) -> None:
         result = install_hooks(platform="vscode", project_dir=tmp_path)

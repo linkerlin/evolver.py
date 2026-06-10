@@ -7,6 +7,8 @@ into the current workspace.
 
 from __future__ import annotations
 
+import re
+from pathlib import Path
 from typing import Any
 
 import httpx
@@ -55,8 +57,11 @@ async def list_recipes(
 async def get_recipe(
     recipe_id: str,
     hub_url: str | None = None,
+    use_cache: bool = True,
 ) -> dict[str, Any]:
-    """Fetch a single recipe by ID."""
+    """Fetch a single recipe by ID, caching on success and falling back on failure."""
+    from evolver.recipe.cache import cache_recipe, get_cached_recipe
+
     hub = hub_url or resolve_hub_url()
     try:
         async with httpx.AsyncClient(http2=True, timeout=15.0) as client:
@@ -67,28 +72,93 @@ async def get_recipe(
             resp.raise_for_status()
             data = resp.json()
     except Exception as exc:
+        if use_cache:
+            cached = get_cached_recipe(recipe_id)
+            if cached:
+                return {"ok": True, "recipe": cached, "source": "cache"}
         return {"ok": False, "error": str(exc)}
-    return {"ok": True, "recipe": data}
+
+    if use_cache:
+        cache_recipe(data)
+    return {"ok": True, "recipe": data, "source": "hub"}
+
+
+_TEMPLATE_VAR_RE = re.compile(r"\{\{\s*(\w+)\s*\}\}")
+
+
+def _render_template(content: str, variables: dict[str, str]) -> str:
+    """Replace {{var}} placeholders with provided values."""
+
+    def replacer(match: re.Match[str]) -> str:
+        key = match.group(1)
+        return variables.get(key, match.group(0))
+
+    return _TEMPLATE_VAR_RE.sub(replacer, content)
 
 
 async def apply_recipe(
     recipe_id: str,
     target_dir: str = ".",
     dry_run: bool = False,
+    variables: dict[str, str] | None = None,
     hub_url: str | None = None,
+    use_cache: bool = True,
 ) -> dict[str, Any]:
     """Fetch a recipe and stage its files into the target directory.
 
-    This is a skeleton — a full implementation would:
-      1. Download the recipe archive
-      2. Validate checksums
-      3. Render template variables
-      4. Write files to disk
+    Supports simple {{var}} template rendering and conflict detection.
+    Falls back to local cache if Hub is unreachable.
     """
-    result = await get_recipe(recipe_id, hub_url)
+    result = await get_recipe(recipe_id, hub_url, use_cache=use_cache)
     if not result.get("ok"):
         return result
     recipe = result["recipe"]
+    files = recipe.get("files", [])
+    if not files:
+        return {"ok": True, "recipe_id": recipe_id, "applied": [], "note": "Recipe contains no files."}
+
+    base = Path(target_dir).resolve()
+    base.mkdir(parents=True, exist_ok=True)
+
+    # Build variable map from recipe defaults + user overrides
+    merged_vars: dict[str, str] = {}
+    for v in recipe.get("variables", []):
+        merged_vars[v["name"]] = v.get("default", "")
+    if variables:
+        merged_vars.update(variables)
+
+    applied: list[str] = []
+    conflicts: list[str] = []
+
+    for f in files:
+        rel_path = f["path"].lstrip("/")
+        target = base / rel_path
+        rendered = _render_template(f.get("content", ""), merged_vars)
+
+        if dry_run:
+            continue
+
+        if target.exists():
+            conflicts.append(rel_path)
+            continue
+
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_text(rendered, encoding="utf-8")
+        applied.append(rel_path)
+
     if dry_run:
-        return {"ok": True, "dry_run": True, "files": recipe.get("files", []), "recipe_id": recipe_id}
-    return {"ok": True, "recipe_id": recipe_id, "applied": [], "note": "Recipe application is a skeleton in this port."}
+        return {
+            "ok": True,
+            "dry_run": True,
+            "recipe_id": recipe_id,
+            "files": [f["path"] for f in files],
+            "variables": merged_vars,
+        }
+
+    return {
+        "ok": True,
+        "recipe_id": recipe_id,
+        "applied": applied,
+        "conflicts": conflicts,
+        "variables": merged_vars,
+    }
