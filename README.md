@@ -1,4 +1,5 @@
 # 🧬 evolver.py
+[【中文】](README.zh.md)
 
 Python 3.12+ port of [`@evomap/evolver`](https://github.com/EvoMap/evolver), a GEP-powered self-evolution engine for AI agents.
 

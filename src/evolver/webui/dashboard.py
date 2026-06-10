@@ -240,6 +240,11 @@ def render_dashboard() -> str:
     controls = """
     <div class="section">
       <h2>🎛️ Controls</h2>
+      <div style="margin-bottom:0.75rem;">
+        <input id="token-input" type="password" placeholder="WebUI token (required for run / solidify)"
+          style="width:100%;padding:0.5rem;background:var(--card);color:var(--fg);border:1px solid var(--border);border-radius:6px;font-family:monospace;"
+          onchange="reconnectWs()" />
+      </div>
       <button onclick="sendWs({action:'run'})" style="background:var(--accent);color:#fff;border:none;padding:0.5rem 1rem;border-radius:6px;cursor:pointer;margin-right:0.5rem;">Run Cycle</button>
       <button onclick="sendWs({action:'solidify'})" style="background:var(--success);color:#fff;border:none;padding:0.5rem 1rem;border-radius:6px;cursor:pointer;margin-right:0.5rem;">Solidify</button>
       <button onclick="sendWs({action:'status'})" style="background:var(--card);color:var(--fg);border:1px solid var(--border);padding:0.5rem 1rem;border-radius:6px;cursor:pointer;">Refresh Status</button>
@@ -281,25 +286,37 @@ def render_dashboard() -> str:
         logEl.textContent += msg + '\n';
         logEl.scrollTop = logEl.scrollHeight;
       }
-      const proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
-      const ws = new WebSocket(proto + '//' + location.host + '/ws');
-      ws.onopen = () => { setLive(true); log('WS connected'); };
-      ws.onclose = () => { setLive(false); log('WS disconnected'); };
-      ws.onerror = () => { setLive(false); log('WS error'); };
-      ws.onmessage = function(e) {
-        try {
-          const data = JSON.parse(e.data);
-          if (data.type === 'pong') return;
-          if (data.type === 'connected') { log('Clients: ' + data.clients); return; }
-          if (data.type === 'status') { toast(data.message, true); log(data.message); }
-          if (data.type === 'error') { toast(data.message, false); log('ERR: ' + data.message); }
-          if (data.type === 'event') {
-            const status = (data.data.outcome || {}).status || 'unknown';
-            toast('New event: ' + (data.data.gene_id || data.data.id || '?') + ' → ' + status, status === 'success');
-          }
-        } catch(err) {}
+      let ws = null;
+      function connectWs() {
+        if (ws) { try { ws.close(); } catch(e) {} }
+        const token = document.getElementById('token-input').value.trim();
+        const proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
+        let url = proto + '//' + location.host + '/ws';
+        if (token) url += '?token=' + encodeURIComponent(token);
+        ws = new WebSocket(url);
+        ws.onopen = () => { setLive(true); log('WS connected'); };
+        ws.onclose = () => { setLive(false); log('WS disconnected'); };
+        ws.onerror = () => { setLive(false); log('WS error'); };
+        ws.onmessage = function(e) {
+          try {
+            const data = JSON.parse(e.data);
+            if (data.type === 'pong') return;
+            if (data.type === 'connected') { log('Clients: ' + data.clients); return; }
+            if (data.type === 'status') { toast(data.message, true); log(data.message); }
+            if (data.type === 'error') { toast(data.message, false); log('ERR: ' + data.message); }
+            if (data.type === 'event') {
+              const status = (data.data.outcome || {}).status || 'unknown';
+              toast('New event: ' + (data.data.gene_id || data.data.id || '?') + ' → ' + status, status === 'success');
+            }
+          } catch(err) {}
+        };
+      }
+      window.reconnectWs = connectWs;
+      window.sendWs = function(obj) {
+        if (!ws || ws.readyState !== WebSocket.OPEN) { toast('WebSocket not connected', false); return; }
+        ws.send(JSON.stringify(obj));
       };
-      window.sendWs = function(obj) { ws.send(JSON.stringify(obj)); };
+      connectWs();
     })();
     </script>
     """

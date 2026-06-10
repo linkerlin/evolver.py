@@ -58,6 +58,9 @@ def _extract_token(request: Request | WebSocket) -> str | None:
     header = request.headers.get("authorization", "")
     if header.lower().startswith("bearer "):
         return header[7:].strip()
+    # WebSocket fallback: browsers cannot set custom headers, so accept token via query param.
+    if isinstance(request, WebSocket):
+        return request.query_params.get("token")
     return None
 
 

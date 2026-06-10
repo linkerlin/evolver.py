@@ -1,0 +1,58 @@
+name: Evolver CI
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+    branches: [main, master]
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          version: "latest"
+      - name: Install dependencies
+        run: uv sync --all-extras --dev
+      - name: Lint with ruff
+        run: uv run ruff check src tests
+      - name: Format check with ruff
+        run: uv run ruff format --check src tests
+      - name: Type check with mypy
+        run: uv run mypy src
+
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python-version: ["3.12", "3.13"]
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python ${{ matrix.python-version }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          version: "latest"
+
+      - name: Install dependencies
+        run: uv sync --all-extras --dev
+
+      - name: Run tests
+        run: uv run pytest tests/ -v --tb=short
+
+      - name: Run evolver version check
+        run: uv run evolver --version
+
+      - name: Run evolver run (dry check)
+        run: uv run evolver run
+        env:
+          EVOLVER_NO_PARENT_GIT: "1"

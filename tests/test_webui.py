@@ -107,3 +107,22 @@ def test_websocket_run(client: TestClient, isolated_evolver_env: Path) -> None:
         ws.send_json({"action": "run"})
         data = ws.receive_json()
         assert data["type"] == "status"
+
+
+def test_websocket_run_unauthorized(client: TestClient, isolated_evolver_env: Path) -> None:
+    with client.websocket_connect("/ws") as ws:
+        ws.receive_json()  # connected
+        ws.send_json({"action": "run"})
+        with pytest.raises(Exception):
+            ws.receive_json()
+
+
+def test_websocket_run_with_query_token(client: TestClient, isolated_evolver_env: Path) -> None:
+    from evolver.ops.auth_middleware import create_token
+
+    token = create_token(role="admin")
+    with client.websocket_connect(f"/ws?token={token}") as ws:
+        ws.receive_json()  # connected
+        ws.send_json({"action": "run"})
+        data = ws.receive_json()
+        assert data["type"] == "status"
