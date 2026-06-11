@@ -5,7 +5,6 @@ Equivalent to evolver/src/proxy/server.js skeleton.
 
 from __future__ import annotations
 
-import asyncio
 import time
 from typing import Any
 
@@ -17,7 +16,10 @@ from evolver.adapters.auth import load_auth
 from evolver.config import HTTP_TRANSPORT_TIMEOUT_MS, resolve_hub_url
 from evolver.gep.a2a_protocol import build_hub_headers
 
+from evolver.proxy.server.routes import router
+
 app = FastAPI(title="Evolver A2A Proxy", version="1.0.0")
+app.include_router(router, prefix="/v1/a2a")
 
 # In-memory request trace (last N entries)
 _trace: list[dict[str, Any]] = []

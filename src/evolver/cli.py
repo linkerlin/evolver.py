@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+import json
 import os
 import sys
 from pathlib import Path
@@ -55,6 +56,15 @@ def _build_parser() -> argparse.ArgumentParser:
 
     sub = parser.add_subparsers(dest="command")
     sub.add_parser("run", help="Run one evolution cycle (default)")
+    sub.add_parser("start", help="Start the evolver daemon loop")
+    sub.add_parser("stop", help="Stop the evolver daemon loop")
+    sub.add_parser("restart", help="Restart the evolver daemon loop")
+    sub.add_parser("status", help="Show daemon status")
+    log_p = sub.add_parser("log", help="Tail the evolver log")
+    log_p.add_argument("--lines", type=int, default=20, help="Number of lines to show")
+    sub.add_parser("check", help="Check daemon health")
+    watch_p = sub.add_parser("watch", help="Run the health-watch supervisor")
+    watch_p.add_argument("--once", action="store_true", help="Check once and exit")
     sub.add_parser("solidify", help="Apply pending mutation")
     sub.add_parser("review", help="Review pending solidify")
     exec_p = sub.add_parser("exec", help="Execute bridge (opt-in)")
@@ -142,6 +152,20 @@ def main(argv: Sequence[str] | None = None) -> int:
             return asyncio.run(_cmd_loop(args))
         return asyncio.run(_cmd_run(args))
 
+    if command == "start":
+        return _cmd_start(args)
+    if command == "stop":
+        return _cmd_stop(args)
+    if command == "restart":
+        return _cmd_restart(args)
+    if command == "status":
+        return _cmd_status(args)
+    if command == "log":
+        return _cmd_log(args)
+    if command == "check":
+        return _cmd_check(args)
+    if command == "watch":
+        return _cmd_watch(args)
     if command == "solidify":
         return _cmd_solidify(args)
 
@@ -157,6 +181,8 @@ def main(argv: Sequence[str] | None = None) -> int:
     if command == "asset-log":
         return _cmd_asset_log(args)
 
+    if command == "atp":
+        return asyncio.run(_cmd_atp(args))
     if command == "replay":
         return _cmd_replay(args)
 
@@ -209,6 +235,57 @@ def main(argv: Sequence[str] | None = None) -> int:
     print(f"Command '{command}' is not yet implemented in this port.", file=sys.stderr)
     return 2
 
+
+def _cmd_start(_args: argparse.Namespace) -> int:
+    from evolver.ops.lifecycle import start
+    result = start()
+    print(json.dumps(result.__dict__, default=str))
+    return 0
+
+def _cmd_stop(_args: argparse.Namespace) -> int:
+    from evolver.ops.lifecycle import stop
+    result = stop()
+    print(json.dumps(result.__dict__, default=str))
+    return 0
+
+def _cmd_restart(_args: argparse.Namespace) -> int:
+    from evolver.ops.lifecycle import restart
+    result = restart()
+    print(json.dumps(result.__dict__, default=str))
+    return 0
+
+def _cmd_status(_args: argparse.Namespace) -> int:
+    from evolver.ops.lifecycle import status
+    result = status()
+    data = result.__dict__.copy()
+    data["processes"] = [p.__dict__ for p in result.processes]
+    print(json.dumps(data, default=str, indent=2))
+    return 0
+
+def _cmd_log(args: argparse.Namespace) -> int:
+    from evolver.ops.lifecycle import tail_log
+    result = tail_log(lines=args.lines)
+    if result.error:
+        print(result.error, file=sys.stderr)
+        return 1
+    print(result.content or "")
+    return 0
+
+def _cmd_check(_args: argparse.Namespace) -> int:
+    import json as _json
+    from evolver.ops.lifecycle import check_health, restart
+    health = check_health()
+    print(_json.dumps(health.__dict__, default=str, indent=2))
+    if not health.healthy:
+        print("[Lifecycle] Restarting...")
+        res = restart()
+        print(_json.dumps(res.__dict__, default=str))
+    return 0
+
+def _cmd_watch(args: argparse.Namespace) -> int:
+    from evolver.ops.lifecycle import watch
+    watch(once=args.once)
+    return 0
 
 def _cmd_solidify(_args: argparse.Namespace) -> int:
     """Apply the pending solidify state."""
@@ -731,6 +808,22 @@ async def _cmd_atp(args: argparse.Namespace) -> int:
         for tx in result.get("transactions", []):
             print(f"{tx['timestamp']}  {tx['kind']:8}  {tx['amount']:10.4f}  {tx['reason']}")
         return 0
+
+    if action in ("enable", "disable", "status"):
+        from evolver.atp.auto_buyer import get_consent, set_consent
+        if action == "status":
+            consent = get_consent()
+            enabled = consent.get("enabled") if consent else False
+            print(f"auto_buyer: {'enabled' if enabled else 'disabled'}")
+            return 0
+        if action == "enable":
+            set_consent(True)
+            print("auto_buyer: enabled")
+            return 0
+        if action == "disable":
+            set_consent(False)
+            print("auto_buyer: disabled")
+            return 0
 
     print(f"Unknown ATP action: {action}", file=sys.stderr)
     return 2

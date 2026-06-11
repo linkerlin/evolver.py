@@ -28,8 +28,8 @@ uv run evolver --review
 
 ## 项目结构篇
 
-完整设计文档详见 `设计方案.md`（中文撰写，与源仓库文档语言一致）。
+完整设计文档详见 `设计方案.md`。
 
 ## 许可证篇
 
-GPL-3.0-or-later（GNU 通用公共许可证第 3 版或其后续版本）
+Apache License

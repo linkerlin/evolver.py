@@ -32,12 +32,13 @@ def desensitize_file_path(path: str) -> str:
 def extract_error_signature(text: str) -> str | None:
     if not text:
         return None
-    # First non-empty line containing "Error" or "Exception"
+    # First non-empty line containing "error" or "exception"
     for line in text.splitlines():
         line = line.strip()
         if not line:
             continue
-        if "Error" in line or "Exception" in line:
+        low = line.lower()
+        if "error" in low or "exception" in low:
             return line[:200]
     return None
 

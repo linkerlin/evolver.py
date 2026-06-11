@@ -1,0 +1,13 @@
+{
+  "enable_auto_buyer": false,
+  "enable_curriculum": false,
+  "enable_explore": false,
+  "enable_idle_scheduler": true,
+  "enable_llm_review": true,
+  "enable_local_state_awareness": true,
+  "enable_memory_graph": true,
+  "enable_policy_check": true,
+  "enable_recall_inject": true,
+  "enable_secret_sanitize": true,
+  "enable_validator": true
+}

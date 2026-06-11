@@ -24,8 +24,10 @@ from evolver.gep.paths import (
     get_solidify_state_path,
 )
 from evolver.webui.dashboard import render_dashboard
+from evolver.webui.server.routes import router as api_router
 
 app = FastAPI(title="Evolver WebUI", version="1.8.0")
+app.include_router(api_router)
 
 _SSE_POLL_INTERVAL = 2.0  # seconds
 
