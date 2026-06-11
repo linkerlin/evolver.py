@@ -7,8 +7,8 @@ import asyncio
 import json
 import os
 import sys
+from collections.abc import Sequence
 from pathlib import Path
-from typing import Sequence
 
 
 def _load_dotenv() -> None:
@@ -71,7 +71,9 @@ def _build_parser() -> argparse.ArgumentParser:
     exec_p.add_argument("--cmd", default=None, help="Command to execute")
     exec_p.add_argument("--timeout", type=int, default=180, help="Timeout in seconds")
     distill_p = sub.add_parser("distill", help="Distill an LLM response")
-    distill_p.add_argument("--response-file", default="-", help="Path to response file (use - for stdin)")
+    distill_p.add_argument(
+        "--response-file", default="-", help="Path to response file (use - for stdin)"
+    )
     distill_p.add_argument("--dry-run", action="store_true", help="Show what would be installed")
     fetch_p = sub.add_parser("fetch", help="Fetch a skill from the Hub")
     fetch_p.add_argument("query", nargs="?", default="", help="Search query or asset id")
@@ -92,7 +94,11 @@ def _build_parser() -> argparse.ArgumentParser:
     login_p.add_argument("--mock", action="store_true", help="Generate a mock token (dev mode)")
     sub.add_parser("logout", help="Clear local OAuth tokens")
     hooks_p = sub.add_parser("setup-hooks", help="Install IDE hooks")
-    hooks_p.add_argument("--platform", default="auto", help="IDE platform: cursor, claude-code, vscode, generic, auto")
+    hooks_p.add_argument(
+        "--platform",
+        default="auto",
+        help="IDE platform: cursor, claude-code, vscode, generic, auto",
+    )
     hooks_p.add_argument("--project-dir", default=".", help="Target project directory")
     hooks_p.add_argument("--force", action="store_true", help="Overwrite existing hook files")
     hooks_p.add_argument("--dry-run", action="store_true", help="Preview changes without writing")
@@ -238,32 +244,41 @@ def main(argv: Sequence[str] | None = None) -> int:
 
 def _cmd_start(_args: argparse.Namespace) -> int:
     from evolver.ops.lifecycle import start
+
     result = start()
     print(json.dumps(result.__dict__, default=str))
     return 0
 
+
 def _cmd_stop(_args: argparse.Namespace) -> int:
     from evolver.ops.lifecycle import stop
+
     result = stop()
     print(json.dumps(result.__dict__, default=str))
     return 0
 
+
 def _cmd_restart(_args: argparse.Namespace) -> int:
     from evolver.ops.lifecycle import restart
+
     result = restart()
     print(json.dumps(result.__dict__, default=str))
     return 0
 
+
 def _cmd_status(_args: argparse.Namespace) -> int:
     from evolver.ops.lifecycle import status
+
     result = status()
     data = result.__dict__.copy()
     data["processes"] = [p.__dict__ for p in result.processes]
     print(json.dumps(data, default=str, indent=2))
     return 0
 
+
 def _cmd_log(args: argparse.Namespace) -> int:
     from evolver.ops.lifecycle import tail_log
+
     result = tail_log(lines=args.lines)
     if result.error:
         print(result.error, file=sys.stderr)
@@ -271,9 +286,12 @@ def _cmd_log(args: argparse.Namespace) -> int:
     print(result.content or "")
     return 0
 
+
 def _cmd_check(_args: argparse.Namespace) -> int:
     import json as _json
+
     from evolver.ops.lifecycle import check_health, restart
+
     health = check_health()
     print(_json.dumps(health.__dict__, default=str, indent=2))
     if not health.healthy:
@@ -282,10 +300,13 @@ def _cmd_check(_args: argparse.Namespace) -> int:
         print(_json.dumps(res.__dict__, default=str))
     return 0
 
+
 def _cmd_watch(args: argparse.Namespace) -> int:
     from evolver.ops.lifecycle import watch
+
     watch(once=args.once)
     return 0
+
 
 def _cmd_solidify(_args: argparse.Namespace) -> int:
     """Apply the pending solidify state."""
@@ -297,9 +318,14 @@ def _cmd_solidify(_args: argparse.Namespace) -> int:
         print(f"Solidify failed: {exc}", file=sys.stderr)
         return 1
     if result.get("ok"):
-        print(f"Solidify succeeded: event_id={result.get('event_id')} blast_radius={result.get('blast_radius')}")
+        print(
+            f"Solidify succeeded: event_id={result.get('event_id')} "
+            f"blast_radius={result.get('blast_radius')}"
+        )
         return 0
-    print(f"Solidify failed: {result.get('error')} details={result.get('details')}", file=sys.stderr)
+    print(
+        f"Solidify failed: {result.get('error')} details={result.get('details')}", file=sys.stderr
+    )
     return 1
 
 
@@ -382,7 +408,12 @@ def _cmd_review(_args: argparse.Namespace) -> int:
     """Interactive review of pending solidify state."""
     import json
 
-    from evolver.gep.git_ops import capture_diff_snapshot, git_list_changed_files, git_list_untracked_files, is_git_repo
+    from evolver.gep.git_ops import (
+        capture_diff_snapshot,
+        git_list_changed_files,
+        git_list_untracked_files,
+        is_git_repo,
+    )
     from evolver.gep.paths import get_solidify_state_path, get_workspace_root
     from evolver.gep.solidify import solidify
 
@@ -452,6 +483,7 @@ def _cmd_review(_args: argparse.Namespace) -> int:
 
 def _cmd_replay(args: argparse.Namespace) -> int:
     from evolver.ops.sqlite_store import read_events_replay
+
     events = read_events_replay(args.since_id, args.limit)
     print(f"Replay {len(events)} event(s) since id={args.since_id}")
     for evt in events:
@@ -464,7 +496,6 @@ def _cmd_replay(args: argparse.Namespace) -> int:
 
 def _cmd_asset_log(_args: argparse.Namespace) -> int:
     """Show the asset call log (events)."""
-    import json
 
     from evolver.gep.asset_store import read_all_events
 
@@ -478,7 +509,10 @@ def _cmd_asset_log(_args: argparse.Namespace) -> int:
         gid = evt.get("gene_id", "?")
         status = (evt.get("outcome") or {}).get("status", "?")
         br = evt.get("blast_radius", {})
-        print(f"{ts}  gene={gid}  status={status}  files={br.get('files', '?')}  lines={br.get('lines', '?')}")
+        print(
+            f"{ts}  gene={gid}  status={status}  "
+            f"files={br.get('files', '?')}  lines={br.get('lines', '?')}"
+        )
     return 0
 
 
@@ -531,7 +565,9 @@ def _cmd_distill(args: argparse.Namespace) -> int:
     capsules = result.get("capsules", [])
     mutations = result.get("mutations", [])
 
-    print(f"Extracted: {len(genes)} gene(s), {len(capsules)} capsule(s), {len(mutations)} mutation(s)")
+    print(
+        f"Extracted: {len(genes)} gene(s), {len(capsules)} capsule(s), {len(mutations)} mutation(s)"
+    )
 
     install = install_distilled(result, dry_run=args.dry_run)
     for item in install.get("installed", []):
@@ -688,12 +724,12 @@ def _cmd_reset_local_secret(args: argparse.Namespace) -> int:
     return 0
 
 
-def _cmd_login(args: argparse.Namespace) -> int:
+async def _cmd_login(args: argparse.Namespace) -> int:
     """OAuth device-code login."""
     from evolver.adapters.auth import login
 
     try:
-        result = login(hub_url=args.hub_url, mock=args.mock)
+        result = await login(hub_url=args.hub_url, mock=args.mock)
     except Exception as exc:
         print(f"Login failed: {exc}", file=sys.stderr)
         return 1
@@ -702,7 +738,7 @@ def _cmd_login(args: argparse.Namespace) -> int:
         print(f"Login failed: {result.get('error')}", file=sys.stderr)
         return 1
 
-    print(f"Login successful. Token saved to ~/.evolver/auth.json")
+    print("Login successful. Token saved to ~/.evolver/auth.json")
     print(f"Expires at: {result.get('expires_at')}")
     return 0
 
@@ -734,7 +770,10 @@ def _cmd_proxy(args: argparse.Namespace) -> int:
 
 async def _cmd_buy(args: argparse.Namespace) -> int:
     from evolver.atp.client import buy
-    result = await buy(skill_id=getattr(args, "skill_id", getattr(args, "skill-id", "")), quantity=args.quantity)
+
+    result = await buy(
+        skill_id=getattr(args, "skill_id", getattr(args, "skill-id", "")), quantity=args.quantity
+    )
     if not result.get("ok"):
         print(f"Buy failed: {result.get('error')}", file=sys.stderr)
         return 1
@@ -744,6 +783,7 @@ async def _cmd_buy(args: argparse.Namespace) -> int:
 
 async def _cmd_orders(args: argparse.Namespace) -> int:
     from evolver.atp.client import list_orders
+
     result = await list_orders(status=args.status, limit=args.limit)
     if not result.get("ok"):
         print(f"Orders failed: {result.get('error')}", file=sys.stderr)
@@ -757,6 +797,7 @@ async def _cmd_orders(args: argparse.Namespace) -> int:
 
 async def _cmd_verify(args: argparse.Namespace) -> int:
     from evolver.atp.client import verify_delivery
+
     result = await verify_delivery(
         order_id=getattr(args, "order_id", getattr(args, "order-id", "")),
         approval=not args.reject,
@@ -764,17 +805,18 @@ async def _cmd_verify(args: argparse.Namespace) -> int:
     if not result.get("ok"):
         print(f"Verify failed: {result.get('error')}", file=sys.stderr)
         return 1
-    print(f"Verification submitted.")
+    print("Verification submitted.")
     return 0
 
 
 async def _cmd_atp_complete(args: argparse.Namespace) -> int:
     from evolver.atp.client import complete_task
+
     result = await complete_task(task_id=getattr(args, "task_id", getattr(args, "task-id", "")))
     if not result.get("ok"):
         print(f"Complete failed: {result.get('error')}", file=sys.stderr)
         return 1
-    print(f"Task completed.")
+    print("Task completed.")
     return 0
 
 
@@ -811,6 +853,7 @@ async def _cmd_atp(args: argparse.Namespace) -> int:
 
     if action in ("enable", "disable", "status"):
         from evolver.atp.auto_buyer import get_consent, set_consent
+
         if action == "status":
             consent = get_consent()
             enabled = consent.get("enabled") if consent else False
@@ -830,11 +873,13 @@ async def _cmd_atp(args: argparse.Namespace) -> int:
 
 
 async def _cmd_recipe(args: argparse.Namespace) -> int:
-    from evolver.recipe.client import list_recipes, get_recipe, apply_recipe
+    from evolver.recipe.client import apply_recipe, get_recipe, list_recipes
 
     action = args.recipe_action
     if action is None or action == "list":
-        result = await list_recipes(tag=getattr(args, "tag", None), limit=getattr(args, "limit", 20))
+        result = await list_recipes(
+            tag=getattr(args, "tag", None), limit=getattr(args, "limit", 20)
+        )
         if not result.get("ok"):
             print(f"Recipe list failed: {result.get('error')}", file=sys.stderr)
             return 1
@@ -866,6 +911,7 @@ async def _cmd_recipe(args: argparse.Namespace) -> int:
 
     if action == "cache-list":
         from evolver.recipe.cache import list_cached_recipes
+
         recipes = list_cached_recipes()
         print(f"{len(recipes)} cached recipe(s)")
         for r in recipes:
@@ -874,6 +920,7 @@ async def _cmd_recipe(args: argparse.Namespace) -> int:
 
     if action == "cache-clear":
         from evolver.recipe.cache import clear_cache
+
         count = clear_cache()
         print(f"Cleared {count} cached recipe(s).")
         return 0

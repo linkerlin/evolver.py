@@ -26,14 +26,18 @@ def test_exec_with_cmd(capsys: pytest.CaptureFixture[str]) -> None:
     assert "hello_exec" in captured.out
 
 
-def test_exec_no_cmd_no_state(isolated_evolver_env: Path, capsys: pytest.CaptureFixture[str]) -> None:
+def test_exec_no_cmd_no_state(
+    isolated_evolver_env: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
     code = main(["exec"])
     captured = capsys.readouterr()
     assert code == 0
     assert "No pending solidify state" in captured.out
 
 
-def test_exec_runs_validation(isolated_evolver_env: Path, capsys: pytest.CaptureFixture[str]) -> None:
+def test_exec_runs_validation(
+    isolated_evolver_env: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
     state = {
         "last_run": {
             "run_id": "r1",

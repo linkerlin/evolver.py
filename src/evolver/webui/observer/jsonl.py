@@ -4,13 +4,16 @@ from __future__ import annotations
 
 import json
 import logging
+from collections.abc import Iterator
 from pathlib import Path
-from typing import Any, Iterator
+from typing import Any
 
 logger = logging.getLogger(__name__)
 
 
-def stream_jsonl(path: Path, *, limit: int | None = None, since: float | None = None) -> Iterator[dict[str, Any]]:
+def stream_jsonl(
+    path: Path, *, limit: int | None = None, since: float | None = None
+) -> Iterator[dict[str, Any]]:
     """Yield JSON objects from a JSONL file lazily.
 
     *limit* — maximum number of lines to yield.

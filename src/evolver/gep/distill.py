@@ -16,9 +16,9 @@ from evolver.gep.schemas.capsule import Capsule
 from evolver.gep.schemas.gene import Gene
 
 
-def _extract_json_blocks(text: str) -> list[dict]:
+def _extract_json_blocks(text: str) -> list[dict[str, Any]]:
     """Extract JSON objects from a text, handling fenced code blocks."""
-    blocks: list[dict] = []
+    blocks: list[dict[str, Any]] = []
     # Try fenced code blocks first
     for match in re.finditer(r"```(?:json)?\s*\n(.*?)\n```", text, re.DOTALL):
         inner = match.group(1).strip()
@@ -40,7 +40,7 @@ def _extract_json_blocks(text: str) -> list[dict]:
     return blocks
 
 
-def _is_valid_gep_asset(obj: dict) -> bool:
+def _is_valid_gep_asset(obj: dict[str, Any]) -> bool:
     return obj.get("type") in ("Gene", "Capsule", "Mutation")
 
 
@@ -50,9 +50,9 @@ def distill_text(text: str) -> dict[str, Any]:
     Returns a dict with ``genes``, ``capsules``, ``mutations`` lists.
     """
     blocks = _extract_json_blocks(text)
-    genes: list[dict] = []
-    capsules: list[dict] = []
-    mutations: list[dict] = []
+    genes: list[dict[str, Any]] = []
+    capsules: list[dict[str, Any]] = []
+    mutations: list[dict[str, Any]] = []
     errors: list[str] = []
 
     for obj in blocks:
@@ -82,7 +82,7 @@ def distill_text(text: str) -> dict[str, Any]:
 
 def install_distilled(result: dict[str, Any], *, dry_run: bool = False) -> dict[str, Any]:
     """Install distilled genes and capsules into the local asset store."""
-    installed: list[dict] = []
+    installed: list[dict[str, Any]] = []
     errors: list[str] = []
 
     for gene in result.get("genes", []):

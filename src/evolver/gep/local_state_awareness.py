@@ -22,7 +22,7 @@ import json
 import logging
 import os
 import subprocess
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
@@ -119,11 +119,13 @@ def _capture_env_vars() -> dict[str, str]:
 def _capture_recent_signals(limit: int = 5) -> list[dict[str, Any]]:
     """Read the most recent signals from the memory graph event stream."""
     try:
-        from evolver.gep.memory_graph import MEMORY_EVENTS_PATH
-        if not MEMORY_EVENTS_PATH.exists():
+        from evolver.gep.paths import get_memory_graph_path
+
+        memory_events_path = get_memory_graph_path()
+        if not memory_events_path.exists():
             return []
         events: list[dict[str, Any]] = []
-        with open(MEMORY_EVENTS_PATH, "r", encoding="utf-8", errors="replace") as f:
+        with open(memory_events_path, encoding="utf-8", errors="replace") as f:
             for line in f:
                 line = line.strip()
                 if not line:
@@ -157,14 +159,14 @@ def capture_snapshot() -> LocalStateSnapshot:
     recent_signals = _capture_recent_signals()
 
     summary_lines = [
-        f"## Local State Summary",
-        f"",
+        "## Local State Summary",
+        "",
         f"- **Branch**: `{branch}`",
         f"- **Commit**: `{commit[:8]}`",
         f"- **Dirty**: {len(status['dirty'])} file(s)",
         f"- **Staged**: {len(status['staged'])} file(s)",
         f"- **Untracked**: {len(status['untracked'])} file(s)",
-        f"",
+        "",
     ]
 
     if status["dirty"]:

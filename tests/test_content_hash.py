@@ -2,9 +2,6 @@
 
 from __future__ import annotations
 
-import hashlib
-import json
-
 from evolver.gep.content_hash import canonicalize, compute_asset_id, verify_asset_id
 
 

@@ -3,12 +3,10 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Any
 
 import pytest
 
-from evolver.proxy.mailbox.store import MailboxStore, Message, _generate_uuidv7
-
+from evolver.proxy.mailbox.store import MailboxStore, _generate_uuidv7
 
 # ---------------------------------------------------------------------------
 # UUID v7
@@ -32,6 +30,7 @@ def test_uuidv7_format() -> None:
 def test_uuidv7_time_ordered() -> None:
     u1 = _generate_uuidv7()
     import time
+
     time.sleep(0.002)  # ensure different millisecond
     u2 = _generate_uuidv7()
     # When timestamps differ, lexicographic order reflects time order

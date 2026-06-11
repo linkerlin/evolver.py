@@ -12,8 +12,12 @@ from evolver.gep import sync
 @respx.mock
 async def test_sync_all_no_hub(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("A2A_HUB_URL", "https://mock.hub")
-    route_tasks = respx.post("https://mock.hub/v1/a2a/tasks").mock(return_value=Response(200, json={"tasks": []}))
-    route_events = respx.post("https://mock.hub/v1/a2a/events").mock(return_value=Response(200, json={"events": []}))
+    route_tasks = respx.post("https://mock.hub/v1/a2a/tasks").mock(
+        return_value=Response(200, json={"tasks": []})
+    )
+    route_events = respx.post("https://mock.hub/v1/a2a/events").mock(
+        return_value=Response(200, json={"events": []})
+    )
     result = await sync.sync_all(dry_run=True)
     assert result["ok"] is True
     assert result["count"] == 0
@@ -41,7 +45,9 @@ async def test_sync_all_events_with_asset(monkeypatch: pytest.MonkeyPatch) -> No
         return_value=Response(200, json={"events": [{"asset_id": "raw:g1", "body": "install g1"}]})
     )
     respx.post("https://mock.hub/v1/a2a/assets").mock(
-        return_value=Response(200, json={"asset": {"type": "Gene", "id": "g1", "category": "repair"}})
+        return_value=Response(
+            200, json={"asset": {"type": "Gene", "id": "g1", "category": "repair"}}
+        )
     )
     result = await sync.sync_all(dry_run=False)
     assert result["ok"] is True

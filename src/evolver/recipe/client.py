@@ -14,7 +14,7 @@ from typing import Any
 import httpx
 
 from evolver.adapters.auth import load_auth
-from evolver.config import HUB_SEARCH_TIMEOUT_MS, resolve_hub_url
+from evolver.config import resolve_hub_url
 from evolver.gep.a2a_protocol import build_hub_headers
 
 
@@ -115,7 +115,12 @@ async def apply_recipe(
     recipe = result["recipe"]
     files = recipe.get("files", [])
     if not files:
-        return {"ok": True, "recipe_id": recipe_id, "applied": [], "note": "Recipe contains no files."}
+        return {
+            "ok": True,
+            "recipe_id": recipe_id,
+            "applied": [],
+            "note": "Recipe contains no files.",
+        }
 
     base = Path(target_dir).resolve()
     base.mkdir(parents=True, exist_ok=True)

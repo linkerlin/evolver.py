@@ -75,20 +75,26 @@ class ValidationTask:
 def _poll_tasks() -> list[ValidationTask]:
     """Poll Hub for open validator tasks."""
     try:
-        from evolver.atp.hub_client import list_validator_tasks
         import asyncio
+
+        from evolver.atp.hub_client import list_validator_tasks
+
         try:
             raw_tasks = asyncio.run(list_validator_tasks())
         except RuntimeError:
             loop = asyncio.get_event_loop()
             raw_tasks = loop.run_until_complete(list_validator_tasks())
+        payload = raw_tasks.get("data", raw_tasks) if isinstance(raw_tasks, dict) else {}
+        task_rows = payload.get("tasks", []) if isinstance(payload, dict) else []
         tasks: list[ValidationTask] = []
-        for t in raw_tasks:
+        for t in task_rows:
+            if not isinstance(t, dict):
+                continue
             tasks.append(
                 ValidationTask(
-                    task_id=t.get("task_id", ""),
-                    script_content=t.get("script", ""),
-                    script_filename=t.get("filename", "validate.py"),
+                    task_id=str(t.get("task_id", "")),
+                    script_content=str(t.get("script", "")),
+                    script_filename=str(t.get("filename", "validate.py")),
                     timeout_seconds=float(t.get("timeout", 180.0)),
                 )
             )
@@ -100,8 +106,10 @@ def _poll_tasks() -> list[ValidationTask]:
 
 def _claim_task(task_id: str) -> bool:
     try:
-        from evolver.atp.hub_client import claim_validator_task
         import asyncio
+
+        from evolver.atp.hub_client import claim_validator_task
+
         try:
             result = asyncio.run(claim_validator_task(task_id))
         except RuntimeError:
@@ -146,7 +154,11 @@ class ValidatorDaemon:
         self._shutdown_event.clear()
         self._thread = threading.Thread(target=self._loop, name="ValidatorDaemon", daemon=True)
         self._thread.start()
-        logger.info("[ValidatorDaemon] Started (poll=%.0fs, max_concurrent=%d)", self.poll_interval, self.max_concurrent)
+        logger.info(
+            "[ValidatorDaemon] Started (poll=%.0fs, max_concurrent=%d)",
+            self.poll_interval,
+            self.max_concurrent,
+        )
 
     def stop(self) -> None:
         """Signal shutdown and wait for inflight tasks (up to *shutdown_timeout*)."""
@@ -165,7 +177,9 @@ class ValidatorDaemon:
 
         with self._lock:
             if self._inflight:
-                logger.warning("[ValidatorDaemon] %d task(s) still inflight after timeout", len(self._inflight))
+                logger.warning(
+                    "[ValidatorDaemon] %d task(s) still inflight after timeout", len(self._inflight)
+                )
 
         if self._thread and self._thread.is_alive():
             self._thread.join(timeout=5.0)
@@ -235,14 +249,16 @@ class ValidatorDaemon:
             submit_report(report)
         except Exception as exc:
             logger.warning("[ValidatorDaemon] Task %s failed: %s", task.task_id, exc)
-            submit_report({
-                "task_id": task.task_id,
-                "status": "error",
-                "score": 0.0,
-                "execution_log": str(exc),
-                "execution_time_ms": 0.0,
-                "sandbox_version": "python-3.13",
-            })
+            submit_report(
+                {
+                    "task_id": task.task_id,
+                    "status": "error",
+                    "score": 0.0,
+                    "execution_log": str(exc),
+                    "execution_time_ms": 0.0,
+                    "sandbox_version": "python-3.13",
+                }
+            )
         finally:
             with self._lock:
                 self._inflight.discard(task.task_id)

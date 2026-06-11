@@ -12,7 +12,6 @@ Format: gzip-tar containing:
 
 from __future__ import annotations
 
-import gzip
 import hashlib
 import json
 import logging
@@ -136,7 +135,10 @@ def import_gepx(path: Path, *, merge: bool = True) -> dict[str, Any]:
         if "manifest.json" not in names:
             raise ImportError("Missing manifest.json in archive")
 
-        manifest_bytes = tf.extractfile("manifest.json").read()
+        manifest_file = tf.extractfile("manifest.json")
+        if manifest_file is None:
+            raise ImportError("Missing manifest.json in archive")
+        manifest_bytes = manifest_file.read()
         manifest = json.loads(manifest_bytes)
 
         # Verify checksums
@@ -144,16 +146,25 @@ def import_gepx(path: Path, *, merge: bool = True) -> dict[str, Any]:
             if name == "manifest.json":
                 continue
             member = tf.getmember(name)
-            data = tf.extractfile(name).read()
+            member_file = tf.extractfile(name)
+            if member_file is None:
+                raise ImportError(f"Missing archive member: {name}")
+            data = member_file.read()
             actual = _file_hash(data)
             if actual != expected_hash:
-                raise ImportError(f"Checksum mismatch for {name}: expected {expected_hash[:16]}… got {actual[:16]}…")
+                raise ImportError(
+                    f"Checksum mismatch for {name}: expected {expected_hash[:16]}… "
+                    f"got {actual[:16]}…"
+                )
 
         imported: dict[str, Any] = {"files": [], "merged": merge}
         for name in names:
             if name == "manifest.json":
                 continue
-            data = tf.extractfile(name).read()
+            member_file = tf.extractfile(name)
+            if member_file is None:
+                continue
+            data = member_file.read()
             dest = mem / name
 
             if name.endswith(".jsonl") and merge and dest.exists():
@@ -177,12 +188,22 @@ def _merge_jsonl(dest: Path, new_data: bytes) -> None:
     existing = _read_jsonl(dest, limit=1_000_000)
     existing_by_id: dict[str, dict[str, Any]] = {}
     for row in existing:
-        key = row.get("id") or row.get("gene_id") or row.get("capsule_id") or json.dumps(row, sort_keys=True)
+        key = (
+            row.get("id")
+            or row.get("gene_id")
+            or row.get("capsule_id")
+            or json.dumps(row, sort_keys=True)
+        )
         existing_by_id[key] = row
 
     for line in new_data.decode("utf-8").strip().splitlines():
         row = json.loads(line)
-        key = row.get("id") or row.get("gene_id") or row.get("capsule_id") or json.dumps(row, sort_keys=True)
+        key = (
+            row.get("id")
+            or row.get("gene_id")
+            or row.get("capsule_id")
+            or json.dumps(row, sort_keys=True)
+        )
         old = existing_by_id.get(key)
         if old is None or row.get("timestamp", 0) > old.get("timestamp", 0):
             existing_by_id[key] = row

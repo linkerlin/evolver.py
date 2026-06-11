@@ -15,7 +15,6 @@ from evolver.atp.hub_client import (
     get_order_status,
     place_order,
     settle_order,
-    submit_delivery,
     verify_delivery,
 )
 from evolver.gep.a2a_protocol import send_hello
@@ -56,7 +55,9 @@ async def settle(order_id: str) -> dict[str, Any]:
     return await settle_order(order_id)
 
 
-async def dispute(order_id: str, reason: str, evidence: dict[str, Any] | None = None) -> dict[str, Any]:
+async def dispute(
+    order_id: str, reason: str, evidence: dict[str, Any] | None = None
+) -> dict[str, Any]:
     await _ensure_initialized()
     return await dispute_order(order_id, reason, evidence)
 

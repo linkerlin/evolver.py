@@ -21,3 +21,52 @@
 {"task_id": "t1", "status": "passed", "_retries": 0, "_last_attempt": 1781110384.3154233}
 {"task_id": "t1", "status": "passed", "_retries": 0, "_last_attempt": 1781110453.8750927}
 {"task_id": "t1", "status": "passed", "_retries": 0, "_last_attempt": 1781110793.4202254}
+{"task_id": "t1", "status": "passed", "_retries": 0, "_last_attempt": 1781144414.2748086}
+{"task_id": "t1", "status": "passed", "_retries": 0, "_last_attempt": 1781144518.2801516}
+{"task_id": "t1", "status": "passed", "_retries": 0, "_last_attempt": 1781144628.8035297}
+{"task_id": "t1", "status": "passed", "_retries": 0, "_last_attempt": 1781144786.2058146}
+{"task_id": "t1", "status": "passed", "_retries": 0, "_last_attempt": 1781144872.8730586}
+{"task_id": "t1", "status": "passed", "_retries": 0, "_last_attempt": 1781144980.271754}
+{"task_id": "t1", "status": "passed", "_retries": 0, "_last_attempt": 1781153687.457227}
+{"task_id": "t1", "status": "passed", "score": 1.0, "execution_log": "ok\n\n", "execution_time_ms": 219.71511840820312, "sandbox_version": "python-3.13", "_retries": 0, "_last_attempt": 1781153832.0593693}
+{"task_id": "t1", "status": "passed", "score": 1.0, "execution_log": "ok\n\n", "execution_time_ms": 88.58585357666016, "sandbox_version": "python-3.13", "_retries": 0, "_last_attempt": 1781153832.0855534}
+{"task_id": "t1", "status": "passed", "score": 1.0, "execution_log": "ok\n\n", "execution_time_ms": 109.76648330688477, "sandbox_version": "python-3.13", "_retries": 0, "_last_attempt": 1781153832.1001291}
+{"task_id": "t1", "status": "passed", "score": 1.0, "execution_log": "ok\n\n", "execution_time_ms": 101.46212577819824, "sandbox_version": "python-3.13", "_retries": 0, "_last_attempt": 1781153856.7653704}
+{"task_id": "t1", "status": "passed", "score": 1.0, "execution_log": "ok\n\n", "execution_time_ms": 90.34419059753418, "sandbox_version": "python-3.13", "_retries": 0, "_last_attempt": 1781153856.841355}
+{"task_id": "t1", "status": "passed", "score": 1.0, "execution_log": "ok\n\n", "execution_time_ms": 44.490814208984375, "sandbox_version": "python-3.13", "_retries": 0, "_last_attempt": 1781153856.9324343}
+{"task_id": "t1", "status": "passed", "score": 1.0, "execution_log": "ok\n\n", "execution_time_ms": 53.656816482543945, "sandbox_version": "python-3.13", "_retries": 0, "_last_attempt": 1781153857.099835}
+{"task_id": "t1", "status": "passed", "score": 1.0, "execution_log": "ok\n\n", "execution_time_ms": 56.661367416381836, "sandbox_version": "python-3.13", "_retries": 0, "_last_attempt": 1781153857.1151307}
+{"task_id": "t1", "status": "passed", "score": 1.0, "execution_log": "ok\n\n", "execution_time_ms": 78.79829406738281, "sandbox_version": "python-3.13", "_retries": 0, "_last_attempt": 1781153979.5925362}
+{"task_id": "t1", "status": "passed", "score": 1.0, "execution_log": "ok\n\n", "execution_time_ms": 152.36258506774902, "sandbox_version": "python-3.13", "_retries": 0, "_last_attempt": 1781153979.6407495}
+{"task_id": "t1", "status": "passed", "score": 1.0, "execution_log": "ok\n\n", "execution_time_ms": 43.23172569274902, "sandbox_version": "python-3.13", "_retries": 0, "_last_attempt": 1781153979.7112167}
+{"task_id": "t2", "status": "failed", "score": 0.0, "execution_log": "\nTraceback (most recent call last):\n  File \"C:\\Temp\\evolver-sandbox-q2ov3t39\\validate.py\", line 1, in <module>\n    raise ValueError('boom')\nValueError: boom\n", "execution_time_ms": 50.97174644470215, "sandbox_version": "python-3.13", "_retries": 0, "_last_attempt": 1781154227.9565911}
+{"task_id": "t2", "status": "failed", "score": 0.0, "execution_log": "\nTraceback (most recent call last):\n  File \"C:\\Temp\\evolver-sandbox-blaouahy\\validate.py\", line 1, in <module>\n    raise ValueError('boom')\nValueError: boom\n", "execution_time_ms": 143.15390586853027, "sandbox_version": "python-3.13", "_retries": 0, "_last_attempt": 1781154227.9718642}
+{"task_id": "t2", "status": "failed", "score": 0.0, "execution_log": "\nTraceback (most recent call last):\n  File \"C:\\Temp\\evolver-sandbox-vb4h0cew\\validate.py\", line 1, in <module>\n    raise ValueError('boom')\nValueError: boom\n", "execution_time_ms": 62.83926963806152, "sandbox_version": "python-3.13", "_retries": 0, "_last_attempt": 1781154228.024624}
+{"task_id": "t1", "status": "passed", "_retries": 0, "_last_attempt": 1781154351.8770814}
+{"task_id": "t1", "status": "passed", "_retries": 0, "_last_attempt": 1781154372.9812276}
+{"task_id": "t1", "status": "passed", "_retries": 0, "_last_attempt": 1781156018.3818293}
+{"task_id": "t1", "status": "passed", "_retries": 0, "_last_attempt": 1781156200.1186378}
+{"task_id": "t1", "status": "passed", "_retries": 0, "_last_attempt": 1781156320.9373372}
+{"task_id": "t1", "status": "passed", "_retries": 0, "_last_attempt": 1781156767.6914897}
+{"task_id": "t1", "status": "passed", "_retries": 0, "_last_attempt": 1781156977.5466669}
+{"task_id": "t1", "status": "passed", "_retries": 0, "_last_attempt": 1781161345.2597013}
+{"task_id": "t1", "status": "passed", "_retries": 0, "_last_attempt": 1781161614.6099806}
+{"task_id": "t1", "status": "passed", "_retries": 0, "_last_attempt": 1781164928.2350366}
+{"task_id": "t1", "status": "passed", "_retries": 0, "_last_attempt": 1781165086.9767027}
+{"task_id": "t1", "status": "passed", "_retries": 0, "_last_attempt": 1781170533.7228544}
+{"task_id": "t1", "status": "passed", "_retries": 0, "_last_attempt": 1781171125.363424}
+{"task_id": "t1", "status": "passed", "_retries": 0, "_last_attempt": 1781172387.9105902}
+{"task_id": "t1", "status": "passed", "_retries": 0, "_last_attempt": 1781183935.3645253}
+{"task_id": "t1", "status": "passed", "_retries": 0, "_last_attempt": 1781184801.2506807}
+{"task_id": "t1", "status": "passed", "_retries": 0, "_last_attempt": 1781185687.146522}
+{"task_id": "t1", "status": "passed", "_retries": 0, "_last_attempt": 1781186031.316993}
+{"task_id": "t1", "status": "passed", "_retries": 0, "_last_attempt": 1781188538.8326185}
+{"task_id": "t1", "status": "passed", "_retries": 0, "_last_attempt": 1781189267.4426527}
+{"task_id": "t1", "status": "passed", "_retries": 0, "_last_attempt": 1781190670.9818478}
+{"task_id": "t1", "status": "passed", "_retries": 0, "_last_attempt": 1781191219.4576757}
+{"task_id": "t1", "status": "passed", "_retries": 0, "_last_attempt": 1781191904.3892078}
+{"task_id": "t1", "status": "passed", "_retries": 0, "_last_attempt": 1781192190.3588796}
+{"task_id": "t1", "status": "passed", "_retries": 0, "_last_attempt": 1781192980.6152635}
+{"task_id": "t1", "status": "passed", "_retries": 0, "_last_attempt": 1781193712.0290775}
+{"task_id": "t1", "status": "passed", "_retries": 0, "_last_attempt": 1781194448.447665}
+{"task_id": "t1", "status": "passed", "_retries": 0, "_last_attempt": 1781195272.0264676}

@@ -5,17 +5,12 @@ Equivalent to evolver/src/gep/fetch.js.
 
 from __future__ import annotations
 
-import json
 from typing import Any
 
 from evolver.gep.a2a_protocol import _http_post, get_hub_url
 from evolver.gep.asset_store import (
     append_capsule,
     upsert_gene,
-    read_json_if_exists,
-    genes_path,
-    capsules_path,
-    atomic_write_json,
 )
 from evolver.gep.content_hash import compute_asset_id, verify_asset_id
 
@@ -49,9 +44,7 @@ async def download_asset(asset_id: str) -> dict[str, Any]:
     if not hub:
         return {"ok": False, "error": "no_hub_url", "asset": None}
     try:
-        result = await _http_post(
-            f"{hub}/v1/a2a/assets", {"asset_id": asset_id}
-        )
+        result = await _http_post(f"{hub}/v1/a2a/assets", {"asset_id": asset_id})
         asset = result.get("asset")
         if not isinstance(asset, dict):
             return {"ok": False, "error": "invalid_asset_format", "asset": None}
@@ -63,7 +56,7 @@ async def download_asset(asset_id: str) -> dict[str, Any]:
         return {"ok": False, "error": str(exc), "asset": None}
 
 
-def install_gene(asset: dict) -> dict[str, Any]:
+def install_gene(asset: dict[str, Any]) -> dict[str, Any]:
     """Install a downloaded gene into the local asset store."""
     gene_id = asset.get("id")
     if not gene_id:
@@ -74,7 +67,7 @@ def install_gene(asset: dict) -> dict[str, Any]:
     return {"ok": True, "gene_id": gene_id, "asset_id": compute_asset_id(asset)}
 
 
-def install_capsule(asset: dict) -> dict[str, Any]:
+def install_capsule(asset: dict[str, Any]) -> dict[str, Any]:
     """Install a downloaded capsule into the local asset store."""
     cap_id = asset.get("id")
     if not cap_id:
@@ -100,14 +93,16 @@ async def fetch_and_install(
     if not assets:
         return {"ok": True, "installed": [], "message": "no_assets_found"}
 
-    installed: list[dict] = []
+    installed: list[dict[str, Any]] = []
     for asset in assets:
         if dry_run:
-            installed.append({
-                "id": asset.get("id"),
-                "type": asset.get("type"),
-                "action": "would_install",
-            })
+            installed.append(
+                {
+                    "id": asset.get("id"),
+                    "type": asset.get("type"),
+                    "action": "would_install",
+                }
+            )
             continue
 
         asset_type = asset.get("type")
@@ -119,16 +114,20 @@ async def fetch_and_install(
             result = {"ok": False, "error": f"unknown_type:{asset_type}"}
 
         if result["ok"]:
-            installed.append({
-                "id": result.get("gene_id") or result.get("capsule_id"),
-                "type": asset_type,
-                "asset_id": result.get("asset_id"),
-            })
+            installed.append(
+                {
+                    "id": result.get("gene_id") or result.get("capsule_id"),
+                    "type": asset_type,
+                    "asset_id": result.get("asset_id"),
+                }
+            )
         else:
-            installed.append({
-                "id": asset.get("id"),
-                "type": asset_type,
-                "error": result.get("error"),
-            })
+            installed.append(
+                {
+                    "id": asset.get("id"),
+                    "type": asset_type,
+                    "error": result.get("error"),
+                }
+            )
 
     return {"ok": True, "installed": installed, "count": len(installed)}

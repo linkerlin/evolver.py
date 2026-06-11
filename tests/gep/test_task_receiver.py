@@ -3,15 +3,14 @@
 import time
 from unittest.mock import patch
 
-import pytest
-
 from evolver.gep.task_receiver import (
     ExternalTask,
-    MAX_CONCURRENT_EXTERNAL,
     _capability_match,
     _load_claimed_tasks,
+    _poll_open_tasks,
     _save_task,
     get_active_tasks,
+    receive_tasks,
     warn_upcoming_deadlines,
 )
 
@@ -81,3 +80,136 @@ class TestWarnDeadlines:
         _save_task(task, path=path)
         urgent = warn_upcoming_deadlines(warning_seconds=3600, path=path)
         assert len(urgent) == 0
+
+
+class TestReceiveTasks:
+    def test_claims_high_value_task(self, tmp_path, monkeypatch):
+        path = tmp_path / "tasks.jsonl"
+        monkeypatch.setenv("EVOLVER_NO_PARENT_GIT", "1")
+
+        open_task = {
+            "task_id": "hub-1",
+            "task_type": "bugfix",
+            "bounty": 100.0,
+            "deadline": time.time() + 86400,
+            "signals": ["auth", "login"],
+            "estimated_hours": 2.0,
+        }
+
+        with (
+            patch("evolver.gep.task_receiver.is_enabled", return_value=True),
+            patch("evolver.gep.task_receiver._poll_open_tasks", return_value=[open_task]),
+            patch("evolver.gep.task_receiver._claim_task", return_value=True),
+        ):
+            local_genes = [{"signal_keywords": ["auth", "login"], "intent": "auth"}]
+            claimed = receive_tasks(local_genes=local_genes, max_concurrent=3, path=path)
+
+        assert len(claimed) == 1
+        assert claimed[0].task_id == "hub-1"
+        assert claimed[0].roi() == 50.0
+
+    def test_skips_low_match_task(self, tmp_path, monkeypatch):
+        path = tmp_path / "tasks.jsonl"
+        monkeypatch.setenv("EVOLVER_NO_PARENT_GIT", "1")
+
+        open_task = {
+            "task_id": "hub-2",
+            "task_type": "ml",
+            "bounty": 100.0,
+            "deadline": time.time() + 86400,
+            "signals": ["neural", "network"],
+            "estimated_hours": 2.0,
+        }
+
+        with (
+            patch("evolver.gep.task_receiver.is_enabled", return_value=True),
+            patch("evolver.gep.task_receiver._poll_open_tasks", return_value=[open_task]),
+            patch("evolver.gep.task_receiver._claim_task") as mock_claim,
+        ):
+            local_genes = [{"signal_keywords": ["auth"], "intent": "auth"}]
+            claimed = receive_tasks(local_genes=local_genes, max_concurrent=3, path=path)
+
+        assert len(claimed) == 0
+        mock_claim.assert_not_called()
+
+    def test_respects_concurrent_limit(self, tmp_path, monkeypatch):
+        path = tmp_path / "tasks.jsonl"
+        monkeypatch.setenv("EVOLVER_NO_PARENT_GIT", "1")
+
+        # Pre-populate with 3 active tasks
+        for i in range(3):
+            t = ExternalTask(f"pre-{i}", "bugfix", 10.0, time.time() + 86400, [])
+            _save_task(t, path=path)
+
+        with patch("evolver.gep.task_receiver.is_enabled", return_value=True):
+            claimed = receive_tasks(local_genes=[], max_concurrent=3, path=path)
+
+        assert len(claimed) == 0
+
+    def test_respects_cooldown(self, tmp_path, monkeypatch):
+        path = tmp_path / "tasks.jsonl"
+        monkeypatch.setenv("EVOLVER_NO_PARENT_GIT", "1")
+
+        # Pre-populate with a recently claimed task of same type
+        recent = ExternalTask("pre-1", "bugfix", 10.0, time.time() + 86400, ["auth"])
+        recent.claimed_at = time.time() - 3600  # 1 hour ago (< 24h cooldown)
+        _save_task(recent, path=path)
+
+        open_task = {
+            "task_id": "hub-3",
+            "task_type": "bugfix",
+            "bounty": 100.0,
+            "deadline": time.time() + 86400,
+            "signals": ["auth"],
+            "estimated_hours": 2.0,
+        }
+
+        with (
+            patch("evolver.gep.task_receiver.is_enabled", return_value=True),
+            patch("evolver.gep.task_receiver._poll_open_tasks", return_value=[open_task]),
+            patch("evolver.gep.task_receiver._claim_task") as mock_claim,
+        ):
+            local_genes = [{"signal_keywords": ["auth"], "intent": "auth"}]
+            claimed = receive_tasks(local_genes=local_genes, max_concurrent=3, path=path)
+
+        assert len(claimed) == 0
+        mock_claim.assert_not_called()
+
+    def test_skips_deadline_too_close(self, tmp_path, monkeypatch):
+        path = tmp_path / "tasks.jsonl"
+        monkeypatch.setenv("EVOLVER_NO_PARENT_GIT", "1")
+
+        open_task = {
+            "task_id": "hub-4",
+            "task_type": "bugfix",
+            "bounty": 100.0,
+            "deadline": time.time() + 600,  # 10 minutes (< 1h warning)
+            "signals": ["auth"],
+            "estimated_hours": 2.0,
+        }
+
+        with (
+            patch("evolver.gep.task_receiver.is_enabled", return_value=True),
+            patch("evolver.gep.task_receiver._poll_open_tasks", return_value=[open_task]),
+            patch("evolver.gep.task_receiver._claim_task") as mock_claim,
+        ):
+            local_genes = [{"signal_keywords": ["auth"], "intent": "auth"}]
+            claimed = receive_tasks(local_genes=local_genes, max_concurrent=3, path=path)
+
+        assert len(claimed) == 0
+        mock_claim.assert_not_called()
+
+    def test_disabled_returns_empty(self, tmp_path, monkeypatch):
+        path = tmp_path / "tasks.jsonl"
+        monkeypatch.setenv("EVOLVER_NO_PARENT_GIT", "1")
+
+        with patch("evolver.gep.task_receiver.is_enabled", return_value=False):
+            claimed = receive_tasks(local_genes=[], max_concurrent=3, path=path)
+
+        assert claimed == []
+
+
+class TestPollOpenTasks:
+    def test_disabled_returns_empty(self):
+        with patch("evolver.gep.task_receiver.is_enabled", return_value=False):
+            assert _poll_open_tasks() == []

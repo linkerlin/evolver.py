@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+from collections.abc import AsyncIterator
 from typing import Any
 
 from fastapi import APIRouter, Query, Request
@@ -17,7 +18,6 @@ from evolver.webui.observer import (
     format_interactions,
     personality_data,
     pipeline_timeline,
-    redact_text,
     runs_history,
     safety_events,
     serialize_assets,
@@ -215,7 +215,7 @@ async def api_logs(request: Request) -> StreamingResponse:
     """SSE log stream."""
     test_mode = request.headers.get("x-test-mode") == "1"
 
-    async def event_generator():
+    async def event_generator() -> AsyncIterator[str]:
         known = len(read_all_events())
         pings = 0
         while True:

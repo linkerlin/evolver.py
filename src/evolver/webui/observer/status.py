@@ -29,7 +29,11 @@ def system_status(memory_dir: Path | None = None) -> dict[str, Any]:
     try:
         import json
 
-        genes = json.loads((mem / "genes.json").read_text(encoding="utf-8")) if (mem / "genes.json").exists() else {}
+        genes = (
+            json.loads((mem / "genes.json").read_text(encoding="utf-8"))
+            if (mem / "genes.json").exists()
+            else {}
+        )
         capsules = (
             json.loads((mem / "capsules.json").read_text(encoding="utf-8"))
             if (mem / "capsules.json").exists()

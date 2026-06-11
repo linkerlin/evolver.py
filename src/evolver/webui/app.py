@@ -7,7 +7,7 @@ from __future__ import annotations
 
 import asyncio
 import json
-from pathlib import Path
+from collections.abc import AsyncIterator
 from typing import Any
 
 from fastapi import FastAPI, Request, WebSocket, WebSocketDisconnect
@@ -20,7 +20,6 @@ from evolver.gep.asset_store import (
     read_json_if_exists,
 )
 from evolver.gep.paths import (
-    get_evolution_dir,
     get_solidify_state_path,
 )
 from evolver.webui.dashboard import render_dashboard
@@ -59,13 +58,15 @@ async def status() -> JSONResponse:
     last_run = solidify.get("last_run")
     last_solidify = solidify.get("last_solidify")
     events = read_all_events()
-    return JSONResponse({
-        "solidify_pending": last_run is not None and last_solidify is None,
-        "last_run": last_run,
-        "last_solidify": last_solidify,
-        "total_events": len(events),
-        "recent_event_ids": [e.get("id") for e in events[-5:]],
-    })
+    return JSONResponse(
+        {
+            "solidify_pending": last_run is not None and last_solidify is None,
+            "last_run": last_run,
+            "last_solidify": last_solidify,
+            "total_events": len(events),
+            "recent_event_ids": [e.get("id") for e in events[-5:]],
+        }
+    )
 
 
 @app.get("/events")
@@ -77,6 +78,7 @@ async def events(limit: int = 100) -> JSONResponse:
 @app.get("/events/replay")
 async def events_replay(since_id: int = 0, limit: int = 100) -> JSONResponse:
     from evolver.ops.sqlite_store import read_events_replay
+
     events = read_events_replay(since_id, limit)
     return JSONResponse({"events": events, "since_id": since_id})
 
@@ -86,7 +88,7 @@ async def events_stream(request: Request) -> StreamingResponse:
     """SSE endpoint that pushes new events as they appear."""
     test_mode = request.headers.get("x-test-mode") == "1"
 
-    async def event_generator():
+    async def event_generator() -> AsyncIterator[str]:
         known = len(read_all_events())
         pings = 0
         while True:
@@ -123,6 +125,7 @@ async def capsules() -> JSONResponse:
 @app.get("/api/peers")
 async def api_peers() -> JSONResponse:
     from evolver.gep.discovery import list_peers
+
     return JSONResponse({"peers": list_peers()})
 
 
@@ -132,7 +135,9 @@ async def websocket_endpoint(websocket: WebSocket) -> None:
     await websocket.accept()
     _ws_connections.add(websocket)
     try:
-        await websocket.send_text(json.dumps({"type": "connected", "clients": len(_ws_connections)}))
+        await websocket.send_text(
+            json.dumps({"type": "connected", "clients": len(_ws_connections)})
+        )
         while True:
             raw = await websocket.receive_text()
             try:
@@ -146,38 +151,55 @@ async def websocket_endpoint(websocket: WebSocket) -> None:
                 await websocket.send_text(json.dumps({"type": "pong"}))
             elif action == "run":
                 from evolver.ops.auth_middleware import ws_require_role
+
                 ws_require_role(websocket, "admin")
                 await _ws_broadcast({"type": "status", "message": "Running evolution cycle..."})
                 try:
                     from evolver.evolve import run
+
                     await run()
                     await _ws_broadcast({"type": "status", "message": "Cycle complete."})
                 except Exception as exc:
                     await _ws_broadcast({"type": "error", "message": str(exc)})
             elif action == "solidify":
                 from evolver.ops.auth_middleware import ws_require_role
+
                 ws_require_role(websocket, "admin")
                 await _ws_broadcast({"type": "status", "message": "Applying solidify..."})
                 try:
                     from evolver.gep.solidify import solidify
+
                     result = solidify()
                     if result.get("ok"):
-                        await _ws_broadcast({"type": "status", "message": f"Solidify succeeded: {result.get('event_id')}"})
+                        await _ws_broadcast(
+                            {
+                                "type": "status",
+                                "message": f"Solidify succeeded: {result.get('event_id')}",
+                            }
+                        )
                     else:
-                        await _ws_broadcast({"type": "error", "message": result.get("error", "unknown")})
+                        await _ws_broadcast(
+                            {"type": "error", "message": result.get("error", "unknown")}
+                        )
                 except Exception as exc:
                     await _ws_broadcast({"type": "error", "message": str(exc)})
             elif action == "status":
-                solidify = read_json_if_exists(get_solidify_state_path()) or {}
-                last_run = solidify.get("last_run")
-                last_solidify = solidify.get("last_solidify")
-                await websocket.send_text(json.dumps({
-                    "type": "status",
-                    "solidify_pending": last_run is not None and last_solidify is None,
-                    "total_events": len(read_all_events()),
-                }))
+                solidify_state = read_json_if_exists(get_solidify_state_path()) or {}
+                last_run = solidify_state.get("last_run")
+                last_solidify = solidify_state.get("last_solidify")
+                await websocket.send_text(
+                    json.dumps(
+                        {
+                            "type": "status",
+                            "solidify_pending": last_run is not None and last_solidify is None,
+                            "total_events": len(read_all_events()),
+                        }
+                    )
+                )
             else:
-                await websocket.send_text(json.dumps({"type": "error", "message": f"Unknown action: {action}"}))
+                await websocket.send_text(
+                    json.dumps({"type": "error", "message": f"Unknown action: {action}"})
+                )
     except WebSocketDisconnect:
         _ws_connections.discard(websocket)
     except Exception:

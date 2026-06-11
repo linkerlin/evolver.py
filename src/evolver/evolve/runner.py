@@ -13,9 +13,6 @@ from typing import Any
 
 from evolver.config import IDLE_FETCH_INTERVAL_MS
 from evolver.evolve import guards
-from evolver.gep.instance_lock import instance_lock_ctx
-from evolver.gep.paths import get_cycle_progress_path
-from evolver.ops.cleanup import run_cleanup
 from evolver.evolve.pipeline import (
     collect_phase,
     dispatch_phase,
@@ -24,7 +21,10 @@ from evolver.evolve.pipeline import (
     select_phase,
     signals_phase,
 )
-
+from evolver.evolve.post_cycle import run_post_cycle_hooks
+from evolver.gep.instance_lock import instance_lock_ctx
+from evolver.gep.paths import get_cycle_progress_path
+from evolver.ops.cleanup import run_cleanup
 
 # Daemon loop coordination
 _shutdown_requested: bool = False
@@ -55,7 +55,7 @@ def _build_initial_context() -> dict[str, Any]:
         "IS_DRY_RUN": False,
         "bridge_enabled": guards.determine_bridge_enabled(),
         "AGENT_NAME": __import__("os").environ.get("AGENT_NAME", "main"),
-        "scan_time_iso": datetime.datetime.now(datetime.timezone.utc).isoformat().replace("+00:00", "Z"),
+        "scan_time_iso": datetime.datetime.now(datetime.UTC).isoformat().replace("+00:00", "Z"),
     }
 
 
@@ -73,6 +73,7 @@ async def _run_single_cycle(*, is_loop: bool = False) -> dict[str, Any]:
     ctx = await enrich_phase(ctx)
     ctx = await select_phase(ctx)
     ctx = await dispatch_phase(ctx)
+    ctx = await run_post_cycle_hooks(ctx)
     return ctx
 
 
@@ -94,8 +95,7 @@ async def run_loop(
     """
     global _shutdown_requested, _shutdown_event
     interval = (interval_ms or IDLE_FETCH_INTERVAL_MS) / 1000.0
-    if interval < 1.0:
-        interval = 1.0
+    interval = max(interval, 1.0)
 
     # Single-instance lock
     acquired = instance_lock_ctx(blocking=False, timeout=0)
@@ -125,8 +125,10 @@ async def run_loop(
                     print("[loop] Review mode active — pausing before cycle.")
                     print("       Press Enter to continue, or send SIGINT to stop.")
                     # Non-blocking attempt to read a line; if shutdown fires first, break.
-                    done, pending = await asyncio.wait(
-                        [asyncio.to_thread(input), shutdown.wait()],
+                    input_task = asyncio.create_task(asyncio.to_thread(input))
+                    shutdown_task = asyncio.create_task(shutdown.wait())
+                    _done, pending = await asyncio.wait(
+                        [input_task, shutdown_task],
                         return_when=asyncio.FIRST_COMPLETED,
                     )
                     for task in pending:
@@ -145,7 +147,7 @@ async def run_loop(
                 print(f"[loop] Backing off for {backoff:.1f}s")
                 try:
                     await asyncio.wait_for(shutdown.wait(), timeout=backoff)
-                except asyncio.TimeoutError:
+                except TimeoutError:
                     pass
                 continue
 
@@ -155,14 +157,16 @@ async def run_loop(
                 try:
                     cleanup_result = run_cleanup()
                     if cleanup_result.get("total_removed", 0) > 0:
-                        print(f"[loop] Cleanup removed {cleanup_result['total_removed']} stale items.")
+                        print(
+                            f"[loop] Cleanup removed {cleanup_result['total_removed']} stale items."
+                        )
                 except Exception as exc:
                     print(f"[loop] Cleanup error: {exc}")
 
             # Sleep until next cycle or shutdown
             try:
                 await asyncio.wait_for(shutdown.wait(), timeout=interval)
-            except asyncio.TimeoutError:
+            except TimeoutError:
                 pass
 
         print("[loop] Graceful shutdown complete.")
@@ -171,12 +175,13 @@ async def run_loop(
 def _write_cycle_progress(cycle_count: int, consecutive_errors: int) -> None:
     """Atomically write cycle progress to disk."""
     import json
+
     path = get_cycle_progress_path()
     path.parent.mkdir(parents=True, exist_ok=True)
     data = {
         "cycle_count": cycle_count,
         "consecutive_errors": consecutive_errors,
-        "timestamp": datetime.datetime.now(datetime.timezone.utc).isoformat().replace("+00:00", "Z"),
+        "timestamp": datetime.datetime.now(datetime.UTC).isoformat().replace("+00:00", "Z"),
     }
     tmp = path.with_suffix(".tmp")
     tmp.write_text(json.dumps(data, indent=2) + "\n", encoding="utf-8")

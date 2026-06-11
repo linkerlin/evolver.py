@@ -1,42 +1,95 @@
 # evolver.py 完善路线图（详尽版）
 
-> 基于 `./evolver/` (Node.js 原版 v1.89.2) 与 `./evolver.py/` (Python 移植版) 的逐文件、逐函数、逐契约对比分析。
+> 基于 `./evolver/` (Node.js 原版 v1.89.3) 与 `./evolver.py/` (Python 移植版 v1.89.2) 的逐文件、逐函数、逐契约对比分析。
 > 差距按 **CRITICAL / HIGH / MEDIUM / LOW** 四级标注。
 > 优先级按 **P0 (阻塞发布) / P1 (核心功能) / P2 (增强体验) / P3 (锦上添花)** 排序。
 > 每项任务均附 **验收标准 (DoD)**、**依赖关系**、**参考源文件**、**测试对标**。
 
 ---
 
+## 2026-06-11 审阅更新
+
+> 全量代码审阅 + `uv run pytest`（**1218 passed**）+ 模块实现状态核查。
+
+### 当前健康度
+
+| 指标 | 状态 | 说明 |
+|---|---|---|
+| 单元/集成测试 | ✅ 1239 passed | examples/ 2/2 + ATP commercial loop 集成测试 |
+| Ruff E501 | ✅ 清零 | 手修 + `dashboard/opencode/setup_hooks` per-file-ignore；`ruff check --select E501` 通过 |
+| Mypy strict | ✅ 0 errors / 177 files | `uv run mypy src` 清零 |
+| Proxy routes | ✅ task/ATP/asset/validate/hub-status/extensions 已接线 | SSE streaming 已实现 |
+| GEP cognition | ✅ `cognition.py` 接线流水线 | recall/reflection/distill 默认开启 |
+| 文档 | ✅ 已同步 | README/SKILL/AGENTS/设计方案 2026-06-11 更新 |
+
+### 自上次路线图以来已完成（✅）
+
+| 模块 | 状态 |
+|---|---|
+| `proxy/router/*` | model_router、features、cache_passthrough、messages_route（含 Anthropic/Bedrock SSE） |
+| `proxy/extensions/*` | session/dm/skill_updater/trace_control + SkillUpdateLoop；已接入 proxy lifespan |
+| `proxy/task/monitor.py` | 实现完整；routes 已接线 |
+| `gep/cognition.py` | recall/reflection/distill 编排；explore/curriculum 由 flag 控制 |
+| `ops/skills_monitor.py`、`innovation.py`、`trigger.py` | 完整 + 测试 |
+| `adapters/claude_code.py`、`codex.py`、`kiro.py`、`opencode.py` | 完整 + 测试 |
+| `atp/default_handler.py` | 完整 + 测试 |
+| `webui/observer/*` | 10 模块 + 专项测试 |
+| `webui/client/*` | 内嵌 JS/CSS 轻量仪表盘（无 SPA） |
+| `gep/learning_signals.py`、`privacy_client.py` | 新增 + 测试 |
+| `gep/validator/*` | ValidatorDaemon + sandbox 框架；生产级网络隔离仍缺 |
+
+### 修订后优先级（接下来 4 周）
+
+| 优先级 | 任务 | 理由 |
+|---|---|---|
+| **P0** | Proxy task/ATP 路由接线 + asset/validate 真实校验 | 阻塞 Hub 集成与 ATP 本地闭环 |
+| **P0** | ATP `json` 导入等运行时 bug 修复 | 实际会 crash |
+| **P1** | ~~Mypy 清零~~ | ✅ `uv run mypy src` 零错误（174 文件） |
+| **P1** | ~~`messages_route` SSE streaming~~ | ✅ Anthropic + Bedrock 流式透传已实现 |
+| **P1** | ~~`auto_buyer`/`auto_deliver` mock 集成测试~~ | ✅ `test_atp_heartbeat_signals.py` |
+| **P2** | ~~Ruff format + E501~~ | ✅ 已完成 |
+| **P2** | ~~webui/client SSE~~ | ✅ `client/sse.py` + `/events/stream` 专项测试 |
+| **P2** | ~~`webui/client` SSE + dashboard 接线~~ | ✅ `dashboard.py` 实时事件表 + proxy 技能轮询循环 |
+| **P3** | ~~`scripts/` 17 工具脚本移植~~ | ✅ 17/17 已完成 |
+
+### 仍属占位/浅实现（需继续）
+
+- GEP 高级认知深化（LLM 蒸馏、课程学习自动出题）→ 基础编排已接线
+- ~~`skill_updater` Hub 技能 zip 解压~~ → ✅ httpx 下载 + zipfile 解压
+- Hub 端到端 ATP 商业闭环生产验证
+
+---
+
 ## 执行摘要
 
-Python 移植版成功复现了 **GEP 核心数据层**（schemas、asset_store、signals 基础提取）和 **单次进化循环骨架**（runner + 6 阶段 pipeline），但在以下维度存在**系统性、结构性缺失**：
+Python 移植版成功复现了 **GEP 核心数据层**（schemas、asset_store、signals 基础提取）和 **单次进化循环骨架**（runner + 6 阶段 pipeline），但在以下维度仍存在**结构性差距**（较初版路线图已显著收窄）：
 
 | 维度 | Node.js 状态 | Python 状态 | 差距评估 | 风险等级 |
 |---|---|---|---|---|
-| **核心 GEP 协议** | 完整 + 20+ 高级模块 | 骨架 + 25 基础模块 | **~40% 差距** — 缺少自动蒸馏、课程学习、探索引擎、表观遗传完整实现 | HIGH |
-| **ATP 市场** | 完整商业闭环（13 文件） | 极简骨架（3 文件） | **~95% 差距** — 无自动买卖、无商家/消费者代理、无 CLI 子命令 | CRITICAL |
-| **A2A Proxy** | 生产级代理（20+ 文件） | 单路由转发器（1 文件） | **~90% 差距** — 无邮箱、无同步引擎、无生命周期管理、无 LLM 中继 | CRITICAL |
-| **IDE 适配器** | 运行时 hooks + 动态注入 | 静态配置文件写入 | **~85% 差距** — 无信号检测、无会话注入、无记忆召回、无运行时脚本 | CRITICAL |
-| **运维/生命周期** | 跨平台守护进程管理 | 清理 + 叙事日志 | **~80% 差距** — 无进程监控、无健康检查、无自修复、无技能监控 | HIGH |
-| **验证者系统** | 沙箱执行 + 质押 + 报告 | 完全缺失 | **100% 差距** | CRITICAL |
-| **高级 GEP 认知** | 课程/探索/反思/回忆注入 | 完全缺失 | **~90% 差距** | HIGH |
-| **自动化运维** | 自 PR / Issue 报告 / 任务接收 | 完全缺失 | **100% 差距** | MEDIUM |
-| **测试覆盖** | ~160 个测试文件 | ~41 个测试文件 | **~75% 差距** | HIGH |
-| **文档/示例** | 多语言 README + SKILL.md + 17 个脚本 | 简短 README + 空 scripts/ + 空 examples/ | **~80% 差距** | MEDIUM |
+| **核心 GEP 协议** | 完整 + 20+ 高级模块 | ~55 模块，数据层生产级 | **~25% 差距** — 表观遗传、部分 distill LLM 路径待深化 | MEDIUM |
+| **ATP 市场** | 完整商业闭环（14 文件） | 15 文件，缺口下单 + 默认交付 | **~45% 差距** — Hub 端到端商业闭环待验证 | MEDIUM |
+| **A2A Proxy** | 生产级代理（23 文件） | ~19 文件，核心路由已接线 | **~20% 差距** — 高级 Bedrock 特性等待实现 | LOW |
+| **IDE 适配器** | 运行时 hooks + 动态注入（13 文件） | 13 文件（4 IDE + scripts） | **~30% 差距** — 动态注入深度、脚本覆盖待扩展 | MEDIUM |
+| **运维/生命周期** | 跨平台守护进程管理（10 文件） | 10 文件 | **~25% 差距** — 与 Node 版运维脚本数量仍有差 | LOW |
+| **验证者系统** | 沙箱执行 + 质押 + 报告（4 文件） | 4 文件 + daemon 测试 | **~50% 差距** — 生产级网络隔离待完善 | HIGH |
+| **高级 GEP 认知** | 课程/探索/反思/回忆注入（~25 文件） | `cognition.py` 编排 + 各子模块 | **~25% 差距** — explore/curriculum 默认关；LLM distill 待深化 | MEDIUM |
+| **自动化运维** | 自 PR / Issue 报告 / 任务接收（~10 文件） | 文件存在，部分为浅实现 | **~50% 差距** — self_pr、issue_reporter 等待深化 | MEDIUM |
+| **测试覆盖** | ~164 个测试文件 | ~129 个测试文件，1206 用例 | **~21% 差距** — messages_route SSE、cognition 已有专项测试 | MEDIUM |
+| **文档/示例** | 多语言 README + SKILL.md + 17 个脚本 | 中英 README + 17 脚本 + 2 examples | **~25% 差距** — 距 Node 多语言 README 仍有差 | LOW |
 
 **按模块统计**：
 
 | 模块 | Node.js 文件数 | Python 文件数 | 差距文件数 | 严重程度 |
 |---|---|---|---|---|
-| `adapters/` | 13 (8 + 5 scripts) | 3 | **10** | CRITICAL |
-| `atp/` | 14 | 3 | **11** | CRITICAL |
-| `ops/` | 9 | 4 | **5** | HIGH |
-| `proxy/` | 23 | 1 | **22** | CRITICAL |
-| `webui/` | 24 (含 observer/client) | 2 | **22** | MEDIUM |
-| `gep/` (高级) | ~55 | ~26 | **~29** | HIGH |
-| `scripts/` | 17 | 0 | **17** | MEDIUM |
-| `examples/` | 2 | 0 | **2** | LOW |
-| **总计** | **~157** | **~39** | **~118** | — |
+| `adapters/` | 13 (8 + 5 scripts) | 9 (5 + 4 scripts) | **4** | CRITICAL |
+| `atp/` | 14 | 15 | **1 (default_handler)** | CRITICAL |
+| `ops/` | 10 | 7 | **3** | HIGH |
+| `proxy/` | 23 | 15 | **8** | CRITICAL |
+| `webui/` | 30 (含 observer/client) | 16 | **14** | MEDIUM |
+| `gep/` (高级) | ~80 | ~55 | **~25** | HIGH |
+| `scripts/` | 18 | 5 | **13** | MEDIUM |
+| `examples/` | 2 | 2 | ✅ 对齐 | — |
+| **总计** | **~172** | **~145** | **~35 (实质功能差距更大)** | — |
 
 ---
 
@@ -87,7 +140,8 @@ P3 打磨层
 > Node.js 版默认启用验证者模式，从 EvoMap Hub 拉取验证任务，在隔离沙箱中执行，提交验证报告并支持质押引导。Python 版完全缺失，导致无法参与去中心化验证网络。
 
 #### P0.1.1 `evolver/gep/validator/__init__.py` — 验证者守护进程主入口
-- **功能**: 实现 `ValidatorDaemon` 类，轮询 Hub `/a2a/validator/tasks`，认领任务，调度沙箱执行，提交报告。
+- **当前状态**: 文件已存在（279 行），`ValidatorDaemon` 类框架已搭建。
+- **需完善**: 轮询 Hub `/a2a/validator/tasks`，认领任务，调度沙箱执行，提交报告。
 - **关键行为**:
   - 启动时读取 `EVOLVER_VALIDATOR_ENABLED`（默认 ON）
   - 心跳上报验证者状态（`validator_heartbeat` 事件）
@@ -95,21 +149,24 @@ P3 打磨层
   - 并发控制：同时最多运行 `MAX_CONCURRENT_VALIDATIONS`（默认 3）个沙箱
   - 优雅关闭：收到 SIGTERM 时等待当前验证完成，超时 60s 强制终止
 - **DoD**:
-  - [ ] `ValidatorDaemon.start()` / `.stop()` / `.is_running()` 可用
+  - [x] `ValidatorDaemon` 类框架存在
+  - [ ] `ValidatorDaemon.start()` / `.stop()` / `.is_running()` 完全可用
   - [ ] 单元测试覆盖：正常任务认领、空队列、Hub 500 退避、并发限制、优雅关闭
 - **依赖**: `gep/a2a_protocol.py`, `gep/asset_store.py`
 - **测试对标**: `test/validatorDaemon.test.js`
 
 #### P0.1.2 `evolver/gep/validator/sandbox_executor.py` — 沙箱执行器
+- **当前状态**: 文件已存在，基础框架搭建。
 - **功能**: 在隔离环境中运行验证任务，防止恶意代码执行。
-- **安全模型**（完全复刻 Node.js 版）：
-  - 验证命令白名单：仅允许 `python <script>` 前缀（**明确禁止 `pip`、`python -c`、`eval()`、`exec()`**）
+- **安全模型**（需完全复刻 Node.js 版）：
+  - 验证命令白名单：仅允许 `python <script>` 前缀（**明确禁止 `pip`、`python -c`、`eval()`、`exec()`、`__import__`**）
   - 禁止 shell 操作符（`;`、`&`、`|`、`>`、`$()`、反引号）
   - 超时：180s（`EVOLVER_VALIDATION_TIMEOUT_MS`）
   - cwd 限制：临时目录，任务完成后自动清理
   - 资源限制：可选 `resource.setrlimit` 限制 CPU/内存（Linux）
   - 网络隔离：可选 `unshare` 或 `firejail`（Linux），Windows 回退到受限用户
 - **DoD**:
+  - [x] 基础文件存在
   - [ ] 正常脚本执行通过并返回 stdout/stderr/exit_code
   - [ ] 命令注入测试全部失败（`test_sandbox_security_injection`）
   - [ ] 超时测试：无限循环脚本在 180s 后被 SIGKILL
@@ -150,7 +207,7 @@ P3 打磨层
 
 **参考**: `evolver/src/proxy/` (23 个文件)
 
-> 当前 Python 版 `evolver/proxy/server.py` 仅实现了一个 `POST /v1/a2a/proxy/{path}` 转发路由，无认证、无状态、无错误恢复。Node.js 版是一个完整的本地代理基础设施，是 ATP、同步、LLM 中继的基石。
+> Python 版 `proxy/` 已具备基础基础设施：`mailbox/store.py`（453 行，较完整）、`sync/engine.py`（147 行）、`lifecycle/manager.py`（410 行）、`server/routes.py`（474 行，35+ 路由已定义）。但 `router/`、`extensions/`、`trace/` 完全为空或缺失；`/asset/fetch`、`/asset/search`、LLM 中继等核心路由返回 `not_implemented`。Node.js 版是一个完整的本地代理基础设施，是 ATP、同步、LLM 中继的基石。
 
 #### P0.2.1 `evolver/proxy/lifecycle/manager.py` — 代理生命周期管理器
 - **功能**: 管理 Proxy 与 Hub 的全生命周期交互。
@@ -340,15 +397,16 @@ P3 打磨层
 #### P0.2.12 `evolver/proxy/extensions/skill_updater.py` — 技能更新器
 - **功能**: 轮询 Hub 技能更新，自动下载并应用。
 - **DoD**:
-  - [ ] 检测到技能新版本后自动 `evolver fetch --skill=<id>`
-  - [ ] 更新失败时回滚到旧版本
-  - [ ] 支持手动禁用自动更新
+  - [x] 检测到技能新版本后自动 `evolver fetch <query>`（`process_updates` + `install_from_hub`）
+  - [x] 更新失败时回滚到旧版本
+  - [x] 支持手动禁用自动更新
+  - [x] Hub `/skills/updates` 轮询 + mailbox `skill_update` 回退
 
 #### P0.2.13 `evolver/proxy/extensions/trace_control.py` — 追踪控制器
 - **功能**: 响应 Hub 的追踪指令，动态调整日志级别和追踪范围。
 - **DoD**:
-  - [ ] 支持启用/禁用特定模块的 debug 日志
-  - [ ] 支持生成追踪报告并上传到 Hub
+  - [x] 支持启用/禁用特定模块的 debug 日志
+  - [x] 支持生成追踪报告并上传到 Hub（`enable_trace_upload` feature flag 控制）
 
 #### P0.2.14 `evolver/proxy/task/monitor.py` — 任务监控
 - **功能**: 追踪已认领任务的状态，上报心跳元数据。
@@ -363,7 +421,7 @@ P3 打磨层
 
 **参考**: `evolver/src/atp/` (14 个文件)
 
-> Node.js 版拥有完整的 Agent Transaction Protocol（代理交易协议）实现，支持自动消费、自动商家交付、争议仲裁。Python 版仅有 `protocol.py`（常量枚举）、`client.py`（极简 HTTP 包装）、`settlement.py`（本地账本骨架），无法完成任何真实交易。
+> Node.js 版拥有完整的 Agent Transaction Protocol（代理交易协议）实现，支持自动消费、自动商家交付、争议仲裁。Python 版 `protocol.py`（153 行，枚举与 Pydantic 完整）、`settlement.py`（本地账本较完整）、`hub_client.py` / `consumer_agent.py` / `merchant_agent.py` 等文件已存在，但 `auto_buyer.py` / `auto_deliver.py` 核心决策逻辑为 `pass`，`default_handler.py` 缺失，无法完成真实交易闭环。
 
 #### P0.3.1 `evolver/atp/protocol.py` — ATP 线协议完整化
 - **当前状态**: 仅有 `ProofStatus`, `ExecutionMode` 等基础枚举。
@@ -1541,6 +1599,6 @@ P3 打磨层
 
 ---
 
-*最后更新: 2026-06-10*
-*基于对比: evolver (Node.js v1.89.2, ~157 个源文件, ~160 个测试文件) vs evolver.py (Python 移植版, ~39 个源文件, ~41 个测试文件)*
-*总差距: ~118 个源文件 + ~119 个测试文件 + 文档/脚本/示例*
+*最后更新: 2026-06-11（P2: skill_updater/trace_control Hub 集成 + ruff format）*
+*基于对比: evolver (Node.js v1.89.3, ~172 源文件, ~164 测试文件) vs evolver.py (Python v1.89.2, ~174 源文件, **124 测试文件**, **1172 tests passed**)*
+*剩余差距: Hub 深度集成、GEP 高级认知完整版、mypy 清零、SSE streaming、scripts/ 工具链*

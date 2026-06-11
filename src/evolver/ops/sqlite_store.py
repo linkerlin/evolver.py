@@ -29,9 +29,7 @@ def _ensure_table(conn: sqlite3.Connection) -> None:
         )
         """
     )
-    conn.execute(
-        "CREATE INDEX IF NOT EXISTS idx_events_ts ON events(timestamp)"
-    )
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_events_ts ON events(timestamp)")
     conn.commit()
 
 
@@ -79,7 +77,8 @@ def event_count() -> int:
     with sqlite3.connect(str(db), timeout=5.0) as conn:
         _ensure_table(conn)
         cursor = conn.execute("SELECT COUNT(*) FROM events")
-        return cursor.fetchone()[0]
+        row = cursor.fetchone()
+        return int(row[0]) if row else 0
 
 
 def read_events_range(start_ts: str, end_ts: str) -> list[dict[str, Any]]:

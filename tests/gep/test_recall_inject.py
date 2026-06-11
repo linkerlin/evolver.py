@@ -41,6 +41,22 @@ class TestSearchRecalls:
         matches = search_recalls(["refactor"], events=[], top_k=3)
         assert matches == []
 
+    def test_finds_memory_graph_outcome(self):
+        events = [
+            {
+                "type": "MemoryGraphEvent",
+                "kind": "outcome",
+                "id": "e-mg",
+                "ts": "2026-06-01T00:00:00.000Z",
+                "signal": {"signals": ["refactor", "auth"]},
+                "gene": {"id": "g1", "category": "repair"},
+                "outcome": {"status": "success"},
+            }
+        ]
+        matches = search_recalls(["refactor", "auth"], events=events, top_k=3)
+        assert len(matches) == 1
+        assert matches[0].event_id == "e-mg"
+
     def test_finds_successful(self):
         events = [
             {

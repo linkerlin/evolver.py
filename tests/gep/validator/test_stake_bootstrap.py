@@ -3,10 +3,7 @@
 import time
 from unittest.mock import patch
 
-import pytest
-
 from evolver.gep.validator.stake_bootstrap import (
-    StakeRequest,
     StakeState,
     format_instructions,
     generate_stake_request,
@@ -52,45 +49,69 @@ class TestStakeState:
         assert loaded.status == "pending"
 
     def test_missing(self, tmp_path):
-        with patch("evolver.gep.validator.stake_bootstrap._state_path", return_value=tmp_path / "missing.json"):
+        with patch(
+            "evolver.gep.validator.stake_bootstrap._state_path",
+            return_value=tmp_path / "missing.json",
+        ):
             assert load_stake_state() is None
 
 
 class TestIsStaked:
     def test_confirmed(self, tmp_path):
         state = StakeState(node_id="n1", status="confirmed")
-        with patch("evolver.gep.validator.stake_bootstrap._state_path", return_value=tmp_path / "state.json"):
+        with patch(
+            "evolver.gep.validator.stake_bootstrap._state_path",
+            return_value=tmp_path / "state.json",
+        ):
             save_stake_state(state)
             assert is_staked()
 
     def test_pending(self, tmp_path):
         state = StakeState(node_id="n1", status="pending")
-        with patch("evolver.gep.validator.stake_bootstrap._state_path", return_value=tmp_path / "state.json"):
+        with patch(
+            "evolver.gep.validator.stake_bootstrap._state_path",
+            return_value=tmp_path / "state.json",
+        ):
             save_stake_state(state)
             assert not is_staked()
 
     def test_none(self, tmp_path):
-        with patch("evolver.gep.validator.stake_bootstrap._state_path", return_value=tmp_path / "missing.json"):
+        with patch(
+            "evolver.gep.validator.stake_bootstrap._state_path",
+            return_value=tmp_path / "missing.json",
+        ):
             assert not is_staked()
 
 
 class TestWaitForConfirmation:
     def test_already_confirmed(self, tmp_path):
         state = StakeState(node_id="n1", status="confirmed", tx_hash="abc")
-        with patch("evolver.gep.validator.stake_bootstrap._state_path", return_value=tmp_path / "state.json"):
+        with patch(
+            "evolver.gep.validator.stake_bootstrap._state_path",
+            return_value=tmp_path / "state.json",
+        ):
             save_stake_state(state)
             result = wait_for_confirmation("n1", poll_interval=0.1, max_attempts=1)
         assert result.status == "confirmed"
 
     def test_timeout(self, tmp_path):
         with patch("evolver.gep.validator.stake_bootstrap._query_stake_status", return_value=None):
-            with patch("evolver.gep.validator.stake_bootstrap._state_path", return_value=tmp_path / "state.json"):
+            with patch(
+                "evolver.gep.validator.stake_bootstrap._state_path",
+                return_value=tmp_path / "state.json",
+            ):
                 result = wait_for_confirmation("n1", poll_interval=0.1, max_attempts=2)
         assert result.status == "pending"
 
     def test_confirmed_during_poll(self, tmp_path):
-        with patch("evolver.gep.validator.stake_bootstrap._query_stake_status", return_value={"status": "confirmed", "tx_hash": "abc"}):
-            with patch("evolver.gep.validator.stake_bootstrap._state_path", return_value=tmp_path / "state.json"):
+        with patch(
+            "evolver.gep.validator.stake_bootstrap._query_stake_status",
+            return_value={"status": "confirmed", "tx_hash": "abc"},
+        ):
+            with patch(
+                "evolver.gep.validator.stake_bootstrap._state_path",
+                return_value=tmp_path / "state.json",
+            ):
                 result = wait_for_confirmation("n1", poll_interval=0.1, max_attempts=2)
         assert result.status == "confirmed"
         assert result.tx_hash == "abc"

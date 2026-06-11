@@ -23,9 +23,9 @@ from __future__ import annotations
 import logging
 import os
 import time
+from collections.abc import Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Sequence
 
 from evolver.config import LOCK_MAX_AGE_MS
 from evolver.gep.git_ops import is_git_repo, try_run_cmd
@@ -146,18 +146,24 @@ def _remove_stale_lock(root: Path, report: RepairReport) -> None:
             report.actions.append(tag)
             logger.info("[SelfRepair] Removed stale index.lock (%.0f min old).", age_ms / 60000)
         else:
-            logger.debug("[SelfRepair] index.lock is fresh (%.0f min), leaving alone.", age_ms / 60000)
+            logger.debug(
+                "[SelfRepair] index.lock is fresh (%.0f min), leaving alone.", age_ms / 60000
+            )
     except OSError as exc:
         report.errors.append(f"lock_remove_failed: {exc}")
         logger.warning("[SelfRepair] Failed to remove index.lock: %s", exc)
 
 
 def _hard_reset(root: Path, report: RepairReport) -> None:
-    logger.warning("[SelfRepair] Performing HARD reset to origin/main (EVOLVER_SELF_REPAIR_HARD_RESET is set).")
+    logger.warning(
+        "[SelfRepair] Performing HARD reset to origin/main (EVOLVER_SELF_REPAIR_HARD_RESET is set)."
+    )
 
     # Safety: stash any local changes before the hard reset.
     try:
-        try_run_cmd(["stash", "push", "-m", "evolver self-repair pre-reset"], cwd=root, timeout=30.0)
+        try_run_cmd(
+            ["stash", "push", "-m", "evolver self-repair pre-reset"], cwd=root, timeout=30.0
+        )
         report.actions.append("pre_reset_stash")
     except Exception:
         pass

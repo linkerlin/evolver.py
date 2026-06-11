@@ -24,14 +24,12 @@ Design notes
 
 from __future__ import annotations
 
-import json
 import logging
 from dataclasses import dataclass
-from pathlib import Path
 from typing import Any
 
 from evolver.gep.feature_flags import is_enabled
-from evolver.gep.memory_graph import get_memory_graph_path, try_read_memory_graph_events
+from evolver.gep.memory_graph import try_read_memory_graph_events
 
 logger = logging.getLogger(__name__)
 
@@ -72,11 +70,7 @@ def _jaccard(a: set[str], b: set[str]) -> float:
 
 def _extract_keywords(text: str) -> set[str]:
     """Extract lowercase alphanumeric keywords from *text*."""
-    return set(
-        w.lower()
-        for w in text.split()
-        if w.isalnum() and len(w) > 2
-    )
+    return set(w.lower() for w in text.split() if w.isalnum() and len(w) > 2)
 
 
 def _signal_fingerprint(signals: list[str]) -> set[str]:
@@ -94,18 +88,9 @@ def _signal_fingerprint(signals: list[str]) -> set[str]:
 
 def _find_successful_attempts(events: list[dict[str, Any]]) -> list[dict[str, Any]]:
     """Filter events to successful attempts with signal snapshots."""
-    results: list[dict[str, Any]] = []
-    for ev in events:
-        if ev.get("type") != "attempt":
-            continue
-        outcome = ev.get("outcome", "").lower()
-        if "success" not in outcome and "pass" not in outcome:
-            continue
-        signals = ev.get("signals_snapshot") or ev.get("signals", [])
-        if not signals:
-            continue
-        results.append(ev)
-    return results
+    from evolver.gep.cognition import flatten_recall_events
+
+    return flatten_recall_events(events)
 
 
 def _score_match(event: dict[str, Any], current_keywords: set[str]) -> float:
@@ -166,7 +151,9 @@ def format_recall_prompt(matches: list[RecallMatch]) -> str:
         return ""
     lines = ["## Recall Hints (from past successes)", ""]
     for i, m in enumerate(matches, 1):
-        lines.append(f"{i}. **Similarity {m.similarity:.0%}** — {m.mutation_summary or 'unknown mutation'}")
+        lines.append(
+            f"{i}. **Similarity {m.similarity:.0%}** — {m.mutation_summary or 'unknown mutation'}"
+        )
         lines.append(f"   - Signals: {', '.join(m.signals[:5])}")
         lines.append(f"   - Outcome: {m.outcome}")
         lines.append("")

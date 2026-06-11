@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import json
 from pathlib import Path
 
 import pytest
@@ -31,15 +30,20 @@ def test_asset_log_empty(isolated_evolver_env: Path, capsys: pytest.CaptureFixtu
     assert "No events recorded" in capsys.readouterr().out
 
 
-def test_asset_log_shows_events(isolated_evolver_env: Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch) -> None:
+def test_asset_log_shows_events(
+    isolated_evolver_env: Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+) -> None:
     from evolver.gep.asset_store import append_event_jsonl
-    append_event_jsonl({
-        "type": "EvolutionEvent",
-        "timestamp": "2026-01-01T00:00:00.000Z",
-        "gene_id": "g1",
-        "outcome": {"status": "success"},
-        "blast_radius": {"files": 2, "lines": 42},
-    })
+
+    append_event_jsonl(
+        {
+            "type": "EvolutionEvent",
+            "timestamp": "2026-01-01T00:00:00.000Z",
+            "gene_id": "g1",
+            "outcome": {"status": "success"},
+            "blast_radius": {"files": 2, "lines": 42},
+        }
+    )
     code = main(["asset-log"])
     captured = capsys.readouterr()
     assert code == 0

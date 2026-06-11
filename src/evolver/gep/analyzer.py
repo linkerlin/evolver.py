@@ -48,7 +48,10 @@ def _match_module_not_found(text: str) -> Diagnosis | None:
             confidence=0.95,
             category=CauseCategory.ENVIRONMENT,
             cause=f"Missing Python dependency: {mod}",
-            recommendation=f"Install the missing package (e.g. `uv pip install {mod}`) or add it to pyproject.toml dependencies.",
+            recommendation=(
+                f"Install the missing package (e.g. `uv pip install {mod}`) "
+                "or add it to pyproject.toml dependencies."
+            ),
             relevant_lines=[m.group(0)],
         )
     return None
@@ -56,12 +59,19 @@ def _match_module_not_found(text: str) -> Diagnosis | None:
 
 def _match_assertion(text: str) -> Diagnosis | None:
     if "AssertionError" in text or "assert " in text:
-        lines = [ln for ln in text.splitlines() if "assert" in ln.lower() or "AssertionError" in ln]
+        lines = [
+            ln
+            for ln in text.splitlines()
+            if "assert" in ln.lower() or "AssertionError" in ln
+        ]
         return Diagnosis(
             confidence=0.90,
             category=CauseCategory.TEST,
             cause="Test assertion failed.",
-            recommendation="Check the expected vs actual values; if logic is correct, update the test expectation.",
+            recommendation=(
+                "Check the expected vs actual values; if logic is correct, "
+                "update the test expectation."
+            ),
             relevant_lines=lines[:3],
         )
     return None
@@ -69,12 +79,18 @@ def _match_assertion(text: str) -> Diagnosis | None:
 
 def _match_syntax(text: str) -> Diagnosis | None:
     if "SyntaxError" in text or "IndentationError" in text:
-        lines = [ln for ln in text.splitlines() if "SyntaxError" in ln or "IndentationError" in ln or "^" in ln]
+        lines = [
+            ln
+            for ln in text.splitlines()
+            if "SyntaxError" in ln or "IndentationError" in ln or "^" in ln
+        ]
         return Diagnosis(
             confidence=0.95,
             category=CauseCategory.CODE,
             cause="Python syntax or indentation error.",
-            recommendation="Review the indicated line for invalid syntax or mismatched indentation.",
+            recommendation=(
+                "Review the indicated line for invalid syntax or mismatched indentation."
+            ),
             relevant_lines=lines[:3],
         )
     return None
@@ -93,7 +109,15 @@ def _match_timeout(text: str) -> Diagnosis | None:
 
 
 def _match_connection(text: str) -> Diagnosis | None:
-    if any(k in text for k in ("Connection refused", "Connection reset", "Name or service not known", "getaddrinfo")):
+    if any(
+        k in text
+        for k in (
+            "Connection refused",
+            "Connection reset",
+            "Name or service not known",
+            "getaddrinfo",
+        )
+    ):
         return Diagnosis(
             confidence=0.90,
             category=CauseCategory.NETWORK,
@@ -120,7 +144,9 @@ def _match_import_cycle(text: str) -> Diagnosis | None:
             confidence=0.90,
             category=CauseCategory.CODE,
             cause="Circular import detected.",
-            recommendation="Refactor to break the cycle (e.g. lazy imports, protocol/interface separation).",
+            recommendation=(
+                "Refactor to break the cycle (e.g. lazy imports, protocol/interface separation)."
+            ),
         )
     return None
 
@@ -177,7 +203,9 @@ def analyze(failure_text: str, *, context: dict[str, Any] | None = None) -> Diag
     for matcher in _MATCHERS:
         diag = matcher(failure_text)
         if diag is not None:
-            logger.info("[Analyzer] matched %s with confidence %.2f", diag.category.value, diag.confidence)
+            logger.info(
+                "[Analyzer] matched %s with confidence %.2f", diag.category.value, diag.confidence
+            )
             return diag
 
     logger.info("[Analyzer] no heuristic matched — returning unknown")
@@ -185,5 +213,7 @@ def analyze(failure_text: str, *, context: dict[str, Any] | None = None) -> Diag
         confidence=0.30,
         category=CauseCategory.UNKNOWN,
         cause="Could not automatically determine cause.",
-        recommendation="Review the full log manually and consider adding a new heuristic to analyzer.py.",
+        recommendation=(
+            "Review the full log manually and consider adding a new heuristic to analyzer.py."
+        ),
     )

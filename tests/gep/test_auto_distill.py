@@ -1,13 +1,10 @@
 """Tests for auto_distill_conv and auto_distill_llm."""
 
 import json
-import tempfile
-from pathlib import Path
 
-import pytest
-
-from evolver.gep.auto_distill_conv import DistillSummary, distill_and_append, distill_window
-from evolver.gep.auto_distill_llm import LLMDistillResult, distill_and_append as llm_distill_and_append, distill_llm_response
+from evolver.gep.auto_distill_conv import distill_and_append, distill_window
+from evolver.gep.auto_distill_llm import distill_and_append as llm_distill_and_append
+from evolver.gep.auto_distill_llm import distill_llm_response
 
 
 class TestAutoDistillConv:
@@ -47,6 +44,7 @@ class TestAutoDistillConv:
 
     def test_distill_and_append(self, tmp_path):
         import time
+
         path = tmp_path / "events.jsonl"
         now = time.time()
         events = [

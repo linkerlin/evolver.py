@@ -17,7 +17,6 @@ Safety:
 
 from __future__ import annotations
 
-import json
 import logging
 import os
 import shutil
@@ -51,7 +50,7 @@ def _parse_version(v: str) -> tuple[int, int, int]:
             nums.append(0)
     while len(nums) < 3:
         nums.append(0)
-    return tuple(nums)
+    return (nums[0], nums[1], nums[2])
 
 
 def is_newer(new: str, current: str) -> bool:
@@ -137,7 +136,9 @@ def apply_update(
     # Build a temp staging area next to target for atomic swap
     staging = target.with_name(f"{target.name}.update-staging-{int(time.time())}")
     try:
-        shutil.copytree(target, staging, ignore=shutil.ignore_patterns("*.pyc", "__pycache__", ".git"))
+        shutil.copytree(
+            target, staging, ignore=shutil.ignore_patterns("*.pyc", "__pycache__", ".git")
+        )
 
         # Overwrite with source, except keep-list
         for item in source.iterdir():
@@ -199,7 +200,10 @@ def force_update(
         Directory to store backups (default: ``~/.evomap/backups``).
     """
     if not os.environ.get("EVOLVER_FORCE_UPDATE") and not os.environ.get("CI"):
-        logger.warning("[ForceUpdate] Non-interactive auto-update disabled. Set EVOLVER_FORCE_UPDATE=1 to enable.")
+        logger.warning(
+            "[ForceUpdate] Non-interactive auto-update disabled. "
+            "Set EVOLVER_FORCE_UPDATE=1 to enable."
+        )
         return {"success": False, "reason": "disabled_in_noninteractive"}
 
     project_root = project_root or Path.cwd()
@@ -222,7 +226,9 @@ def force_update(
             return {"success": False, "reason": "fetch_failed", "error": str(exc)}
 
     if not target_version or not is_newer(target_version, current_version):
-        logger.info("[ForceUpdate] No update needed: current=%s target=%s", current_version, target_version)
+        logger.info(
+            "[ForceUpdate] No update needed: current=%s target=%s", current_version, target_version
+        )
         return {"success": True, "reason": "up_to_date", "version": current_version}
 
     if url is None:

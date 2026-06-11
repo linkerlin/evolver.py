@@ -37,7 +37,7 @@ def is_high_risk_mutation_allowed(personality: dict[str, Any] | None) -> bool:
     return rigor >= 0.6 and risk_tolerance <= 0.5
 
 
-class Mutation(dict):
+class Mutation(dict[str, Any]):
     """Mutation object backed by a dict for easy serialization."""
 
     def __init__(self, **kwargs: Any) -> None:
@@ -49,13 +49,16 @@ def _choose_category(signals: list[str], drift_enabled: bool = False) -> str:
     if drift_enabled:
         return "innovate"
     lowered = [s.lower() for s in signals]
-    error_hits = sum(1 for s in lowered if "error" in s or "exception" in s or "failed" in s or "errsig" in s)
+    error_hits = sum(
+        1 for s in lowered if "error" in s or "exception" in s or "failed" in s or "errsig" in s
+    )
     if error_hits > 0:
         return "repair"
     opportunity_hits = sum(
         1
         for s in lowered
-        if s in (
+        if s
+        in (
             "user_feature_request",
             "user_improvement_suggestion",
             "capability_gap",
@@ -75,7 +78,7 @@ def _choose_category(signals: list[str], drift_enabled: bool = False) -> str:
 def build_mutation(
     *,
     signals: list[str],
-    selected_gene: dict | None = None,
+    selected_gene: dict[str, Any] | None = None,
     drift_enabled: bool = False,
     personality_state: dict[str, Any] | None = None,
     allow_high_risk: bool = False,
@@ -101,7 +104,9 @@ def build_mutation(
 
     mutation_id = f"mut_{int(time.time() * 1000)}_{secrets.token_hex(4)}"
     target = selected_gene.get("id") if selected_gene else None
-    expected_effect = f"Address signals: {', '.join(signals[:5])}" if signals else "No specific signal"
+    expected_effect = (
+        f"Address signals: {', '.join(signals[:5])}" if signals else "No specific signal"
+    )
 
     return Mutation(
         type="Mutation",
@@ -136,26 +141,30 @@ def is_valid_mutation(m: Any) -> bool:
     return True
 
 
-def normalize_mutation(m: dict | None) -> Mutation:
+def normalize_mutation(m: dict[str, Any] | None) -> Mutation:
     if not isinstance(m, dict):
         m = {}
     return Mutation(
         type="Mutation",
         id=m.get("id") or f"mut_{int(time.time() * 1000)}_{secrets.token_hex(4)}",
-        category=m.get("category", "optimize") if m.get("category") in VALID_CATEGORIES else "optimize",
+        category=m.get("category", "optimize")
+        if m.get("category") in VALID_CATEGORIES
+        else "optimize",
         trigger_signals=list(m.get("trigger_signals", [])),
         target=m.get("target"),
         expected_effect=m.get("expected_effect", ""),
-        risk_level=m.get("risk_level", "low") if m.get("risk_level") in ("low", "medium", "high") else "low",
+        risk_level=m.get("risk_level", "low")
+        if m.get("risk_level") in ("low", "medium", "high")
+        else "low",
     )
 
 
 __all__ = [
-    "clamp01",
-    "is_high_risk_personality",
-    "is_high_risk_mutation_allowed",
+    "Mutation",
     "build_mutation",
+    "clamp01",
+    "is_high_risk_mutation_allowed",
+    "is_high_risk_personality",
     "is_valid_mutation",
     "normalize_mutation",
-    "Mutation",
 ]

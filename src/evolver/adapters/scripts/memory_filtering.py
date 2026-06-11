@@ -28,7 +28,7 @@ def filter_relevant_memories(
 
     entries: list[dict[str, Any]] = []
     try:
-        with open(graph_file, "r", encoding="utf-8") as f:
+        with open(graph_file, encoding="utf-8") as f:
             for line in f:
                 line = line.strip()
                 if not line:
@@ -48,7 +48,8 @@ def filter_relevant_memories(
         ts = rec.get("ts", 0)
         if isinstance(ts, str):
             try:
-                from datetime import datetime, timezone
+                from datetime import datetime
+
                 ts = datetime.fromisoformat(ts.replace("Z", "+00:00")).timestamp()
             except Exception:
                 ts = 0

@@ -13,7 +13,7 @@ from evolver.gep.asset_store import (
 )
 from evolver.gep.discovery import list_peers
 from evolver.gep.paths import get_solidify_state_path
-
+from evolver.webui.client.sse import render_sse_client_js
 
 _CSS = """
 :root {
@@ -169,7 +169,8 @@ def render_dashboard() -> str:
         badge = _status_badge_class(risk)
         genes_rows += f"<tr><td>{gid}</td><td>{cat}</td><td><span class='badge {badge}'>{risk}</span></td><td>{score}</td></tr>\n"
 
-    genes_section = f"""
+    genes_section = (
+        f"""
     <div class="section">
       <h2>🧪 Genes ({len(genes)})</h2>
       <table>
@@ -177,7 +178,10 @@ def render_dashboard() -> str:
         <tbody>{genes_rows}</tbody>
       </table>
     </div>
-    """ if genes else ""
+    """
+        if genes
+        else ""
+    )
 
     caps_rows = ""
     for c in capsules:
@@ -186,7 +190,8 @@ def render_dashboard() -> str:
         src = c.get("source", "?")
         caps_rows += f"<tr><td>{cid}</td><td>{ctype}</td><td>{src}</td></tr>\n"
 
-    caps_section = f"""
+    caps_section = (
+        f"""
     <div class="section">
       <h2>💊 Capsules ({len(capsules)})</h2>
       <table>
@@ -194,7 +199,10 @@ def render_dashboard() -> str:
         <tbody>{caps_rows}</tbody>
       </table>
     </div>
-    """ if capsules else ""
+    """
+        if capsules
+        else ""
+    )
 
     evt_rows = ""
     for e in recent_events:
@@ -213,13 +221,14 @@ def render_dashboard() -> str:
       <h2>📜 Recent Events ({len(recent_events)})</h2>
       <table>
         <thead><tr><th>ID</th><th>Timestamp</th><th>Gene</th><th>Status</th><th>Blast Radius</th></tr></thead>
-        <tbody>{evt_rows or '<tr><td colspan="5" style="color:var(--muted)">No events recorded yet.</td></tr>'}</tbody>
+        <tbody id="events-tbody">{evt_rows or '<tr><td colspan="5" style="color:var(--muted)">No events recorded yet.</td></tr>'}</tbody>
       </table>
     </div>
     """
 
     peers_rows = ""
     import time as _time
+
     now = _time.time()
     for p in peers:
         pid = p.get("node_id", "?")
@@ -264,7 +273,10 @@ def render_dashboard() -> str:
     <div id="toast-container"></div>
     """
 
-    js = """
+    js = (
+        "<script>"
+        + render_sse_client_js()
+        + """</script>
     <script>
     (function(){
       const indicator = document.getElementById('live-indicator');
@@ -317,16 +329,42 @@ def render_dashboard() -> str:
         ws.send(JSON.stringify(obj));
       };
       connectWs();
+      if (window.EvolverSSE) {
+        EvolverSSE.onConnect(function(live) {
+          if (!indicator) return;
+          indicator.className = live ? 'live' : 'offline';
+          indicator.querySelector('.label').textContent = live ? 'sse live' : 'offline';
+        });
+        EvolverSSE.onEvent(function(evt) {
+          const tbody = document.getElementById('events-tbody');
+          if (!tbody || !evt) return;
+          const eid = String(evt.id || '?').slice(0, 16);
+          const ts = evt.timestamp || '?';
+          const gid = evt.gene_id || '?';
+          const status = (evt.outcome || {}).status || '?';
+          const br = evt.blast_radius || {};
+          const files = br.files != null ? br.files : '?';
+          const lines = br.lines != null ? br.lines : '?';
+          const tr = document.createElement('tr');
+          tr.innerHTML = '<td>' + eid + '…</td><td>' + ts + '</td><td>' + gid +
+            '</td><td><span class="value ' + (status === 'success' ? 'ok' : 'warn') +
+            '" style="font-size:0.875rem">' + status + '</span></td><td>' +
+            files + ' / ' + lines + '</td>';
+          tbody.insertBefore(tr, tbody.firstChild);
+          toast('New event: ' + gid + ' → ' + status, status === 'success');
+        });
+        EvolverSSE.connect('/events/stream');
+      }
     })();
     </script>
     """
+    )
 
     return f"""<!doctype html>
 <html lang="en">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<meta http-equiv="refresh" content="30">
 <title>Evolver Dashboard</title>
 <style>{_CSS}</style>
 </head>

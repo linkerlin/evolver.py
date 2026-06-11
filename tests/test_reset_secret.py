@@ -4,8 +4,6 @@ from __future__ import annotations
 
 from pathlib import Path
 
-import pytest
-
 from evolver.adapters.reset_secret import (
     _generate_node_id,
     _generate_secret,

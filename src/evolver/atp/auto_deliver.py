@@ -12,8 +12,9 @@ import json
 import logging
 import time
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
+from evolver.atp.default_handler import default_order_handler
 from evolver.atp.hub_client import list_my_tasks, submit_delivery
 from evolver.gep.paths import get_memory_dir
 
@@ -53,8 +54,10 @@ class AutoDeliver:
             except Exception as exc:
                 logger.warning("[AutoDeliver] Tick error: %s", exc)
             try:
-                await asyncio.wait_for(asyncio.sleep(self.poll_interval_s), timeout=self.poll_interval_s + 5)
-            except asyncio.TimeoutError:
+                await asyncio.wait_for(
+                    asyncio.sleep(self.poll_interval_s), timeout=self.poll_interval_s + 5
+                )
+            except TimeoutError:
                 pass
 
     async def _tick(self) -> None:
@@ -71,11 +74,38 @@ class AutoDeliver:
         status = task.get("status", "")
         if status not in ("claimed", "completed"):
             return
-        result_asset_id = task.get("result_asset_id")
-        if not result_asset_id:
-            return
         if _already_submitted(order_id):
             return
+
+        result_asset_id = task.get("result_asset_id")
+        if not result_asset_id and status == "claimed":
+            handled = default_order_handler(task)
+            result_asset_id = handled.get("result_asset_id") or f"local:{order_id}"
+            proof = json.dumps(
+                {
+                    "task_id": task.get("task_id"),
+                    "processor": handled.get("processor", "evolver-default"),
+                    "output": handled.get("output", ""),
+                }
+            )
+            delivery = await submit_delivery(order_id, proof, result_asset_id)
+            if delivery.get("ok"):
+                _mark_submitted(order_id, success=True)
+                logger.info("[AutoDeliver] Delivered claimed task %s via default handler", order_id)
+            else:
+                status_code = delivery.get("status")
+                if status_code in (400, 404, 409):
+                    _mark_submitted(order_id, success=False)
+                logger.warning(
+                    "[AutoDeliver] Default delivery failed for %s: %s",
+                    order_id,
+                    delivery.get("error"),
+                )
+            return
+
+        if not result_asset_id:
+            return
+
         proof = json.dumps({"task_id": task.get("task_id"), "asset_id": result_asset_id})
         delivery = await submit_delivery(order_id, proof, result_asset_id)
         if delivery.get("ok"):
@@ -85,7 +115,9 @@ class AutoDeliver:
             status_code = delivery.get("status")
             if status_code in (400, 404, 409):
                 _mark_submitted(order_id, success=False)
-            logger.warning("[AutoDeliver] Delivery failed for %s: %s", order_id, delivery.get("error"))
+            logger.warning(
+                "[AutoDeliver] Delivery failed for %s: %s", order_id, delivery.get("error")
+            )
 
 
 # ---------------------------------------------------------------------------
@@ -102,7 +134,7 @@ def _read_ledger() -> dict[str, Any]:
     if not p.exists():
         return {"version": 1, "submitted": {}}
     try:
-        return json.loads(p.read_text(encoding="utf-8"))
+        return cast(dict[str, Any], json.loads(p.read_text(encoding="utf-8")))
     except (json.JSONDecodeError, OSError):
         return {"version": 1, "submitted": {}}
 

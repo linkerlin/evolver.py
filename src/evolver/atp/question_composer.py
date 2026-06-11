@@ -7,7 +7,6 @@ Maps capability/signal inputs to natural-language buyer questions.
 from __future__ import annotations
 
 import re
-from typing import Any
 
 # Templates by capability key
 templates: dict[str, list[str]] = {

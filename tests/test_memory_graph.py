@@ -62,7 +62,9 @@ def test_record_hypothesis(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> N
     assert events[-1]["kind"] == "hypothesis"
 
 
-def test_get_memory_advice_bans_failing_gene(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_get_memory_advice_bans_failing_gene(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     monkeypatch.setenv("EVOLUTION_DIR", str(tmp_path))
     monkeypatch.setenv("MEMORY_GRAPH_PATH", str(tmp_path / "memory_graph.jsonl"))
     signals = ["log_error", "recurring_error"]
@@ -81,7 +83,9 @@ def test_get_memory_advice_bans_failing_gene(tmp_path: Path, monkeypatch: pytest
     assert "gene_repair_failing" in advice["bannedGeneIds"]
 
 
-def test_get_memory_advice_drift_respects_ban(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_get_memory_advice_drift_respects_ban(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     monkeypatch.setenv("EVOLUTION_DIR", str(tmp_path))
     monkeypatch.setenv("MEMORY_GRAPH_PATH", str(tmp_path / "memory_graph.jsonl"))
     signals = ["log_error", "recurring_error"]

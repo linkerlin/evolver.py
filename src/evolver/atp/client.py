@@ -10,7 +10,7 @@ from typing import Any
 import httpx
 
 from evolver.adapters.auth import load_auth
-from evolver.config import HUB_SEARCH_TIMEOUT_MS, resolve_hub_url
+from evolver.config import resolve_hub_url
 from evolver.gep.a2a_protocol import build_hub_headers
 
 

@@ -18,12 +18,13 @@ def safety_events(*, limit: int = 100, memory_dir: Path | None = None) -> dict[s
     safety = [
         e
         for e in events
-        if e.get("type") in ("policy_violation", "secret_detected", "sandbox_escape_attempt", "rollback_triggered")
+        if e.get("type")
+        in ("policy_violation", "secret_detected", "sandbox_escape_attempt", "rollback_triggered")
     ]
     safety = safety[-limit:]
     severity_counts = Counter(e.get("severity", "unknown") for e in safety)
     return {
         "total": len(safety),
-        "severity_counts": dict(severity_counts),
+        "severity_counts": dict[str, Any](severity_counts),
         "events": safety,
     }

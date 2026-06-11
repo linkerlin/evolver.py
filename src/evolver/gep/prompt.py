@@ -6,7 +6,6 @@ Equivalent to evolver/src/gep/prompt.js (obfuscated).
 from __future__ import annotations
 
 import json
-import re
 from typing import Any
 
 from evolver.config import PROMPT_MAX_CHARS
@@ -24,11 +23,7 @@ _PREVIEW_STRIP_FIELDS = {
 
 def _strip_bloat(obj: Any) -> Any:
     if isinstance(obj, dict):
-        return {
-            k: _strip_bloat(v)
-            for k, v in obj.items()
-            if k not in _PREVIEW_STRIP_FIELDS
-        }
+        return {k: _strip_bloat(v) for k, v in obj.items() if k not in _PREVIEW_STRIP_FIELDS}
     if isinstance(obj, list):
         return [_strip_bloat(v) for v in obj]
     return obj
@@ -75,7 +70,7 @@ def build_gep_prompt(
     signals: list[str],
     selector: dict[str, Any] | None,
     parent_event_id: str | None,
-    selected_gene: dict | None,
+    selected_gene: dict[str, Any] | None,
     capsule_candidates: str,
     genes_preview: str,
     capsules_preview: str,
@@ -86,7 +81,7 @@ def build_gep_prompt(
     recent_history: str,
     failed_capsules: list[Any],
     hub_lessons: list[Any],
-    strategy_policy: dict | None,
+    strategy_policy: dict[str, Any] | None,
     initial_user_prompt: str | None,
     max_chars: int = PROMPT_MAX_CHARS,
 ) -> str:
@@ -110,9 +105,15 @@ def build_gep_prompt(
         "",
         "## Schemas",
         "",
-        "- Mutation: { type: 'Mutation', id, category, trigger_signals, target, expected_effect, risk_level }",
+        (
+            "- Mutation: { type: 'Mutation', id, category, trigger_signals, "
+            "target, expected_effect, risk_level }"
+        ),
         "- PersonalityState: { rigor, creativity, risk_tolerance } in [0,1]",
-        "- EvolutionEvent: { type: 'EvolutionEvent', id, run_id, timestamp, gene_id, signals, outcome }",
+        (
+            "- EvolutionEvent: { type: 'EvolutionEvent', id, run_id, timestamp, "
+            "gene_id, signals, outcome }"
+        ),
         "- Gene: { type: 'Gene', id, category, signals_match, strategy, validation, constraints }",
         "- Capsule: { type: 'Capsule', id, trigger, gene, summary, confidence, outcome }",
         "",
@@ -123,7 +124,7 @@ def build_gep_prompt(
         "3. TRANSPARENCY: Report uncertainty explicitly.",
         "4. AUTONOMY: Respect user intent; ask for clarification on ambiguous risky requests.",
         "",
-        f"## Cycle Metadata",
+        "## Cycle Metadata",
         f"- cycle_id: {cycle_id}",
         f"- timestamp: {now_iso}",
         f"- parent_event_id: {parent_event_id or 'null'}",
@@ -162,7 +163,10 @@ def build_gep_prompt(
         json.dumps(hub_lessons, ensure_ascii=False) if hub_lessons else "[]",
         "",
         "## Task",
-        "Produce a GEP-compliant Mutation or EvolutionEvent JSON. Do NOT include prose outside the JSON.",
+        (
+            "Produce a GEP-compliant Mutation or EvolutionEvent JSON. "
+            "Do NOT include prose outside the JSON."
+        ),
     ]
     prompt = "\n".join(lines)
 
@@ -189,4 +193,4 @@ __internals = {
 }
 
 
-__all__ = ["build_gep_prompt", "compact_preview_for_prompt", "__internals"]
+__all__ = ["__internals", "build_gep_prompt", "compact_preview_for_prompt"]

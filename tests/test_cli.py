@@ -28,29 +28,39 @@ def test_cli_version(capsys: pytest.CaptureFixture[str]) -> None:
     assert captured.out.startswith("evolver ")
 
 
-def test_cli_run_emits_prompt(isolated_evolver_env: Path, capsys: pytest.CaptureFixture[str]) -> None:
+def test_cli_run_emits_prompt(
+    isolated_evolver_env: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
     code = main(["run"])
     assert code == 0
     captured = capsys.readouterr()
     assert "GENOME EVOLUTION PROTOCOL" in captured.out
 
 
-def test_cli_solidify_without_state_fails(isolated_evolver_env: Path, capsys: pytest.CaptureFixture[str]) -> None:
+def test_cli_solidify_without_state_fails(
+    isolated_evolver_env: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
     code = main(["solidify"])
     assert code == 1
     captured = capsys.readouterr()
     assert "no_pending_run" in captured.err
 
 
-def test_cli_solidify_after_run_in_git_repo(isolated_evolver_env: Path, capsys: pytest.CaptureFixture[str]) -> None:
-    subprocess.run(["git", "init", "-b", "main", str(isolated_evolver_env)], check=True, capture_output=True)
+def test_cli_solidify_after_run_in_git_repo(
+    isolated_evolver_env: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    subprocess.run(
+        ["git", "init", "-b", "main", str(isolated_evolver_env)], check=True, capture_output=True
+    )
     subprocess.run(
         ["git", "-C", str(isolated_evolver_env), "config", "user.email", "test@example.com"],
-        check=True, capture_output=True,
+        check=True,
+        capture_output=True,
     )
     subprocess.run(
         ["git", "-C", str(isolated_evolver_env), "config", "user.name", "Test"],
-        check=True, capture_output=True,
+        check=True,
+        capture_output=True,
     )
 
     code = main(["run"])
@@ -62,7 +72,9 @@ def test_cli_solidify_after_run_in_git_repo(isolated_evolver_env: Path, capsys: 
     assert "Solidify succeeded" in captured.out
 
 
-def test_cli_webui_token_generate_and_revoke(isolated_evolver_env: Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch) -> None:
+def test_cli_webui_token_generate_and_revoke(
+    isolated_evolver_env: Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+) -> None:
     monkeypatch.setenv("EVOLVER_HOME", str(isolated_evolver_env / ".evolver"))
     code = main(["webui-token", "--generate", "--role", "admin"])
     assert code == 0

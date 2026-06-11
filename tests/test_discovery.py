@@ -24,6 +24,7 @@ def _clear_peers(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     monkeypatch.setenv("EVOLVER_HOME", str(tmp_path / ".evolver"))
     # Clear in-memory registry
     import evolver.gep.discovery as disc
+
     disc._PEERS.clear()
 
 

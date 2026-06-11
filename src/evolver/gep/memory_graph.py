@@ -11,7 +11,7 @@ import os
 import secrets
 import time
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 from evolver.gep.paths import get_evolution_dir, get_memory_graph_path
 
@@ -39,19 +39,19 @@ def compute_signal_key(signals: list[str] | None) -> str:
     return hashlib.sha256(canonical.encode("utf-8")).hexdigest()[:32]
 
 
-def try_read_memory_graph_events(limit: int = 10_000) -> list[dict]:
+def try_read_memory_graph_events(limit: int = 10_000) -> list[dict[str, Any]]:
     path = _graph_path()
     if not path.exists():
         return []
-    events: list[dict] = []
+    events: list[dict[str, Any]] = []
     try:
-        with open(path, "r", encoding="utf-8") as f:
+        with open(path, encoding="utf-8") as f:
             for line in f:
                 line = line.strip()
                 if not line:
                     continue
                 try:
-                    events.append(json.loads(line))
+                    events.append(cast(dict[str, Any], json.loads(line)))
                 except json.JSONDecodeError:
                     continue
                 if len(events) >= limit:
@@ -61,7 +61,7 @@ def try_read_memory_graph_events(limit: int = 10_000) -> list[dict]:
     return events
 
 
-def _append_event(event: dict) -> dict:
+def _append_event(event: dict[str, Any]) -> dict[str, Any]:
     path = _graph_path()
     path.parent.mkdir(parents=True, exist_ok=True)
     with open(path, "a", encoding="utf-8") as f:
@@ -76,14 +76,15 @@ def _new_id(prefix: str = "mge") -> str:
 def record_signal_snapshot(
     *,
     signals: list[str],
-    observations: dict | None = None,
+    observations: dict[str, Any] | None = None,
     run_id: str | None = None,
-) -> dict:
+) -> dict[str, Any]:
     event = {
         "type": "MemoryGraphEvent",
         "kind": "signal",
         "id": _new_id("sig"),
-        "ts": time.strftime("%Y-%m-%dT%H:%M:%S.", time.gmtime()) + f"{int((time.time() % 1) * 1000):03d}Z",
+        "ts": time.strftime("%Y-%m-%dT%H:%M:%S.", time.gmtime())
+        + f"{int((time.time() % 1) * 1000):03d}Z",
         "signal": {"key": compute_signal_key(signals), "signals": list(signals)},
         "observations": observations or {},
     }
@@ -95,38 +96,41 @@ def record_signal_snapshot(
 def record_hypothesis(
     *,
     signals: list[str],
-    selected_gene: dict | None,
+    selected_gene: dict[str, Any] | None,
     drift_enabled: bool = False,
     run_id: str | None = None,
-) -> dict:
+) -> dict[str, Any]:
     event = {
         "type": "MemoryGraphEvent",
         "kind": "hypothesis",
         "id": _new_id("hyp"),
-        "ts": time.strftime("%Y-%m-%dT%H:%M:%S.", time.gmtime()) + f"{int((time.time() % 1) * 1000):03d}Z",
+        "ts": time.strftime("%Y-%m-%dT%H:%M:%S.", time.gmtime())
+        + f"{int((time.time() % 1) * 1000):03d}Z",
         "signal": {"key": compute_signal_key(signals), "signals": list(signals)},
         "gene": selected_gene,
         "drift_enabled": drift_enabled,
     }
     if run_id:
         event["run_id"] = run_id
-    _append_event(event)
-    return {"hypothesisId": event["id"], "signalKey": event["signal"]["key"]}
+    saved = _append_event(event)
+    signal = cast(dict[str, Any], saved.get("signal", {}))
+    return {"hypothesisId": saved["id"], "signalKey": signal["key"]}
 
 
 def record_attempt(
     *,
     signals: list[str],
-    selected_gene: dict | None,
+    selected_gene: dict[str, Any] | None,
     drift_enabled: bool = False,
     run_id: str | None = None,
-) -> dict:
+) -> dict[str, Any]:
     action_id = _new_id("act")
     event = {
         "type": "MemoryGraphEvent",
         "kind": "attempt",
         "id": _new_id("att"),
-        "ts": time.strftime("%Y-%m-%dT%H:%M:%S.", time.gmtime()) + f"{int((time.time() % 1) * 1000):03d}Z",
+        "ts": time.strftime("%Y-%m-%dT%H:%M:%S.", time.gmtime())
+        + f"{int((time.time() % 1) * 1000):03d}Z",
         "signal": {"key": compute_signal_key(signals), "signals": list(signals)},
         "gene": selected_gene,
         "action": {"id": action_id},
@@ -144,22 +148,24 @@ def record_attempt(
         "ts": event["ts"],
     }
     _write_state(state)
-    return {"actionId": action_id, "signalKey": event["signal"]["key"]}
+    signal = cast(dict[str, Any], event.get("signal", {}))
+    return {"actionId": action_id, "signalKey": signal["key"]}
 
 
 def record_outcome(
     *,
     signals: list[str],
-    selected_gene: dict | None,
-    outcome: dict,
-    blast_radius: dict | None = None,
+    selected_gene: dict[str, Any] | None,
+    outcome: dict[str, Any],
+    blast_radius: dict[str, Any] | None = None,
     run_id: str | None = None,
-) -> dict:
+) -> dict[str, Any]:
     event = {
         "type": "MemoryGraphEvent",
         "kind": "outcome",
         "id": _new_id("out"),
-        "ts": time.strftime("%Y-%m-%dT%H:%M:%S.", time.gmtime()) + f"{int((time.time() % 1) * 1000):03d}Z",
+        "ts": time.strftime("%Y-%m-%dT%H:%M:%S.", time.gmtime())
+        + f"{int((time.time() % 1) * 1000):03d}Z",
         "signal": {"key": compute_signal_key(signals), "signals": list(signals)},
         "gene": selected_gene,
         "outcome": outcome,
@@ -178,10 +184,10 @@ def record_outcome(
 
 def record_external_candidate(
     *,
-    asset: dict | None,
+    asset: dict[str, Any] | None,
     source: str = "external",
     signals: list[str] | None = None,
-) -> dict | None:
+) -> dict[str, Any] | None:
     if not isinstance(asset, dict) or not asset.get("type") or not asset.get("id"):
         return None
 
@@ -195,7 +201,8 @@ def record_external_candidate(
         "type": "MemoryGraphEvent",
         "kind": "external_candidate",
         "id": _new_id("ext"),
-        "ts": time.strftime("%Y-%m-%dT%H:%M:%S.", time.gmtime()) + f"{int((time.time() % 1) * 1000):03d}Z",
+        "ts": time.strftime("%Y-%m-%dT%H:%M:%S.", time.gmtime())
+        + f"{int((time.time() % 1) * 1000):03d}Z",
         "asset": {"type": asset["type"], "id": asset["id"]},
         "candidate": candidate,
         "external": {"source": source},
@@ -204,7 +211,7 @@ def record_external_candidate(
     return _append_event(event)
 
 
-def _read_state() -> dict:
+def _read_state() -> dict[str, Any]:
     path = _state_path()
     if not path.exists():
         return {}
@@ -212,12 +219,12 @@ def _read_state() -> dict:
         raw = path.read_text(encoding="utf-8")
         if not raw.strip():
             return {}
-        return json.loads(raw)
+        return cast(dict[str, Any], json.loads(raw))
     except (OSError, json.JSONDecodeError):
         return {}
 
 
-def _write_state(state: dict) -> None:
+def _write_state(state: dict[str, Any]) -> None:
     path = _state_path()
     path.parent.mkdir(parents=True, exist_ok=True)
     tmp = path.with_suffix(".tmp")
@@ -228,7 +235,7 @@ def _write_state(state: dict) -> None:
 def get_memory_advice(
     *,
     signals: list[str] | None,
-    genes: list[dict] | None,
+    genes: list[dict[str, Any]] | None,
     drift_enabled: bool = False,
 ) -> dict[str, Any]:
     signals = list(signals) if isinstance(signals, list) else []
@@ -265,7 +272,10 @@ def get_memory_advice(
                 best_rate = rate
                 preferred = gene_id
 
-    explanation_parts = [f"signal_key={key}", f"matching_outcomes={len([e for e in outcomes if e.get('signal', {}).get('key') == key])}"]
+    explanation_parts = [
+        f"signal_key={key}",
+        f"matching_outcomes={len([e for e in outcomes if e.get('signal', {}).get('key') == key])}",
+    ]
     if banned:
         explanation_parts.append(f"banned={','.join(banned)}")
 
@@ -277,13 +287,20 @@ def get_memory_advice(
     }
 
 
+def read_all(limit: int = 10_000) -> list[dict[str, Any]]:
+    """Alias for try_read_memory_graph_events (WebUI / observer API)."""
+    return try_read_memory_graph_events(limit=limit)
+
+
 __all__ = [
     "compute_signal_key",
-    "try_read_memory_graph_events",
-    "record_signal_snapshot",
-    "record_hypothesis",
-    "record_attempt",
-    "record_outcome",
-    "record_external_candidate",
     "get_memory_advice",
+    "get_memory_graph_path",
+    "read_all",
+    "record_attempt",
+    "record_external_candidate",
+    "record_hypothesis",
+    "record_outcome",
+    "record_signal_snapshot",
+    "try_read_memory_graph_events",
 ]

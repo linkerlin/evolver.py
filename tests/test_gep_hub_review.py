@@ -2,11 +2,7 @@
 
 from __future__ import annotations
 
-import pytest
-
 from evolver.gep.hub_review import (
-    ReviewComment,
-    ReviewResult,
     Verdict,
     review_patch,
     review_service_listing,

@@ -1,7 +1,5 @@
 """Tests for evolver.gep.candidate_eval."""
 
-import pytest
-
 from evolver.gep.candidate_eval import (
     Candidate,
     evaluate_candidate,
@@ -21,7 +19,9 @@ class TestEvaluateCandidate:
         assert 0 <= score.composite <= 1
 
     def test_test_coverage(self):
-        c = Candidate(diff_text="diff --git a/tests/test_foo.py b/tests/test_foo.py\n+def test(): pass")
+        c = Candidate(
+            diff_text="diff --git a/tests/test_foo.py b/tests/test_foo.py\n+def test(): pass"
+        )
         score = evaluate_candidate(c)
         assert score.test_coverage > 0
 

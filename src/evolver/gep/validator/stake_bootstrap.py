@@ -24,7 +24,7 @@ import logging
 import time
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 from evolver.gep.paths import get_workspace_root
 
@@ -83,7 +83,7 @@ class StakeState:
         }
 
     @classmethod
-    def from_dict(cls, d: dict[str, Any]) -> "StakeState":
+    def from_dict(cls, d: dict[str, Any]) -> StakeState:
         return cls(
             node_id=d.get("node_id", ""),
             status=d.get("status", "pending"),
@@ -107,7 +107,7 @@ def load_stake_state() -> StakeState | None:
     if not p.exists():
         return None
     try:
-        with open(p, "r", encoding="utf-8") as f:
+        with open(p, encoding="utf-8") as f:
             data = json.load(f)
         return StakeState.from_dict(data)
     except (OSError, json.JSONDecodeError) as exc:
@@ -140,6 +140,7 @@ def generate_stake_request(
 ) -> StakeRequest:
     """Generate an unsigned staking transaction request."""
     import os
+
     nid = node_id or os.environ.get("EVOLVER_AGENT_ID", "unknown-node")
     return StakeRequest(
         node_id=nid,
@@ -183,12 +184,13 @@ def _query_stake_status(node_id: str) -> dict[str, Any] | None:
     """Query Hub for stake status."""
     try:
         import httpx
+
         resp = httpx.get(
             f"http://127.0.0.1:19820/a2a/validator/stake-status?node_id={node_id}",
             timeout=10.0,
         )
         if resp.status_code == 200:
-            return resp.json()
+            return cast(dict[str, Any], resp.json())
     except Exception as exc:
         logger.debug("[StakeBootstrap] Status query failed: %s", exc)
     return None
@@ -255,6 +257,7 @@ def bootstrap(
     4. Return final state.
     """
     import os
+
     nid = node_id or os.environ.get("EVOLVER_AGENT_ID", "unknown-node")
     state = load_stake_state()
 

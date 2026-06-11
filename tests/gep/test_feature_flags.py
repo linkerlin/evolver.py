@@ -1,16 +1,11 @@
 """Tests for evolver.gep.feature_flags."""
 
 import json
-import os
 from unittest.mock import patch
-
-import pytest
 
 from evolver.gep.feature_flags import (
     DEFAULT_FLAGS,
-    DISK_FLAG_TTL,
     _load_disk_flags,
-    _write_disk_flags,
     get_all_flags,
     is_enabled,
     reset_to_defaults,

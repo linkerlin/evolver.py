@@ -2,11 +2,9 @@
 
 from __future__ import annotations
 
-import json
-import os
 from pathlib import Path
 from typing import Any
-from unittest.mock import AsyncMock, patch
+from unittest.mock import AsyncMock
 
 import pytest
 
@@ -16,14 +14,11 @@ from evolver.atp import (
     cli_autobuy_prompt,
     consumer_agent,
     heartbeat_signals_handler,
-    hub_client,
     merchant_agent,
     protocol,
     question_composer,
-    service_helper,
 )
-from evolver.atp.atp_task_pickup import pick_one, forget
-
+from evolver.atp.atp_task_pickup import pick_one
 
 # ---------------------------------------------------------------------------
 # Protocol
@@ -57,6 +52,17 @@ def test_compose_basic() -> None:
 def test_compose_fallback() -> None:
     q = question_composer.compose([], "something weird")
     assert len(q) <= 240
+
+
+def test_detect_capability_gaps() -> None:
+    gaps = auto_buyer.detect_capability_gaps(["TypeError in module", "pytest failed"])
+    caps = {g["capability"] for g in gaps}
+    assert "debugging" in caps
+    assert "testing" in caps
+
+
+def test_detect_capability_gaps_empty() -> None:
+    assert auto_buyer.detect_capability_gaps([]) == []
 
 
 # ---------------------------------------------------------------------------
@@ -97,6 +103,63 @@ async def test_consider_order_disabled(monkeypatch: pytest.MonkeyPatch) -> None:
     assert "disabled" in result["error"]
 
 
+@pytest.mark.asyncio
+async def test_consider_order_success(
+    temp_workspace: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("EVOLVER_ATP_AUTOBUY", "1")
+    monkeypatch.setattr(auto_buyer, "get_memory_dir", lambda: temp_workspace)
+    mock_place = AsyncMock(return_value={"ok": True, "data": {"order_id": "ord_1"}})
+    monkeypatch.setattr(auto_buyer, "place_order", mock_place)
+
+    result = await auto_buyer.consider_order(["debugging"], signal="TypeError")
+    assert result["ok"] is True
+    mock_place.assert_called_once()
+    ledger = auto_buyer._read_ledger()
+    assert ledger["spent"] > 0
+
+
+@pytest.mark.asyncio
+async def test_consider_order_dedup_24h(
+    temp_workspace: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("EVOLVER_ATP_AUTOBUY", "1")
+    monkeypatch.setattr(auto_buyer, "get_memory_dir", lambda: temp_workspace)
+    mock_place = AsyncMock(return_value={"ok": True, "data": {"order_id": "ord_1"}})
+    monkeypatch.setattr(auto_buyer, "place_order", mock_place)
+
+    first = await auto_buyer.consider_order(["debugging"], signal="same error")
+    assert first["ok"] is True
+    second = await auto_buyer.consider_order(["debugging"], signal="same error")
+    assert second["ok"] is False
+    assert second["error"] == "dedup_24h"
+    assert mock_place.call_count == 1
+
+
+@pytest.mark.asyncio
+async def test_run_tick_places_orders(
+    temp_workspace: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("EVOLVER_ATP_AUTOBUY", "1")
+    monkeypatch.setattr(auto_buyer, "get_memory_dir", lambda: temp_workspace)
+    mock_place = AsyncMock(return_value={"ok": True, "data": {"order_id": "ord_tick"}})
+    monkeypatch.setattr(auto_buyer, "place_order", mock_place)
+
+    result = await auto_buyer.run_tick(["unexpected TypeError in handler"])
+    assert result["ok"] is True
+    assert result["placed"] == 1
+    assert len(result["orders"]) == 1
+
+
+@pytest.mark.asyncio
+async def test_run_tick_no_gaps(temp_workspace: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("EVOLVER_ATP_AUTOBUY", "1")
+    monkeypatch.setattr(auto_buyer, "get_memory_dir", lambda: temp_workspace)
+    result = await auto_buyer.run_tick(["everything is fine"])
+    assert result["ok"] is True
+    assert result["orders"] == []
+
+
 # ---------------------------------------------------------------------------
 # Auto deliver
 # ---------------------------------------------------------------------------
@@ -110,6 +173,71 @@ async def test_auto_deliver_lifecycle() -> None:
     assert ad.is_started() is True
     ad.stop()
     assert ad.is_started() is False
+
+
+@pytest.mark.asyncio
+async def test_auto_deliver_handle_task(
+    temp_workspace: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(auto_deliver, "get_memory_dir", lambda: temp_workspace)
+    mock_submit = AsyncMock(return_value={"ok": True})
+    monkeypatch.setattr(auto_deliver, "submit_delivery", mock_submit)
+
+    ad = auto_deliver.AutoDeliver()
+    await ad._handle_task(
+        {
+            "atp_order_id": "ord_99",
+            "status": "completed",
+            "result_asset_id": "asset_99",
+            "task_id": "task_99",
+        }
+    )
+    mock_submit.assert_called_once()
+    assert auto_deliver._already_submitted("ord_99") is True
+
+
+@pytest.mark.asyncio
+async def test_auto_deliver_skips_duplicate(
+    temp_workspace: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(auto_deliver, "get_memory_dir", lambda: temp_workspace)
+    auto_deliver._mark_submitted("ord_dup", success=True)
+    mock_submit = AsyncMock(return_value={"ok": True})
+    monkeypatch.setattr(auto_deliver, "submit_delivery", mock_submit)
+
+    ad = auto_deliver.AutoDeliver()
+    await ad._handle_task(
+        {
+            "atp_order_id": "ord_dup",
+            "status": "completed",
+            "result_asset_id": "asset_dup",
+            "task_id": "task_dup",
+        }
+    )
+    mock_submit.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_auto_deliver_claimed_via_default_handler(
+    temp_workspace: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(auto_deliver, "get_memory_dir", lambda: temp_workspace)
+    mock_submit = AsyncMock(return_value={"ok": True})
+    monkeypatch.setattr(auto_deliver, "submit_delivery", mock_submit)
+
+    ad = auto_deliver.AutoDeliver()
+    await ad._handle_task(
+        {
+            "atp_order_id": "ord_claim",
+            "status": "claimed",
+            "task_id": "task_claim",
+            "title": "Code review request",
+        }
+    )
+    mock_submit.assert_called_once()
+    args = mock_submit.call_args[0]
+    assert args[0] == "ord_claim"
+    assert auto_deliver._already_submitted("ord_claim") is True
 
 
 # ---------------------------------------------------------------------------
@@ -164,9 +292,9 @@ async def test_merchant_agent_lifecycle(monkeypatch: pytest.MonkeyPatch) -> None
 
 @pytest.mark.asyncio
 async def test_heartbeat_signals_no_crash() -> None:
+    heartbeat_signals_handler._LAST_RUN_AT = 0.0
     result = await heartbeat_signals_handler.handle_signals({})
-    # Should not raise
-    assert True
+    assert result["ok"] is True
 
 
 # ---------------------------------------------------------------------------

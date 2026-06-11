@@ -92,7 +92,9 @@ class OutboundSync:
             msg_id = item.get("id")
             status = item.get("status")
             if status in ("accepted", "ok"):
-                self._store.update_status(msg_id, "synced", synced_at=int(__import__("time").time() * 1000))
+                self._store.update_status(
+                    msg_id, "synced", synced_at=int(__import__("time").time() * 1000)
+                )
                 sent += 1
             elif status in ("failed", "rejected"):
                 retry = self._store.get_by_id(msg_id)

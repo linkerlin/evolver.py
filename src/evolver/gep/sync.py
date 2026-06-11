@@ -17,7 +17,7 @@ async def sync_all(
     scope: str | None = None,
 ) -> dict[str, Any]:
     """High-level sync: fetch tasks and hub events, install matching assets."""
-    installed: list[dict] = []
+    installed: list[dict[str, Any]] = []
     errors: list[str] = []
 
     # Fetch tasks
@@ -25,18 +25,22 @@ async def sync_all(
     if tasks_result.get("ok"):
         for task in tasks_result.get("tasks", []):
             if dry_run:
-                installed.append({
-                    "id": task.get("task_id"),
-                    "type": "Task",
-                    "action": "would_sync",
-                })
+                installed.append(
+                    {
+                        "id": task.get("task_id"),
+                        "type": "Task",
+                        "action": "would_sync",
+                    }
+                )
                 continue
             # Tasks are not installed into asset store; they are ephemeral
-            installed.append({
-                "id": task.get("task_id"),
-                "type": "Task",
-                "action": "noted",
-            })
+            installed.append(
+                {
+                    "id": task.get("task_id"),
+                    "type": "Task",
+                    "action": "noted",
+                }
+            )
     else:
         errors.append(f"tasks: {tasks_result.get('error')}")
 
@@ -53,11 +57,13 @@ async def sync_all(
                     continue
                 asset = dl["asset"]
                 if dry_run:
-                    installed.append({
-                        "id": asset.get("id"),
-                        "type": asset.get("type"),
-                        "action": "would_install",
-                    })
+                    installed.append(
+                        {
+                            "id": asset.get("id"),
+                            "type": asset.get("type"),
+                            "action": "would_install",
+                        }
+                    )
                     continue
                 asset_type = asset.get("type")
                 if asset_type == "Gene":
@@ -67,19 +73,23 @@ async def sync_all(
                 else:
                     result = {"ok": False, "error": f"unknown_type:{asset_type}"}
                 if result["ok"]:
-                    installed.append({
-                        "id": result.get("gene_id") or result.get("capsule_id"),
-                        "type": asset_type,
-                        "asset_id": result.get("asset_id"),
-                    })
+                    installed.append(
+                        {
+                            "id": result.get("gene_id") or result.get("capsule_id"),
+                            "type": asset_type,
+                            "asset_id": result.get("asset_id"),
+                        }
+                    )
                 else:
                     errors.append(f"install {asset.get('id')}: {result.get('error')}")
             else:
-                installed.append({
-                    "type": "Event",
-                    "action": "noted",
-                    "body": directive[:200] if isinstance(directive, str) else "",
-                })
+                installed.append(
+                    {
+                        "type": "Event",
+                        "action": "noted",
+                        "body": directive[:200] if isinstance(directive, str) else "",
+                    }
+                )
     else:
         errors.append(f"events: {events_result.get('error')}")
 

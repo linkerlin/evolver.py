@@ -5,7 +5,6 @@ import time
 import pytest
 
 from evolver.gep.epigenetics import (
-    DEFAULT_MARK_HALF_LIFE_DAYS,
     GENE_EPIGENETIC_HARD_BOOST,
     age_all_genes,
     age_marks,

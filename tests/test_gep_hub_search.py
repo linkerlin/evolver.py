@@ -2,9 +2,7 @@
 
 from __future__ import annotations
 
-import pytest
-
-from evolver.gep.hub_search import ServiceHit, _tfidf_similarity, _tokenize, search_services
+from evolver.gep.hub_search import _tfidf_similarity, _tokenize, search_services
 
 
 class TestTokenize:
@@ -31,8 +29,22 @@ class TestTfidfSimilarity:
 class TestSearchServices:
     def test_basic_ranking(self):
         services = [
-            {"service_id": "a", "title": "Image Resizer", "description": "Resize images fast.", "capabilities": ["resize"], "price_per_task": 1.0, "execution_mode": "sync"},
-            {"service_id": "b", "title": "Text Summarizer", "description": "Summarize long text.", "capabilities": ["summarize"], "price_per_task": 2.0, "execution_mode": "async"},
+            {
+                "service_id": "a",
+                "title": "Image Resizer",
+                "description": "Resize images fast.",
+                "capabilities": ["resize"],
+                "price_per_task": 1.0,
+                "execution_mode": "sync",
+            },
+            {
+                "service_id": "b",
+                "title": "Text Summarizer",
+                "description": "Summarize long text.",
+                "capabilities": ["summarize"],
+                "price_per_task": 2.0,
+                "execution_mode": "async",
+            },
         ]
         hits = search_services(services, "resize image", top_k=10)
         assert len(hits) == 2
@@ -60,7 +72,14 @@ class TestSearchServices:
 
     def test_top_k_limits(self):
         services = [
-            {"service_id": str(i), "title": f"Svc {i}", "description": f"Desc {i}.", "capabilities": [], "price_per_task": 0, "execution_mode": "sync"}
+            {
+                "service_id": str(i),
+                "title": f"Svc {i}",
+                "description": f"Desc {i}.",
+                "capabilities": [],
+                "price_per_task": 0,
+                "execution_mode": "sync",
+            }
             for i in range(20)
         ]
         hits = search_services(services, "svc", top_k=5)

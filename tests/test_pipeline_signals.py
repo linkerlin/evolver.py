@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-import pytest
-
 from evolver.evolve.pipeline.signals import should_skip_hub_calls
 
 

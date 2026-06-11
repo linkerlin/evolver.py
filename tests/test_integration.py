@@ -43,11 +43,13 @@ def _init_git_repo(path: Path) -> None:
     subprocess.run(["git", "init", "-b", "main", str(path)], check=True, capture_output=True)
     subprocess.run(
         ["git", "-C", str(path), "config", "user.email", "test@example.com"],
-        check=True, capture_output=True,
+        check=True,
+        capture_output=True,
     )
     subprocess.run(
         ["git", "-C", str(path), "config", "user.name", "Test"],
-        check=True, capture_output=True,
+        check=True,
+        capture_output=True,
     )
 
 
@@ -55,18 +57,24 @@ def _init_git_repo(path: Path) -> None:
 # 1. Full run → solidify cycle
 # ---------------------------------------------------------------------------
 
+
 class TestFullRunSolidifyCycle:
-    def test_run_creates_solidify_state(self, isolated_evolver_env: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    def test_run_creates_solidify_state(
+        self, isolated_evolver_env: Path, capsys: pytest.CaptureFixture[str]
+    ) -> None:
         code = main(["run"])
         assert code == 0
         from evolver.gep.paths import get_solidify_state_path
+
         state = get_solidify_state_path()
         assert state.exists(), "Solidify state should be written after run"
         data = json.loads(state.read_text())
         assert "last_run" in data
         assert "run_id" in data["last_run"]
 
-    def test_solidify_after_run_in_git_repo(self, isolated_evolver_env: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    def test_solidify_after_run_in_git_repo(
+        self, isolated_evolver_env: Path, capsys: pytest.CaptureFixture[str]
+    ) -> None:
         _init_git_repo(isolated_evolver_env)
 
         code = main(["run"])
@@ -78,12 +86,14 @@ class TestFullRunSolidifyCycle:
         assert "Solidify succeeded" in captured.out
 
         from evolver.gep.paths import get_solidify_state_path
+
         state = json.loads(get_solidify_state_path().read_text())
         assert "last_solidify" in state
 
     def test_run_then_solidify_appends_events(self, isolated_evolver_env: Path) -> None:
         _init_git_repo(isolated_evolver_env)
         from evolver.gep.asset_store import read_all_events
+
         before = len(read_all_events())
         code = main(["run"])
         assert code == 0
@@ -97,8 +107,11 @@ class TestFullRunSolidifyCycle:
 # 2. WebUI reflects runtime state after run
 # ---------------------------------------------------------------------------
 
+
 class TestWebUIFullPipeline:
-    def test_status_shows_solidify_pending_after_run(self, client: TestClient, isolated_evolver_env: Path) -> None:
+    def test_status_shows_solidify_pending_after_run(
+        self, client: TestClient, isolated_evolver_env: Path
+    ) -> None:
         main(["run"])
         response = client.get("/status")
         assert response.status_code == 200
@@ -113,7 +126,9 @@ class TestWebUIFullPipeline:
         assert "genes" in data
         assert len(data["genes"]) >= 3  # seed genes always present
 
-    def test_events_endpoint_after_run_and_solidify(self, client: TestClient, isolated_evolver_env: Path) -> None:
+    def test_events_endpoint_after_run_and_solidify(
+        self, client: TestClient, isolated_evolver_env: Path
+    ) -> None:
         _init_git_repo(isolated_evolver_env)
         main(["run"])
         main(["solidify"])
@@ -123,7 +138,9 @@ class TestWebUIFullPipeline:
         assert "events" in data
         assert len(data["events"]) > 0
 
-    def test_events_replay_api_after_run_and_solidify(self, client: TestClient, isolated_evolver_env: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    def test_events_replay_api_after_run_and_solidify(
+        self, client: TestClient, isolated_evolver_env: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
         _init_git_repo(isolated_evolver_env)
         monkeypatch.setenv("EVOLVER_SQLITE_STORE", "1")
         main(["run"])
@@ -135,7 +152,9 @@ class TestWebUIFullPipeline:
         assert len(data["events"]) > 0
         assert data["since_id"] == 0
 
-    def test_capsules_endpoint_after_run(self, client: TestClient, isolated_evolver_env: Path) -> None:
+    def test_capsules_endpoint_after_run(
+        self, client: TestClient, isolated_evolver_env: Path
+    ) -> None:
         main(["run"])
         response = client.get("/capsules")
         assert response.status_code == 200
@@ -147,8 +166,11 @@ class TestWebUIFullPipeline:
 # 3. SQLite event store full pipeline
 # ---------------------------------------------------------------------------
 
+
 class TestSQLiteStoreFullPipeline:
-    def test_sqlite_events_after_run_and_solidify(self, isolated_evolver_env: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    def test_sqlite_events_after_run_and_solidify(
+        self, isolated_evolver_env: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
         _init_git_repo(isolated_evolver_env)
         monkeypatch.setenv("EVOLVER_SQLITE_STORE", "1")
         from evolver.ops import sqlite_store
@@ -161,7 +183,9 @@ class TestSQLiteStoreFullPipeline:
         after = sqlite_store.event_count()
         assert after > before, "SQLite should contain events after solidify"
 
-    def test_sqlite_replay_after_run_and_solidify(self, isolated_evolver_env: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    def test_sqlite_replay_after_run_and_solidify(
+        self, isolated_evolver_env: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
         _init_git_repo(isolated_evolver_env)
         monkeypatch.setenv("EVOLVER_SQLITE_STORE", "1")
         from evolver.ops import sqlite_store
@@ -172,7 +196,9 @@ class TestSQLiteStoreFullPipeline:
         assert len(events) > 0
         assert all("id" in e or "event_id" in e for e in events)
 
-    def test_sqlite_range_query(self, isolated_evolver_env: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    def test_sqlite_range_query(
+        self, isolated_evolver_env: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
         monkeypatch.setenv("EVOLVER_SQLITE_STORE", "1")
         from evolver.ops import sqlite_store
 
@@ -184,9 +210,11 @@ class TestSQLiteStoreFullPipeline:
         assert len(events) == 1
         assert events[0]["id"] == "mid"
 
-    def test_sqlite_and_jsonl_toggle(self, isolated_evolver_env: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    def test_sqlite_and_jsonl_toggle(
+        self, isolated_evolver_env: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
         """Events go to SQLite when enabled, JSONL when disabled."""
-        from evolver.gep.asset_store import read_all_events, append_event_jsonl
+        from evolver.gep.asset_store import append_event_jsonl, read_all_events
 
         # JSONL mode (default)
         monkeypatch.setenv("EVOLVER_SQLITE_STORE", "0")
@@ -197,6 +225,7 @@ class TestSQLiteStoreFullPipeline:
         # SQLite mode
         monkeypatch.setenv("EVOLVER_SQLITE_STORE", "1")
         from evolver.ops import sqlite_store
+
         sqlite_store.append_event({"id": "sqlite-event", "timestamp": "2024-01-01T00:00:00Z"})
         events_sqlite = read_all_events()
         assert any(e.get("id") == "sqlite-event" for e in events_sqlite)
@@ -206,8 +235,11 @@ class TestSQLiteStoreFullPipeline:
 # 4. Auth + WebSocket full flow
 # ---------------------------------------------------------------------------
 
+
 class TestAuthWebSocketFullFlow:
-    def test_websocket_run_with_admin_token(self, client: TestClient, isolated_evolver_env: Path) -> None:
+    def test_websocket_run_with_admin_token(
+        self, client: TestClient, isolated_evolver_env: Path
+    ) -> None:
         from evolver.ops.auth_middleware import create_token
 
         token = create_token(role="admin")
@@ -217,7 +249,9 @@ class TestAuthWebSocketFullFlow:
             data = ws.receive_json()
             assert data["type"] == "status"
 
-    def test_websocket_solidify_with_admin_token(self, client: TestClient, isolated_evolver_env: Path) -> None:
+    def test_websocket_solidify_with_admin_token(
+        self, client: TestClient, isolated_evolver_env: Path
+    ) -> None:
         from evolver.ops.auth_middleware import create_token
 
         token = create_token(role="admin")
@@ -227,14 +261,18 @@ class TestAuthWebSocketFullFlow:
             data = ws.receive_json()
             assert data["type"] == "status"
 
-    def test_websocket_run_unauthorized_no_token(self, client: TestClient, isolated_evolver_env: Path) -> None:
+    def test_websocket_run_unauthorized_no_token(
+        self, client: TestClient, isolated_evolver_env: Path
+    ) -> None:
         with client.websocket_connect("/ws") as ws:
             ws.receive_json()  # connected
             ws.send_json({"action": "run"})
             with pytest.raises(Exception):
                 ws.receive_json()
 
-    def test_websocket_run_readonly_token_fails(self, client: TestClient, isolated_evolver_env: Path) -> None:
+    def test_websocket_run_readonly_token_fails(
+        self, client: TestClient, isolated_evolver_env: Path
+    ) -> None:
         from evolver.ops.auth_middleware import create_token
 
         token = create_token(role="readonly")
@@ -244,7 +282,9 @@ class TestAuthWebSocketFullFlow:
             with pytest.raises(Exception):
                 ws.receive_json()
 
-    def test_websocket_status_no_token_ok(self, client: TestClient, isolated_evolver_env: Path) -> None:
+    def test_websocket_status_no_token_ok(
+        self, client: TestClient, isolated_evolver_env: Path
+    ) -> None:
         """Read-only actions should work without a token."""
         with client.websocket_connect("/ws") as ws:
             ws.receive_json()  # connected
@@ -257,9 +297,11 @@ class TestAuthWebSocketFullFlow:
 # 5. Recipe cache + apply
 # ---------------------------------------------------------------------------
 
+
 class TestRecipeCacheAndApply:
     def test_cache_recipe_and_apply(self, isolated_evolver_env: Path) -> None:
         import asyncio
+
         from evolver.recipe.cache import cache_recipe, get_cached_recipe
         from evolver.recipe.client import apply_recipe
 
@@ -288,6 +330,7 @@ class TestRecipeCacheAndApply:
 
     def test_apply_recipe_conflict_detection(self, isolated_evolver_env: Path) -> None:
         import asyncio
+
         from evolver.recipe.cache import cache_recipe
         from evolver.recipe.client import apply_recipe
 
@@ -302,13 +345,15 @@ class TestRecipeCacheAndApply:
         target.mkdir(parents=True, exist_ok=True)
         (target / "existing.txt").write_text("old content")
 
-        result = asyncio.run(apply_recipe("conflict-recipe", target_dir=str(target), use_cache=True))
+        result = asyncio.run(
+            apply_recipe("conflict-recipe", target_dir=str(target), use_cache=True)
+        )
         assert result["ok"] is True
         assert "existing.txt" in result.get("conflicts", [])
         assert "existing.txt" not in result.get("applied", [])
 
     def test_list_cached_recipes(self, isolated_evolver_env: Path) -> None:
-        from evolver.recipe.cache import cache_recipe, list_cached_recipes, clear_cache
+        from evolver.recipe.cache import cache_recipe, clear_cache, list_cached_recipes
 
         clear_cache()
         cache_recipe({"id": "r1", "files": []})
@@ -323,6 +368,7 @@ class TestRecipeCacheAndApply:
 # ---------------------------------------------------------------------------
 # 6. Peer discovery lifecycle
 # ---------------------------------------------------------------------------
+
 
 class TestPeerLifecycle:
     def test_add_list_remove_peer(self, isolated_evolver_env: Path) -> None:
@@ -339,13 +385,14 @@ class TestPeerLifecycle:
         assert len(list_peers()) == 0
 
     def test_peer_persistence_round_trip(self, isolated_evolver_env: Path) -> None:
-        from evolver.gep.discovery import add_peer, list_peers, save_peers, load_peers
+        from evolver.gep.discovery import add_peer, list_peers, load_peers, save_peers
 
         add_peer("persist-node", "http://localhost:9000")
         save_peers()
 
         # Simulate fresh process by clearing in-memory registry
         from evolver.gep import discovery as disc
+
         disc._PEERS.clear()
 
         loaded = load_peers()
@@ -356,13 +403,17 @@ class TestPeerLifecycle:
         peers = list_peers()
         assert any(p["node_id"] == "persist-node" for p in peers)
 
-    def test_stale_peer_filtering(self, isolated_evolver_env: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    def test_stale_peer_filtering(
+        self, isolated_evolver_env: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
         import time
+
         from evolver.gep.discovery import add_peer, list_peers
 
         add_peer("fresh-node", "http://localhost:8001")
         # Manually add a stale peer
         from evolver.gep import discovery as disc
+
         disc._PEERS["stale-node"] = {
             "endpoint": "http://localhost:8002",
             "last_seen": time.time() - 1000,  # way past TTL
@@ -379,8 +430,11 @@ class TestPeerLifecycle:
 # 7. Cross-subsystem: run → WebUI → replay → CLI token
 # ---------------------------------------------------------------------------
 
+
 class TestCrossSubsystemWorkflow:
-    def test_run_then_webui_then_replay(self, client: TestClient, isolated_evolver_env: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    def test_run_then_webui_then_replay(
+        self, client: TestClient, isolated_evolver_env: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
         """Most comprehensive integration: run cycle → WebUI state → event replay → auth."""
         _init_git_repo(isolated_evolver_env)
         monkeypatch.setenv("EVOLVER_SQLITE_STORE", "1")
@@ -411,6 +465,7 @@ class TestCrossSubsystemWorkflow:
 
         # 5. Generate admin token via CLI
         from evolver.ops.auth_middleware import create_token
+
         token = create_token(role="admin")
 
         # 6. WebSocket run with admin token works
@@ -427,7 +482,9 @@ class TestCrossSubsystemWorkflow:
             with pytest.raises(Exception):
                 ws.receive_json()
 
-    def test_solidify_in_git_clears_pending(self, client: TestClient, isolated_evolver_env: Path) -> None:
+    def test_solidify_in_git_clears_pending(
+        self, client: TestClient, isolated_evolver_env: Path
+    ) -> None:
         _init_git_repo(isolated_evolver_env)
 
         main(["run"])

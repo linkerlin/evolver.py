@@ -5,6 +5,8 @@ Equivalent to evolver/src/gep/schemas/protocol.js.
 
 from __future__ import annotations
 
+from typing import Any
+
 from pydantic import BaseModel, ConfigDict
 
 
@@ -19,4 +21,4 @@ class A2AEnvelope(BaseModel):
     message_id: str
     sender_id: str
     timestamp: str
-    payload: dict | None = None
+    payload: dict[str, Any] | None = None

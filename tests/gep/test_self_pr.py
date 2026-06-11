@@ -1,11 +1,7 @@
 """Tests for evolver.gep.self_pr."""
 
-import pytest
-from unittest.mock import patch
-
 from evolver.gep.self_pr import (
     DEFAULT_MIN_SCORE,
-    SelfPRResult,
     _check_cooldown,
     _check_diff_dedup,
     _check_policy,
@@ -37,6 +33,7 @@ class TestChecks:
 
     def test_cooldown(self):
         import time
+
         registry = {
             "prs": [
                 {"gene_id": "g1", "created_at": time.time()},

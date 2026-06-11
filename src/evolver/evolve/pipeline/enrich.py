@@ -7,8 +7,9 @@ from __future__ import annotations
 
 from typing import Any
 
-from evolver.gep.memory_graph import get_memory_advice, record_signal_snapshot
 from evolver.gep.asset_store import read_recent_failed_capsules
+from evolver.gep.cognition import enrich_cycle_context
+from evolver.gep.memory_graph import get_memory_advice, record_signal_snapshot
 
 
 async def enrich_phase(ctx: dict[str, Any]) -> dict[str, Any]:
@@ -58,4 +59,5 @@ async def enrich_phase(ctx: dict[str, Any]) -> dict[str, Any]:
     elif any(s.startswith("plateau_pivot_suggested") for s in signals):
         ctx["plateau_override"] = {"severity": "suggested"}
 
+    enrich_cycle_context(ctx)
     return ctx

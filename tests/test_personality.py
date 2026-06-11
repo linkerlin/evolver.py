@@ -33,8 +33,7 @@ def test_save_clamps_values(tmp_path, monkeypatch: pytest.MonkeyPatch) -> None:
 
 def test_adapt_personality_success_streak() -> None:
     events = [
-        {"outcome": {"status": "success"}, "mutation": {"category": "innovate"}}
-        for _ in range(5)
+        {"outcome": {"status": "success"}, "mutation": {"category": "innovate"}} for _ in range(5)
     ]
     p = pers.adapt_personality(pers.DEFAULT_PERSONALITY.copy(), recent_events=events)
     assert p["creativity"] > pers.DEFAULT_PERSONALITY["creativity"]
@@ -43,8 +42,7 @@ def test_adapt_personality_success_streak() -> None:
 
 def test_adapt_personality_failure_streak() -> None:
     events = [
-        {"outcome": {"status": "failed"}, "mutation": {"category": "repair"}}
-        for _ in range(5)
+        {"outcome": {"status": "failed"}, "mutation": {"category": "repair"}} for _ in range(5)
     ]
     p = pers.adapt_personality(pers.DEFAULT_PERSONALITY.copy(), recent_events=events)
     assert p["rigor"] > pers.DEFAULT_PERSONALITY["rigor"]
@@ -57,16 +55,30 @@ def test_adapt_personality_empty_events() -> None:
 
 
 def test_personality_to_strategy_bias() -> None:
-    bias = pers.personality_to_strategy_bias({"rigor": 0.9, "creativity": 0.1, "risk_tolerance": 0.1})
+    bias = pers.personality_to_strategy_bias(
+        {"rigor": 0.9, "creativity": 0.1, "risk_tolerance": 0.1}
+    )
     assert bias["repair"] > bias["innovate"]
     assert abs(bias["repair"] + bias["optimize"] + bias["innovate"] - 1.0) < 0.01
 
 
 def test_is_high_risk_personality() -> None:
-    assert pers.is_high_risk_personality({"rigor": 0.3, "creativity": 0.5, "risk_tolerance": 0.7}) is True
-    assert pers.is_high_risk_personality({"rigor": 0.8, "creativity": 0.5, "risk_tolerance": 0.2}) is False
+    assert (
+        pers.is_high_risk_personality({"rigor": 0.3, "creativity": 0.5, "risk_tolerance": 0.7})
+        is True
+    )
+    assert (
+        pers.is_high_risk_personality({"rigor": 0.8, "creativity": 0.5, "risk_tolerance": 0.2})
+        is False
+    )
 
 
 def test_is_conservative_personality() -> None:
-    assert pers.is_conservative_personality({"rigor": 0.8, "creativity": 0.5, "risk_tolerance": 0.2}) is True
-    assert pers.is_conservative_personality({"rigor": 0.5, "creativity": 0.5, "risk_tolerance": 0.5}) is False
+    assert (
+        pers.is_conservative_personality({"rigor": 0.8, "creativity": 0.5, "risk_tolerance": 0.2})
+        is True
+    )
+    assert (
+        pers.is_conservative_personality({"rigor": 0.5, "creativity": 0.5, "risk_tolerance": 0.5})
+        is False
+    )

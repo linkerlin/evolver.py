@@ -3,7 +3,6 @@
 import pytest
 
 from evolver.gep.validator.sandbox_executor import (
-    SandboxResult,
     _validate_command,
     _validate_script,
     execute_in_sandbox,
@@ -39,6 +38,11 @@ class TestValidateScript:
         with pytest.raises(ValueError):
             _validate_script("import os; os.system('ls')")
 
+    def test_strict_blocks_socket_import(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setenv("EVOLVER_SANDBOX_STRICT", "1")
+        with pytest.raises(ValueError, match="Network import blocked"):
+            _validate_script("import socket\nprint('hi')")
+
     def test_forbidden_subprocess(self):
         with pytest.raises(ValueError):
             _validate_script("import subprocess; subprocess.call(['ls'])")
@@ -66,8 +70,9 @@ class TestExecuteInSandbox:
         assert result.exit_code == -1
 
     def test_temp_cleanup(self):
-        import tempfile
         import os
+        import tempfile
+
         before = set(os.listdir(tempfile.gettempdir()))
         execute_in_sandbox("print('ok')", timeout_seconds=5)
         after = set(os.listdir(tempfile.gettempdir()))

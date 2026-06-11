@@ -10,7 +10,7 @@ import json
 import os
 import secrets
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 from fastapi import HTTPException, Request, WebSocket
 
@@ -25,7 +25,7 @@ def load_auth_db() -> dict[str, Any]:
     if not path.exists():
         return {"tokens": {}}
     try:
-        return json.loads(path.read_text(encoding="utf-8"))
+        return cast(dict[str, Any], json.loads(path.read_text(encoding="utf-8")))
     except (OSError, json.JSONDecodeError):
         return {"tokens": {}}
 

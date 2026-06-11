@@ -34,12 +34,14 @@ def _file_age_ms(path: Path) -> int | None:
         return None
 
 
-def cleanup_jsonl(path: Path, *, max_age_ms: int = CLEANUP_MAX_AGE_MS, min_keep: int = CLEANUP_MIN_KEEP) -> dict[str, Any]:
+def cleanup_jsonl(
+    path: Path, *, max_age_ms: int = CLEANUP_MAX_AGE_MS, min_keep: int = CLEANUP_MIN_KEEP
+) -> dict[str, Any]:
     """Remove stale lines from a JSONL file while keeping at least *min_keep* recent lines."""
     if not path.exists():
         return {"path": str(path), "removed": 0, "kept": 0}
     try:
-        with open(path, "r", encoding="utf-8") as f:
+        with open(path, encoding="utf-8") as f:
             lines = f.readlines()
     except OSError:
         return {"path": str(path), "removed": 0, "kept": 0, "error": "read_failed"}
@@ -63,6 +65,7 @@ def cleanup_jsonl(path: Path, *, max_age_ms: int = CLEANUP_MAX_AGE_MS, min_keep:
                     # Best-effort ISO parse
                     try:
                         from datetime import datetime
+
                         dt = datetime.fromisoformat(ts.replace("Z", "+00:00"))
                         record_ms = int(dt.timestamp() * 1000)
                     except Exception:
@@ -104,13 +107,7 @@ def cleanup_directory(
         if i < min_keep:
             continue
         age = _file_age_ms(f)
-        if age is not None and age > max_age_ms:
-            try:
-                f.unlink()
-                removed += 1
-            except OSError:
-                pass
-        elif i >= max_files:
+        if (age is not None and age > max_age_ms) or i >= max_files:
             try:
                 f.unlink()
                 removed += 1
@@ -122,7 +119,7 @@ def cleanup_directory(
 
 def run_cleanup() -> dict[str, Any]:
     """Run all cleanup tasks and return summary."""
-    results: list[dict] = []
+    results: list[dict[str, Any]] = []
 
     # Evolution events
     evo_dir = get_evolution_dir()

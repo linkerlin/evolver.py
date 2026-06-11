@@ -114,4 +114,4 @@ def resolve_strategy(ctx: dict[str, Any] | None = None) -> Strategy:
     return STRATEGIES["balanced"]
 
 
-__all__ = ["Strategy", "STRATEGIES", "get_strategy_names", "resolve_strategy"]
+__all__ = ["STRATEGIES", "Strategy", "get_strategy_names", "resolve_strategy"]

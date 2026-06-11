@@ -20,8 +20,12 @@ class TestSQLiteStore:
         assert sqlite_store.event_count() == 0
 
     def test_append_and_read(self) -> None:
-        sqlite_store.append_event({"id": "e1", "timestamp": "2024-01-01T00:00:00Z", "gene_id": "g1"})
-        sqlite_store.append_event({"id": "e2", "timestamp": "2024-01-01T00:01:00Z", "gene_id": "g2"})
+        sqlite_store.append_event(
+            {"id": "e1", "timestamp": "2024-01-01T00:00:00Z", "gene_id": "g1"}
+        )
+        sqlite_store.append_event(
+            {"id": "e2", "timestamp": "2024-01-01T00:01:00Z", "gene_id": "g2"}
+        )
         events = sqlite_store.read_all_events()
         assert len(events) == 2
         assert events[0]["id"] == "e1"

@@ -38,8 +38,8 @@ def test_stale_lock_broken(isolated_lock_dir: Path) -> None:
     lock_path = il._lock_path()
     lock_path.parent.mkdir(parents=True, exist_ok=True)
     lock_path.write_text("stale")
-    import time
     import os
+    import time
 
     old = time.time() - 400
     os.utime(lock_path, (old, old))

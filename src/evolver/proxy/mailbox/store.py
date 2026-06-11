@@ -25,7 +25,7 @@ import threading
 import time
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
-from typing import Any, ClassVar, Literal
+from typing import Any, Literal, cast
 
 # ---------------------------------------------------------------------------
 # Constants
@@ -92,7 +92,7 @@ def _generate_uuidv7() -> str:
     b[4] = (ts >> 8) & 0xFF
     b[5] = ts & 0xFF
     b[6] = 0x70 | ((rand >> 68) & 0x0F)  # version 7
-    b[7] = ((rand >> 60) & 0xFF)
+    b[7] = (rand >> 60) & 0xFF
     b[8] = 0x80 | ((rand >> 54) & 0x3F)  # variant 10
     b[9] = (rand >> 46) & 0xFF
     b[10] = (rand >> 38) & 0xFF
@@ -128,7 +128,7 @@ class MailboxStore:
         # In-memory indexes
         self._messages: dict[str, Message] = {}
         self._outbound: list[str] = []  # ids of non-terminal outbound
-        self._inbound: list[str] = []   # ids of non-terminal inbound
+        self._inbound: list[str] = []  # ids of non-terminal inbound
 
         self._load_state()
         self._rebuild_index()
@@ -140,7 +140,7 @@ class MailboxStore:
     def _load_state(self) -> None:
         if self._state_path.exists():
             try:
-                with open(self._state_path, "r", encoding="utf-8") as f:
+                with open(self._state_path, encoding="utf-8") as f:
                     self._state: dict[str, Any] = json.load(f)
             except (json.JSONDecodeError, OSError):
                 self._state = {"schema_version": SCHEMA_VERSION}
@@ -174,7 +174,7 @@ class MailboxStore:
         self._inbound.clear()
         if not self._msg_path.exists():
             return
-        with open(self._msg_path, "r", encoding="utf-8") as f:
+        with open(self._msg_path, encoding="utf-8") as f:
             for line in f:
                 line = line.strip()
                 if not line:
@@ -334,7 +334,13 @@ class MailboxStore:
                 msg.synced_at = int(time.time() * 1000)
                 if msg_id in self._inbound:
                     self._inbound.remove(msg_id)
-                self._append_jsonl({"_op": "update", "id": msg_id, "fields": {"status": "delivered", "synced_at": msg.synced_at}})
+                self._append_jsonl(
+                    {
+                        "_op": "update",
+                        "id": msg_id,
+                        "fields": {"status": "delivered", "synced_at": msg.synced_at},
+                    }
+                )
                 count += 1
         return count
 
@@ -350,7 +356,10 @@ class MailboxStore:
             msg = self._messages.get(msg_id)
             if msg is None:
                 return False
-            msg.status = status
+            msg.status = cast(
+                Literal["pending", "synced", "delivered", "failed", "rejected"],
+                status,
+            )
             if error is not None:
                 msg.error = error
             if synced_at is not None:
@@ -377,7 +386,13 @@ class MailboxStore:
             msg.retry_count += 1
             if error:
                 msg.error = error
-            self._append_jsonl({"_op": "update", "id": msg_id, "fields": {"retry_count": msg.retry_count, "error": msg.error}})
+            self._append_jsonl(
+                {
+                    "_op": "update",
+                    "id": msg_id,
+                    "fields": {"retry_count": msg.retry_count, "error": msg.error},
+                }
+            )
 
     def list(
         self,
@@ -414,7 +429,8 @@ class MailboxStore:
     # ------------------------------------------------------------------
 
     def get_cursor(self, key: str) -> str | None:
-        return self._state.get("cursors", {}).get(key)
+        value = self._state.get("cursors", {}).get(key)
+        return value if isinstance(value, str) else None
 
     def set_cursor(self, key: str, value: str) -> None:
         cursors = self._state.setdefault("cursors", {})
@@ -438,7 +454,9 @@ class MailboxStore:
             tmp = self._msg_path.with_suffix(f".tmp-{os.getpid()}")
             with open(tmp, "w", encoding="utf-8") as f:
                 for msg in self._messages.values():
-                    f.write(json.dumps(msg.to_dict(), ensure_ascii=False, separators=(",", ":")) + "\n")
+                    f.write(
+                        json.dumps(msg.to_dict(), ensure_ascii=False, separators=(",", ":")) + "\n"
+                    )
                     f.flush()
                     os.fsync(f.fileno())
             try:

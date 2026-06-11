@@ -39,21 +39,19 @@ async def _post(
     last_exc: Exception | None = None
     for attempt in range(_MAX_RETRIES):
         try:
-            async with httpx.AsyncClient(
-                http2=True, timeout=timeout_ms / 1000.0
-            ) as client:
+            async with httpx.AsyncClient(http2=True, timeout=timeout_ms / 1000.0) as client:
                 resp = await client.post(url, json=payload, headers=h)
                 resp.raise_for_status()
                 return {"ok": True, "data": resp.json()}
         except httpx.HTTPStatusError as exc:
             if exc.response.status_code >= 500:
                 last_exc = exc
-                await asyncio.sleep(_BACKOFF_BASE_S * (2 ** attempt))
+                await asyncio.sleep(_BACKOFF_BASE_S * (2**attempt))
                 continue
             return {"ok": False, "error": str(exc), "status": exc.response.status_code}
         except Exception as exc:
             last_exc = exc
-            await asyncio.sleep(_BACKOFF_BASE_S * (2 ** attempt))
+            await asyncio.sleep(_BACKOFF_BASE_S * (2**attempt))
     return {"ok": False, "error": str(last_exc) if last_exc else "max_retries"}
 
 
@@ -67,21 +65,19 @@ async def _get(
     last_exc: Exception | None = None
     for attempt in range(_MAX_RETRIES):
         try:
-            async with httpx.AsyncClient(
-                http2=True, timeout=timeout_ms / 1000.0
-            ) as client:
+            async with httpx.AsyncClient(http2=True, timeout=timeout_ms / 1000.0) as client:
                 resp = await client.get(url, params=params, headers=h)
                 resp.raise_for_status()
                 return {"ok": True, "data": resp.json()}
         except httpx.HTTPStatusError as exc:
             if exc.response.status_code >= 500:
                 last_exc = exc
-                await asyncio.sleep(_BACKOFF_BASE_S * (2 ** attempt))
+                await asyncio.sleep(_BACKOFF_BASE_S * (2**attempt))
                 continue
             return {"ok": False, "error": str(exc), "status": exc.response.status_code}
         except Exception as exc:
             last_exc = exc
-            await asyncio.sleep(_BACKOFF_BASE_S * (2 ** attempt))
+            await asyncio.sleep(_BACKOFF_BASE_S * (2**attempt))
     return {"ok": False, "error": str(last_exc) if last_exc else "max_retries"}
 
 
@@ -161,6 +157,29 @@ async def get_atp_policy() -> dict[str, Any]:
 
 async def list_my_tasks() -> dict[str, Any]:
     return await _get("tasks")
+
+
+async def list_open_tasks() -> dict[str, Any]:
+    return await _get("tasks/open")
+
+
+async def claim_task(task_id: str) -> dict[str, Any]:
+    payload = {"sender_id": get_node_id(), "task_id": task_id}
+    return await _post("task/claim", payload)
+
+
+async def post_bounty(payload: dict[str, Any]) -> dict[str, Any]:
+    body = {"sender_id": get_node_id(), **payload}
+    return await _post("bounty", body)
+
+
+async def list_validator_tasks() -> dict[str, Any]:
+    return await _get("validator/tasks")
+
+
+async def claim_validator_task(task_id: str) -> dict[str, Any]:
+    payload = {"sender_id": get_node_id(), "task_id": task_id}
+    return await _post("validator/claim", payload)
 
 
 async def get_merchant_tier(merchant_id: str | None = None) -> dict[str, Any]:

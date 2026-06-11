@@ -5,7 +5,7 @@ Equivalent to evolver/src/gep/schemas/capsule.js.
 
 from __future__ import annotations
 
-from typing import Literal
+from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
@@ -73,7 +73,7 @@ class Capsule(BaseModel):
     content: str | None = None
     diff: str | None = None
     strategy: list[str] = Field(default_factory=list)
-    execution_trace: list[dict] = Field(default_factory=list)
+    execution_trace: list[dict[str, Any]] = Field(default_factory=list)
     asset_id: str | None = None
     visibility: Literal["private", "unlisted", "public"] | None = None
     scope: list[str] | None = None
@@ -83,7 +83,7 @@ class Capsule(BaseModel):
 
     @field_validator("visibility", "cost_tier", mode="before")
     @classmethod
-    def _coerce_invalid_enum_to_none(cls, v):
+    def _coerce_invalid_enum_to_none(cls, v: object) -> object:
         if v is None:
             return None
         return v
@@ -92,7 +92,7 @@ class Capsule(BaseModel):
 CAPSULE_DEFAULTS = Capsule().model_dump()
 
 
-def create_capsule(partial: dict | None = None) -> Capsule:
+def create_capsule(partial: dict[str, Any] | None = None) -> Capsule:
     return Capsule.model_validate(partial or {})
 
 

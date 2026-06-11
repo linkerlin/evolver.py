@@ -68,7 +68,7 @@ class CurriculumTask:
         }
 
     @classmethod
-    def from_dict(cls, d: dict[str, Any]) -> "CurriculumTask":
+    def from_dict(cls, d: dict[str, Any]) -> CurriculumTask:
         return cls(
             task_id=d["task_id"],
             description=d.get("description", ""),
@@ -102,7 +102,7 @@ class CurriculumState:
         }
 
     @classmethod
-    def from_dict(cls, d: dict[str, Any]) -> "CurriculumState":
+    def from_dict(cls, d: dict[str, Any]) -> CurriculumState:
         return cls(
             current_level=d.get("current_level", 1),
             tasks=[CurriculumTask.from_dict(t) for t in d.get("tasks", [])],
@@ -125,7 +125,7 @@ def load_state() -> CurriculumState:
     if not path.exists():
         return CurriculumState()
     try:
-        with open(path, "r", encoding="utf-8") as f:
+        with open(path, encoding="utf-8") as f:
             raw = json.load(f)
         return CurriculumState.from_dict(raw)
     except (OSError, json.JSONDecodeError) as exc:
@@ -196,7 +196,9 @@ def advance_level() -> int:
     Returns the new level.
     """
     state = load_state()
-    current_tasks = [t for t in state.tasks if t.difficulty == state.current_level and not t.completed]
+    current_tasks = [
+        t for t in state.tasks if t.difficulty == state.current_level and not t.completed
+    ]
     if not current_tasks:
         # All tasks at current level completed — advance
         state.current_level = min(5, state.current_level + 1)
@@ -238,7 +240,9 @@ def ingest_exploration_tasks(exploration_signals: list[dict[str, Any]]) -> int:
     state = load_state()
     added = 0
     for sig in exploration_signals:
-        task_id = f"explore:{sig.get('file_path','')}:{sig.get('line',0)}:{sig.get('task_type','')}"
+        task_id = (
+            f"explore:{sig.get('file_path', '')}:{sig.get('line', 0)}:{sig.get('task_type', '')}"
+        )
         if not any(t.task_id == task_id for t in state.tasks):
             task = CurriculumTask(
                 task_id=task_id,

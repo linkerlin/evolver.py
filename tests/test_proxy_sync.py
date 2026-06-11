@@ -7,7 +7,6 @@ from pathlib import Path
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock
 
-import httpx
 import pytest
 
 from evolver.proxy.lifecycle.manager import AuthError
@@ -49,7 +48,9 @@ async def test_outbound_flush_batch(store: MailboxStore, monkeypatch: pytest.Mon
         }
         return resp
 
-    monkeypatch.setattr("httpx.AsyncClient.__aenter__", AsyncMock(return_value=MagicMock(post=fake_post)))
+    monkeypatch.setattr(
+        "httpx.AsyncClient.__aenter__", AsyncMock(return_value=MagicMock(post=fake_post))
+    )
     monkeypatch.setattr("httpx.AsyncClient.__aexit__", AsyncMock(return_value=False))
 
     out = OutboundSync(store=store)
@@ -58,15 +59,20 @@ async def test_outbound_flush_batch(store: MailboxStore, monkeypatch: pytest.Mon
 
 
 @pytest.mark.asyncio
-async def test_outbound_flush_auth_error(store: MailboxStore, monkeypatch: pytest.MonkeyPatch) -> None:
+async def test_outbound_flush_auth_error(
+    store: MailboxStore, monkeypatch: pytest.MonkeyPatch
+) -> None:
     store.send(type="t", payload={})
 
     async def fake_post(*args: Any, **kwargs: Any) -> MagicMock:
         from httpx import HTTPStatusError, Response
+
         resp = Response(401, json={"error": "unauthorized"})
         raise HTTPStatusError("401", request=MagicMock(), response=resp)
 
-    monkeypatch.setattr("httpx.AsyncClient.__aenter__", AsyncMock(return_value=MagicMock(post=fake_post)))
+    monkeypatch.setattr(
+        "httpx.AsyncClient.__aenter__", AsyncMock(return_value=MagicMock(post=fake_post))
+    )
     monkeypatch.setattr("httpx.AsyncClient.__aexit__", AsyncMock(return_value=False))
 
     out = OutboundSync(store=store)
@@ -87,7 +93,9 @@ async def test_inbound_pull_empty(store: MailboxStore, monkeypatch: pytest.Monke
         resp.json.return_value = {"messages": []}
         return resp
 
-    monkeypatch.setattr("httpx.AsyncClient.__aenter__", AsyncMock(return_value=MagicMock(post=fake_post)))
+    monkeypatch.setattr(
+        "httpx.AsyncClient.__aenter__", AsyncMock(return_value=MagicMock(post=fake_post))
+    )
     monkeypatch.setattr("httpx.AsyncClient.__aexit__", AsyncMock(return_value=False))
 
     inn = InboundSync(store=store)
@@ -96,7 +104,9 @@ async def test_inbound_pull_empty(store: MailboxStore, monkeypatch: pytest.Monke
 
 
 @pytest.mark.asyncio
-async def test_inbound_pull_with_messages(store: MailboxStore, monkeypatch: pytest.MonkeyPatch) -> None:
+async def test_inbound_pull_with_messages(
+    store: MailboxStore, monkeypatch: pytest.MonkeyPatch
+) -> None:
     async def fake_post(*args: Any, **kwargs: Any) -> MagicMock:
         resp = MagicMock()
         resp.status_code = 200
@@ -108,7 +118,9 @@ async def test_inbound_pull_with_messages(store: MailboxStore, monkeypatch: pyte
         }
         return resp
 
-    monkeypatch.setattr("httpx.AsyncClient.__aenter__", AsyncMock(return_value=MagicMock(post=fake_post)))
+    monkeypatch.setattr(
+        "httpx.AsyncClient.__aenter__", AsyncMock(return_value=MagicMock(post=fake_post))
+    )
     monkeypatch.setattr("httpx.AsyncClient.__aexit__", AsyncMock(return_value=False))
 
     inn = InboundSync(store=store)
@@ -134,7 +146,9 @@ async def test_engine_start_stop(store: MailboxStore) -> None:
 
 
 @pytest.mark.asyncio
-async def test_engine_notify_accelerates(store: MailboxStore, monkeypatch: pytest.MonkeyPatch) -> None:
+async def test_engine_notify_accelerates(
+    store: MailboxStore, monkeypatch: pytest.MonkeyPatch
+) -> None:
     engine = SyncEngine(store=store)
     flushes = 0
 

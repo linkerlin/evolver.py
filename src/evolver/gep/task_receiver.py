@@ -32,9 +32,8 @@ from pathlib import Path
 from typing import Any
 
 from evolver.gep.feature_flags import is_enabled
-from evolver.gep.memory_graph import try_read_memory_graph_events
 from evolver.gep.paths import get_workspace_root
-from evolver.gep.skill2gep import skill_genes_to_selector_pool, scan_skills
+from evolver.gep.skill2gep import scan_skills, skill_genes_to_selector_pool
 
 logger = logging.getLogger(__name__)
 
@@ -127,7 +126,7 @@ def _load_claimed_tasks(path: Path | None = None) -> list[ExternalTask]:
         return []
     tasks: list[ExternalTask] = []
     try:
-        with open(p, "r", encoding="utf-8", errors="replace") as f:
+        with open(p, encoding="utf-8", errors="replace") as f:
             for line in f:
                 line = line.strip()
                 if not line:
@@ -137,8 +136,8 @@ def _load_claimed_tasks(path: Path | None = None) -> list[ExternalTask]:
                     tasks.append(ExternalTask(**obj))
                 except (json.JSONDecodeError, TypeError):
                     continue
-    except OSError:
-        pass
+    except OSError as exc:
+        logger.debug("[TaskReceiver] Failed to load claimed tasks: %s", exc)
     return tasks
 
 
@@ -159,15 +158,21 @@ def _poll_open_tasks() -> list[dict[str, Any]]:
     if not is_enabled("enable_task_receiver"):
         return []
     try:
-        from evolver.atp.hub_client import list_open_tasks
         # list_open_tasks may be async; wrap if needed
         import asyncio
+
+        from evolver.atp.hub_client import list_open_tasks
+
         try:
-            return asyncio.run(list_open_tasks())
+            result = asyncio.run(list_open_tasks())
         except RuntimeError:
-            # Already in event loop
             loop = asyncio.get_event_loop()
-            return loop.run_until_complete(list_open_tasks())
+            result = loop.run_until_complete(list_open_tasks())
+        if not isinstance(result, dict) or not result.get("ok"):
+            return []
+        data = result.get("data", {})
+        tasks = data.get("tasks", []) if isinstance(data, dict) else []
+        return [t for t in tasks if isinstance(t, dict)]
     except Exception as exc:
         logger.debug("[TaskReceiver] Failed to poll tasks: %s", exc)
         return []
@@ -176,8 +181,10 @@ def _poll_open_tasks() -> list[dict[str, Any]]:
 def _claim_task(task_id: str) -> bool:
     """Claim a task on the Hub."""
     try:
-        from evolver.atp.hub_client import claim_task
         import asyncio
+
+        from evolver.atp.hub_client import claim_task
+
         try:
             result = asyncio.run(claim_task(task_id))
         except RuntimeError:

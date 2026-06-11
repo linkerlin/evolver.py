@@ -5,7 +5,7 @@ Equivalent to evolver/src/gep/schemas/gene.js.
 
 from __future__ import annotations
 
-from typing import Literal
+from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
@@ -50,7 +50,7 @@ class Gene(BaseModel):
     summary: str = ""
     schema_version: str = "1.6.0"
     epigenetic_marks: list[str] = Field(default_factory=list)
-    learning_history: list[dict] = Field(default_factory=list)
+    learning_history: list[dict[str, Any]] = Field(default_factory=list)
     anti_patterns: list[str] = Field(default_factory=list)
     routing_hint: RoutingHint | None = None
     tool_policy: ToolPolicy | None = None
@@ -67,7 +67,7 @@ class Gene(BaseModel):
 GENE_DEFAULTS = Gene().model_dump()
 
 
-def create_gene(partial: dict | None = None) -> Gene:
+def create_gene(partial: dict[str, Any] | None = None) -> Gene:
     """Create a Gene with defaults, normalizing malformed fields."""
     partial = dict(partial or {})
     cat = partial.get("category")

@@ -9,7 +9,6 @@ from __future__ import annotations
 import argparse
 import json
 import sys
-from pathlib import Path
 
 
 def main() -> None:
@@ -18,8 +17,8 @@ def main() -> None:
     args = parser.parse_args()
 
     try:
-        from evolver.adapters.scripts.runtime_paths import find_workspace_root
         from evolver.adapters.scripts.memory_filtering import filter_relevant_memories
+        from evolver.adapters.scripts.runtime_paths import find_workspace_root
     except ImportError:
         # If evolver is not installed, output empty context
         print(json.dumps({"evolver_context": {"relevant_memories": [], "personality_hint": ""}}))

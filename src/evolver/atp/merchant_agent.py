@@ -7,7 +7,8 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from typing import Any, Callable, Coroutine
+from collections.abc import Callable, Coroutine
+from typing import Any
 
 from evolver.atp.hub_client import (
     get_merchant_tier,
@@ -86,5 +87,5 @@ class MerchantAgent:
                     asyncio.sleep(self.poll_interval_s),
                     timeout=self.poll_interval_s + 5,
                 )
-            except asyncio.TimeoutError:
+            except TimeoutError:
                 pass

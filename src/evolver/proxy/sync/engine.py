@@ -17,10 +17,15 @@ from __future__ import annotations
 import asyncio
 import logging
 import time
-from typing import Any, Callable
+from collections.abc import Callable
+from typing import Any
 
 from evolver.proxy.lifecycle.manager import AuthError
-from evolver.proxy.sync.inbound import DEFAULT_POLL_INTERVAL_ACTIVE, DEFAULT_POLL_INTERVAL_IDLE, InboundSync
+from evolver.proxy.sync.inbound import (
+    DEFAULT_POLL_INTERVAL_ACTIVE,
+    DEFAULT_POLL_INTERVAL_IDLE,
+    InboundSync,
+)
 from evolver.proxy.sync.outbound import DEFAULT_OUTBOUND_INTERVAL, OutboundSync
 
 logger = logging.getLogger(__name__)
@@ -111,7 +116,7 @@ class SyncEngine:
                         timeout=delay,
                     )
                     self._out_notify.clear()
-                except asyncio.TimeoutError:
+                except TimeoutError:
                     pass
 
     # ------------------------------------------------------------------
@@ -143,5 +148,5 @@ class SyncEngine:
                         self._shutdown_event.wait(),
                         timeout=delay,
                     )
-                except asyncio.TimeoutError:
+                except TimeoutError:
                     pass

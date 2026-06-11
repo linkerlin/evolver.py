@@ -9,7 +9,7 @@ import json
 import os
 import re
 import subprocess
-from typing import Any
+from typing import Any, cast
 
 # Opportunity signal names (shared with mutation.py and personality.py).
 OPPORTUNITY_SIGNALS = [
@@ -46,7 +46,7 @@ def has_opportunity_signal(signals: list[str]) -> bool:
     return False
 
 
-def analyze_recent_history(recent_events: list[dict] | None) -> dict[str, Any]:
+def analyze_recent_history(recent_events: list[dict[str, Any]] | None) -> dict[str, Any]:
     """Build de-duplication set from recent evolution events."""
     if not isinstance(recent_events, list) or not recent_events:
         return {
@@ -119,21 +119,17 @@ def analyze_recent_history(recent_events: list[dict] | None) -> dict[str, Any]:
             break
 
     recent_failure_count = sum(
-        1
-        for evt in tail
-        if evt.get("outcome", {}).get("status") == "failed"
+        1 for evt in tail if evt.get("outcome", {}).get("status") == "failed"
     )
 
     recent_scores = [
         e.get("outcome", {}).get("score")
         for e in recent_events[-6:]
-        if isinstance(e.get("outcome", {}).get("score"), (int, float)) and e["outcome"]["score"] >= 0
+        if isinstance(e.get("outcome", {}).get("score"), (int, float))
+        and e["outcome"]["score"] >= 0
     ]
     avg_score = sum(recent_scores) / len(recent_scores) if recent_scores else None
-    improving = (
-        len(recent_scores) >= 2
-        and recent_scores[-1] > recent_scores[-2] + 0.05
-    )
+    improving = len(recent_scores) >= 2 and recent_scores[-1] > recent_scores[-2] + 0.05
 
     return {
         "suppressedSignals": suppressed_signals,
@@ -279,8 +275,10 @@ SIGNAL_PROFILES = {
 def _extract_keyword_score(lower: str) -> list[str]:
     scored: list[str] = []
     for signal_name, profile in SIGNAL_PROFILES.items():
+        keywords = cast(dict[str, int], profile["keywords"])
+        threshold = cast(int, profile["threshold"])
         total = 0
-        for kw, weight in profile["keywords"].items():
+        for kw, weight in keywords.items():
             idx = 0
             count = 0
             while idx < len(lower) and count < 20:
@@ -290,7 +288,7 @@ def _extract_keyword_score(lower: str) -> list[str]:
                 count += 1
                 idx = pos + len(kw)
             total += count * weight
-        if total >= profile["threshold"]:
+        if total >= threshold:
             scored.append(signal_name)
     return scored
 
@@ -352,11 +350,9 @@ def _extract_llm(corpus: str) -> list[str]:
             return []
         parsed = json.loads(result.stdout)
         if isinstance(parsed.get("signals"), list):
-            return [
-                str(s)
-                for s in parsed["signals"]
-                if isinstance(s, str) and 0 < len(s) < 200
-            ][:10]
+            return [str(s) for s in parsed["signals"] if isinstance(s, str) and 0 < len(s) < 200][
+                :10
+            ]
     except Exception:
         pass
     return []
@@ -469,11 +465,11 @@ def _extract_regex(corpus: str, lower: str, error_hit: bool) -> list[str]:
         lower,
         re.IGNORECASE,
     ):
-        feat_want = re.search(
-            r".{0,80}\b(i want|i need|we need|please add|can you add|could you add|let'?s add)\b.{0,80}",
-            corpus,
-            re.IGNORECASE,
+        _feat_want_pat = (
+            r".{0,80}\b(i want|i need|we need|please add|can you add|"
+            r"could you add|let'?s add)\b.{0,80}"
         )
+        feat_want = re.search(_feat_want_pat, corpus, re.IGNORECASE)
         feature_snippet = (
             re.sub(r"\s+", " ", feat_want.group(0)).strip()[:200]
             if feat_want
@@ -554,11 +550,11 @@ def _extract_regex(corpus: str, lower: str, error_hit: bool) -> list[str]:
     # Improvement suggestion (4 languages)
     improvement_snippet = ""
     if not error_hit:
-        imp_en = re.search(
-            r".{0,80}\b(should be|could be better|improve|enhance|upgrade|refactor|clean up|simplify|streamline)\b.{0,80}",
-            corpus,
-            re.IGNORECASE,
+        _imp_en_pat = (
+            r".{0,80}\b(should be|could be better|improve|enhance|upgrade|"
+            r"refactor|clean up|simplify|streamline)\b.{0,80}"
         )
+        imp_en = re.search(_imp_en_pat, corpus, re.IGNORECASE)
         if imp_en:
             improvement_snippet = re.sub(r"\s+", " ", imp_en.group(0)).strip()[:200]
         if not improvement_snippet and re.search(
@@ -598,7 +594,8 @@ def _extract_regex(corpus: str, lower: str, error_hit: bool) -> list[str]:
         has_improvement = bool(
             improvement_snippet
             or re.search(
-                r"\b(should be|could be better|improve|enhance|upgrade|refactor|clean up|simplify|streamline)\b",
+                r"\b(should be|could be better|improve|enhance|upgrade|"
+                r"refactor|clean up|simplify|streamline)\b",
                 lower,
                 re.IGNORECASE,
             )
@@ -611,19 +608,21 @@ def _extract_regex(corpus: str, lower: str, error_hit: bool) -> list[str]:
             if improvement_snippet:
                 signals.append("user_improvement_suggestion:" + improvement_snippet)
 
-    if re.search(
-        r"\b(slow|timeout|timed?\s*out|latency|bottleneck|took too long|performance issue|high cpu|high memory|oom|out of memory)\b",
-        lower,
-        re.IGNORECASE,
-    ):
+    _perf_pat = (
+        r"\b(slow|timeout|timed?\s*out|latency|bottleneck|took too long|"
+        r"performance issue|high cpu|high memory|oom|out of memory)\b"
+    )
+    if re.search(_perf_pat, lower, re.IGNORECASE):
         signals.append("perf_bottleneck")
 
-    if re.search(
-        r"\b(not supported|cannot|doesn'?t support|no way to|missing feature|unsupported|not available|not implemented|no support for)\b",
-        lower,
-        re.IGNORECASE,
-    ):
-        if not any(s in signals for s in ("memory_missing", "user_missing", "session_logs_missing")):
+    _cap_gap_pat = (
+        r"\b(not supported|cannot|doesn'?t support|no way to|missing feature|"
+        r"unsupported|not available|not implemented|no support for)\b"
+    )
+    if re.search(_cap_gap_pat, lower, re.IGNORECASE):
+        if not any(
+            s in signals for s in ("memory_missing", "user_missing", "session_logs_missing")
+        ):
             signals.append("capability_gap")
 
     # Tool usage analytics
@@ -672,7 +671,7 @@ def extract_signals(
     today_log: str = "",
     memory_snippet: str = "",
     user_snippet: str = "",
-    recent_events: list[dict] | None = None,
+    recent_events: list[dict[str, Any]] | None = None,
 ) -> list[str]:
     corpus = "\n".join(
         [
@@ -704,7 +703,13 @@ def extract_signals(
     actionable = [
         s
         for s in signals
-        if s not in ("user_missing", "memory_missing", "session_logs_missing", "windows_shell_incompatible")
+        if s
+        not in (
+            "user_missing",
+            "memory_missing",
+            "session_logs_missing",
+            "windows_shell_incompatible",
+        )
     ]
     if actionable:
         signals = actionable
@@ -730,14 +735,26 @@ def extract_signals(
 
     # Force innovation after 3+ consecutive repairs
     if history["consecutiveRepairCount"] >= 3:
-        signals = [s for s in signals if s != "log_error" and not s.startswith("errsig:") and not s.startswith("recurring_errsig")]
+        signals = [
+            s
+            for s in signals
+            if s != "log_error"
+            and not s.startswith("errsig:")
+            and not s.startswith("recurring_errsig")
+        ]
         if not signals:
             signals.extend(["repair_loop_detected", "stable_success_plateau"])
         signals.append("force_innovation_after_repair_loop")
 
     # Empty cycle loop
     if history["emptyCycleCount"] >= 4:
-        signals = [s for s in signals if s != "log_error" and not s.startswith("errsig:") and not s.startswith("recurring_errsig")]
+        signals = [
+            s
+            for s in signals
+            if s != "log_error"
+            and not s.startswith("errsig:")
+            and not s.startswith("recurring_errsig")
+        ]
         if "empty_cycle_loop_detected" not in signals:
             signals.append("empty_cycle_loop_detected")
         if "stable_success_plateau" not in signals:
@@ -761,7 +778,11 @@ def extract_signals(
         signals.append(f"consecutive_failure_streak_{history['consecutiveFailureCount']}")
         if history["consecutiveFailureCount"] >= 5:
             signals.append("failure_loop_detected")
-            top_gene = max(history["geneFreq"], key=lambda k: history["geneFreq"][k]) if history["geneFreq"] else None
+            top_gene = (
+                max(history["geneFreq"], key=lambda k: history["geneFreq"][k])
+                if history["geneFreq"]
+                else None
+            )
             if top_gene:
                 signals.append(f"ban_gene:{top_gene}")
 
@@ -778,12 +799,13 @@ def extract_signals(
             signals.append("plateau_pivot_suggested")
 
     if not signals or all(
-        s in ("user_missing", "memory_missing", "session_logs_missing", "windows_shell_incompatible")
+        s
+        in ("user_missing", "memory_missing", "session_logs_missing", "windows_shell_incompatible")
         for s in signals
     ):
         signals = ["stable_success_plateau"]
 
-    return list(dict.fromkeys(signals))
+    return list(dict[str, Any].fromkeys(signals))
 
 
 SKIP_HUB_SATURATION_SIGNALS = {
@@ -800,22 +822,21 @@ def should_skip_hub_calls(signals: list[str] | None) -> bool:
         return False
     has_saturation = any(s in SKIP_HUB_SATURATION_SIGNALS for s in signals)
     actionable = any(
-        s not in SKIP_HUB_SATURATION_SIGNALS and not s.startswith("ban_gene:")
-        for s in signals
+        s not in SKIP_HUB_SATURATION_SIGNALS and not s.startswith("ban_gene:") for s in signals
     )
     return has_saturation and not actionable
 
 
 __all__ = [
+    "LLM_SIGNAL_INTERVAL",
     "OPPORTUNITY_SIGNALS",
     "SIGNAL_PROFILES",
-    "LLM_SIGNAL_INTERVAL",
-    "has_opportunity_signal",
-    "analyze_recent_history",
-    "extract_signals",
-    "should_skip_hub_calls",
-    "_extract_regex",
     "_extract_keyword_score",
     "_extract_llm",
+    "_extract_regex",
     "_merge_signals",
+    "analyze_recent_history",
+    "extract_signals",
+    "has_opportunity_signal",
+    "should_skip_hub_calls",
 ]

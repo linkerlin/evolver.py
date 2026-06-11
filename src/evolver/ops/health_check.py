@@ -19,10 +19,8 @@ import shutil
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import ClassVar
 
 import psutil
-
 
 # ---------------------------------------------------------------------------
 # Data models
@@ -51,7 +49,7 @@ class HealthReport:
 
 def _default_mount() -> Path:
     if __import__("platform").system() == "Windows":
-        return Path(__import__("os").getcwd()).anchor
+        return Path(Path.cwd().anchor)
     return Path("/")
 
 
@@ -232,8 +230,9 @@ def run_health_check(
 
     return HealthReport(
         status=overall,
-        timestamp=__import__("datetime").datetime.now(
-            __import__("datetime").timezone.utc
-        ).isoformat().replace("+00:00", "Z"),
+        timestamp=__import__("datetime")
+        .datetime.now(__import__("datetime").timezone.utc)
+        .isoformat()
+        .replace("+00:00", "Z"),
         checks=checks,
     )

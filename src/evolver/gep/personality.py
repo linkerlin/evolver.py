@@ -8,7 +8,6 @@ and drift intensity. It adapts based on recent outcomes.
 from __future__ import annotations
 
 import json
-import os
 from pathlib import Path
 from typing import Any
 
@@ -59,7 +58,7 @@ def clamp(value: float, low: float = 0.0, high: float = 1.0) -> float:
 
 def adapt_personality(
     personality: dict[str, float] | None = None,
-    recent_events: list[dict] | None = None,
+    recent_events: list[dict[str, Any]] | None = None,
 ) -> dict[str, float]:
     """Adapt personality based on recent evolution outcomes.
 
@@ -76,19 +75,10 @@ def adapt_personality(
 
     # Look at last 5 events
     tail = events[-5:]
-    success_count = sum(
-        1 for e in tail
-        if (e.get("outcome") or {}).get("status") == "success"
-    )
+    success_count = sum(1 for e in tail if (e.get("outcome") or {}).get("status") == "success")
     failure_count = len(tail) - success_count
-    repair_count = sum(
-        1 for e in tail
-        if (e.get("mutation") or {}).get("category") == "repair"
-    )
-    innovate_count = sum(
-        1 for e in tail
-        if (e.get("mutation") or {}).get("category") == "innovate"
-    )
+    repair_count = sum(1 for e in tail if (e.get("mutation") or {}).get("category") == "repair")
+    innovate_count = sum(1 for e in tail if (e.get("mutation") or {}).get("category") == "innovate")
 
     # Adjust rigor
     if failure_count >= 2:
@@ -144,11 +134,11 @@ def is_conservative_personality(personality: dict[str, float] | None = None) -> 
 
 __all__ = [
     "DEFAULT_PERSONALITY",
-    "load_personality",
-    "save_personality",
     "adapt_personality",
-    "personality_to_strategy_bias",
-    "is_high_risk_personality",
-    "is_conservative_personality",
     "clamp",
+    "is_conservative_personality",
+    "is_high_risk_personality",
+    "load_personality",
+    "personality_to_strategy_bias",
+    "save_personality",
 ]

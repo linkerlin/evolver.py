@@ -29,5 +29,8 @@ def runs_history(*, limit: int = 50, memory_dir: Path | None = None) -> dict[str
         "successes": successes,
         "failures": failures,
         "success_rate": round(rate, 3),
-        "recent": [{"ts": c.get("timestamp"), "outcome": c.get("outcome"), "gene_id": c.get("gene_id")} for c in recent],
+        "recent": [
+            {"ts": c.get("timestamp"), "outcome": c.get("outcome"), "gene_id": c.get("gene_id")}
+            for c in recent
+        ],
     }

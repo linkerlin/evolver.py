@@ -4,8 +4,6 @@ from __future__ import annotations
 
 import hashlib
 
-import pytest
-
 from evolver.gep.hub_verify import (
     verify_patch_integrity,
     verify_service_schema,
@@ -33,25 +31,29 @@ class TestVerifyServiceSchema:
         assert len(r.errors) == 6
 
     def test_bad_price(self):
-        r = verify_service_schema({
-            "service_id": "s1",
-            "title": "T",
-            "description": "D",
-            "capabilities": ["c"],
-            "price_per_task": -1,
-            "execution_mode": "sync",
-        })
+        r = verify_service_schema(
+            {
+                "service_id": "s1",
+                "title": "T",
+                "description": "D",
+                "capabilities": ["c"],
+                "price_per_task": -1,
+                "execution_mode": "sync",
+            }
+        )
         assert any("price_per_task must be" in e.message for e in r.errors)
 
     def test_bad_mode(self):
-        r = verify_service_schema({
-            "service_id": "s1",
-            "title": "T",
-            "description": "D",
-            "capabilities": ["c"],
-            "price_per_task": 0,
-            "execution_mode": "magic",
-        })
+        r = verify_service_schema(
+            {
+                "service_id": "s1",
+                "title": "T",
+                "description": "D",
+                "capabilities": ["c"],
+                "price_per_task": 0,
+                "execution_mode": "magic",
+            }
+        )
         assert any("Invalid execution_mode" in e.message for e in r.errors)
 
 

@@ -2,12 +2,10 @@
 
 from __future__ import annotations
 
-import pytest
-
 from evolver.gep.workspace_keychain import (
     WorkspaceKeychain,
-    _FallbackBackend,
     _derive_key,
+    _FallbackBackend,
 )
 
 

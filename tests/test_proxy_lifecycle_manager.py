@@ -12,7 +12,6 @@ import pytest
 
 from evolver.proxy.lifecycle.manager import (
     AuthError,
-    HEARTBEAT_BACKOFF_CAP_MS,
     LifecycleManager,
 )
 from evolver.proxy.mailbox.store import MailboxStore
@@ -41,7 +40,9 @@ def test_loads_node_secret_from_store(store: MailboxStore) -> None:
     assert m._state.node_secret_source == "hub_rotate"
 
 
-def test_env_secret_wins_when_store_has_env_seed(monkeypatch: pytest.MonkeyPatch, store: MailboxStore) -> None:
+def test_env_secret_wins_when_store_has_env_seed(
+    monkeypatch: pytest.MonkeyPatch, store: MailboxStore
+) -> None:
     store.set_state("node_secret", "store-secret")
     store.set_state("node_secret_source", "env_seed")
     monkeypatch.setenv("A2A_NODE_SECRET", "env-secret")
@@ -49,7 +50,9 @@ def test_env_secret_wins_when_store_has_env_seed(monkeypatch: pytest.MonkeyPatch
     assert m._state.node_secret == "env-secret"
 
 
-def test_store_hub_rotate_wins_over_env(monkeypatch: pytest.MonkeyPatch, store: MailboxStore) -> None:
+def test_store_hub_rotate_wins_over_env(
+    monkeypatch: pytest.MonkeyPatch, store: MailboxStore
+) -> None:
     store.set_state("node_secret", "store-secret")
     store.set_state("node_secret_source", "hub_rotate")
     monkeypatch.setenv("A2A_NODE_SECRET", "env-secret")
@@ -63,7 +66,9 @@ def test_store_hub_rotate_wins_over_env(monkeypatch: pytest.MonkeyPatch, store: 
 
 
 @pytest.mark.asyncio
-async def test_hello_success_updates_state(manager: LifecycleManager, monkeypatch: pytest.MonkeyPatch) -> None:
+async def test_hello_success_updates_state(
+    manager: LifecycleManager, monkeypatch: pytest.MonkeyPatch
+) -> None:
     monkeypatch.setenv("A2A_NODE_SECRET", "old-secret")
     manager._state.node_secret = "old-secret"
 
@@ -74,7 +79,9 @@ async def test_hello_success_updates_state(manager: LifecycleManager, monkeypatc
         return resp
 
     monkeypatch.setattr("httpx.AsyncClient.post", fake_post)
-    monkeypatch.setattr("httpx.AsyncClient.__aenter__", AsyncMock(return_value=MagicMock(post=fake_post)))
+    monkeypatch.setattr(
+        "httpx.AsyncClient.__aenter__", AsyncMock(return_value=MagicMock(post=fake_post))
+    )
     monkeypatch.setattr("httpx.AsyncClient.__aexit__", AsyncMock(return_value=False))
 
     result = await manager.hello()
@@ -85,13 +92,18 @@ async def test_hello_success_updates_state(manager: LifecycleManager, monkeypatc
 
 
 @pytest.mark.asyncio
-async def test_hello_auth_error_raises(manager: LifecycleManager, monkeypatch: pytest.MonkeyPatch) -> None:
+async def test_hello_auth_error_raises(
+    manager: LifecycleManager, monkeypatch: pytest.MonkeyPatch
+) -> None:
     async def fake_post(*args: Any, **kwargs: Any) -> MagicMock:
         from httpx import HTTPStatusError, Response
+
         resp = Response(401, json={"error": "unauthorized"})
         raise HTTPStatusError("401", request=MagicMock(), response=resp)
 
-    monkeypatch.setattr("httpx.AsyncClient.__aenter__", AsyncMock(return_value=MagicMock(post=fake_post)))
+    monkeypatch.setattr(
+        "httpx.AsyncClient.__aenter__", AsyncMock(return_value=MagicMock(post=fake_post))
+    )
     monkeypatch.setattr("httpx.AsyncClient.__aexit__", AsyncMock(return_value=False))
 
     with pytest.raises(AuthError):
@@ -104,7 +116,9 @@ async def test_hello_auth_error_raises(manager: LifecycleManager, monkeypatch: p
 
 
 @pytest.mark.asyncio
-async def test_heartbeat_loop_starts_and_stops(manager: LifecycleManager, monkeypatch: pytest.MonkeyPatch) -> None:
+async def test_heartbeat_loop_starts_and_stops(
+    manager: LifecycleManager, monkeypatch: pytest.MonkeyPatch
+) -> None:
     calls: list[Any] = []
 
     async def fake_heartbeat(*args: Any, **kwargs: Any) -> dict[str, Any]:

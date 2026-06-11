@@ -27,9 +27,10 @@ import signal
 import subprocess
 import sys
 import time
+from collections.abc import Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Sequence
+from typing import Any
 
 import psutil
 
@@ -181,7 +182,7 @@ def start(*, delay_ms: int = 0) -> StartResult:
     # Open log file in append mode for the child.
     # We use low-level os.open so we can pass the fd directly to Popen.
     with open(log_path, "a", encoding="utf-8") as log_fh:
-        popen_kwargs: dict = {
+        popen_kwargs: dict[str, Any] = {
             "args": cmd,
             "stdin": subprocess.DEVNULL,
             "stdout": log_fh.fileno(),
@@ -199,7 +200,7 @@ def start(*, delay_ms: int = 0) -> StartResult:
         else:
             popen_kwargs["start_new_session"] = True
 
-        proc = subprocess.Popen(**popen_kwargs)  # noqa: S603
+        proc = subprocess.Popen(**popen_kwargs)
 
     # Record PID for fast-path discovery.
     pid_file = _pid_file_path()

@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-import pytest
-
 from evolver.evolve.pipeline.dispatch import _format_preview
 
 

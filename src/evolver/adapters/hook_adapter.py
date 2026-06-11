@@ -19,7 +19,7 @@ import os
 import shutil
 import stat
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 from evolver.gep.paths import get_workspace_root
 
@@ -77,7 +77,9 @@ def resolve_config_root(platform_id: str, cwd: Path | str | None = None) -> Path
 def load_adapter(platform_id: str) -> Any | None:
     """Dynamically import the platform-specific adapter module."""
     try:
-        mod = __import__(f"evolver.adapters.{platform_id.replace('-', '_')}", fromlist=["install", "uninstall"])
+        mod = __import__(
+            f"evolver.adapters.{platform_id.replace('-', '_')}", fromlist=["install", "uninstall"]
+        )
         return mod
     except ImportError:
         return None
@@ -91,11 +93,7 @@ def load_adapter(platform_id: str) -> Any | None:
 def deep_merge(target: dict[str, Any], source: dict[str, Any]) -> dict[str, Any]:
     result = dict(target)
     for key, val in source.items():
-        if (
-            isinstance(val, dict)
-            and key in result
-            and isinstance(result[key], dict)
-        ):
+        if isinstance(val, dict) and key in result and isinstance(result[key], dict):
             result[key] = deep_merge(result[key], val)
         else:
             result[key] = val
@@ -118,7 +116,9 @@ def merge_with_hooks_union(target: dict[str, Any], source: dict[str, Any]) -> di
 
 def _is_evolver_owned(entry: Any) -> bool:
     cmds = _collect_commands(entry)
-    return any("evolver-session" in c or "evolver-signal" in c or "evolver-task-recall" in c for c in cmds)
+    return any(
+        "evolver-session" in c or "evolver-signal" in c or "evolver-task-recall" in c for c in cmds
+    )
 
 
 def _collect_commands(entry: Any) -> list[str]:
@@ -331,11 +331,16 @@ def setup_hooks(
     evolver_root: Path | str | None = None,
 ) -> dict[str, Any]:
     effective_cwd = Path(cwd) if cwd else get_workspace_root()
-    effective_evolver_root = Path(evolver_root) if evolver_root else Path(__file__).resolve().parents[2]
+    effective_evolver_root = (
+        Path(evolver_root) if evolver_root else Path(__file__).resolve().parents[2]
+    )
     platform_id = platform or detect_platform(effective_cwd)
 
     if not platform_id:
-        print("[setup-hooks] Could not detect platform. Use --platform=cursor|claude-code|codex|kiro|opencode")
+        print(
+            "[setup-hooks] Could not detect platform. "
+            "Use --platform=cursor|claude-code|codex|kiro|opencode"
+        )
         return {"ok": False, "error": "platform_not_detected"}
 
     meta = PLATFORMS.get(platform_id)
@@ -353,5 +358,11 @@ def setup_hooks(
     print(f"[setup-hooks] Config root: {config_root}")
 
     if uninstall:
-        return adapter.uninstall(config_root=config_root, evolver_root=effective_evolver_root)
-    return adapter.install(config_root=config_root, evolver_root=effective_evolver_root, force=force)
+        return cast(
+            dict[str, Any],
+            adapter.uninstall(config_root=config_root, evolver_root=effective_evolver_root),
+        )
+    return cast(
+        dict[str, Any],
+        adapter.install(config_root=config_root, evolver_root=effective_evolver_root, force=force),
+    )

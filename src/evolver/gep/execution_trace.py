@@ -8,7 +8,7 @@ from __future__ import annotations
 import os
 import re
 from pathlib import Path
-from typing import Literal
+from typing import Any, Literal
 
 TraceLevel = Literal["none", "minimal", "full"]
 
@@ -25,7 +25,9 @@ def desensitize_file_path(path: str) -> str:
     home = str(Path.home())
     p = path.replace(home, "~")
     # Collapse workspace-specific segments to <workspace>
-    p = re.sub(r"[~\w/\\]+/([^/\\]+/){1,3}(src|lib|test|evolver|\.evolver)", "<workspace>/.../\\2", p)
+    p = re.sub(
+        r"[~\w/\\]+/([^/\\]+/){1,3}(src|lib|test|evolver|\.evolver)", "<workspace>/.../\\2", p
+    )
     return p
 
 
@@ -74,14 +76,14 @@ def build_execution_trace(
     commands: list[str],
     outputs: list[str],
     file_changes: list[str] | None = None,
-) -> list[dict]:
+) -> list[dict[str, Any]]:
     level = get_trace_level()
     if level == "none":
         return []
 
-    trace: list[dict] = []
+    trace: list[dict[str, Any]] = []
     for cmd, out in zip(commands, outputs):
-        entry: dict = {
+        entry: dict[str, Any] = {
             "tool": infer_tool_chain(cmd),
             "command_preview": cmd[:120],
         }

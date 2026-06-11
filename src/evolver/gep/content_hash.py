@@ -17,7 +17,7 @@ def canonicalize(obj: Any) -> str:
     return json.dumps(obj, sort_keys=True, ensure_ascii=False, separators=(",", ":"))
 
 
-def compute_asset_id(asset: dict) -> str:
+def compute_asset_id(asset: dict[str, Any]) -> str:
     # Exclude asset_id from the hash payload to avoid self-reference mismatch.
     payload = {k: v for k, v in asset.items() if k != "asset_id"}
     canonical = canonicalize(payload)
@@ -25,5 +25,5 @@ def compute_asset_id(asset: dict) -> str:
     return f"sha256:{digest}"
 
 
-def verify_asset_id(asset: dict, asset_id: str) -> bool:
+def verify_asset_id(asset: dict[str, Any], asset_id: str) -> bool:
     return compute_asset_id(asset) == asset_id

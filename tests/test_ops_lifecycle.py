@@ -5,7 +5,6 @@ Covers: start, stop, restart, status, tail_log, check_health, watch.
 
 from __future__ import annotations
 
-import json
 import os
 import signal
 import subprocess
@@ -14,13 +13,12 @@ import time
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock
 
 import psutil
 import pytest
 
 from evolver.ops import lifecycle
-
 
 # ---------------------------------------------------------------------------
 # Fixtures

@@ -19,12 +19,12 @@ Design notes (Pythonic)
 from __future__ import annotations
 
 import asyncio
-import json
 import logging
 import os
 import time
-from dataclasses import dataclass, field
-from typing import Any, Callable
+from collections.abc import Callable
+from dataclasses import dataclass
+from typing import Any
 
 import httpx
 
@@ -162,9 +162,7 @@ class LifecycleManager:
             headers["Authorization"] = f"Bearer {self._state.node_secret}"
 
         try:
-            async with httpx.AsyncClient(
-                http2=True, timeout=HELLO_TIMEOUT_MS / 1000.0
-            ) as client:
+            async with httpx.AsyncClient(http2=True, timeout=HELLO_TIMEOUT_MS / 1000.0) as client:
                 response = await client.post(
                     f"{self._hub_url}/v1/a2a/hello",
                     json=payload,
@@ -228,9 +226,7 @@ class LifecycleManager:
         except httpx.HTTPStatusError as exc:
             if exc.response.status_code in (401, 403) and not _skip_reauth:
                 if self._on_auth_error:
-                    self._on_auth_error(
-                        AuthError(str(exc), exc.response.status_code)
-                    )
+                    self._on_auth_error(AuthError(str(exc), exc.response.status_code))
                 return {"ok": False, "error": "auth_error", "status_code": exc.response.status_code}
             return {"ok": False, "error": str(exc), "status_code": exc.response.status_code}
         except Exception as exc:
@@ -248,7 +244,10 @@ class LifecycleManager:
                 self._state.force_update_last_attempt_at = time.time()
                 asyncio.create_task(self._run_force_update(body["force_update"]))
 
-        return {"ok": True, "hub_response": body}
+        from evolver.atp.heartbeat_signals_handler import handle_signals
+
+        atp_summary = await handle_signals(body)
+        return {"ok": True, "hub_response": body, "atp_signals": atp_summary}
 
     async def _run_force_update(self, directive: dict[str, Any]) -> None:
         """Execute a forced update in the background."""
@@ -323,6 +322,26 @@ class LifecycleManager:
     def poke_heartbeat_loop(self) -> None:
         self._poke_event.set()
 
+    @property
+    def connection_status(self) -> str:
+        if not self._state.node_id:
+            return "unregistered"
+        if self._state.last_heartbeat_at:
+            age_ms = int(time.time() * 1000) - int(self._state.last_heartbeat_at)
+            if age_ms < HEARTBEAT_INTERVAL_MS * 3:
+                return "connected"
+        return "idle"
+
+    @property
+    def state(self) -> str:
+        """String status for proxy routes (Node.js compatibility)."""
+        status = self.connection_status
+        if status == "connected":
+            return "HEARTBEATING"
+        if self._state.node_id:
+            return "AUTHENTICATED"
+        return "IDLE"
+
     async def _heartbeat_loop(self, interval_ms: int) -> None:
         # Initial delay (responds to poke as well)
         try:
@@ -337,7 +356,7 @@ class LifecycleManager:
             self._poke_event.clear()
             if self._shutdown_event.is_set():
                 return
-        except asyncio.TimeoutError:
+        except TimeoutError:
             pass
 
         prev_wall = time.time()
@@ -358,6 +377,7 @@ class LifecycleManager:
                 if drift > WALL_CLOCK_DRIFT_CLEAR_REAUTH_S:
                     self._state.reauth_failures = 0
 
+            result: dict[str, Any] = {"ok": False}
             try:
                 result = await self.heartbeat()
                 if not result.get("ok"):
@@ -373,7 +393,7 @@ class LifecycleManager:
             # Compute backoff interval
             backoff = min(
                 HEARTBEAT_BACKOFF_CAP_MS,
-                interval_ms * (2 ** self._state.heartbeat_failures),
+                interval_ms * (2**self._state.heartbeat_failures),
             )
             if result.get("ok"):
                 actual_interval = interval_ms / 1000.0
@@ -390,7 +410,7 @@ class LifecycleManager:
                     timeout=actual_interval,
                 )
                 self._poke_event.clear()
-            except asyncio.TimeoutError:
+            except TimeoutError:
                 pass
 
     # ------------------------------------------------------------------
@@ -402,9 +422,11 @@ class LifecycleManager:
         """Return True if *min_version* is newer than *current*."""
         try:
             from packaging.version import Version as V
+
             return V(min_version) > V(current)
         except Exception:
             # Fallback: simple tuple comparison
             def _parse(v: str) -> tuple[int, ...]:
                 return tuple(int(x) for x in v.split(".") if x.isdigit())
+
             return _parse(min_version) > _parse(current)

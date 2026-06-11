@@ -8,11 +8,11 @@ import pytest
 from evolver.gep.reflection import (
     MAX_DELTA,
     ReflectionDelta,
+    _score_recent_attempts,
     apply_delta,
     compute_delta,
     reflect,
     should_reflect,
-    _score_recent_attempts,
 )
 
 
@@ -75,7 +75,9 @@ class TestApplyDelta:
         personality = {"rigor": 0.5, "creativity": 0.5, "risk_tolerance": 0.5}
         with patch("evolver.gep.reflection.load_personality", return_value=personality):
             with patch("evolver.gep.reflection.save_personality") as mock_save:
-                result = apply_delta(ReflectionDelta(rigor=0.1, creativity=-0.1, risk_tolerance=0.3))
+                result = apply_delta(
+                    ReflectionDelta(rigor=0.1, creativity=-0.1, risk_tolerance=0.3)
+                )
         assert result["rigor"] == pytest.approx(0.6, rel=0.01)
         assert result["creativity"] == pytest.approx(0.4, rel=0.01)
         assert result["risk_tolerance"] == pytest.approx(0.8, rel=0.01)
@@ -85,7 +87,9 @@ class TestApplyDelta:
         personality = {"rigor": 0.05, "creativity": 0.05, "risk_tolerance": 0.05}
         with patch("evolver.gep.reflection.load_personality", return_value=personality):
             with patch("evolver.gep.reflection.save_personality"):
-                result = apply_delta(ReflectionDelta(rigor=-0.2, creativity=-0.2, risk_tolerance=-0.2))
+                result = apply_delta(
+                    ReflectionDelta(rigor=-0.2, creativity=-0.2, risk_tolerance=-0.2)
+                )
         assert result["rigor"] == 0.0
         assert result["creativity"] == 0.0
         assert result["risk_tolerance"] == 0.0
@@ -97,7 +101,10 @@ class TestReflect:
         events = [
             {"type": "attempt", "timestamp": now, "outcome": "success", "changed_files": ["a.py"]},
         ]
-        with patch("evolver.gep.reflection.load_personality", return_value={"rigor": 0.5, "creativity": 0.5, "risk_tolerance": 0.5}):
+        with patch(
+            "evolver.gep.reflection.load_personality",
+            return_value={"rigor": 0.5, "creativity": 0.5, "risk_tolerance": 0.5},
+        ):
             with patch("evolver.gep.reflection.save_personality") as mock_save:
                 delta = reflect(events=events, dry_run=True, now=now)
         assert isinstance(delta, ReflectionDelta)
@@ -108,7 +115,10 @@ class TestReflect:
         events = [
             {"type": "attempt", "timestamp": now, "outcome": "failure", "changed_files": ["a.py"]},
         ]
-        with patch("evolver.gep.reflection.load_personality", return_value={"rigor": 0.5, "creativity": 0.5, "risk_tolerance": 0.5}):
+        with patch(
+            "evolver.gep.reflection.load_personality",
+            return_value={"rigor": 0.5, "creativity": 0.5, "risk_tolerance": 0.5},
+        ):
             with patch("evolver.gep.reflection.save_personality") as mock_save:
                 delta = reflect(events=events, dry_run=False, now=now)
         assert isinstance(delta, ReflectionDelta)
@@ -125,7 +135,9 @@ class TestShouldReflect:
 
     def test_old_reflection(self):
         now = time.time()
-        assert should_reflect(last_reflection_timestamp=now - 7200, now=now, min_elapsed_seconds=3600)
+        assert should_reflect(
+            last_reflection_timestamp=now - 7200, now=now, min_elapsed_seconds=3600
+        )
 
 
 class TestReflectionDelta:

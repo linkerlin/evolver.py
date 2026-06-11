@@ -23,7 +23,6 @@ from pathlib import Path
 from typing import Any
 
 from evolver.gep.memory_graph import get_memory_graph_path
-from evolver.gep.paths import get_workspace_root
 
 logger = logging.getLogger(__name__)
 
@@ -70,7 +69,7 @@ def _read_events(path: Path | None = None, since: float = 0.0) -> list[dict[str,
         return []
     events: list[dict[str, Any]] = []
     try:
-        with open(p, "r", encoding="utf-8", errors="replace") as f:
+        with open(p, encoding="utf-8", errors="replace") as f:
             for line in f:
                 line = line.strip()
                 if not line:

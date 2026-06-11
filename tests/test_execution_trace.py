@@ -5,15 +5,13 @@ from __future__ import annotations
 import os
 from pathlib import Path
 
-import pytest
-
 from evolver.gep.execution_trace import (
+    build_execution_trace,
     classify_blast_level,
     desensitize_file_path,
     extract_error_signature,
     get_trace_level,
     infer_tool_chain,
-    build_execution_trace,
 )
 
 

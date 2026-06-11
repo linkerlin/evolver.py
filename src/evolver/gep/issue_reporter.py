@@ -37,7 +37,7 @@ import re
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 from evolver.gep.epigenetics import capture_env_fingerprint, env_fingerprint_key
 from evolver.gep.paths import get_workspace_root
@@ -130,7 +130,7 @@ def _load_cache(path: Path | None = None) -> dict[str, float]:
     if not p.exists():
         return {}
     try:
-        with open(p, "r", encoding="utf-8") as f:
+        with open(p, encoding="utf-8") as f:
             data = json.load(f)
         return {k: float(v) for k, v in data.items()}
     except (OSError, json.JSONDecodeError, ValueError):
@@ -213,6 +213,7 @@ def _repo_from_git() -> str | None:
     """Try to extract ``owner/repo`` from the local git remote."""
     try:
         import subprocess
+
         result = subprocess.run(
             ["git", "remote", "get-url", "origin"],
             capture_output=True,
@@ -228,8 +229,8 @@ def _repo_from_git() -> str | None:
         m = re.search(r"github\.com[/:]([^/]+/[^/]+?)(?:\.git)?$", url)
         if m:
             return m.group(1)
-    except (FileNotFoundError, subprocess.TimeoutExpired):
-        pass
+    except (FileNotFoundError, subprocess.TimeoutExpired) as exc:
+        logger.debug("[IssueReporter] Failed to detect repo from git remote: %s", exc)
     return None
 
 
@@ -237,6 +238,7 @@ def _search_existing_issues(repo: str, signal_key: str, token: str) -> bool:
     """Return ``True`` if an open issue for *signal_key* already exists."""
     try:
         import httpx
+
         query = f"repo:{repo} is:issue is:open {signal_key} in:body"
         resp = httpx.get(
             "https://api.github.com/search/issues",
@@ -246,7 +248,7 @@ def _search_existing_issues(repo: str, signal_key: str, token: str) -> bool:
         )
         if resp.status_code == 200:
             data = resp.json()
-            return data.get("total_count", 0) > 0
+            return int(data.get("total_count", 0)) > 0
     except Exception as exc:
         logger.debug("[IssueReporter] GitHub search failed: %s", exc)
     return False
@@ -256,6 +258,7 @@ def _create_issue(repo: str, draft: IssueDraft, token: str) -> dict[str, Any] | 
     """Create a GitHub issue. Returns the API response or ``None``."""
     try:
         import httpx
+
         resp = httpx.post(
             f"https://api.github.com/repos/{repo}/issues",
             json={
@@ -270,8 +273,10 @@ def _create_issue(repo: str, draft: IssueDraft, token: str) -> dict[str, Any] | 
             timeout=10.0,
         )
         if resp.status_code in (200, 201):
-            return resp.json()
-        logger.warning("[IssueReporter] GitHub API returned %d: %s", resp.status_code, resp.text[:200])
+            return cast(dict[str, Any], resp.json())
+        logger.warning(
+            "[IssueReporter] GitHub API returned %d: %s", resp.status_code, resp.text[:200]
+        )
     except Exception as exc:
         logger.warning("[IssueReporter] Failed to create issue: %s", exc)
     return None

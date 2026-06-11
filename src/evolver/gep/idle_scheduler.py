@@ -25,11 +25,8 @@ import ctypes
 import logging
 import os
 import platform
-import struct
 import time
-from dataclasses import dataclass
 from enum import Enum
-from typing import Callable
 
 logger = logging.getLogger(__name__)
 
@@ -37,9 +34,9 @@ logger = logging.getLogger(__name__)
 # Constants
 # ---------------------------------------------------------------------------
 
-INTENSITY_LIGHT_THRESHOLD = 60    # seconds idle to trigger light
+INTENSITY_LIGHT_THRESHOLD = 60  # seconds idle to trigger light
 INTENSITY_NORMAL_THRESHOLD = 300  # seconds idle to trigger normal
-INTENSITY_DEEP_THRESHOLD = 900    # seconds idle to trigger deep
+INTENSITY_DEEP_THRESHOLD = 900  # seconds idle to trigger deep
 
 # ---------------------------------------------------------------------------
 # Intensity enum
@@ -60,6 +57,7 @@ class EvolutionIntensity(str, Enum):
 
 def _idle_time_windows() -> float:
     """Return milliseconds since last input event on Windows."""
+
     class LASTINPUTINFO(ctypes.Structure):
         _fields_ = [("cbSize", ctypes.c_uint), ("dwTime", ctypes.c_ulong)]
 
@@ -67,7 +65,7 @@ def _idle_time_windows() -> float:
     lii = LASTINPUTINFO()
     lii.cbSize = ctypes.sizeof(LASTINPUTINFO)
     if user32.GetLastInputInfo(ctypes.byref(lii)):
-        return (ctypes.windll.kernel32.GetTickCount() - lii.dwTime) / 1000.0
+        return float((ctypes.windll.kernel32.GetTickCount() - lii.dwTime) / 1000.0)
     return 0.0
 
 
@@ -76,6 +74,7 @@ def _idle_time_linux() -> float:
     # Try X11 idle via xprintidle
     try:
         import subprocess
+
         result = subprocess.run(
             ["xprintidle"],
             capture_output=True,
@@ -110,6 +109,7 @@ def _idle_time_macos() -> float:
     """Best-effort macOS idle time via ioreg."""
     try:
         import subprocess
+
         result = subprocess.run(
             ["ioreg", "-c", "IOHIDSystem"],
             capture_output=True,
@@ -192,12 +192,14 @@ def notify(title: str, message: str) -> None:
     if system == "Windows":
         try:
             from ctypes import windll
+
             windll.user32.MessageBoxW(0, message, title, 0x40 | 0x0)
         except Exception:
             logger.debug("[IdleScheduler] Windows notification failed")
     elif system == "Darwin":
         try:
             import subprocess
+
             subprocess.run(
                 ["osascript", "-e", f'display notification "{message}" with title "{title}"'],
                 capture_output=True,
@@ -208,6 +210,7 @@ def notify(title: str, message: str) -> None:
     else:
         try:
             import subprocess
+
             subprocess.run(
                 ["notify-send", title, message],
                 capture_output=True,

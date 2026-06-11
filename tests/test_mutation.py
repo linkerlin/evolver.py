@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-import pytest
-
 from evolver.gep import mutation
 
 
@@ -54,4 +52,6 @@ def test_normalize_mutation_defaults() -> None:
 def test_is_valid_mutation_rejects_invalid() -> None:
     assert mutation.is_valid_mutation(None) is False
     assert mutation.is_valid_mutation({}) is False
-    assert mutation.is_valid_mutation({"type": "Mutation", "id": "x", "category": "destroy"}) is False
+    assert (
+        mutation.is_valid_mutation({"type": "Mutation", "id": "x", "category": "destroy"}) is False
+    )

@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-import pytest
-
 from evolver.gep import selector
 from evolver.gep.env_fingerprint import capture_env_fingerprint
 
@@ -14,7 +12,7 @@ GENES = [
         "category": "repair",
         "signals_match": ["error", "exception", "failed"],
         "strategy": ["fix it"],
-        "validation": ["node -e \"true\""],
+        "validation": ['node -e "true"'],
     },
     {
         "type": "Gene",
@@ -22,7 +20,7 @@ GENES = [
         "category": "repair",
         "signals_match": ["error", "exception", "failed"],
         "strategy": ["fallback fix"],
-        "validation": ["node -e \"true\""],
+        "validation": ['node -e "true"'],
     },
     {
         "type": "Gene",
@@ -30,7 +28,7 @@ GENES = [
         "category": "optimize",
         "signals_match": ["protocol", "prompt", "audit"],
         "strategy": ["optimize it"],
-        "validation": ["node -e \"true\""],
+        "validation": ['node -e "true"'],
     },
     {
         "type": "Gene",
@@ -43,7 +41,7 @@ GENES = [
             "stable_success_plateau",
         ],
         "strategy": ["build it"],
-        "validation": ["node -e \"true\""],
+        "validation": ['node -e "true"'],
     },
 ]
 

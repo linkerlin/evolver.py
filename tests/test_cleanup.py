@@ -16,8 +16,10 @@ def test_cleanup_jsonl_removes_old(tmp_path: Path) -> None:
     old_ts = int((time.time() - 86400) * 1000)  # 1 day old
     new_ts = int(time.time() * 1000)
     path.write_text(
-        json.dumps({"id": "e1", "timestamp": old_ts}) + "\n" +
-        json.dumps({"id": "e2", "timestamp": new_ts}) + "\n",
+        json.dumps({"id": "e1", "timestamp": old_ts})
+        + "\n"
+        + json.dumps({"id": "e2", "timestamp": new_ts})
+        + "\n",
         encoding="utf-8",
     )
     result = cleanup.cleanup_jsonl(path, max_age_ms=3600_000, min_keep=1)
@@ -49,7 +51,9 @@ def test_cleanup_directory_removes_old_files(tmp_path: Path) -> None:
 
     old = time.time() - 86400 * 2
     os.utime(f1, (old, old))
-    result = cleanup.cleanup_directory(tmp_path, pattern="*.log", max_age_ms=3600_000, max_files=10, min_keep=1)
+    result = cleanup.cleanup_directory(
+        tmp_path, pattern="*.log", max_age_ms=3600_000, max_files=10, min_keep=1
+    )
     assert result["removed"] == 1
     assert not f1.exists()
     assert f2.exists()
@@ -58,7 +62,9 @@ def test_cleanup_directory_removes_old_files(tmp_path: Path) -> None:
 def test_cleanup_directory_respects_max_files(tmp_path: Path) -> None:
     for i in range(5):
         (tmp_path / f"{i}.log").write_text("x")
-    result = cleanup.cleanup_directory(tmp_path, pattern="*.log", max_age_ms=999999999, max_files=2, min_keep=0)
+    result = cleanup.cleanup_directory(
+        tmp_path, pattern="*.log", max_age_ms=999999999, max_files=2, min_keep=0
+    )
     assert result["removed"] == 3
     assert len(list(tmp_path.glob("*.log"))) == 2
 

@@ -10,8 +10,7 @@ import json
 import os
 import time
 from pathlib import Path
-from typing import Any
-
+from typing import Any, cast
 
 _LEDGER_FILENAME = "atp_ledger.json"
 
@@ -26,7 +25,7 @@ def _load_ledger() -> dict[str, Any]:
     if not path.exists():
         return {"balance": 0.0, "transactions": []}
     try:
-        return json.loads(path.read_text(encoding="utf-8"))
+        return cast(dict[str, Any], json.loads(path.read_text(encoding="utf-8")))
     except (OSError, json.JSONDecodeError):
         return {"balance": 0.0, "transactions": []}
 

@@ -1,12 +1,8 @@
 """Tests for evolver.gep.question_generator."""
 
 import time
-from unittest.mock import patch
-
-import pytest
 
 from evolver.gep.question_generator import (
-    BountyQuestion,
     DAILY_LIMIT,
     _compute_bounty,
     _is_infrastructure_error,
@@ -79,20 +75,48 @@ class TestGenerateQuestions:
     def test_below_daily_limit(self, tmp_path, monkeypatch):
         monkeypatch.setenv("EVOLVER_FF_ENABLE_QUESTION_GENERATOR", "1")
         events = [
-            {"type": "attempt", "timestamp": time.time(), "outcome": "failure", "signals": ["auth"], "error": "bug"},
-            {"type": "attempt", "timestamp": time.time(), "outcome": "failure", "signals": ["auth"], "error": "bug"},
+            {
+                "type": "attempt",
+                "timestamp": time.time(),
+                "outcome": "failure",
+                "signals": ["auth"],
+                "error": "bug",
+            },
+            {
+                "type": "attempt",
+                "timestamp": time.time(),
+                "outcome": "failure",
+                "signals": ["auth"],
+                "error": "bug",
+            },
         ]
-        questions = generate_questions(events=events, max_questions=3, state_path=tmp_path / "state.json")
+        questions = generate_questions(
+            events=events, max_questions=3, state_path=tmp_path / "state.json"
+        )
         assert len(questions) >= 1
         assert questions[0].priority == "low"
 
     def test_infrastructure_filtered(self, tmp_path, monkeypatch):
         monkeypatch.setenv("EVOLVER_FF_ENABLE_QUESTION_GENERATOR", "1")
         events = [
-            {"type": "attempt", "timestamp": time.time(), "outcome": "failure", "signals": ["net"], "error": "timeout"},
-            {"type": "attempt", "timestamp": time.time(), "outcome": "failure", "signals": ["net"], "error": "timeout"},
+            {
+                "type": "attempt",
+                "timestamp": time.time(),
+                "outcome": "failure",
+                "signals": ["net"],
+                "error": "timeout",
+            },
+            {
+                "type": "attempt",
+                "timestamp": time.time(),
+                "outcome": "failure",
+                "signals": ["net"],
+                "error": "timeout",
+            },
         ]
-        questions = generate_questions(events=events, max_questions=3, state_path=tmp_path / "state.json")
+        questions = generate_questions(
+            events=events, max_questions=3, state_path=tmp_path / "state.json"
+        )
         assert questions == []
 
     def test_daily_limit(self, tmp_path, monkeypatch):
@@ -100,10 +124,24 @@ class TestGenerateQuestions:
         state = {"daily_count": DAILY_LIMIT, "last_reset": time.time(), "questions": []}
         _save_state(state, path=tmp_path / "state.json")
         events = [
-            {"type": "attempt", "timestamp": time.time(), "outcome": "failure", "signals": ["auth"], "error": "bug"},
-            {"type": "attempt", "timestamp": time.time(), "outcome": "failure", "signals": ["auth"], "error": "bug"},
+            {
+                "type": "attempt",
+                "timestamp": time.time(),
+                "outcome": "failure",
+                "signals": ["auth"],
+                "error": "bug",
+            },
+            {
+                "type": "attempt",
+                "timestamp": time.time(),
+                "outcome": "failure",
+                "signals": ["auth"],
+                "error": "bug",
+            },
         ]
-        questions = generate_questions(events=events, max_questions=DAILY_LIMIT, state_path=tmp_path / "state.json")
+        questions = generate_questions(
+            events=events, max_questions=DAILY_LIMIT, state_path=tmp_path / "state.json"
+        )
         assert questions == []
 
     def test_feature_flag_off(self, monkeypatch):

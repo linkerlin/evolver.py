@@ -6,9 +6,8 @@ Equivalent to evolver/src/gep/bridge.js.
 from __future__ import annotations
 
 import json
-import os
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 from evolver.config import PROMPT_MAX_CHARS
 
@@ -65,15 +64,14 @@ def extract_first_spawn_payload(text: str | None) -> str | None:
                 escape = True
             elif ch == '"':
                 in_string = False
-        else:
-            if ch == '"':
-                in_string = True
-            elif ch == "{":
-                depth += 1
-            elif ch == "}":
-                depth -= 1
-                if depth == 0:
-                    return text[brace : i + 1]
+        elif ch == '"':
+            in_string = True
+        elif ch == "{":
+            depth += 1
+        elif ch == "}":
+            depth -= 1
+            if depth == 0:
+                return text[brace : i + 1]
         i += 1
     return None
 
@@ -83,6 +81,6 @@ def parse_first_spawn_call(text: str | None) -> dict[str, Any] | None:
     if raw is None:
         return None
     try:
-        return json.loads(raw)
+        return cast(dict[str, Any], json.loads(raw))
     except json.JSONDecodeError:
         return None

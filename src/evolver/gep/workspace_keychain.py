@@ -14,7 +14,7 @@ import logging
 import os
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 logger = logging.getLogger(__name__)
 
@@ -67,7 +67,7 @@ class _KeyringBackend:
         try:
             import keyring as kr
 
-            self._kr = kr
+            self._kr: Any = kr
         except ImportError:
             self._kr = None
 
@@ -82,7 +82,8 @@ class _KeyringBackend:
     def get(self, key: str) -> str | None:
         if self._kr is None:
             return None
-        return self._kr.get_password(self._svc, key)
+        value = self._kr.get_password(self._svc, key)
+        return str(value) if value is not None else None
 
     def delete(self, key: str) -> None:
         if self._kr is None:
@@ -93,7 +94,12 @@ class _KeyringBackend:
         if self._kr is None:
             return []
         try:
-            return [item["username"] for item in self._kr.get_credential(self._svc, None) or []]
+            creds = self._kr.get_credential(self._svc, None)
+            if creds is None:
+                return []
+            if isinstance(creds, list):
+                return [str(item.username) for item in creds]
+            return [str(creds.username)]
         except Exception:
             return []
 
@@ -125,8 +131,8 @@ class _FallbackBackend:
             data = json.loads(self._path.read_text(encoding="utf-8"))
             if "encrypted" in data:
                 raw = _decrypt(data["encrypted"], self._password)
-                return json.loads(raw)
-            return data
+                return cast(dict[str, Any], json.loads(raw))
+            return cast(dict[str, Any], data)
         except Exception as exc:
             logger.warning("[Keychain] Failed to load fallback keychain: %s", exc)
             return {}
@@ -167,7 +173,7 @@ class WorkspaceKeychain:
     _kr: _KeyringBackend = field(default_factory=_KeyringBackend)
     _fb: _FallbackBackend = field(default_factory=_FallbackBackend)
 
-    def _backend(self):
+    def _backend(self) -> _KeyringBackend | _FallbackBackend:
         if self._kr.available():
             return self._kr
         return self._fb

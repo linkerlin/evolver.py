@@ -9,7 +9,7 @@ import json
 import os
 import time
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 import httpx
 
@@ -34,7 +34,7 @@ def load_auth() -> dict[str, Any] | None:
     expires_at = data.get("expires_at")
     if expires_at and time.time() > expires_at:
         return None
-    return data
+    return cast(dict[str, Any], data)
 
 
 def save_auth(data: dict[str, Any]) -> None:
@@ -107,11 +107,20 @@ async def poll_for_token(
                 data = resp.json()
             except httpx.HTTPStatusError as exc:
                 if exc.response.status_code == 400:
-                    body = exc.response.json() if exc.response.headers.get("content-type", "").startswith("application/json") else {}
+                    body = (
+                        exc.response.json()
+                        if exc.response.headers.get("content-type", "").startswith(
+                            "application/json"
+                        )
+                        else {}
+                    )
                     if body.get("error") == "authorization_pending":
                         await _async_sleep(interval)
                         continue
-                    return {"ok": False, "error": body.get("error_description", body.get("error", str(exc)))}
+                    return {
+                        "ok": False,
+                        "error": body.get("error_description", body.get("error", str(exc))),
+                    }
                 return {"ok": False, "error": str(exc)}
             except Exception as exc:
                 return {"ok": False, "error": str(exc)}

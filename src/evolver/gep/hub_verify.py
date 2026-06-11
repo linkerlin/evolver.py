@@ -7,10 +7,8 @@ Equivalent to Node's ``evolver/src/gep/hubVerify.js``.
 from __future__ import annotations
 
 import hashlib
-import json
 import logging
 from dataclasses import dataclass, field
-from pathlib import Path
 from typing import Any
 
 from .hub_review import ReviewComment
@@ -30,7 +28,14 @@ def verify_service_schema(data: dict[str, Any]) -> VerifyResult:
     errors: list[ReviewComment] = []
     warnings: list[ReviewComment] = []
 
-    required = ["service_id", "title", "description", "capabilities", "price_per_task", "execution_mode"]
+    required = [
+        "service_id",
+        "title",
+        "description",
+        "capabilities",
+        "price_per_task",
+        "execution_mode",
+    ]
     for field_name in required:
         if field_name not in data:
             errors.append(ReviewComment("error", f"Missing required field '{field_name}'."))
@@ -49,7 +54,12 @@ def verify_service_schema(data: dict[str, Any]) -> VerifyResult:
         errors.append(ReviewComment("error", "capabilities must be a list."))
 
     valid = len(errors) == 0
-    logger.info("[HubVerify] service schema valid=%s errors=%d warnings=%d", valid, len(errors), len(warnings))
+    logger.info(
+        "[HubVerify] service schema valid=%s errors=%d warnings=%d",
+        valid,
+        len(errors),
+        len(warnings),
+    )
     return VerifyResult(valid=valid, errors=errors, warnings=warnings)
 
 
@@ -77,7 +87,8 @@ def verify_skill_bundle(manifest: dict[str, Any], files: dict[str, bytes]) -> Ve
             errors.append(
                 ReviewComment(
                     "error",
-                    f"Hash mismatch for {path}: expected {expected_hash[:12]}… got {actual_hash[:12]}…",
+                    f"Hash mismatch for {path}: expected {expected_hash[:12]}… "
+                    f"got {actual_hash[:12]}…",
                 )
             )
 
@@ -93,6 +104,7 @@ def verify_patch_integrity(diff_text: str, changed_files: list[str]) -> VerifyRe
 
     # Parse diff headers to extract referenced files
     import re
+
     referenced: set[str] = set()
     for match in re.finditer(r"^diff --git a/(\S+) b/\S+", diff_text, re.MULTILINE):
         referenced.add(match.group(1))

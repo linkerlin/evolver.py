@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-import pytest
-
 from evolver.evolve.pipeline.select import compute_adaptive_strategy_policy
 
 

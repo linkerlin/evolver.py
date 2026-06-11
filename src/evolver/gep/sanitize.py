@@ -7,8 +7,7 @@ from __future__ import annotations
 
 import os
 import re
-from typing import Sequence
-
+from typing import Any
 
 _PATTERNS = {
     "bearer": re.compile(r"(?i)bearer\s+[a-z0-9_\-\.]{20,}"),
@@ -28,10 +27,10 @@ def redact_string(text: str) -> str:
     return out
 
 
-def scan_for_leaks(text: str | bytes) -> list[dict]:
+def scan_for_leaks(text: str | bytes) -> list[dict[str, Any]]:
     if isinstance(text, bytes):
         text = text.decode("utf-8", errors="replace")
-    leaks: list[dict] = []
+    leaks: list[dict[str, Any]] = []
     for name, pattern in _PATTERNS.items():
         for match in pattern.finditer(text):
             leaks.append(
@@ -45,10 +44,10 @@ def scan_for_leaks(text: str | bytes) -> list[dict]:
     return leaks
 
 
-def detect_env_value_leaks(payload: dict | str) -> list[dict]:
+def detect_env_value_leaks(payload: dict[str, Any] | str) -> list[dict[str, Any]]:
     """Detect accidental inclusions of env variable values in payload."""
     text = json.dumps(payload) if isinstance(payload, dict) else payload
-    leaks: list[dict] = []
+    leaks: list[dict[str, Any]] = []
     for key, value in os.environ.items():
         if not value or len(value) < 8:
             continue
@@ -57,7 +56,7 @@ def detect_env_value_leaks(payload: dict | str) -> list[dict]:
     return leaks
 
 
-def full_leak_check(payload: dict | str) -> dict:
+def full_leak_check(payload: dict[str, Any] | str) -> dict[str, Any]:
     text = json.dumps(payload) if isinstance(payload, dict) else str(payload)
     return {
         "pattern_leaks": scan_for_leaks(text),
@@ -66,7 +65,7 @@ def full_leak_check(payload: dict | str) -> dict:
     }
 
 
-def sanitize_payload(payload: dict | str) -> str:
+def sanitize_payload(payload: dict[str, Any] | str) -> str:
     """Best-effort sanitize a payload for publishing."""
     text = json.dumps(payload) if isinstance(payload, dict) else str(payload)
     return redact_string(text)

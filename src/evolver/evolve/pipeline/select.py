@@ -5,14 +5,17 @@ Equivalent to evolver/src/evolve/pipeline/select.js.
 
 from __future__ import annotations
 
-import json
 import secrets
 import time
 from typing import Any
 
 from evolver.gep.memory_graph import record_attempt, record_hypothesis
 from evolver.gep.mutation import build_mutation
-from evolver.gep.personality import adapt_personality, load_personality, personality_to_strategy_bias
+from evolver.gep.personality import (
+    adapt_personality,
+    load_personality,
+    personality_to_strategy_bias,
+)
 from evolver.gep.selector import select_gene_and_capsule
 from evolver.gep.strategy import resolve_strategy
 
@@ -36,13 +39,15 @@ async def select_phase(ctx: dict[str, Any]) -> dict[str, Any]:
     memory_advice = ctx.get("memory_advice") or {}
     drift_enabled = bool(ctx.get("IS_RANDOM_DRIFT", False))
 
-    selection = select_gene_and_capsule({
-        "genes": genes,
-        "capsules": capsules,
-        "signals": signals,
-        "memoryAdvice": memory_advice,
-        "driftEnabled": drift_enabled,
-    })
+    selection = select_gene_and_capsule(
+        {
+            "genes": genes,
+            "capsules": capsules,
+            "signals": signals,
+            "memoryAdvice": memory_advice,
+            "driftEnabled": drift_enabled,
+        }
+    )
 
     selected_gene = selection.get("selectedGene")
     selected_capsule = selection.get("selectedCapsule")

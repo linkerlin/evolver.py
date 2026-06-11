@@ -1,11 +1,6 @@
 """Tests for evolver.gep.open_pr_registry."""
 
-from unittest.mock import patch
-
-import pytest
-
 from evolver.gep.open_pr_registry import (
-    archive_merged_prs,
     get_open_prs,
     load_registry,
     prune_old_entries,
@@ -74,6 +69,7 @@ class TestPrune:
     def test_removes_old(self, tmp_path):
         path = tmp_path / "reg.json"
         import time
+
         old = time.time() - 40 * 86400
         register_pr(1, "url", "b", "g", "diff", 0.9, path=path)
         # Manually age the entry

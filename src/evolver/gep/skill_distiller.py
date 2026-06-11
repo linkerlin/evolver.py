@@ -29,7 +29,6 @@ import logging
 import re
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
 
 from evolver.gep.paths import get_workspace_root
 
@@ -96,7 +95,9 @@ def _extract_rules(text: str) -> list[str]:
         line = line.strip()
         if line.startswith(("- ", "* ", "• ")):
             content = line[2:].strip()
-            if re.search(r"\b(should|must|never|always|avoid|prefer|use)\b", content, re.IGNORECASE):
+            if re.search(
+                r"\b(should|must|never|always|avoid|prefer|use)\b", content, re.IGNORECASE
+            ):
                 rules.append(content)
         elif re.search(r"\b(should|must|never|always|avoid|prefer|use)\b", line, re.IGNORECASE):
             if len(line) > 10 and len(line) < 300:
@@ -110,7 +111,9 @@ def _extract_triggers(text: str) -> list[str]:
     for line in text.splitlines():
         line = line.strip()
         # Match "how do I...", "can you...", "please..."
-        m = re.search(r'^(?:how\s+(?:do|can|should)\s+i|can\s+you|please)\s+(.+)[?.]?$', line, re.IGNORECASE)
+        m = re.search(
+            r"^(?:how\s+(?:do|can|should)\s+i|can\s+you|please)\s+(.+)[?.]?$", line, re.IGNORECASE
+        )
         if m:
             triggers.append(m.group(1).strip())
     return triggers

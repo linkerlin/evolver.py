@@ -25,11 +25,9 @@ Design notes
 
 from __future__ import annotations
 
-import json
 import logging
 import time
 from dataclasses import dataclass
-from pathlib import Path
 from typing import Any
 
 from evolver.gep.feature_flags import is_enabled
@@ -164,7 +162,9 @@ def apply_delta(delta: ReflectionDelta) -> dict[str, float]:
     """
     personality = load_personality()
     personality["rigor"] = max(0.0, min(1.0, personality.get("rigor", 0.5) + delta.rigor))
-    personality["creativity"] = max(0.0, min(1.0, personality.get("creativity", 0.5) + delta.creativity))
+    personality["creativity"] = max(
+        0.0, min(1.0, personality.get("creativity", 0.5) + delta.creativity)
+    )
     personality["risk_tolerance"] = max(
         0.0, min(1.0, personality.get("risk_tolerance", 0.5) + delta.risk_tolerance)
     )
@@ -199,8 +199,7 @@ def reflect(
     Returns the computed :class:`ReflectionDelta`.
     """
     if not is_enabled("enable_reflection"):
-        # Default feature flag doesn't exist yet; we treat missing as True
-        pass  # proceed anyway — flag is advisory
+        return ReflectionDelta(reason="reflection_disabled")
 
     if events is None:
         events = try_read_memory_graph_events()

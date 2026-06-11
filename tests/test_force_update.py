@@ -2,9 +2,6 @@
 
 from __future__ import annotations
 
-import zipfile
-from pathlib import Path
-
 import pytest
 
 from evolver.force_update import (
@@ -72,7 +69,6 @@ class TestBackup:
     def test_prune_old(self, tmp_path):
         old = tmp_path / "old"
         old.mkdir()
-        import time
 
         # Manually set mtime far in the past
         import os

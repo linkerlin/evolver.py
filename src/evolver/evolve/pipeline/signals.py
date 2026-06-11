@@ -8,8 +8,8 @@ from __future__ import annotations
 from typing import Any
 
 from evolver.gep.asset_store import consume_pending_signals, load_capsules, load_genes
+from evolver.gep.cognition import augment_signals
 from evolver.gep.signals import extract_signals as gep_extract_signals
-
 
 # Must match actionable signals that prevent saturation gating
 _ACTIONABLE_SIGNALS = {
@@ -30,8 +30,7 @@ def should_skip_hub_calls(signals: list[str]) -> bool:
     if not signals:
         return False
     has_actionable = any(
-        sig in _ACTIONABLE_SIGNALS or sig.startswith("errsig:") or len(sig) > 21
-        for sig in signals
+        sig in _ACTIONABLE_SIGNALS or sig.startswith("errsig:") or len(sig) > 21 for sig in signals
     )
     if has_actionable:
         return False
@@ -61,6 +60,7 @@ async def signals_phase(ctx: dict[str, Any]) -> dict[str, Any]:
         if s not in signals:
             signals.append(s)
 
+    signals = augment_signals(signals)
     ctx["signals"] = signals
     ctx["genes"] = load_genes()
     ctx["capsules"] = load_capsules()

@@ -78,7 +78,11 @@ def install(*, config_root: Path, evolver_root: Path, force: bool = False) -> di
     print("[cursor] Installation complete.")
     print("[cursor] Restart Cursor or open a new session to activate hooks.")
 
-    return {"ok": True, "platform": "cursor", "files": [str(hooks_json_path)] + [str(c) for c in copied]}
+    return {
+        "ok": True,
+        "platform": "cursor",
+        "files": [str(hooks_json_path)] + [str(c) for c in copied],
+    }
 
 
 def uninstall(*, config_root: Path, evolver_root: Path) -> dict[str, Any]:

@@ -6,9 +6,8 @@ Equivalent to evolver/src/gep/a2aProtocol.js (obfuscated).
 from __future__ import annotations
 
 import asyncio
-import json
 import os
-from typing import Any
+from typing import Any, cast
 
 import httpx
 
@@ -53,7 +52,7 @@ async def _http_post(
     async with httpx.AsyncClient(http2=True, timeout=timeout_ms / 1000.0) as client:
         response = await client.post(url, json=payload, headers=headers)
         response.raise_for_status()
-        return response.json()
+        return cast(dict[str, Any], response.json())
 
 
 async def send_hello() -> dict[str, Any]:
@@ -98,7 +97,7 @@ async def fetch_tasks(
 ) -> dict[str, Any]:
     """Fetch open tasks from the Hub.
 
-    Returns a dict with ``tasks`` (list[dict]) and metadata.
+    Returns a dict with ``tasks`` (list[dict[str, Any]]) and metadata.
     """
     hub = get_hub_url()
     if not hub:
@@ -111,9 +110,7 @@ async def fetch_tasks(
     if signals:
         payload["signals"] = signals
     try:
-        result = await _http_post(
-            f"{hub}/v1/a2a/tasks", payload, timeout_ms=HUB_SEARCH_TIMEOUT_MS
-        )
+        result = await _http_post(f"{hub}/v1/a2a/tasks", payload, timeout_ms=HUB_SEARCH_TIMEOUT_MS)
         tasks = result.get("tasks", [])
         if not isinstance(tasks, list):
             tasks = []

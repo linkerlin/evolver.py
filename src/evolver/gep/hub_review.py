@@ -73,13 +73,7 @@ def review_service_listing(data: dict[str, Any]) -> ReviewResult:
         comments.append(ReviewComment("error", "price_per_task must be a non-negative number."))
         score -= 15
 
-    verdict = (
-        Verdict.APPROVE
-        if score >= 80
-        else Verdict.REVISE
-        if score >= 40
-        else Verdict.REJECT
-    )
+    verdict = Verdict.APPROVE if score >= 80 else Verdict.REVISE if score >= 40 else Verdict.REJECT
 
     summary = f"Score {score:.1f}/100 — {len(comments)} comment(s)."
     logger.info("[HubReview] service listing reviewed: %s", summary)
@@ -93,7 +87,9 @@ def review_patch(diff_text: str, changed_files: list[str]) -> ReviewResult:
 
     if not diff_text:
         comments.append(ReviewComment("error", "Empty diff."))
-        return ReviewResult(verdict=Verdict.REJECT, score=0.0, comments=comments, summary="Empty diff.")
+        return ReviewResult(
+            verdict=Verdict.REJECT, score=0.0, comments=comments, summary="Empty diff."
+        )
 
     # Basic heuristics
     if "TODO" in diff_text or "FIXME" in diff_text:
@@ -101,7 +97,9 @@ def review_patch(diff_text: str, changed_files: list[str]) -> ReviewResult:
         score -= 5
 
     if diff_text.count("\n") > 500:
-        comments.append(ReviewComment("warning", "Diff exceeds 500 lines — consider breaking into smaller PRs."))
+        comments.append(
+            ReviewComment("warning", "Diff exceeds 500 lines — consider breaking into smaller PRs.")
+        )
         score -= 10
 
     # Check for suspicious patterns
@@ -111,13 +109,7 @@ def review_patch(diff_text: str, changed_files: list[str]) -> ReviewResult:
             comments.append(ReviewComment("error", f"Suspicious pattern '{pat}' detected in diff."))
             score -= 65
 
-    verdict = (
-        Verdict.APPROVE
-        if score >= 80
-        else Verdict.REVISE
-        if score >= 40
-        else Verdict.REJECT
-    )
+    verdict = Verdict.APPROVE if score >= 80 else Verdict.REVISE if score >= 40 else Verdict.REJECT
 
     summary = f"Score {score:.1f}/100 — {len(comments)} comment(s) on {len(changed_files)} file(s)."
     logger.info("[HubReview] patch reviewed: %s", summary)

@@ -82,7 +82,11 @@ def _extract_rules(text: str) -> list[str]:
     for line in text.splitlines():
         line = line.strip()
         if re.match(r"^(Rule|Guideline|Principle|Heuristic)s?:\s*", line, re.IGNORECASE):
-            rules.append(re.sub(r"^(Rule|Guideline|Principle|Heuristic)s?:\s*", "", line, flags=re.IGNORECASE))
+            rules.append(
+                re.sub(
+                    r"^(Rule|Guideline|Principle|Heuristic)s?:\s*", "", line, flags=re.IGNORECASE
+                )
+            )
         elif re.search(r"\b(never|always|must not|should not|do not|avoid)\b", line, re.IGNORECASE):
             if len(line) > 10:
                 rules.append(line)
@@ -96,7 +100,9 @@ def _extract_patterns(text: str) -> list[str]:
     for line in text.splitlines():
         line = line.strip()
         if re.match(r"^(Pattern|Idiom|Anti-pattern)s?:\s*", line, re.IGNORECASE):
-            patterns.append(re.sub(r"^(Pattern|Idiom|Anti-pattern)s?:\s*", "", line, flags=re.IGNORECASE))
+            patterns.append(
+                re.sub(r"^(Pattern|Idiom|Anti-pattern)s?:\s*", "", line, flags=re.IGNORECASE)
+            )
     # Also extract docstring-like descriptions
     matches = re.findall(r'"""(.{10,200}?)"""', text, re.DOTALL)
     for m in matches:
@@ -110,7 +116,9 @@ def _extract_decisions(text: str) -> list[str]:
     for line in text.splitlines():
         line = line.strip()
         if re.match(r"^(Decision|Choice|Trade-off)s?:\s*", line, re.IGNORECASE):
-            decisions.append(re.sub(r"^(Decision|Choice|Trade-off)s?:\s*", "", line, flags=re.IGNORECASE))
+            decisions.append(
+                re.sub(r"^(Decision|Choice|Trade-off)s?:\s*", "", line, flags=re.IGNORECASE)
+            )
         elif re.search(r"\b(decided to|chose to|opted for|prefer)\b", line, re.IGNORECASE):
             if len(line) > 10:
                 decisions.append(line)

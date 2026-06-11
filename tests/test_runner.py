@@ -21,7 +21,9 @@ def isolated_evolver_env(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
 
 
 @pytest.mark.asyncio
-async def test_run_single_cycle_emits_prompt(isolated_evolver_env: Path, capsys: pytest.CaptureFixture[str]) -> None:
+async def test_run_single_cycle_emits_prompt(
+    isolated_evolver_env: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
     await run()
     captured = capsys.readouterr()
     assert "BUILT_PROMPT" in captured.out or "sessions_spawn" in captured.out
@@ -29,7 +31,9 @@ async def test_run_single_cycle_emits_prompt(isolated_evolver_env: Path, capsys:
 
 
 @pytest.mark.asyncio
-async def test_run_single_cycle_selects_gene(isolated_evolver_env: Path, capsys: pytest.CaptureFixture[str]) -> None:
+async def test_run_single_cycle_selects_gene(
+    isolated_evolver_env: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
     await run()
     captured = capsys.readouterr()
     assert "Selected Gene:" in captured.out

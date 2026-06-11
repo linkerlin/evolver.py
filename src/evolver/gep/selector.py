@@ -19,7 +19,9 @@ def tokenize(text: str) -> list[str]:
     if not text:
         return []
     # Split on non-alphanumeric non-CJK runs
-    tokens = re.split(r"[^\w\u4e00-\u9fff\u3040-\u309f\u30a0-\u30ff\uac00-\ud7af]+", text, flags=re.UNICODE)
+    tokens = re.split(
+        r"[^\w\u4e00-\u9fff\u3040-\u309f\u30a0-\u30ff\uac00-\ud7af]+", text, flags=re.UNICODE
+    )
     out = []
     for t in tokens:
         t = t.strip()
@@ -47,7 +49,7 @@ def _match_pattern_to_signals(pattern: str, signals: list[str]) -> bool:
     return False
 
 
-def _score_gene(gene: dict, signals: list[str]) -> float:
+def _score_gene(gene: dict[str, Any], signals: list[str]) -> float:
     score = 0.0
     signals_match = gene.get("signals_match") or []
     for pattern in signals_match:
@@ -67,13 +69,17 @@ def _score_gene(gene: dict, signals: list[str]) -> float:
     hard_fail_count = sum(
         1
         for ap in anti_patterns
-        if isinstance(ap, dict) and ap.get("mode") == "hard" and "problem" in (ap.get("learning_signals") or [])
+        if isinstance(ap, dict)
+        and ap.get("mode") == "hard"
+        and "problem" in (ap.get("learning_signals") or [])
     )
     score -= hard_fail_count * 0.4
 
     # Upweight learning history success
     learning_history = gene.get("learning_history") or []
-    success_count = sum(1 for lh in learning_history if isinstance(lh, dict) and lh.get("outcome") == "success")
+    success_count = sum(
+        1 for lh in learning_history if isinstance(lh, dict) and lh.get("outcome") == "success"
+    )
     score += success_count * 0.15
 
     return max(0.0, score)
@@ -93,7 +99,7 @@ def compute_drift_intensity(
     return base
 
 
-def is_epigenetically_suppressed(gene: dict, env: dict[str, str] | None = None) -> bool:
+def is_epigenetically_suppressed(gene: dict[str, Any], env: dict[str, str] | None = None) -> bool:
     marks = gene.get("epigenetic_marks") or []
     if not marks:
         return False
@@ -111,7 +117,7 @@ def is_epigenetically_suppressed(gene: dict, env: dict[str, str] | None = None) 
 
 
 def select_gene(
-    genes: list[dict],
+    genes: list[dict[str, Any]],
     signals: list[str],
     options: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
@@ -128,7 +134,7 @@ def select_gene(
         memory_evidence=memory_evidence,
     )
 
-    candidates = []
+    candidates: list[dict[str, Any]] = []
     for gene in genes:
         gid = gene.get("id")
         if not gid:
@@ -152,7 +158,7 @@ def select_gene(
         for c in candidates:
             c["score"] += random.random() * drift_intensity
 
-    candidates.sort(key=lambda x: x["score"], reverse=True)
+    candidates.sort(key=lambda x: float(x["score"]), reverse=True)
 
     if not candidates:
         # Distilled gene fallback
@@ -189,8 +195,8 @@ def select_gene(
     }
 
 
-def select_capsule(capsules: list[dict], signals: list[str]) -> dict | None:
-    best: dict | None = None
+def select_capsule(capsules: list[dict[str, Any]], signals: list[str]) -> dict[str, Any] | None:
+    best: dict[str, Any] | None = None
     best_score = 0.0
     for cap in capsules:
         triggers = cap.get("trigger") or []
@@ -242,10 +248,10 @@ def select_gene_and_capsule(ctx: dict[str, Any]) -> dict[str, Any]:
 
 
 __all__ = [
-    "tokenize",
     "compute_drift_intensity",
     "is_epigenetically_suppressed",
-    "select_gene",
     "select_capsule",
+    "select_gene",
     "select_gene_and_capsule",
+    "tokenize",
 ]

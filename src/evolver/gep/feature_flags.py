@@ -17,9 +17,7 @@ import logging
 import os
 import threading
 import time
-from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any
 
 logger = logging.getLogger(__name__)
 
@@ -38,6 +36,8 @@ DEFAULT_FLAGS: dict[str, bool] = {
     "enable_auto_buyer": False,
     "enable_validator": True,
     "enable_recall_inject": True,
+    "enable_reflection": True,
+    "enable_auto_distill": True,
     "enable_curriculum": False,
     "enable_explore": False,
     "enable_idle_scheduler": True,
@@ -93,12 +93,18 @@ def _load_disk_flags(force: bool = False) -> dict[str, bool]:
 
         try:
             mtime = path.stat().st_mtime
-            if not force and mtime == _disk_flags_mtime and (now - _disk_flags_loaded_at) < DISK_FLAG_TTL:
+            if (
+                not force
+                and mtime == _disk_flags_mtime
+                and (now - _disk_flags_loaded_at) < DISK_FLAG_TTL
+            ):
                 return _disk_flags.copy()
 
-            with open(path, "r", encoding="utf-8") as f:
+            with open(path, encoding="utf-8") as f:
                 raw = json.load(f)
-            parsed = {k: bool(v) for k, v in raw.items() if isinstance(v, bool) or isinstance(v, int)}
+            parsed = {
+                k: bool(v) for k, v in raw.items() if isinstance(v, bool) or isinstance(v, int)
+            }
             _disk_flags = parsed
             _disk_flags_mtime = mtime
             _disk_flags_loaded_at = now

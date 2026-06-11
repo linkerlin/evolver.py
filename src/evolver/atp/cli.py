@@ -6,13 +6,12 @@ Equivalent to ``evolver/src/atp/cli.js``.
 from __future__ import annotations
 
 import argparse
-import asyncio
 import json
 import sys
 from typing import Any
 
 from evolver.atp.auto_buyer import get_consent, set_consent
-from evolver.atp.consumer_agent import check_order, order_and_wait
+from evolver.atp.consumer_agent import order_and_wait
 from evolver.atp.hub_client import list_my_tasks
 
 
@@ -36,7 +35,11 @@ async def _cmd_orders(_args: argparse.Namespace) -> int:
 async def _cmd_status(_args: argparse.Namespace) -> int:
     consent = get_consent()
     enabled = consent.get("enabled") if consent else False
-    print(json.dumps({"auto_buyer": "enabled" if enabled else "disabled", "consent": consent}, default=str))
+    print(
+        json.dumps(
+            {"auto_buyer": "enabled" if enabled else "disabled", "consent": consent}, default=str
+        )
+    )
     return 0
 
 
@@ -52,7 +55,7 @@ async def _cmd_disable(_args: argparse.Namespace) -> int:
     return 0
 
 
-def add_atp_subparsers(sub: argparse._SubParsersAction[Any]) -> None:  # type: ignore[name-defined]
+def add_atp_subparsers(sub: Any) -> None:
     atp_p = sub.add_parser("atp", help="ATP marketplace commands")
     atp_sub = atp_p.add_subparsers(dest="atp_command")
 

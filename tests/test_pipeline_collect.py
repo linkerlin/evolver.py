@@ -2,10 +2,6 @@
 
 from __future__ import annotations
 
-from pathlib import Path
-
-import pytest
-
 from evolver.evolve.pipeline.collect import (
     _read_file_snippet,
     check_system_health,

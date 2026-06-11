@@ -3,11 +3,10 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Any
 
 import pytest
 
-from evolver.atp.settlement import _load_ledger, _save_ledger, credit, debit, get_balance, history
+from evolver.atp.settlement import _load_ledger, credit, debit, get_balance, history
 
 
 @pytest.fixture(autouse=True)

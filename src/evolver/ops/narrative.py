@@ -7,13 +7,11 @@ after each solidify cycle.
 
 from __future__ import annotations
 
-import json
 import time
-from pathlib import Path
 from typing import Any
 
 from evolver.gep.asset_store import append_jsonl
-from evolver.gep.paths import get_evolution_dir, get_narrative_path, get_reflection_log_path
+from evolver.gep.paths import get_narrative_path, get_reflection_log_path
 
 
 def _format_blast_radius(br: dict[str, Any]) -> str:
@@ -82,7 +80,7 @@ def generate_reflection(event: dict[str, Any]) -> dict[str, Any]:
     return reflection
 
 
-def _compute_reflection_text(outcome: dict, blast_radius: dict) -> str:
+def _compute_reflection_text(outcome: dict[str, Any], blast_radius: dict[str, Any]) -> str:
     status = outcome.get("status", "")
     files = blast_radius.get("files", 0)
     if status == "success" and files <= 3:

@@ -8,7 +8,6 @@ Exit 0 = safe, non-zero = broken.
 from __future__ import annotations
 
 import sys
-from pathlib import Path
 
 
 def main() -> int:
@@ -17,7 +16,7 @@ def main() -> int:
         import evolver.cli  # noqa: F401
 
         return 0
-    except Exception as exc:  # noqa: BLE001
+    except Exception as exc:
         msg = str(exc)[:500]
         sys.stderr.write(msg)
         return 1

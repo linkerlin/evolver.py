@@ -9,7 +9,14 @@ from evolver.gep import strategy
 
 def test_strategy_names() -> None:
     names = strategy.get_strategy_names()
-    for expected in ("balanced", "innovate", "harden", "repair-only", "early-stabilize", "steady-state"):
+    for expected in (
+        "balanced",
+        "innovate",
+        "harden",
+        "repair-only",
+        "early-stabilize",
+        "steady-state",
+    ):
         assert expected in names
 
 

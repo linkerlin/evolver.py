@@ -1,9 +1,6 @@
 """Tests for evolver.gep.local_state_awareness."""
 
-import json
 from unittest.mock import patch
-
-import pytest
 
 from evolver.gep.local_state_awareness import (
     LocalStateSnapshot,
@@ -29,7 +26,9 @@ class TestCaptureSnapshot:
 
     def test_git_commit_capture(self, tmp_path):
         with patch("evolver.gep.local_state_awareness.get_workspace_root", return_value=tmp_path):
-            with patch("evolver.gep.local_state_awareness._run_git", side_effect=["main", "abc123" * 8, ""]):
+            with patch(
+                "evolver.gep.local_state_awareness._run_git", side_effect=["main", "abc123" * 8, ""]
+            ):
                 snap = capture_snapshot()
         assert snap.git_commit == "abc123" * 8
 
@@ -43,11 +42,14 @@ class TestCaptureSnapshot:
     def test_dirty_files_parsed(self, tmp_path):
         status_output = " M dirty.py\nA  staged.py\n?? untracked.py"
         with patch("evolver.gep.local_state_awareness.get_workspace_root", return_value=tmp_path):
-            with patch("evolver.gep.local_state_awareness._run_git", side_effect=[
-                "main",
-                "abc123",
-                status_output,
-            ]):
+            with patch(
+                "evolver.gep.local_state_awareness._run_git",
+                side_effect=[
+                    "main",
+                    "abc123",
+                    status_output,
+                ],
+            ):
                 snap = capture_snapshot()
         assert "dirty.py" in snap.dirty_files
         assert "staged.py" in snap.staged_files

@@ -2,12 +2,11 @@
 
 from __future__ import annotations
 
+import asyncio
+
 import pytest
 
 from evolver.evolve import guards
-
-
-import asyncio
 
 
 def test_preflight_load_exceeds_threshold(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -28,7 +27,6 @@ def test_repair_loop_circuit_breaker_empty() -> None:
 
 
 def test_repair_loop_circuit_breaker_trips(tmp_path, monkeypatch: pytest.MonkeyPatch) -> None:
-    import json
 
     monkeypatch.setenv("EVOLUTION_DIR", str(tmp_path))
     monkeypatch.setenv("GEP_ASSETS_DIR", str(tmp_path / "gep"))
@@ -37,18 +35,21 @@ def test_repair_loop_circuit_breaker_trips(tmp_path, monkeypatch: pytest.MonkeyP
 
     get_gep_assets_dir().mkdir(parents=True, exist_ok=True)
     for _ in range(3):
-        append_event_jsonl({
-            "type": "EvolutionEvent",
-            "mutation": {"category": "repair"},
-            "outcome": {"status": "failed"},
-        })
+        append_event_jsonl(
+            {
+                "type": "EvolutionEvent",
+                "mutation": {"category": "repair"},
+                "outcome": {"status": "failed"},
+            }
+        )
     cb = guards.check_repair_loop_circuit_breaker(threshold=3)
     assert cb["tripped"] is True
     assert cb["consecutive"] == 3
 
 
-def test_repair_loop_circuit_breaker_resets_on_success(tmp_path, monkeypatch: pytest.MonkeyPatch) -> None:
-    import json
+def test_repair_loop_circuit_breaker_resets_on_success(
+    tmp_path, monkeypatch: pytest.MonkeyPatch
+) -> None:
 
     monkeypatch.setenv("EVOLUTION_DIR", str(tmp_path))
     monkeypatch.setenv("GEP_ASSETS_DIR", str(tmp_path / "gep"))
@@ -56,9 +57,27 @@ def test_repair_loop_circuit_breaker_resets_on_success(tmp_path, monkeypatch: py
     from evolver.gep.paths import get_gep_assets_dir
 
     get_gep_assets_dir().mkdir(parents=True, exist_ok=True)
-    append_event_jsonl({"type": "EvolutionEvent", "mutation": {"category": "repair"}, "outcome": {"status": "failed"}})
-    append_event_jsonl({"type": "EvolutionEvent", "mutation": {"category": "repair"}, "outcome": {"status": "success"}})
-    append_event_jsonl({"type": "EvolutionEvent", "mutation": {"category": "repair"}, "outcome": {"status": "failed"}})
+    append_event_jsonl(
+        {
+            "type": "EvolutionEvent",
+            "mutation": {"category": "repair"},
+            "outcome": {"status": "failed"},
+        }
+    )
+    append_event_jsonl(
+        {
+            "type": "EvolutionEvent",
+            "mutation": {"category": "repair"},
+            "outcome": {"status": "success"},
+        }
+    )
+    append_event_jsonl(
+        {
+            "type": "EvolutionEvent",
+            "mutation": {"category": "repair"},
+            "outcome": {"status": "failed"},
+        }
+    )
     cb = guards.check_repair_loop_circuit_breaker(threshold=2)
     assert cb["tripped"] is False
     assert cb["consecutive"] == 1

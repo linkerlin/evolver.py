@@ -9,7 +9,6 @@ import pytest
 
 from evolver.adapters import hook_adapter
 
-
 # ---------------------------------------------------------------------------
 # Platform detection
 # ---------------------------------------------------------------------------
@@ -92,8 +91,12 @@ def test_append_section_idempotent(temp_workspace: Path) -> None:
     path = temp_workspace / "AGENTS.md"
     path.write_text("# Agent\n", encoding="utf-8")
     marker = "<!-- evolver-start -->"
-    hook_adapter.append_section_to_file(path, marker, "<!-- evolver-start -->\ncontent\n<!-- evolver-end -->")
-    result = hook_adapter.append_section_to_file(path, marker, "<!-- evolver-start -->\ncontent\n<!-- evolver-end -->")
+    hook_adapter.append_section_to_file(
+        path, marker, "<!-- evolver-start -->\ncontent\n<!-- evolver-end -->"
+    )
+    result = hook_adapter.append_section_to_file(
+        path, marker, "<!-- evolver-start -->\ncontent\n<!-- evolver-end -->"
+    )
     assert result is False
 
 
@@ -158,10 +161,11 @@ def test_cursor_install_skips_when_already_installed(temp_workspace: Path) -> No
 
 
 def test_runtime_paths_find_workspace(temp_workspace: Path) -> None:
-    from evolver.adapters.scripts.runtime_paths import find_workspace_root
-
     # Create a git repo
     import subprocess
+
+    from evolver.adapters.scripts.runtime_paths import find_workspace_root
+
     subprocess.run(["git", "init"], cwd=temp_workspace, capture_output=True, check=False)
     result = find_workspace_root(temp_workspace)
     assert result == temp_workspace

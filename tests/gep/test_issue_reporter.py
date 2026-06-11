@@ -1,17 +1,12 @@
 """Tests for evolver.gep.issue_reporter."""
 
-import json
-from unittest.mock import MagicMock, patch
-
-import pytest
+from unittest.mock import patch
 
 from evolver.gep.issue_reporter import (
-    FAILURE_THRESHOLD,
-    IssueDraft,
     _count_failures_by_signal,
     _load_cache,
-    _save_cache,
     _sanitise,
+    _save_cache,
     report_recurring_failures,
     should_report,
 )
@@ -26,6 +21,7 @@ class TestSanitise:
 
     def test_redacts_home_dir(self):
         import os
+
         home = os.path.expanduser("~")
         text = f"path: {home}/project/file.py"
         result = _sanitise(text)
@@ -43,10 +39,30 @@ class TestCountFailures:
     def test_counts_failures(self):
         now = 1000100
         events = [
-            {"type": "attempt", "timestamp": 1000000, "outcome": "failure", "signals_snapshot": ["auth"]},
-            {"type": "attempt", "timestamp": 1000001, "outcome": "failure", "signals_snapshot": ["auth"]},
-            {"type": "attempt", "timestamp": 1000002, "outcome": "failure", "signals_snapshot": ["auth"]},
-            {"type": "attempt", "timestamp": 1000003, "outcome": "success", "signals_snapshot": ["auth"]},
+            {
+                "type": "attempt",
+                "timestamp": 1000000,
+                "outcome": "failure",
+                "signals_snapshot": ["auth"],
+            },
+            {
+                "type": "attempt",
+                "timestamp": 1000001,
+                "outcome": "failure",
+                "signals_snapshot": ["auth"],
+            },
+            {
+                "type": "attempt",
+                "timestamp": 1000002,
+                "outcome": "failure",
+                "signals_snapshot": ["auth"],
+            },
+            {
+                "type": "attempt",
+                "timestamp": 1000003,
+                "outcome": "success",
+                "signals_snapshot": ["auth"],
+            },
         ]
         counts = _count_failures_by_signal(events, window_seconds=10000, now=now)
         assert len(counts) == 1
@@ -55,7 +71,12 @@ class TestCountFailures:
     def test_ignores_success(self):
         now = 1000100
         events = [
-            {"type": "attempt", "timestamp": 1000000, "outcome": "success", "signals_snapshot": ["auth"]},
+            {
+                "type": "attempt",
+                "timestamp": 1000000,
+                "outcome": "success",
+                "signals_snapshot": ["auth"],
+            },
         ]
         counts = _count_failures_by_signal(events, now=now)
         assert counts == {}
@@ -84,7 +105,13 @@ class TestCache:
 class TestReportRecurringFailures:
     def test_no_token_no_crash(self, tmp_path):
         events = [
-            {"type": "attempt", "timestamp": 1000000, "outcome": "failure", "signals_snapshot": ["auth"], "error": "timeout"},
+            {
+                "type": "attempt",
+                "timestamp": 1000000,
+                "outcome": "failure",
+                "signals_snapshot": ["auth"],
+                "error": "timeout",
+            },
         ] * 3
         with patch.dict("os.environ", {}, clear=True):
             with patch("evolver.gep.issue_reporter._repo_from_git", return_value=None):
@@ -93,14 +120,25 @@ class TestReportRecurringFailures:
 
     def test_below_threshold(self, tmp_path):
         events = [
-            {"type": "attempt", "timestamp": 1000000, "outcome": "failure", "signals_snapshot": ["auth"]},
+            {
+                "type": "attempt",
+                "timestamp": 1000000,
+                "outcome": "failure",
+                "signals_snapshot": ["auth"],
+            },
         ] * 2
         urls = report_recurring_failures(events=events, cache_path=tmp_path / "cache.json")
         assert urls == []
 
     def test_cooldown(self, tmp_path):
         events = [
-            {"type": "attempt", "timestamp": 1000000, "outcome": "failure", "signals_snapshot": ["auth"], "error": "err"},
+            {
+                "type": "attempt",
+                "timestamp": 1000000,
+                "outcome": "failure",
+                "signals_snapshot": ["auth"],
+                "error": "err",
+            },
         ] * 3
         path = tmp_path / "cache.json"
         report_recurring_failures(events=events, cache_path=path)

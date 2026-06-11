@@ -17,7 +17,8 @@ def pipeline_timeline(*, limit: int = 100, memory_dir: Path | None = None) -> li
     pipeline = [
         e
         for e in events
-        if e.get("type") in ("pipeline_start", "pipeline_phase", "pipeline_end", "cycle_start", "cycle_end")
+        if e.get("type")
+        in ("pipeline_start", "pipeline_phase", "pipeline_end", "cycle_start", "cycle_end")
     ]
     pipeline = pipeline[-limit:]
     return pipeline

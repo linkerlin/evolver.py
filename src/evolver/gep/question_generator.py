@@ -31,7 +31,7 @@ import logging
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 from evolver.gep.feature_flags import is_enabled
 from evolver.gep.memory_graph import try_read_memory_graph_events
@@ -90,12 +90,12 @@ def _load_state(path: Path | None = None) -> dict[str, Any]:
     if not p.exists():
         return {"daily_count": 0, "last_reset": 0, "questions": []}
     try:
-        with open(p, "r", encoding="utf-8") as f:
+        with open(p, encoding="utf-8") as f:
             data = json.load(f)
         data.setdefault("daily_count", 0)
         data.setdefault("last_reset", 0)
         data.setdefault("questions", [])
-        return data
+        return cast(dict[str, Any], data)
     except (OSError, json.JSONDecodeError):
         return {"daily_count": 0, "last_reset": 0, "questions": []}
 
@@ -284,7 +284,9 @@ def generate_questions(
 
         priority = _signal_priority(cluster[-1])
         # CRITICAL signals bypass daily limit
-        if state["daily_count"] >= max_questions and not (CRITICAL_BYPASS and priority == "critical"):
+        if state["daily_count"] >= max_questions and not (
+            CRITICAL_BYPASS and priority == "critical"
+        ):
             break
 
         question = _draft_question(key, cluster)
@@ -319,8 +321,10 @@ def submit_question(
     Returns the Hub response, or ``None`` on failure.
     """
     try:
-        from evolver.atp.hub_client import post_bounty
         import asyncio
+
+        from evolver.atp.hub_client import post_bounty
+
         payload = {
             "title": question.title,
             "description": question.background,

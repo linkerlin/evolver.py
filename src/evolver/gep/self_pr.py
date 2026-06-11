@@ -31,21 +31,19 @@ Design notes
 
 from __future__ import annotations
 
-import hashlib
 import json
 import logging
 import os
 import re
 import subprocess
 import time
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
-from evolver.gep.feature_flags import is_enabled
-from evolver.gep.git_ops import is_critical_protected_path
 from evolver.gep.epigenetics import capture_env_fingerprint, env_fingerprint_key
-from evolver.gep.open_pr_registry import load_registry, register_pr, update_pr_status
+from evolver.gep.feature_flags import is_enabled
+from evolver.gep.open_pr_registry import load_registry, register_pr
 from evolver.gep.paths import get_workspace_root
 from evolver.gep.policy_check import check_policy
 from evolver.gep.sanitize import full_leak_check
@@ -93,7 +91,7 @@ def _check_policy(diff_text: str) -> bool:
 
 
 def _check_secrets(diff_text: str) -> bool:
-    return full_leak_check(diff_text)["safe"]
+    return bool(full_leak_check(diff_text)["safe"])
 
 
 def _check_cooldown(gene_id: str, registry: dict[str, Any]) -> bool:
@@ -170,8 +168,8 @@ def _push_branch(branch: str) -> None:
 def _delete_remote_branch(branch: str) -> None:
     try:
         _run_git("push", "origin", "--delete", branch, check=False)
-    except Exception:
-        pass
+    except Exception as exc:
+        logger.debug("[SelfPR] Failed to delete remote branch %s: %s", branch, exc)
 
 
 def _repo_from_git() -> str | None:
@@ -180,8 +178,8 @@ def _repo_from_git() -> str | None:
         m = re.search(r"github\.com[/:]([^/]+/[^/]+?)(?:\.git)?$", url)
         if m:
             return m.group(1)
-    except Exception:
-        pass
+    except Exception as exc:
+        logger.debug("[SelfPR] Failed to detect repo from git remote: %s", exc)
     return None
 
 
@@ -194,24 +192,39 @@ def _create_pr_via_gh(branch: str, title: str, body: str) -> dict[str, Any] | No
     """Try ``gh pr create``. Returns parsed JSON or None."""
     try:
         result = subprocess.run(
-            ["gh", "pr", "create", "--title", title, "--body", body, "--head", branch, "--json", "url,number"],
+            [
+                "gh",
+                "pr",
+                "create",
+                "--title",
+                title,
+                "--body",
+                body,
+                "--head",
+                branch,
+                "--json",
+                "url,number",
+            ],
             cwd=str(get_workspace_root()),
             capture_output=True,
             text=True,
             timeout=30,
         )
         if result.returncode == 0:
-            return json.loads(result.stdout.strip())
+            return cast(dict[str, Any], json.loads(result.stdout.strip()))
         logger.debug("[SelfPR] gh CLI failed: %s", result.stderr)
     except FileNotFoundError:
-        pass
+        logger.debug("[SelfPR] gh CLI not found")
     return None
 
 
-def _create_pr_via_api(repo: str, branch: str, title: str, body: str, token: str) -> dict[str, Any] | None:
+def _create_pr_via_api(
+    repo: str, branch: str, title: str, body: str, token: str
+) -> dict[str, Any] | None:
     """Try GitHub API. Returns parsed JSON or None."""
     try:
         import httpx
+
         resp = httpx.post(
             f"https://api.github.com/repos/{repo}/pulls",
             json={
@@ -227,7 +240,7 @@ def _create_pr_via_api(repo: str, branch: str, title: str, body: str, token: str
             timeout=15.0,
         )
         if resp.status_code in (200, 201):
-            return resp.json()
+            return cast(dict[str, Any], resp.json())
         logger.warning("[SelfPR] GitHub API returned %d: %s", resp.status_code, resp.text[:200])
     except Exception as exc:
         logger.warning("[SelfPR] API call failed: %s", exc)
@@ -254,7 +267,9 @@ def _build_pr_body(
         "",
         "### Diff Summary",
         "",
-        f"```diff\n{diff_text[:2000]}\n```" if len(diff_text) <= 2000 else f"```diff\n{diff_text[:2000]}\n... (truncated)\n```",
+        f"```diff\n{diff_text[:2000]}\n```"
+        if len(diff_text) <= 2000
+        else f"```diff\n{diff_text[:2000]}\n... (truncated)\n```",
         "",
         "---",
         "",

@@ -2,9 +2,7 @@
 
 from __future__ import annotations
 
-import pytest
-
-from evolver.gep.analyzer import CauseCategory, Diagnosis, analyze
+from evolver.gep.analyzer import CauseCategory, analyze
 
 
 class TestAnalyze:

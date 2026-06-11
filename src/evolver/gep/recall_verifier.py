@@ -25,7 +25,6 @@ Design notes
 from __future__ import annotations
 
 import hashlib
-import json
 import logging
 import time
 from dataclasses import dataclass
@@ -114,7 +113,7 @@ def _compute_drift(
             drift_scores.append(1.0)
             continue
         try:
-            with open(p, "r", encoding="utf-8", errors="replace") as f:
+            with open(p, encoding="utf-8", errors="replace") as f:
                 current_lines = sum(1 for _ in f)
         except OSError:
             drift_scores.append(1.0)

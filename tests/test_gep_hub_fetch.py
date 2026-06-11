@@ -45,7 +45,6 @@ class TestCache:
         assert _get_cached("k1", ttl=10) == {"a": 1}
 
     def test_ttl_expires(self):
-        import time
 
         _set_cached("k2", {"a": 2})
         assert _get_cached("k2", ttl=-1) is None
@@ -101,7 +100,9 @@ class TestCircuitBreaker:
 class TestHubFetch:
     @respx.mock
     def test_success_and_cache(self):
-        route = respx.get("https://hub.example/svc").mock(return_value=Response(200, json={"ok": True}))
+        route = respx.get("https://hub.example/svc").mock(
+            return_value=Response(200, json={"ok": True})
+        )
         r = hub_fetch("https://hub.example/svc")
         assert r == {"ok": True}
         assert route.called
@@ -130,7 +131,9 @@ class TestHubFetch:
 
     @respx.mock
     def test_post_no_cache(self):
-        route = respx.post("https://hub.example/action").mock(return_value=Response(200, json={"done": True}))
+        route = respx.post("https://hub.example/action").mock(
+            return_value=Response(200, json={"done": True})
+        )
         r = hub_post("https://hub.example/action", json_body={"x": 1})
         assert r == {"done": True}
         assert route.called
@@ -142,7 +145,9 @@ class TestHubFetch:
 
     @respx.mock
     def test_hub_get_convenience(self):
-        route = respx.get("https://hub.example/search").mock(return_value=Response(200, json={"hits": []}))
+        route = respx.get("https://hub.example/search").mock(
+            return_value=Response(200, json={"hits": []})
+        )
         assert hub_get("https://hub.example/search", params={"q": "abc"}) == {"hits": []}
         assert route.called
 

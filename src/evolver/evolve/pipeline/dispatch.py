@@ -6,7 +6,6 @@ Equivalent to evolver/src/evolve/pipeline/dispatch.js.
 from __future__ import annotations
 
 import json
-from pathlib import Path
 from typing import Any
 
 from evolver.gep.bridge import render_sessions_spawn_call, write_prompt_artifact
@@ -18,7 +17,9 @@ def _write_solidify_state(ctx: dict[str, Any]) -> None:
     last_run = {
         "run_id": ctx.get("run_id"),
         "signals": ctx.get("signals", []),
-        "selected_gene_id": ctx.get("selected_gene", {}).get("id") if ctx.get("selected_gene") else None,
+        "selected_gene_id": ctx.get("selected_gene", {}).get("id")
+        if ctx.get("selected_gene")
+        else None,
         "selected_capsule_id": ctx.get("selected_capsule_id"),
         "mutation": ctx.get("mutation"),
         "personality_state": ctx.get("personality_state"),
@@ -27,7 +28,7 @@ def _write_solidify_state(ctx: dict[str, Any]) -> None:
     write_state_for_solidify(last_run)
 
 
-def _format_preview(items: list[dict]) -> str:
+def _format_preview(items: list[dict[str, Any]]) -> str:
     return "```json\n" + json.dumps(items, indent=2, ensure_ascii=False) + "\n```"
 
 
@@ -46,9 +47,14 @@ async def dispatch_phase(ctx: dict[str, Any]) -> dict[str, Any]:
     genes_preview = _format_preview(ctx.get("genes", [])[:10])
     capsules_preview = _format_preview(ctx.get("capsules", [])[:10])
 
+    context_parts = [
+        ctx.get("mutation_directive", ""),
+        ctx.get("health_report", ""),
+        ctx.get("recall_section", ""),
+    ]
     prompt = build_gep_prompt(
         now_iso=ctx.get("scan_time_iso", ""),
-        context=ctx.get("mutation_directive", "") + "\n" + ctx.get("health_report", ""),
+        context="\n".join(part for part in context_parts if part),
         signals=ctx.get("signals", []),
         selector={"selectedBy": ctx.get("selected_by", "score_ranked")},
         parent_event_id=ctx.get("parent_event_id"),
@@ -69,12 +75,14 @@ async def dispatch_phase(ctx: dict[str, Any]) -> dict[str, Any]:
 
     if ctx.get("bridge_enabled"):
         artifact_path = write_prompt_artifact(prompt)
-        spawn = render_sessions_spawn_call({
-            "task": prompt[:4000],
-            "agentId": ctx.get("AGENT_NAME", "main"),
-            "label": f"gep_{ctx.get('cycle_id', '0000')}",
-            "cleanup": "delete",
-        })
+        spawn = render_sessions_spawn_call(
+            {
+                "task": prompt[:4000],
+                "agentId": ctx.get("AGENT_NAME", "main"),
+                "label": f"gep_{ctx.get('cycle_id', '0000')}",
+                "cleanup": "delete",
+            }
+        )
         print(spawn)
     else:
         print("BUILT_PROMPT")

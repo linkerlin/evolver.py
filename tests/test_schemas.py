@@ -3,13 +3,8 @@
 from __future__ import annotations
 
 import pytest
-from pydantic import ValidationError
 
 from evolver.gep.schemas import (
-    VALID_CATEGORIES,
-    Capsule,
-    Gene,
-    Task,
     create_capsule,
     create_gene,
     create_task,

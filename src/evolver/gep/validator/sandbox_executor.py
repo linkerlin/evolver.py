@@ -33,7 +33,6 @@ import tempfile
 import time
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
 
 logger = logging.getLogger(__name__)
 
@@ -71,7 +70,7 @@ def _validate_command(command: list[str]) -> None:
     cmd_str = " ".join(command)
 
     # Must start with python
-    if not command or not command[0].lower().endswith("python") and command[0] != "python":
+    if not command or (not command[0].lower().endswith("python") and command[0] != "python"):
         raise ValueError(f"Command must start with 'python', got: {command[0]}")
 
     # Forbidden prefixes
@@ -92,6 +91,10 @@ def _validate_command(command: list[str]) -> None:
 def _validate_script(content: str) -> None:
     """Raise ``ValueError`` if *content* contains dangerous patterns."""
     lower = content.lower()
+    if os.environ.get("EVOLVER_SANDBOX_STRICT", "").strip().lower() in ("1", "true", "yes"):
+        for pattern in ("import socket", "import urllib", "import requests", "import httpx"):
+            if pattern in lower:
+                raise ValueError(f"Network import blocked in strict sandbox: {pattern}")
     dangerous = [
         ("os.system", "os.system call"),
         ("subprocess.call", "subprocess.call"),
@@ -111,20 +114,36 @@ def _validate_script(content: str) -> None:
 # ---------------------------------------------------------------------------
 
 
-def _apply_resource_limits() -> None:
-    """Apply CPU/memory limits in the child process (Linux only)."""
+def _try_linux_network_isolation() -> None:
+    """Best-effort network namespace isolation (Linux + CAP_SYS_ADMIN)."""
+    if platform.system() != "Linux":
+        return
+    if os.environ.get("EVOLVER_SANDBOX_NETWORK", "").strip().lower() not in ("1", "true", "yes"):
+        return
+    try:
+        import ctypes
+
+        libc = ctypes.CDLL("libc.so.6", use_errno=True)
+        clone_newnet = 0x40000000
+        if libc.unshare(clone_newnet) != 0:
+            logger.debug("[Sandbox] unshare(CLONE_NEWNET) failed (privileges required)")
+    except Exception as exc:
+        logger.debug("[Sandbox] network isolation unavailable: %s", exc)
+
+
+def _linux_child_preexec() -> None:
+    """Child pre-exec hook: resource limits + optional network namespace."""
     if platform.system() != "Linux":
         return
     try:
-        import resource
-        # 60 seconds CPU time
-        resource.setrlimit(resource.RLIMIT_CPU, (60, 60))
-        # 512 MB memory
-        resource.setrlimit(resource.RLIMIT_AS, (512 * 1024 * 1024, 512 * 1024 * 1024))
-        # 128 MB file size
-        resource.setrlimit(resource.RLIMIT_FSIZE, (128 * 1024 * 1024, 128 * 1024 * 1024))
+        import resource as resource_mod
+
+        resource_mod.setrlimit(resource_mod.RLIMIT_CPU, (60, 60))  # type: ignore[attr-defined]
+        resource_mod.setrlimit(resource_mod.RLIMIT_AS, (512 * 1024 * 1024, 512 * 1024 * 1024))  # type: ignore[attr-defined]
+        resource_mod.setrlimit(resource_mod.RLIMIT_FSIZE, (128 * 1024 * 1024, 128 * 1024 * 1024))  # type: ignore[attr-defined]
     except Exception as exc:
         logger.debug("[Sandbox] Failed to set resource limits: %s", exc)
+    _try_linux_network_isolation()
 
 
 # ---------------------------------------------------------------------------
@@ -144,7 +163,9 @@ def execute_in_sandbox(
     Returns :class:`SandboxResult` with stdout, stderr, exit code, and
     timing information.
     """
-    timeout = timeout_seconds or (float(os.environ.get(ENV_TIMEOUT, DEFAULT_TIMEOUT * 1000)) / 1000.0)
+    timeout = timeout_seconds or (
+        float(os.environ.get(ENV_TIMEOUT, DEFAULT_TIMEOUT * 1000)) / 1000.0
+    )
     if timeout <= 0:
         timeout = DEFAULT_TIMEOUT
 
@@ -170,7 +191,7 @@ def execute_in_sandbox(
             capture_output=True,
             text=True,
             timeout=timeout,
-            preexec_fn=_apply_resource_limits if platform.system() == "Linux" else None,
+            preexec_fn=_linux_child_preexec if platform.system() == "Linux" else None,
         )
 
         elapsed = (time.time() - t0) * 1000.0
@@ -184,19 +205,29 @@ def execute_in_sandbox(
 
     except subprocess.TimeoutExpired as exc:
         elapsed = (time.time() - t0) * 1000.0
-        # Kill the process tree if possible
-        try:
-            import psutil
-            parent = psutil.Process(exc.pid)
-            for child in parent.children(recursive=True):
-                child.terminate()
-            parent.terminate()
-        except Exception:
-            pass
+        pid = getattr(exc, "pid", None)
+        if pid is not None:
+            try:
+                import psutil
+
+                parent = psutil.Process(pid)
+                for child in parent.children(recursive=True):
+                    child.terminate()
+                parent.terminate()
+            except Exception as cleanup_exc:
+                logger.debug("[Sandbox] Failed to terminate process tree: %s", cleanup_exc)
+
+        def _as_text(value: bytes | str | None) -> str:
+            if value is None:
+                return ""
+            if isinstance(value, bytes):
+                return value.decode("utf-8", errors="replace")
+            return value
+
         return SandboxResult(
             exit_code=-1,
-            stdout=exc.stdout or "",
-            stderr=exc.stderr or "",
+            stdout=_as_text(exc.stdout),
+            stderr=_as_text(exc.stderr),
             timed_out=True,
             elapsed_ms=elapsed,
         )

@@ -49,7 +49,9 @@ async def test_download_asset_hash_mismatch(monkeypatch: pytest.MonkeyPatch) -> 
     route = respx.post("https://mock.hub/v1/a2a/assets").mock(
         return_value=Response(200, json={"asset": asset})
     )
-    result = await fetch.download_asset("sha256:0000000000000000000000000000000000000000000000000000000000000000")
+    result = await fetch.download_asset(
+        "sha256:0000000000000000000000000000000000000000000000000000000000000000"
+    )
     assert result["ok"] is False
     assert result["error"] == "asset_hash_mismatch"
 
@@ -80,10 +82,15 @@ def test_install_capsule(tmp_path, monkeypatch: pytest.MonkeyPatch) -> None:
 async def test_fetch_and_install_dry_run(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("A2A_HUB_URL", "https://mock.hub")
     route = respx.post("https://mock.hub/v1/a2a/search").mock(
-        return_value=Response(200, json={"assets": [
-            {"id": "g1", "type": "Gene"},
-            {"id": "c1", "type": "Capsule"},
-        ]})
+        return_value=Response(
+            200,
+            json={
+                "assets": [
+                    {"id": "g1", "type": "Gene"},
+                    {"id": "c1", "type": "Capsule"},
+                ]
+            },
+        )
     )
     result = await fetch.fetch_and_install("test", dry_run=True)
     assert result["ok"] is True

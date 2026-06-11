@@ -5,12 +5,8 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-import pytest
-
 from evolver.webui.observer import (
-    format_interactions,
     personality_data,
-    pipeline_timeline,
     redact_text,
     runs_history,
     safety_events,
@@ -86,6 +82,7 @@ class TestRedact:
 class TestSerializeAssets:
     def test_empty(self, tmp_path, monkeypatch):
         import evolver.gep.paths as paths_mod
+
         monkeypatch.setattr(paths_mod, "get_memory_dir", lambda: tmp_path)
         result = serialize_assets()
         assert result["total"] == 0
@@ -93,21 +90,28 @@ class TestSerializeAssets:
 
     def test_genes(self, tmp_path, monkeypatch):
         import evolver.gep.paths as paths_mod
+
         monkeypatch.setattr(paths_mod, "get_memory_dir", lambda: tmp_path)
-        (tmp_path / "genes.json").write_text('{"genes":[{"id":"g1","summary":"x"}]}', encoding="utf-8")
+        (tmp_path / "genes.json").write_text(
+            '{"genes":[{"id":"g1","summary":"x"}]}', encoding="utf-8"
+        )
         result = serialize_assets(type_filter="gene")
         assert result["total"] == 1
         assert result["items"][0]["id"] == "g1"
 
     def test_query(self, tmp_path, monkeypatch):
         import evolver.gep.paths as paths_mod
+
         monkeypatch.setattr(paths_mod, "get_memory_dir", lambda: tmp_path)
-        (tmp_path / "genes.json").write_text('{"genes":[{"id":"alpha","summary":"hello"}]}', encoding="utf-8")
+        (tmp_path / "genes.json").write_text(
+            '{"genes":[{"id":"alpha","summary":"hello"}]}', encoding="utf-8"
+        )
         result = serialize_assets(query="alp")
         assert result["total"] == 1
 
     def test_pagination(self, tmp_path, monkeypatch):
         import evolver.gep.paths as paths_mod
+
         monkeypatch.setattr(paths_mod, "get_memory_dir", lambda: tmp_path)
         genes = [{"id": f"g{i}"} for i in range(10)]
         (tmp_path / "genes.json").write_text(json.dumps({"genes": genes}), encoding="utf-8")
@@ -119,6 +123,7 @@ class TestSerializeAssets:
 class TestSystemStatus:
     def test_basic(self, tmp_path, monkeypatch):
         import evolver.gep.paths as paths_mod
+
         monkeypatch.setattr(paths_mod, "get_memory_dir", lambda: tmp_path)
         result = system_status()
         assert "timestamp" in result
@@ -128,12 +133,14 @@ class TestSystemStatus:
 class TestPersonalityData:
     def test_missing(self, tmp_path, monkeypatch):
         import evolver.gep.paths as paths_mod
+
         monkeypatch.setattr(paths_mod, "get_memory_dir", lambda: tmp_path)
         result = personality_data()
         assert result["dimensions"]["risk_tolerance"] == 0.5
 
     def test_existing(self, tmp_path, monkeypatch):
         import evolver.gep.paths as paths_mod
+
         monkeypatch.setattr(paths_mod, "get_memory_dir", lambda: tmp_path)
         (tmp_path / "personality.json").write_text('{"risk_tolerance":0.9}', encoding="utf-8")
         result = personality_data()
@@ -157,12 +164,14 @@ class TestSkillsStatus:
 class TestSafetyEvents:
     def test_empty(self, tmp_path, monkeypatch):
         import evolver.gep.paths as paths_mod
+
         monkeypatch.setattr(paths_mod, "get_memory_dir", lambda: tmp_path)
         result = safety_events()
         assert result["total"] == 0
 
     def test_policy_violation(self, tmp_path, monkeypatch):
         import evolver.gep.paths as paths_mod
+
         monkeypatch.setattr(paths_mod, "get_memory_dir", lambda: tmp_path)
         (tmp_path / "events.jsonl").write_text(
             '{"type":"policy_violation","severity":"high"}\n', encoding="utf-8"
@@ -175,6 +184,7 @@ class TestSafetyEvents:
 class TestRunsHistory:
     def test_empty(self, tmp_path, monkeypatch):
         import evolver.gep.paths as paths_mod
+
         monkeypatch.setattr(paths_mod, "get_memory_dir", lambda: tmp_path)
         result = runs_history()
         assert result["total_cycles"] == 0
@@ -182,6 +192,7 @@ class TestRunsHistory:
 
     def test_mixed(self, tmp_path, monkeypatch):
         import evolver.gep.paths as paths_mod
+
         monkeypatch.setattr(paths_mod, "get_memory_dir", lambda: tmp_path)
         lines = [
             '{"type":"cycle_end","outcome":"success"}',

@@ -15,6 +15,7 @@
 | 从 Hub 获取技能 | `uv run evolver fetch <query>` |
 | 同步资源 | `uv run evolver sync [--scope=...]` |
 | 启动 WebUI | `uv run evolver webui [--port=8080]` |
+| 启动本地代理 | `uv run evolver proxy` |
 | 运行测试 | `uv run pytest` |
 | 运行测试（排除慢速） | `uv run pytest -m "not slow"` |
 | 代码检查 | `uv run ruff check src tests` |
@@ -35,7 +36,7 @@ config.py           全部运行时阈值/超时、环境变量覆盖
 canary.py           Fork-canary：验证 CLI 加载不出崩溃
 gep/                GEP（基因组进化协议）核心
   schemas/          Pydantic 模型：Gene、Capsule、Task、Protocol
-  asset_store.py    JSON/JSONL 持久化，叠加语义
+  asset_store.py    JSON/JSONL 持久化，叠加语义（生产级）
   paths.py          中心化路径解析，支持环境变量覆盖
   a2a_protocol.py   Agent 间 Hub 协议（HTTP）
   bridge.py         Git worktree 变异桥接
@@ -46,6 +47,7 @@ gep/                GEP（基因组进化协议）核心
   git_ops.py        Git diff/回滚/状态辅助函数
   instance_lock.py  基于 FileLock 之单实例守护
   memory_graph.py   JSONL 记忆图谱存储与信号键查询
+  cognition.py      高级认知编排：recall/explore/curriculum/reflection/distill 接线
   mutation.py       变异引擎：类别选择、变体生成
   personality.py    人格配置文件（严谨度、风险容忍度）
   prompt.py         GEP 提示词组装
@@ -55,6 +57,7 @@ gep/                GEP（基因组进化协议）核心
   solidify.py       应用基因 → 验证 → 持久化 → 发布
   strategy.py       进化策略选择
   sync.py           Hub 同步：获取任务、下载资源
+  validator/        验证者守护进程（文件存在，安全模型待完善）
 evolve/             进化流水线
   runner.py         编排器：单周期 + 守护循环
   guards.py         起飞前检查（负载、RSS、冷却）
@@ -62,14 +65,52 @@ evolve/             进化流水线
     collect.py      扫描 memory/ 之运行时日志与错误模式
     signals.py      从收集数据中分类信号
     hub.py          向 Hub 查询匹配之资源与任务
-    enrich.py       以 Hub 数据丰富上下文
+    enrich.py       以 Hub 数据丰富上下文 + 认知蒸馏/回忆
     select.py       选择最佳 Gene/Capsule
-    dispatch.py     生成 GEP 提示词，写入分发输出
+    dispatch.py     生成 GEP 提示词（含回忆注入），写入分发输出
+  post_cycle.py     周期末钩子（ATP auto-buyer、task pickup）
 proxy/              本地 HTTP 代理（127.0.0.1:19820）
+  mailbox/store.py  本地邮箱 JSONL 存储（较完整）
+  sync/             双向同步引擎（较完整）
+  lifecycle/        生命周期管理器（hello/heartbeat + ATP 信号处理）
+  server/routes.py  FastAPI 路由矩阵（task/ATP/extensions/asset/validate 已接线）
+  router/           模型路由/特性路由/缓存透传/messages_route（含 Anthropic/Bedrock SSE）
+  extensions/       DM/会话/技能更新/追踪控制 + SkillUpdateLoop + AtpDeliverLoop
+  task/monitor.py   任务监控（已接入 routes）
+  trace/store.py    请求追踪环形缓冲（Hub 转发诊断）
 webui/              FastAPI 只读仪表盘
+  app.py            仪表盘应用 + `/events/stream` SSE
+  dashboard.py      暗色 HTML 仪表盘（实时事件表）
+  observer/         数据聚合模块（已实现）
+  client/           内嵌 JS/CSS（sse、bootstrap、i18n、static）
 ops/                健康检查、清理、叙事日志
-adapters/           IDE 钩子生成器（Cursor、Claude Code 等）
+  lifecycle.py      跨平台守护进程管理（较完整）
+  health_check.py   系统健康检查（较完整）
+  self_repair.py    Git 紧急修复
+  cleanup.py        日志与产物清理
+  narrative.py      叙事日志
+  sqlite_store.py   SQLite 持久化增强
+  skills_monitor.py 技能健康监控（已实现）
+  innovation.py     创新追踪（已实现）
+  trigger.py        外部触发器（已实现）
+adapters/           IDE 钩子生成器
+  hook_adapter.py   共享适配器逻辑（较完整）
+  setup_hooks.py    安装静态配置文件（Cursor/VSCode/Claude Code 基础）
+  cursor.py         Cursor 适配器（部分实现）
+  scripts/          运行时脚本（session_start, signal_detect, session_end 深度有限）
+  claude_code.py    Claude Code 适配器（已实现）
+  codex.py          Codex 适配器（已实现，功能略少于 Cursor）
+  kiro.py           Kiro 适配器（已实现）
+  opencode.py       OpenCode 适配器（已实现）
 atp/                Agent 交易协议市场
+  protocol.py       枚举与 Pydantic 模型（完整）
+  hub_client.py     Hub API 客户端（中等）
+  auto_buyer.py     自动消费代理（缺口检测 + run_tick + 预算去重）
+  auto_deliver.py   自动商家交付（轮询 + default_handler 认领交付）
+  consumer_agent.py 消费者代理模板（骨架）
+  merchant_agent.py 商家代理模板（骨架）
+  settlement.py     本地账本（较完整）
+  default_handler.py 默认处理器（已实现）
 ```
 
 ### 数据流（单周期）
@@ -182,3 +223,6 @@ atp/                Agent 交易协议市场
 - **`canary.py` 为子进程运行**：其在 `solidify` 提交之前于子进程中运行。测试中勿直接从中导入。
 - **种子数据**：`src/evolver/assets/gep/genes.seed.json` 为捆绑之默认基因。测试不应修改之——用 `GEP_ASSETS_DIR` 覆盖。
 - **测试隔离**：环境变量总是用 `monkeypatch.setenv`，勿直接用 `os.environ`。`temp_workspace` fixture 为此常用路径处理之。
+- **曾为空之模块**：`proxy/router/`、`proxy/extensions/`、`webui/client/` 等已填充；`proxy/trace/` 仍缺失。修改前确认目标模块是否已实现。
+- **Proxy 路由深度**：`proxy/server/routes.py` 路由均已实现，但 `/task/*`、部分 `/atp/*` 为本地状态机；Hub 长连接与 SSE streaming 仍待深化。
+- **许可证差异**：本移植使用 Apache-2.0，Node.js 参考实现使用 GPL-3.0-or-later。如引入 Node 版之测试或文档，须注意许可证兼容性。

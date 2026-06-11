@@ -1,10 +1,5 @@
 """Tests for evolver.gep.skill_distiller."""
 
-import tempfile
-from pathlib import Path
-
-import pytest
-
 from evolver.gep.skill_distiller import (
     DistilledSkill,
     distill_and_save,

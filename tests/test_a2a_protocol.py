@@ -13,7 +13,9 @@ from evolver.gep import a2a_protocol as a2a
 async def test_send_hello_success(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("A2A_HUB_URL", "https://mock.hub")
     monkeypatch.setenv("A2A_NODE_ID", "node_123")
-    route = respx.post("https://mock.hub/v1/a2a/hello").mock(return_value=Response(200, json={"status": "ok"}))
+    route = respx.post("https://mock.hub/v1/a2a/hello").mock(
+        return_value=Response(200, json={"status": "ok"})
+    )
     result = await a2a.send_hello()
     assert result["ok"] is True
     assert route.called
@@ -55,7 +57,9 @@ async def test_fetch_tasks_network_error(monkeypatch: pytest.MonkeyPatch) -> Non
 async def test_submit_task_result_success(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("A2A_HUB_URL", "https://mock.hub")
     monkeypatch.setenv("A2A_NODE_ID", "node_123")
-    route = respx.post("https://mock.hub/v1/a2a/tasks/t1/result").mock(return_value=Response(200, json={"status": "accepted"}))
+    route = respx.post("https://mock.hub/v1/a2a/tasks/t1/result").mock(
+        return_value=Response(200, json={"status": "accepted"})
+    )
     result = await a2a.submit_task_result("t1", {"outcome": "success"})
     assert result["ok"] is True
     assert route.called

@@ -87,6 +87,12 @@ ignore = [
     "PLR0913",  # many arguments inherited from Node design
 ]
 
+[tool.ruff.lint.per-file-ignores]
+# Self-contained HTML / embedded hook scripts — line breaks harm readability
+"src/evolver/webui/dashboard.py" = ["E501"]
+"src/evolver/adapters/opencode.py" = ["E501"]
+"src/evolver/adapters/setup_hooks.py" = ["E501"]
+
 [tool.ruff.format]
 quote-style = "double"
 indent-style = "space"

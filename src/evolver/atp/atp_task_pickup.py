@@ -10,7 +10,7 @@ import logging
 import re
 import time
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 from evolver.atp.hub_client import list_my_tasks
 from evolver.gep.paths import get_memory_dir
@@ -30,7 +30,7 @@ def _read_ledger() -> dict[str, Any]:
     if not p.exists():
         return {"version": 1, "spawned": {}}
     try:
-        return json.loads(p.read_text(encoding="utf-8"))
+        return cast(dict[str, Any], json.loads(p.read_text(encoding="utf-8")))
     except (json.JSONDecodeError, OSError):
         return {"version": 1, "spawned": {}}
 
@@ -82,7 +82,8 @@ async def pick_one() -> str | None:
             f"Order: {order_id}\n"
             f"Question: {question}\n"
             f"Write answer to: {answer_path}\n"
-            f"Then run: python -m evolver.atp.atp_execute --task-id={task_id} --answer-file={answer_path}\n"
+            "Then run: python -m evolver.atp.atp_execute "
+            f"--task-id={task_id} --answer-file={answer_path}\n"
         )
         spawned[task_id] = {"at": time.time(), "order_id": order_id}
         _write_ledger(ledger)

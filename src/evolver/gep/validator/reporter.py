@@ -75,7 +75,7 @@ def _load_queue(path: Path | None = None) -> list[dict[str, Any]]:
         return []
     entries: list[dict[str, Any]] = []
     try:
-        with open(p, "r", encoding="utf-8", errors="replace") as f:
+        with open(p, encoding="utf-8", errors="replace") as f:
             for line in f:
                 line = line.strip()
                 if not line:
@@ -94,9 +94,8 @@ def _load_queue(path: Path | None = None) -> list[dict[str, Any]]:
 def _append_to_queue(report: dict[str, Any], path: Path | None = None) -> None:
     p = path or _queue_path()
     p.parent.mkdir(parents=True, exist_ok=True)
-    with _lock:
-        with open(p, "a", encoding="utf-8") as f:
-            f.write(json.dumps(report, ensure_ascii=False) + "\n")
+    with _lock, open(p, "a", encoding="utf-8") as f:
+        f.write(json.dumps(report, ensure_ascii=False) + "\n")
 
 
 def _rewrite_queue(entries: list[dict[str, Any]], path: Path | None = None) -> None:
@@ -123,6 +122,7 @@ def _submit_single(report: dict[str, Any]) -> bool:
     """Submit a single report to the Hub. Returns True on success."""
     try:
         import httpx
+
         payload = {
             "task_id": report["task_id"],
             "validator_node_id": _node_id(),
@@ -204,7 +204,7 @@ def flush_queue(
             dropped += 1
             continue
         last_attempt = entry.get("_last_attempt", 0)
-        backoff = min(MAX_BACKOFF, BASE_BACKOFF * (2 ** retries))
+        backoff = min(MAX_BACKOFF, BASE_BACKOFF * (2**retries))
         if (now - last_attempt) >= backoff:
             eligible.append(entry)
 

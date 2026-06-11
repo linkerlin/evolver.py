@@ -6,10 +6,9 @@ Supports Cursor, Claude Code, VS Code, and a generic markdown fallback.
 from __future__ import annotations
 
 import json
-import os
+from collections.abc import Sequence
 from pathlib import Path
-from typing import Sequence
-
+from typing import Any
 
 SUPPORTED_PLATFORMS: Sequence[str] = ("cursor", "claude-code", "vscode", "generic")
 
@@ -169,23 +168,21 @@ def _write_cursor_hook(project_dir: Path, force: bool, dry_run: bool) -> list[st
     msgs: list[str] = []
     if target.exists() and not force:
         msgs.append(f"SKIP cursor hook (exists): {target}")
+    elif dry_run:
+        msgs.append(f"WOULD write cursor hook: {target}")
     else:
-        if dry_run:
-            msgs.append(f"WOULD write cursor hook: {target}")
-        else:
-            rules_dir.mkdir(parents=True, exist_ok=True)
-            target.write_text(_CURSOR_RULE, encoding="utf-8")
-            msgs.append(f"OK cursor hook: {target}")
+        rules_dir.mkdir(parents=True, exist_ok=True)
+        target.write_text(_CURSOR_RULE, encoding="utf-8")
+        msgs.append(f"OK cursor hook: {target}")
 
     if mcp_target.exists() and not force:
         msgs.append(f"SKIP cursor mcp (exists): {mcp_target}")
+    elif dry_run:
+        msgs.append(f"WOULD write cursor mcp: {mcp_target}")
     else:
-        if dry_run:
-            msgs.append(f"WOULD write cursor mcp: {mcp_target}")
-        else:
-            mcp_target.parent.mkdir(parents=True, exist_ok=True)
-            mcp_target.write_text(json.dumps(_CURSOR_MCP, indent=2) + "\n", encoding="utf-8")
-            msgs.append(f"OK cursor mcp: {mcp_target}")
+        mcp_target.parent.mkdir(parents=True, exist_ok=True)
+        mcp_target.write_text(json.dumps(_CURSOR_MCP, indent=2) + "\n", encoding="utf-8")
+        msgs.append(f"OK cursor mcp: {mcp_target}")
     return msgs
 
 
@@ -196,13 +193,12 @@ def _write_claude_hook(project_dir: Path, force: bool, dry_run: bool) -> list[st
     msgs: list[str] = []
     if target.exists() and not force:
         msgs.append(f"SKIP claude hook (exists): {target}")
+    elif dry_run:
+        msgs.append(f"WOULD write claude hook: {target}")
     else:
-        if dry_run:
-            msgs.append(f"WOULD write claude hook: {target}")
-        else:
-            claude_dir.mkdir(parents=True, exist_ok=True)
-            target.write_text(_CLAUDE_MD_HEADER, encoding="utf-8")
-            msgs.append(f"OK claude hook: {target}")
+        claude_dir.mkdir(parents=True, exist_ok=True)
+        target.write_text(_CLAUDE_MD_HEADER, encoding="utf-8")
+        msgs.append(f"OK claude hook: {target}")
 
     for cmd_name, cmd_data in _CLAUDE_COMMANDS.items():
         cmd_target = cmds_dir / f"{cmd_name}.json"
@@ -222,7 +218,7 @@ def _write_vscode_hook(project_dir: Path, force: bool, dry_run: bool) -> list[st
     vscode_dir = project_dir / ".vscode"
     target = vscode_dir / "settings.json"
     msgs: list[str] = []
-    existing: dict = {}
+    existing: dict[str, Any] = {}
     if target.exists():
         if not force:
             msgs.append(f"SKIP vscode hook (exists): {target}")
@@ -261,7 +257,7 @@ def install_hooks(
     project_dir: str | Path = ".",
     force: bool = False,
     dry_run: bool = False,
-) -> dict:
+) -> dict[str, Any]:
     """Install IDE hooks for the given platform.
 
     Returns a result dict with ``ok``, ``messages``, and ``platform`` keys.

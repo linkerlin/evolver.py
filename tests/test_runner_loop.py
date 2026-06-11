@@ -22,7 +22,9 @@ def isolated_evolver_env(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
 
 
 @pytest.mark.asyncio
-async def test_run_loop_runs_at_least_one_cycle(isolated_evolver_env: Path, capsys: pytest.CaptureFixture[str]) -> None:
+async def test_run_loop_runs_at_least_one_cycle(
+    isolated_evolver_env: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
     # Start loop then immediately request shutdown after a short delay
     async def stopper():
         await asyncio.sleep(0.3)
@@ -37,7 +39,9 @@ async def test_run_loop_runs_at_least_one_cycle(isolated_evolver_env: Path, caps
 
 
 @pytest.mark.asyncio
-async def test_run_loop_respects_shutdown_between_cycles(isolated_evolver_env: Path, capsys: pytest.CaptureFixture[str]) -> None:
+async def test_run_loop_respects_shutdown_between_cycles(
+    isolated_evolver_env: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
     # Let it run one cycle, then stop
     call_count = 0
 

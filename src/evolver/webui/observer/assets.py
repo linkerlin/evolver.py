@@ -3,17 +3,15 @@
 from __future__ import annotations
 
 import json
-import time
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
-from .jsonl import stream_jsonl
 from .paths import sanitize_path
 
 
 def _load_json(path: Path) -> dict[str, Any]:
     if path.exists():
-        return json.loads(path.read_text(encoding="utf-8"))
+        return cast(dict[str, Any], json.loads(path.read_text(encoding="utf-8")))
     return {}
 
 

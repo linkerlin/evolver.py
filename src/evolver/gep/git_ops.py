@@ -7,8 +7,9 @@ from __future__ import annotations
 
 import os
 import subprocess
+from collections.abc import Sequence
 from pathlib import Path
-from typing import Sequence
+from typing import Any
 
 CRITICAL_PROTECTED_PREFIXES = (
     ".env",
@@ -25,7 +26,9 @@ CRITICAL_PROTECTED_FILES = (
 )
 
 
-def run_cmd(args: Sequence[str], cwd: Path | str | None = None, timeout: float | None = None) -> str:
+def run_cmd(
+    args: Sequence[str], cwd: Path | str | None = None, timeout: float | None = None
+) -> str:
     """Run a git command and return stripped stdout. Raises on non-zero exit."""
     result = subprocess.run(
         ["git", *args],
@@ -68,7 +71,7 @@ def normalize_rel_path(path: str) -> str:
 
 def count_file_lines(path: Path | str) -> int:
     try:
-        with open(path, "r", encoding="utf-8", errors="replace") as f:
+        with open(path, encoding="utf-8", errors="replace") as f:
             return sum(1 for _ in f)
     except OSError:
         return 0
@@ -124,7 +127,7 @@ def is_constraint_counted_path(rel_path: str) -> bool:
 def rollback_tracked(
     mode: str | None = None,
     cwd: Path | str | None = None,
-) -> dict:
+) -> dict[str, Any]:
     """Roll back tracked changes according to EVOLVER_ROLLBACK_MODE."""
     if mode is None:
         mode = os.environ.get("EVOLVER_ROLLBACK_MODE", "stash").lower().strip()

@@ -8,9 +8,10 @@ from __future__ import annotations
 import json
 import os
 import tempfile
+from collections.abc import Iterator
 from contextlib import contextmanager
 from pathlib import Path
-from typing import Any, Iterator
+from typing import Any, cast
 
 from filelock import FileLock
 
@@ -24,19 +25,19 @@ def _sqlite_enabled() -> bool:
 
 def _safe_json_loads(raw: str) -> Any:
     try:
-        return json.loads(raw)
+        return cast(dict[str, Any], json.loads(raw))
     except json.JSONDecodeError:
         return None
 
 
-def read_json_if_exists(path: Path) -> Any:
+def read_json_if_exists(path: Path) -> dict[str, Any] | None:
     if not path.exists():
         return None
     try:
         raw = path.read_text(encoding="utf-8")
         if not raw.strip():
             return None
-        return json.loads(raw)
+        return cast(dict[str, Any], json.loads(raw))
     except (OSError, json.JSONDecodeError):
         return None
 
@@ -58,22 +59,22 @@ def atomic_write_json(path: Path, data: Any) -> None:
         raise
 
 
-def append_jsonl(path: Path, record: dict) -> None:
+def append_jsonl(path: Path, record: dict[str, Any]) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     with open(path, "a", encoding="utf-8") as f:
         f.write(json.dumps(record, ensure_ascii=False) + "\n")
 
 
-def read_jsonl_tail(path: Path, limit: int = 1000) -> list[dict]:
+def read_jsonl_tail(path: Path, limit: int = 1000) -> list[dict[str, Any]]:
     if not path.exists():
         return []
     lines: list[str] = []
     try:
-        with open(path, "r", encoding="utf-8") as f:
+        with open(path, encoding="utf-8") as f:
             lines = f.readlines()
     except OSError:
         return []
-    out: list[dict] = []
+    out: list[dict[str, Any]] = []
     for line in lines[-limit:]:
         line = line.strip()
         if not line:
@@ -85,7 +86,7 @@ def read_jsonl_tail(path: Path, limit: int = 1000) -> list[dict]:
     return out
 
 
-def read_jsonl_all(path: Path) -> list[dict]:
+def read_jsonl_all(path: Path) -> list[dict[str, Any]]:
     return read_jsonl_tail(path, limit=1_000_000)
 
 
@@ -147,21 +148,21 @@ def with_file_lock(timeout: float = 30.0) -> Iterator[None]:
 # --- Load / save genes ---
 
 
-def _maybe_verify_asset(asset: dict) -> bool:
+def _maybe_verify_asset(asset: dict[str, Any]) -> bool:
     asset_id = asset.get("asset_id")
     if not asset_id:
         return True
     return verify_asset_id(asset, asset_id)
 
 
-def _ensure_asset_id(asset: dict) -> dict:
+def _ensure_asset_id(asset: dict[str, Any]) -> dict[str, Any]:
     if not asset.get("asset_id"):
         asset = dict(asset)
         asset["asset_id"] = compute_asset_id(asset)
     return asset
 
 
-def load_genes() -> list[dict]:
+def load_genes() -> list[dict[str, Any]]:
     base = read_json_if_exists(genes_path()) or {}
     genes = list(base.get("genes", []))
     # Overlay genes.jsonl
@@ -184,7 +185,7 @@ def load_genes() -> list[dict]:
     return genes
 
 
-def upsert_gene(gene: dict) -> None:
+def upsert_gene(gene: dict[str, Any]) -> None:
     gene = _ensure_asset_id(gene)
     with with_file_lock():
         append_jsonl(genes_path().with_suffix(".jsonl"), gene)
@@ -193,7 +194,7 @@ def upsert_gene(gene: dict) -> None:
 # --- Load / save capsules ---
 
 
-def load_capsules() -> list[dict]:
+def load_capsules() -> list[dict[str, Any]]:
     base = read_json_if_exists(capsules_path()) or {}
     capsules = list(base.get("capsules", []))
     overlay_path = capsules_path().with_suffix(".jsonl")
@@ -210,22 +211,23 @@ def load_capsules() -> list[dict]:
     return capsules
 
 
-def append_capsule(capsule: dict) -> None:
+def append_capsule(capsule: dict[str, Any]) -> None:
     capsule = _ensure_asset_id(capsule)
     with with_file_lock():
         append_jsonl(capsules_path().with_suffix(".jsonl"), capsule)
 
 
-def upsert_capsule(capsule: dict) -> None:
+def upsert_capsule(capsule: dict[str, Any]) -> None:
     append_capsule(capsule)
 
 
 # --- Events ---
 
 
-def read_all_events() -> list[dict]:
+def read_all_events() -> list[dict[str, Any]]:
     if _sqlite_enabled():
         from evolver.ops.sqlite_store import read_all_events as _sqlite_read
+
         return _sqlite_read()
     return read_jsonl_all(events_path())
 
@@ -238,9 +240,10 @@ def get_last_event_id() -> str | None:
     return last.get("id") or last.get("event_id")
 
 
-def append_event_jsonl(record: dict) -> None:
+def append_event_jsonl(record: dict[str, Any]) -> None:
     if _sqlite_enabled():
         from evolver.ops.sqlite_store import append_event as _sqlite_append
+
         _sqlite_append(record)
         return
     with with_file_lock():
@@ -250,28 +253,28 @@ def append_event_jsonl(record: dict) -> None:
 # --- Candidates ---
 
 
-def append_candidate_jsonl(record: dict) -> None:
+def append_candidate_jsonl(record: dict[str, Any]) -> None:
     with with_file_lock():
         append_jsonl(candidates_path(), record)
 
 
-def append_external_candidate_jsonl(record: dict) -> None:
+def append_external_candidate_jsonl(record: dict[str, Any]) -> None:
     with with_file_lock():
         append_jsonl(external_candidates_path(), record)
 
 
-def read_recent_candidates(limit: int = 100) -> list[dict]:
+def read_recent_candidates(limit: int = 100) -> list[dict[str, Any]]:
     return read_jsonl_tail(candidates_path(), limit=limit)
 
 
-def read_recent_external_candidates(limit: int = 100) -> list[dict]:
+def read_recent_external_candidates(limit: int = 100) -> list[dict[str, Any]]:
     return read_jsonl_tail(external_candidates_path(), limit=limit)
 
 
 # --- Failed capsules ---
 
 
-def append_failed_capsule(record: dict) -> None:
+def append_failed_capsule(record: dict[str, Any]) -> None:
     with with_file_lock():
         path = failed_capsules_path()
         current = read_json_if_exists(path) or {"failed": []}
@@ -279,7 +282,7 @@ def append_failed_capsule(record: dict) -> None:
         atomic_write_json(path, current)
 
 
-def read_recent_failed_capsules(limit: int = 100) -> list[dict]:
+def read_recent_failed_capsules(limit: int = 100) -> list[dict[str, Any]]:
     data = read_json_if_exists(failed_capsules_path()) or {}
     return list(data.get("failed", []))[-limit:]
 

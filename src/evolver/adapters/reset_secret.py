@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import secrets
 from pathlib import Path
+from typing import Any
 
 
 def _generate_secret(length: int = 32) -> str:
@@ -49,7 +50,7 @@ def reset_local_secret(
     project_dir: str | Path = ".",
     also_node_id: bool = False,
     dry_run: bool = False,
-) -> dict:
+) -> dict[str, Any]:
     """Reset the local A2A_NODE_SECRET (and optionally A2A_NODE_ID).
 
     Returns a result dict with ``ok``, ``secret``, ``node_id``, and ``env_path``.
@@ -72,7 +73,7 @@ def reset_local_secret(
         }
 
     _update_env_file(env_path, "A2A_NODE_SECRET", new_secret)
-    if also_node_id:
+    if also_node_id and new_node_id:
         _update_env_file(env_path, "A2A_NODE_ID", new_node_id)
 
     return {

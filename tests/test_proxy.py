@@ -5,7 +5,8 @@ from __future__ import annotations
 import pytest
 from fastapi.testclient import TestClient
 
-from evolver.proxy.server import app, _trace
+from evolver.proxy.server import app
+from evolver.proxy.trace import get_trace_store
 
 
 @pytest.fixture
@@ -15,7 +16,7 @@ def client() -> TestClient:
 
 @pytest.fixture(autouse=True)
 def _clear_trace() -> None:
-    _trace.clear()
+    get_trace_store().clear()
 
 
 class TestHealth:
@@ -38,8 +39,9 @@ class TestProxyForward:
         assert response.json()["trace"] == []
 
     def test_trace_limit(self, client: TestClient) -> None:
+        store = get_trace_store()
         for i in range(5):
-            _trace.append({"ts": i})
+            store.push({"ts": i})
         response = client.get("/v1/a2a/trace?limit=3")
         assert response.status_code == 200
         assert len(response.json()["trace"]) == 3

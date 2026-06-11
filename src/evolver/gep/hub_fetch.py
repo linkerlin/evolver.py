@@ -22,8 +22,8 @@ import json
 import logging
 import threading
 import time
-from dataclasses import dataclass, field
-from typing import Any
+from dataclasses import dataclass
+from typing import Any, cast
 
 import httpx
 
@@ -103,7 +103,9 @@ _cb = CircuitBreaker()
 
 
 def _cache_key(method: str, url: str, params: Any, body: Any) -> str:
-    canonical = json.dumps({"m": method, "u": url, "p": params, "b": body}, sort_keys=True, separators=(",", ":"))
+    canonical = json.dumps(
+        {"m": method, "u": url, "p": params, "b": body}, sort_keys=True, separators=(",", ":")
+    )
     return hashlib.sha256(canonical.encode()).hexdigest()[:16]
 
 
@@ -161,7 +163,7 @@ def hub_fetch(
     if use_cache and method.upper() == "GET":
         cached = _get_cached(key, cache_ttl)
         if cached is not None:
-            return cached
+            return cast(dict[str, Any], cached)
 
     last_exc: Exception | None = None
     backoff = backoff_base
@@ -181,7 +183,7 @@ def hub_fetch(
             _cb.record_success()
             if use_cache and method.upper() == "GET":
                 _set_cached(key, data)
-            return data
+            return cast(dict[str, Any], data)
         except Exception as exc:
             last_exc = exc
             logger.debug("[HubFetch] Attempt %d failed for %s: %s", attempt + 1, url, exc)
@@ -190,7 +192,9 @@ def hub_fetch(
                 backoff = min(DEFAULT_BACKOFF_MAX, backoff * 2)
 
     _cb.record_failure()
-    raise RuntimeError(f"Hub fetch failed after {max_retries + 1} attempts: {last_exc}") from last_exc
+    raise RuntimeError(
+        f"Hub fetch failed after {max_retries + 1} attempts: {last_exc}"
+    ) from last_exc
 
 
 def reset_circuit_breaker() -> None:

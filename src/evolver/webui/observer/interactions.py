@@ -9,7 +9,9 @@ from .jsonl import stream_jsonl
 from .redact import redact_text
 
 
-def format_interactions(*, limit: int = 100, memory_dir: Path | None = None) -> list[dict[str, Any]]:
+def format_interactions(
+    *, limit: int = 100, memory_dir: Path | None = None
+) -> list[dict[str, Any]]:
     """Return recent interaction records, newest first."""
     from evolver.gep.paths import get_memory_dir
 
@@ -17,9 +19,7 @@ def format_interactions(*, limit: int = 100, memory_dir: Path | None = None) -> 
     events = list(stream_jsonl(mem / "events.jsonl", limit=limit * 2))
     # Filter to interaction-like events
     interactions = [
-        e
-        for e in events
-        if e.get("type") in ("interaction", "session", "signal", "solidify")
+        e for e in events if e.get("type") in ("interaction", "session", "signal", "solidify")
     ]
     interactions = interactions[-limit:]
     interactions.reverse()

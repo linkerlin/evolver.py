@@ -7,6 +7,7 @@ Called by CLI after a merchant writes an answer file.
 from __future__ import annotations
 
 import argparse
+import json
 import logging
 from pathlib import Path
 from typing import Any
@@ -20,20 +21,22 @@ MAX_ANSWER_CHARS = 32_000
 
 
 def _build_gene(answer: str, task: dict[str, Any]) -> dict[str, Any]:
-    return {
+    gene: dict[str, Any] = {
         "type": "Gene",
-        "asset_id": compute_asset_id(answer),
+        "id": f"atp-{task.get('task_id', 'unknown')}",
         "summary": f"ATP answer for {task.get('task_id', '')}",
-        "strategy": "atp_merchant_delivery",
-        "constraints": [],
-        "validation_rules": [],
+        "strategy": ["atp_merchant_delivery"],
+        "validation": [],
+        "constraints": {"max_files": 1, "forbidden_paths": [".git"]},
     }
+    gene["asset_id"] = compute_asset_id(gene)
+    return gene
 
 
 def _build_capsule(answer: str, task: dict[str, Any]) -> dict[str, Any]:
-    return {
+    capsule: dict[str, Any] = {
         "type": "Capsule",
-        "asset_id": compute_asset_id(answer + "|capsule"),
+        "id": f"atp-cap-{task.get('task_id', 'unknown')}",
         "content": answer[:MAX_ANSWER_CHARS],
         "a2a": {
             "atp": {
@@ -43,6 +46,8 @@ def _build_capsule(answer: str, task: dict[str, Any]) -> dict[str, Any]:
             }
         },
     }
+    capsule["asset_id"] = compute_asset_id(capsule)
+    return capsule
 
 
 async def complete_atp_task(
@@ -71,6 +76,7 @@ def main() -> None:
     args = parser.parse_args()
 
     import asyncio
+
     result = asyncio.run(complete_atp_task(args.task_id, args.answer_file))
     print(json.dumps(result, ensure_ascii=False))
     if not result.get("ok"):

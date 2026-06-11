@@ -9,8 +9,7 @@ import os
 import time
 from dataclasses import dataclass
 from pathlib import Path
-
-import psutil
+from typing import Any, cast
 
 
 @dataclass
@@ -33,7 +32,7 @@ def detect_cpu_count() -> int:
 def get_system_load() -> LoadSample:
     cpu_count = detect_cpu_count()
     try:
-        raw = os.getloadavg()
+        raw = os.getloadavg()  # type: ignore[attr-defined]
         loads = [min(float(x), 2.0 * cpu_count) for x in raw]
     except (AttributeError, OSError):
         loads = [0.0, 0.0, 0.0]
@@ -57,7 +56,7 @@ def _dormant_path() -> Path:
     return get_evolution_dir() / "dormant_hypothesis.json"
 
 
-def write_dormant_hypothesis(payload: dict) -> None:
+def write_dormant_hypothesis(payload: dict[str, Any]) -> None:
     path = _dormant_path()
     path.parent.mkdir(parents=True, exist_ok=True)
     import json
@@ -65,14 +64,14 @@ def write_dormant_hypothesis(payload: dict) -> None:
     path.write_text(json.dumps(payload), encoding="utf-8")
 
 
-def read_dormant_hypothesis() -> dict | None:
+def read_dormant_hypothesis() -> dict[str, Any] | None:
     import json
 
     path = _dormant_path()
     if not path.exists():
         return None
     try:
-        return json.loads(path.read_text(encoding="utf-8"))
+        return cast(dict[str, Any], json.loads(path.read_text(encoding="utf-8")))
     except (OSError, json.JSONDecodeError):
         return None
 
@@ -86,7 +85,7 @@ def clear_dormant_hypothesis() -> None:
 def check_repair_loop_circuit_breaker(
     threshold: int | None = None,
     window: int = 10,
-) -> dict:
+) -> dict[str, Any]:
     """Inspect asset-store history to detect repair loops.
 
     A repair loop is defined as ``threshold`` consecutive events whose
@@ -143,11 +142,16 @@ async def run_preflight_checks(is_loop: bool = False, is_dry_run: bool = False) 
     if cb["tripped"]:
         return PreflightResult(
             abort=True,
-            reason=f"repair loop detected ({cb['consecutive']}/{cb['threshold']} consecutive failed repair cycles)",
+            reason=(
+                f"repair loop detected ({cb['consecutive']}/{cb['threshold']} "
+                "consecutive failed repair cycles)"
+            ),
         )
 
     # User lock
-    user_lock = Path(os.environ.get("EVOLVER_USER_LOCK", "")) or (Path.home() / ".evolver" / "user.lock")
+    user_lock = Path(os.environ.get("EVOLVER_USER_LOCK", "")) or (
+        Path.home() / ".evolver" / "user.lock"
+    )
     if user_lock.exists():
         lock_eval = evaluate_user_lock(user_lock)
         if lock_eval.yield_required:
@@ -184,8 +188,7 @@ def evaluate_user_lock(
 ) -> LockEvaluation:
     if now is None:
         now = time.time() * 1000
-    if ttl_ms < MIN_USER_LOCK_TTL_MS:
-        ttl_ms = MIN_USER_LOCK_TTL_MS
+    ttl_ms = max(ttl_ms, MIN_USER_LOCK_TTL_MS)
     if not lock_path.exists():
         return LockEvaluation(yield_required=False, reason="no_lock")
     try:

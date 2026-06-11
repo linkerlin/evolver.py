@@ -5,7 +5,6 @@ Equivalent to evolver/src/evolve/pipeline/collect.js.
 
 from __future__ import annotations
 
-import os
 import platform
 import time
 from pathlib import Path
@@ -83,7 +82,7 @@ def check_system_health() -> str:
     )
 
 
-def diagnose_session_source_empty(diagnostics: dict | None = None) -> dict:
+def diagnose_session_source_empty(diagnostics: dict[str, Any] | None = None) -> dict[str, Any]:
     return diagnostics or {
         "memory_present": (get_workspace_root() / "MEMORY.md").exists(),
         "user_present": (get_workspace_root() / "USER.md").exists(),
@@ -91,8 +90,13 @@ def diagnose_session_source_empty(diagnostics: dict | None = None) -> dict:
     }
 
 
-def reset_session_source_warning() -> None:
-    pass
+def reset_session_source_warning() -> dict[str, Any]:
+    """Reset and return the current session source diagnostic state.
+
+    Clears any transient warning flags so the next cycle starts fresh.
+    Equivalent to evolver/src/evolve/pipeline/collect.js::resetSessionSourceWarning.
+    """
+    return diagnose_session_source_empty()
 
 
 def format_cursor_transcript(raw: str) -> str:

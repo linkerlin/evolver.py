@@ -14,7 +14,9 @@ def test_get_workspace_root_prefers_env(monkeypatch: pytest.MonkeyPatch, tmp_pat
     assert paths.get_workspace_root() == tmp_path
 
 
-def test_get_workspace_root_falls_back_to_cwd(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_get_workspace_root_falls_back_to_cwd(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     monkeypatch.delenv("OPENCLAW_WORKSPACE", raising=False)
     monkeypatch.chdir(tmp_path)
     assert paths.get_workspace_root() == tmp_path

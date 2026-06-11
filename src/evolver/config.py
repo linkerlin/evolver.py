@@ -11,7 +11,6 @@ import os
 import warnings
 from typing import Final
 
-
 _ENV_WARNED: set[str] = set()
 
 
@@ -34,8 +33,7 @@ def env_positive_int(key: str, fallback: int) -> int:
         n = int(v)
     except ValueError:
         n = None
-    valid = n is not None and 0 < n < 2**31
-    if not valid:
+    if n is None or not (0 < n < 2**31):
         if key not in _ENV_WARNED:
             _ENV_WARNED.add(key)
             warnings.warn(
@@ -174,7 +172,11 @@ REUSE_ATTRIBUTION_MODE: Final = env_str("EVOLVER_REUSE_ATTRIBUTION", "off")
 
 
 def reuse_attribution_mode() -> str:
-    v = (os.environ.get("EVOLVER_REUSE_ATTRIBUTION") or REUSE_ATTRIBUTION_MODE or "off").lower().strip()
+    v = (
+        (os.environ.get("EVOLVER_REUSE_ATTRIBUTION") or REUSE_ATTRIBUTION_MODE or "off")
+        .lower()
+        .strip()
+    )
     return "shadow" if v == "shadow" else "off"
 
 
@@ -194,72 +196,72 @@ VALIDATOR_CMD_TIMEOUT_MS: Final = env_int("EVOLVER_VALIDATOR_CMD_TIMEOUT_MS", 60
 VALIDATOR_BATCH_TIMEOUT_MS: Final = env_int("EVOLVER_VALIDATOR_BATCH_TIMEOUT_MS", 180_000)
 
 __all__ = [
-    "env_int",
-    "env_positive_int",
-    "env_float",
-    "env_str",
-    "env_bool",
-    "resolve_hub_url",
-    "HELLO_TIMEOUT_MS",
-    "HEARTBEAT_TIMEOUT_MS",
-    "HEARTBEAT_INTERVAL_MS",
-    "HEARTBEAT_FIRST_DELAY_MS",
-    "EVENT_POLL_TIMEOUT_MS",
-    "HTTP_TRANSPORT_TIMEOUT_MS",
-    "SECRET_CACHE_TTL_MS",
-    "HUB_SEARCH_TIMEOUT_MS",
-    "PUBLIC_DEFAULT_HUB_URL",
+    "ACTIVE_WINDOW_MS",
     "BLAST_RADIUS_HARD_CAP_FILES",
     "BLAST_RADIUS_HARD_CAP_LINES",
-    "VALIDATION_TIMEOUT_MS",
-    "CANARY_TIMEOUT_MS",
-    "CAPSULE_CONTENT_MAX_CHARS",
-    "SOLIDIFY_MAX_RETRIES",
-    "SOLIDIFY_RETRY_INTERVAL_MS",
-    "MIN_PUBLISH_SCORE",
     "BROADCAST_SCORE_THRESHOLD",
     "BROADCAST_SUCCESS_STREAK",
-    "MAX_REGEX_PATTERN_LEN",
-    "REPAIR_LOOP_THRESHOLD",
-    "GENE_BAN_PER_KEY_ATTEMPTS",
+    "CANARY_TIMEOUT_MS",
+    "CAPSULE_CONTENT_MAX_CHARS",
+    "CLEANUP_MAX_AGE_MS",
+    "CLEANUP_MAX_FILES",
+    "CLEANUP_MIN_KEEP",
+    "DORMANT_TTL_MS",
+    "EVENT_POLL_TIMEOUT_MS",
     "GENE_BAN_BEST_THRESHOLD",
-    "GENE_INERT_BAN_STREAK",
+    "GENE_BAN_PER_KEY_ATTEMPTS",
     "GENE_EPIGENETIC_HARD_BOOST",
-    "SESSION_ARCHIVE_TRIGGER",
-    "SESSION_ARCHIVE_KEEP",
-    "MEMORY_FRAGMENT_MAX_CHARS",
+    "GENE_INERT_BAN_STREAK",
+    "HEARTBEAT_FIRST_DELAY_MS",
+    "HEARTBEAT_INTERVAL_MS",
+    "HEARTBEAT_TIMEOUT_MS",
+    "HELLO_TIMEOUT_MS",
+    "HTTP_TRANSPORT_TIMEOUT_MS",
+    "HUB_SEARCH_TIMEOUT_MS",
     "IDLE_FETCH_INTERVAL_MS",
-    "PROMPT_MAX_CHARS",
-    "ACTIVE_WINDOW_MS",
-    "TARGET_BYTES",
+    "LEAK_CHECK_MODE",
+    "LOCK_MAX_AGE_MS",
+    "MAX_REGEX_PATTERN_LEN",
+    "MAX_SILENCE_MS",
+    "MEMORY_FRAGMENT_MAX_CHARS",
+    "MEMORY_GRAPH_READ_LIMIT",
+    "MIN_PUBLISH_SCORE",
+    "NARRATIVE_SUMMARY_MAX_CHARS",
+    "PACKAGE_DESC_CACHE_TTL_MS",
     "PER_FILE_BYTES",
     "PER_SESSION_BYTES",
+    "PROMPT_MAX_CHARS",
+    "PUBLIC_DEFAULT_HUB_URL",
     "RECENCY_GUARD_MS",
-    "DORMANT_TTL_MS",
-    "PACKAGE_DESC_CACHE_TTL_MS",
-    "MEMORY_GRAPH_READ_LIMIT",
-    "NARRATIVE_SUMMARY_MAX_CHARS",
-    "MAX_SILENCE_MS",
-    "CLEANUP_MAX_AGE_MS",
-    "CLEANUP_MIN_KEEP",
-    "CLEANUP_MAX_FILES",
-    "LOCK_MAX_AGE_MS",
-    "SELF_PR_MIN_SCORE",
-    "SELF_PR_MIN_STREAK",
+    "REPAIR_LOOP_THRESHOLD",
+    "REUSE_ATTRIBUTION_MODE",
+    "SECRET_CACHE_TTL_MS",
+    "SELF_PR_COOLDOWN_MS",
     "SELF_PR_MAX_FILES",
     "SELF_PR_MAX_LINES",
-    "SELF_PR_COOLDOWN_MS",
+    "SELF_PR_MIN_SCORE",
+    "SELF_PR_MIN_STREAK",
     "SELF_PR_REPO",
     "SELF_PR_TIMEOUT_MS",
-    "LEAK_CHECK_MODE",
-    "REUSE_ATTRIBUTION_MODE",
-    "reuse_attribution_mode",
-    "VALIDATOR_ENABLED",
-    "VALIDATOR_STAKE_AMOUNT",
-    "VALIDATOR_MAX_TASKS_PER_CYCLE",
-    "VALIDATOR_FETCH_TIMEOUT_MS",
-    "VALIDATOR_REPORT_TIMEOUT_MS",
-    "VALIDATOR_STAKE_TIMEOUT_MS",
-    "VALIDATOR_CMD_TIMEOUT_MS",
+    "SESSION_ARCHIVE_KEEP",
+    "SESSION_ARCHIVE_TRIGGER",
+    "SOLIDIFY_MAX_RETRIES",
+    "SOLIDIFY_RETRY_INTERVAL_MS",
+    "TARGET_BYTES",
+    "VALIDATION_TIMEOUT_MS",
     "VALIDATOR_BATCH_TIMEOUT_MS",
+    "VALIDATOR_CMD_TIMEOUT_MS",
+    "VALIDATOR_ENABLED",
+    "VALIDATOR_FETCH_TIMEOUT_MS",
+    "VALIDATOR_MAX_TASKS_PER_CYCLE",
+    "VALIDATOR_REPORT_TIMEOUT_MS",
+    "VALIDATOR_STAKE_AMOUNT",
+    "VALIDATOR_STAKE_TIMEOUT_MS",
+    "env_bool",
+    "env_float",
+    "env_int",
+    "env_positive_int",
+    "env_str",
+    "resolve_hub_url",
+    "reuse_attribution_mode",
 ]

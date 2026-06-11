@@ -47,7 +47,7 @@ import logging
 import threading
 import time
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 from evolver.gep.paths import get_workspace_root
 
@@ -71,7 +71,7 @@ def load_registry(path: Path | None = None) -> dict[str, Any]:
     if not p.exists():
         return {"version": 1, "prs": []}
     try:
-        with open(p, "r", encoding="utf-8") as f:
+        with open(p, encoding="utf-8") as f:
             data = json.load(f)
         if not isinstance(data, dict):
             return {"version": 1, "prs": []}
@@ -144,7 +144,7 @@ def update_pr_status(
                 pr["status"] = status
                 pr["updated_at"] = time.time()
                 save_registry(data, path)
-                return pr
+                return cast(dict[str, Any], pr)
     return None
 
 
@@ -195,6 +195,7 @@ def archive_merged_prs(path: Path | None = None) -> list[dict[str, Any]]:
         if remote_status is None and token:
             try:
                 import httpx
+
                 # Extract repo from pr_url
                 url = pr.get("pr_url", "")
                 m = __import__("re").search(r"github\.com/([^/]+/[^/]+)/pull/", url)

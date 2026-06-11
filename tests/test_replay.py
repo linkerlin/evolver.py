@@ -35,5 +35,3 @@ class TestReplay:
         events = sqlite_store.read_events_range("2024-01-01T11:00:00Z", "2024-01-01T13:00:00Z")
         assert len(events) == 1
         assert events[0]["id"] == "b"
-
-

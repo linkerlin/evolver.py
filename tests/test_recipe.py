@@ -4,7 +4,6 @@ from __future__ import annotations
 
 from pathlib import Path
 
-import pytest
 import respx
 from httpx import Response
 
@@ -15,7 +14,10 @@ class TestListRecipes:
     @respx.mock
     async def test_success(self) -> None:
         respx.get("https://evomap.ai/v1/recipes/").mock(
-            return_value=Response(200, json={"recipes": [{"id": "r1", "name": "FastAPI"}, {"id": "r2", "name": "React"}]})
+            return_value=Response(
+                200,
+                json={"recipes": [{"id": "r1", "name": "FastAPI"}, {"id": "r2", "name": "React"}]},
+            )
         )
         result = await list_recipes()
         assert result["ok"] is True
@@ -36,7 +38,9 @@ class TestGetRecipe:
     @respx.mock
     async def test_success(self) -> None:
         respx.get("https://evomap.ai/v1/recipes/r1").mock(
-            return_value=Response(200, json={"id": "r1", "files": [{"path": "main.py", "content": "print(1)"}]})
+            return_value=Response(
+                200, json={"id": "r1", "files": [{"path": "main.py", "content": "print(1)"}]}
+            )
         )
         result = await get_recipe("r1")
         assert result["ok"] is True

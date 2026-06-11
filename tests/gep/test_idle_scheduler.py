@@ -2,8 +2,6 @@
 
 from unittest.mock import patch
 
-import pytest
-
 from evolver.gep.idle_scheduler import (
     INTENSITY_DEEP_THRESHOLD,
     INTENSITY_LIGHT_THRESHOLD,

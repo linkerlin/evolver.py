@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-import pytest
-
 from evolver.gep import signals as sig
 
 
@@ -31,7 +29,11 @@ def test_extract_keyword_score_perf_bottleneck() -> None:
 
 
 def test_extract_regex_error_hit() -> None:
-    s = sig._extract_regex("Something went wrong: Error: connection refused", "something went wrong: error: connection refused", True)
+    s = sig._extract_regex(
+        "Something went wrong: Error: connection refused",
+        "something went wrong: error: connection refused",
+        True,
+    )
     assert "log_error" in s
     assert any(x.startswith("errsig:") for x in s)
 
@@ -43,7 +45,9 @@ def test_extract_regex_feature_request_multilingual() -> None:
 
 
 def test_extract_signals_returns_stable_default() -> None:
-    s = sig.extract_signals(recent_session_transcript="", today_log="", memory_snippet="", user_snippet="")
+    s = sig.extract_signals(
+        recent_session_transcript="", today_log="", memory_snippet="", user_snippet=""
+    )
     assert "stable_success_plateau" in s
 
 
@@ -53,7 +57,10 @@ def test_extract_signals_detects_error() -> None:
 
 
 def test_extract_signals_repair_loop() -> None:
-    events = [{"signals": ["log_error"], "intent": "repair", "outcome": {"status": "failed"}} for _ in range(4)]
+    events = [
+        {"signals": ["log_error"], "intent": "repair", "outcome": {"status": "failed"}}
+        for _ in range(4)
+    ]
     s = sig.extract_signals(recent_session_transcript="Error", recent_events=events)
     assert "repair_loop_detected" in s
     assert "force_innovation_after_repair_loop" in s

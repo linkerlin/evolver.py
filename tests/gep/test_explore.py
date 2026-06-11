@@ -1,12 +1,6 @@
 """Tests for evolver.gep.explore."""
 
-import tempfile
-from pathlib import Path
-
-import pytest
-
 from evolver.gep.explore import (
-    ExplorationTask,
     explore_workspace,
     top_exploration_signals,
 )

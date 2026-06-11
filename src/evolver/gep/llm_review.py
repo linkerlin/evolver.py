@@ -78,7 +78,10 @@ def _build_prompt(diff_text: str, gene_summary: str, constraints: list[str] | No
         "5. Ensure test files are included if logic changes.",
     ]
     lines = [
-        "You are a senior code reviewer. Review the following git diff and decide whether it should be approved.",
+        (
+            "You are a senior code reviewer. Review the following git diff "
+            "and decide whether it should be approved."
+        ),
         "",
         "## Gene Summary",
         gene_summary or "(no summary provided)",
@@ -109,6 +112,7 @@ def _call_llm(prompt: str, timeout: float = 10.0) -> str:
     """
     try:
         import httpx
+
         resp = httpx.post(
             "http://127.0.0.1:19820/v1/messages",
             json={
@@ -124,7 +128,9 @@ def _call_llm(prompt: str, timeout: float = 10.0) -> str:
         # Extract content from Anthropic-style response
         content = data.get("content", "")
         if isinstance(content, list) and content:
-            return content[0].get("text", "")
+            first = content[0]
+            if isinstance(first, dict):
+                return str(first.get("text", ""))
         return str(content)
     except Exception as exc:
         raise RuntimeError(f"LLM call failed: {exc}") from exc
@@ -204,7 +210,8 @@ def review_diff(
         return LLMReviewResult(
             approved=False,
             confidence=0.0,
-            concerns=["Secret leak detected — refusing to send to LLM"] + leak.get("pattern_leaks", []),
+            concerns=["Secret leak detected — refusing to send to LLM"]
+            + leak.get("pattern_leaks", []),
         )
 
     t0 = time.time()

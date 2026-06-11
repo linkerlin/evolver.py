@@ -1,12 +1,7 @@
 """Tests for evolver.gep.skill_publisher."""
 
-from unittest.mock import MagicMock, patch
-
-import pytest
-
 from evolver.gep.skill_distiller import DistilledSkill
 from evolver.gep.skill_publisher import (
-    SkillPublication,
     _load_published_hashes,
     _save_published_hashes,
     list_publishable_skills,
@@ -70,6 +65,7 @@ class TestListPublishableSkills:
         # Pre-publish
         dedup = tmp_path / "published.json"
         import hashlib
+
         text = (skills_dir / "test.md").read_text()
         h = hashlib.sha256(text.encode()).hexdigest()[:16]
         _save_published_hashes({h}, path=dedup)

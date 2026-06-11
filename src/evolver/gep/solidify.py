@@ -15,7 +15,6 @@ from typing import Any
 from evolver.config import VALIDATION_TIMEOUT_MS
 from evolver.gep.asset_store import append_event_jsonl, read_json_if_exists
 from evolver.gep.execution_trace import build_execution_trace
-from evolver.ops.narrative import record_narrative_and_reflection
 from evolver.gep.git_ops import (
     capture_diff_snapshot,
     git_list_changed_files,
@@ -25,11 +24,11 @@ from evolver.gep.git_ops import (
     rollback_tracked,
 )
 from evolver.gep.paths import (
-    get_evolution_dir,
-    get_gep_assets_dir,
     get_solidify_state_path,
     get_workspace_root,
 )
+from evolver.gep.cognition import post_solidify_hooks, record_solidify_failure
+from evolver.ops.narrative import record_narrative_and_reflection
 
 
 def write_state_for_solidify(last_run: dict[str, Any]) -> None:
@@ -49,7 +48,7 @@ def _read_solidify_state() -> dict[str, Any] | None:
 
 
 def _run_validations(commands: list[str], cwd: Path) -> dict[str, Any]:
-    results: list[dict] = []
+    results: list[dict[str, Any]] = []
     overall_ok = True
     for cmd in commands:
         result = {"command": cmd, "ok": False, "stdout": "", "stderr": ""}
@@ -82,7 +81,7 @@ def _compute_blast_radius() -> dict[str, int]:
     for rel in changed + untracked:
         p = cwd / rel
         try:
-            with open(p, "r", encoding="utf-8", errors="replace") as f:
+            with open(p, encoding="utf-8", errors="replace") as f:
                 lines += sum(1 for _ in f)
         except OSError:
             pass
@@ -91,7 +90,7 @@ def _compute_blast_radius() -> dict[str, int]:
 
 def solidify(
     *,
-    mutation_override: dict | None = None,
+    mutation_override: dict[str, Any] | None = None,
     skip_validation: bool = False,
 ) -> dict[str, Any]:
     """Run a solidify cycle."""
@@ -114,6 +113,7 @@ def solidify(
         if not validation_result["ok"]:
             rollback_tracked()
             rollback_new_untracked_files(git_list_untracked_files(cwd))
+            record_solidify_failure(last_run, error="validation_failed")
             return {
                 "ok": False,
                 "error": "validation_failed",
@@ -124,7 +124,7 @@ def solidify(
     diff_snapshot = capture_diff_snapshot(cwd)
 
     # Build execution trace from validation results
-    trace: list[dict] = []
+    trace: list[dict[str, Any]] = []
     if validation_result:
         commands = [r["command"] for r in validation_result["results"]]
         outputs = [r["stdout"] + "\n" + r["stderr"] for r in validation_result["results"]]
@@ -149,6 +149,11 @@ def solidify(
     # Generate narrative and reflection
     try:
         record_narrative_and_reflection(event)
+    except Exception:
+        pass
+
+    try:
+        post_solidify_hooks(event, last_run)
     except Exception:
         pass
 

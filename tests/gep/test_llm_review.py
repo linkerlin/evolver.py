@@ -2,11 +2,8 @@
 
 from unittest.mock import patch
 
-import pytest
-
 from evolver.gep.llm_review import (
     LLMReviewResult,
-    MIN_CONFIDENCE,
     _build_prompt,
     _parse_review_response,
     is_approved,

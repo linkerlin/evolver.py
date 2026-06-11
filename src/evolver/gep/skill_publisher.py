@@ -63,7 +63,7 @@ def _load_published_hashes(path: Path | None = None) -> set[str]:
     if not p.exists():
         return set()
     try:
-        with open(p, "r", encoding="utf-8") as f:
+        with open(p, encoding="utf-8") as f:
             data = json.load(f)
         return set(data.get("hashes", []))
     except (OSError, json.JSONDecodeError):
@@ -148,13 +148,31 @@ def publish_skill(
         # Lazy import to avoid circular deps
         try:
             from evolver.atp.service_helper import publish as _real_publish
+
             publish_fn = _real_publish
         except ImportError:
             logger.warning("[SkillPublisher] ATP service_helper not available")
             return None
 
     try:
-        result = publish_fn(listing=listing)
+        if _publish_fn is not None:
+            result: dict[str, Any] = _publish_fn(
+                title=listing.title,
+                description=listing.description,
+                capabilities=listing.capabilities,
+                price_per_task=listing.price_per_task,
+            )
+        else:
+            import asyncio
+
+            result = asyncio.run(
+                publish_fn(
+                    title=listing.title,
+                    description=listing.description,
+                    capabilities=listing.capabilities,
+                    price_per_task=listing.price_per_task,
+                )
+            )
         published.add(skill.source_hash)
         _save_published_hashes(published, dedup_path)
         logger.info("[SkillPublisher] Published skill %s as %s", skill.name, listing.service_id)

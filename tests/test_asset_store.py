@@ -31,7 +31,9 @@ def test_append_jsonl_and_read(tmp_path: Path) -> None:
 
 def test_load_genes_with_overlay(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("GEP_ASSETS_DIR", str(tmp_path))
-    asset_store.atomic_write_json(tmp_path / "genes.json", {"version": 1, "genes": [{"id": "g1", "category": "repair"}]})
+    asset_store.atomic_write_json(
+        tmp_path / "genes.json", {"version": 1, "genes": [{"id": "g1", "category": "repair"}]}
+    )
     asset_store.append_jsonl(tmp_path / "genes.jsonl", {"id": "g1", "category": "innovate"})
     genes = asset_store.load_genes()
     assert len(genes) == 1

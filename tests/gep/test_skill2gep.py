@@ -1,10 +1,5 @@
 """Tests for evolver.gep.skill2gep."""
 
-import tempfile
-from pathlib import Path
-
-import pytest
-
 from evolver.gep.skill2gep import (
     SkillGene,
     scan_skills,

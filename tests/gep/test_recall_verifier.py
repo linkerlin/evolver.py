@@ -1,7 +1,5 @@
 """Tests for evolver.gep.recall_verifier."""
 
-import tempfile
-from pathlib import Path
 from unittest.mock import patch
 
 import pytest
@@ -19,7 +17,9 @@ from evolver.gep.recall_verifier import (
 
 class TestStaleness:
     def test_fresh(self):
-        assert _staleness(time.time() - 10, time.time()) == pytest.approx(10 / STALE_THRESHOLD_SECONDS, rel=0.01)
+        assert _staleness(time.time() - 10, time.time()) == pytest.approx(
+            10 / STALE_THRESHOLD_SECONDS, rel=0.01
+        )
 
     def test_very_stale(self):
         assert _staleness(0, time.time()) == 1.0

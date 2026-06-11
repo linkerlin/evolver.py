@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-import pytest
-
 from evolver.evolve.pipeline.hub import hub_phase
 
 
@@ -16,6 +14,7 @@ class TestHubPhase:
     async def test_offline(self, monkeypatch):
         async def fail(*a, **k):
             raise Exception("no network")
+
         monkeypatch.setattr("evolver.gep.a2a_protocol.fetch_tasks", fail)
         ctx = {}
         result = await hub_phase(ctx)

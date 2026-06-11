@@ -5,7 +5,7 @@ Equivalent to evolver/src/gep/schemas/task.js.
 
 from __future__ import annotations
 
-from typing import Literal
+from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -41,7 +41,7 @@ class Task(BaseModel):
 TASK_DEFAULTS = Task().model_dump()
 
 
-def create_task(partial: dict | None = None) -> Task:
+def create_task(partial: dict[str, Any] | None = None) -> Task:
     return Task.model_validate(partial or {})
 
 

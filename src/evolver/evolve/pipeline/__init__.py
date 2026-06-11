@@ -9,9 +9,9 @@ from evolver.evolve.pipeline.signals import signals_phase
 
 __all__ = [
     "collect_phase",
-    "signals_phase",
-    "hub_phase",
-    "enrich_phase",
-    "select_phase",
     "dispatch_phase",
+    "enrich_phase",
+    "hub_phase",
+    "select_phase",
+    "signals_phase",
 ]

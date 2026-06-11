@@ -110,7 +110,9 @@ class Proof(BaseModel):
     model_config = ConfigDict(extra="forbid")
     proof_id: str
     order_id: str
-    status: Literal["pending", "submitted", "verified", "disputed", "settled", "rejected"] = "pending"
+    status: Literal["pending", "submitted", "verified", "disputed", "settled", "rejected"] = (
+        "pending"
+    )
     score: float = Field(ge=0.0, le=1.0, default=0.0)
     verifier_id: str | None = None
 

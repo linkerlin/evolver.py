@@ -73,15 +73,15 @@ def _tfidf_similarity(query: str, description: str, corpus: list[str]) -> float:
 def _signal_score(service: dict[str, Any]) -> float:
     """Compute a 0–1 signal score from service metadata."""
     # Uptime rate
-    uptime = service.get("uptime_rate", 1.0)
+    uptime = float(service.get("uptime_rate", 1.0))
     # Avg response time (ms) — lower is better, clamp at 5 s
-    avg_ms = service.get("avg_response_ms", 500)
+    avg_ms = float(service.get("avg_response_ms", 500))
     response_score = max(0.0, 1.0 - avg_ms / 5000)
     # Success rate
-    success_rate = service.get("success_rate", 1.0)
+    success_rate = float(service.get("success_rate", 1.0))
     # Reviews / rating
-    rating = service.get("rating", 0.0)
-    reviews = service.get("reviews_count", 0)
+    rating = float(service.get("rating", 0.0))
+    reviews = float(service.get("reviews_count", 0))
     review_boost = min(1.0, reviews / 10) * (rating / 5.0 if rating else 0.5)
 
     weights = {"uptime": 0.3, "response": 0.25, "success": 0.25, "reviews": 0.2}
@@ -118,10 +118,9 @@ def search_services(
         q_tokens = _tokenize(query)
         title_tokens = _tokenize(title)
         desc_tokens = _tokenize(desc)
-        keyword_score = (
-            0.6 * len(q_tokens & title_tokens) / max(len(q_tokens), 1)
-            + 0.4 * len(q_tokens & desc_tokens) / max(len(q_tokens), 1)
-        )
+        keyword_score = 0.6 * len(q_tokens & title_tokens) / max(len(q_tokens), 1) + 0.4 * len(
+            q_tokens & desc_tokens
+        ) / max(len(q_tokens), 1)
 
         # Semantic
         semantic_score = _tfidf_similarity(query, desc, corpus)
@@ -132,11 +131,7 @@ def search_services(
             continue
 
         # Combined score (arbitrary weights tuned for balance)
-        combined = (
-            0.35 * min(1.0, keyword_score)
-            + 0.35 * max(0.0, semantic_score)
-            + 0.30 * sig
-        )
+        combined = 0.35 * min(1.0, keyword_score) + 0.35 * max(0.0, semantic_score) + 0.30 * sig
         hits.append(
             ServiceHit(
                 service_id=service_id,

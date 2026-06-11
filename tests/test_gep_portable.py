@@ -9,7 +9,6 @@ import pytest
 
 from evolver.gep.portable import (
     ImportError,
-    _file_hash,
     _read_jsonl,
     export_gepx,
     import_gepx,
@@ -44,6 +43,7 @@ class TestExport:
         (mem / "events.jsonl").write_text('{"ts":1}\n{"ts":2}\n', encoding="utf-8")
 
         import evolver.gep.portable as portable_mod
+
         monkeypatch.setattr(portable_mod, "get_memory_dir", lambda: mem)
 
         out = tmp_path / "backup.gepx"
@@ -62,6 +62,7 @@ class TestExport:
         (mem / "genes.json").write_text('{"genes":[]}', encoding="utf-8")
 
         import evolver.gep.portable as portable_mod
+
         monkeypatch.setattr(portable_mod, "get_memory_dir", lambda: mem)
 
         out = tmp_path / "backup.gepx"
@@ -81,6 +82,7 @@ class TestImport:
         (mem / "events.jsonl").write_text('{"ts":1}\n', encoding="utf-8")
 
         import evolver.gep.portable as portable_mod
+
         monkeypatch.setattr(portable_mod, "get_memory_dir", lambda: mem)
 
         out = tmp_path / "backup.gepx"
@@ -101,6 +103,7 @@ class TestImport:
         (mem / "events.jsonl").write_text('{"id":"a","timestamp":1}\n', encoding="utf-8")
 
         import evolver.gep.portable as portable_mod
+
         monkeypatch.setattr(portable_mod, "get_memory_dir", lambda: mem)
 
         out = tmp_path / "backup.gepx"
@@ -116,7 +119,7 @@ class TestImport:
 
     def test_checksum_mismatch(self, tmp_path):
         out = tmp_path / "bad.gepx"
-        buf = bytes()
+        buf = b""
         import io
 
         with tarfile.open(fileobj=io.BytesIO(buf), mode="w:gz") as tf:

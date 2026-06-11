@@ -6,7 +6,6 @@ Equivalent to ``evolver/src/atp/cliAutobuyPrompt.js``.
 from __future__ import annotations
 
 import sys
-from typing import Any
 
 from evolver.atp.auto_buyer import get_consent, set_consent
 

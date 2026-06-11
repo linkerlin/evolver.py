@@ -19,14 +19,13 @@ from __future__ import annotations
 
 import logging
 import os
+from collections.abc import Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Sequence
+from typing import Any
 
 from evolver.config import BLAST_RADIUS_HARD_CAP_FILES, BLAST_RADIUS_HARD_CAP_LINES
 from evolver.gep.git_ops import (
-    CRITICAL_PROTECTED_FILES,
-    CRITICAL_PROTECTED_PREFIXES,
     git_list_changed_files,
     git_list_untracked_files,
     is_critical_protected_path,
@@ -94,8 +93,10 @@ def check_policy(
     cwd = get_workspace_root()
 
     changed = list(changed_files) if changed_files is not None else git_list_changed_files(cwd)
-    untracked = list(untracked_files) if untracked_files is not None else git_list_untracked_files(cwd)
-    all_files = list(dict.fromkeys(changed + untracked))  # preserve order, dedup
+    untracked = (
+        list(untracked_files) if untracked_files is not None else git_list_untracked_files(cwd)
+    )
+    all_files = list(dict[str, Any].fromkeys(changed + untracked))  # preserve order, dedup
 
     # 1. Blast radius
     _check_blast_radius(all_files, changed, untracked, max_files, max_lines, violations)
@@ -109,9 +110,14 @@ def check_policy(
     # 4. Rollback safety (stash path)
     _check_rollback_safety(changed, untracked, violations)
 
-    report = PolicyReport(ok=not any(v.severity == "critical" for v in violations), violations=violations)
+    report = PolicyReport(
+        ok=not any(v.severity == "critical" for v in violations), violations=violations
+    )
     if not report.ok:
-        logger.warning("[PolicyCheck] %d critical violation(s) found", len([v for v in violations if v.severity == "critical"]))
+        logger.warning(
+            "[PolicyCheck] %d critical violation(s) found",
+            len([v for v in violations if v.severity == "critical"]),
+        )
     return report
 
 
@@ -146,7 +152,7 @@ def _check_blast_radius(
     for rel in changed + untracked:
         p = cwd / rel
         try:
-            with open(p, "r", encoding="utf-8", errors="replace") as f:
+            with open(p, encoding="utf-8", errors="replace") as f:
                 total_lines += sum(1 for _ in f)
         except OSError:
             pass
@@ -213,7 +219,10 @@ def _check_secret_leaks(diff_text: str | None, violations: list[PolicyViolation]
                 PolicyViolation(
                     rule="secret_leak",
                     severity="critical",
-                    message=f"Potential secret leak detected: {leak['type']} at offset {leak['start']}",
+                    message=(
+                        f"Potential secret leak detected: {leak['type']} "
+                        f"at offset {leak['start']}"
+                    ),
                 )
             )
         for leak in leak_report.get("env_leaks", []):
