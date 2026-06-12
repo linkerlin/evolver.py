@@ -191,6 +191,31 @@ def post_solidify_hooks(
         except Exception as exc:
             hooks["reflection_error"] = str(exc)
 
+    mutation = last_run.get("mutation") or {}
+    attempt_id = last_run.get("innovation_attempt_id")
+    if attempt_id or mutation.get("category") == "innovate":
+        try:
+            from evolver.ops.innovation import record_innovation_outcome
+
+            record_innovation_outcome(
+                attempt_id=str(attempt_id or "unknown"),
+                gene_id=gene_id,
+                status=str(outcome.get("status") or "failed"),
+                run_id=last_run.get("run_id"),
+            )
+            hooks["innovation_outcome"] = True
+        except Exception as exc:
+            hooks["innovation_outcome_error"] = str(exc)
+
+    if outcome.get("status") == "success":
+        try:
+            from evolver.gep.autopoiesis import capture_solidify_success
+
+            capture_solidify_success(event, last_run=last_run)
+            hooks["autopoiesis_success"] = True
+        except Exception as exc:
+            hooks["autopoiesis_success_error"] = str(exc)
+
     if gene_id and outcome.get("status") == "success":
         try:
             from evolver.gep.asset_store import load_genes, upsert_gene
@@ -219,9 +244,17 @@ def record_solidify_failure(
     error: str,
 ) -> None:
     """Record a failed solidify attempt into the memory graph."""
+    try:
+        from evolver.gep.autopoiesis import capture_solidify_friction
+
+        capture_solidify_friction(error, last_run=last_run)
+    except Exception as exc:
+        logger.debug("[Cognition] autopoiesis solidify friction skipped: %s", exc)
+
     if not is_enabled("enable_memory_graph"):
         return
     try:
+        from evolver.gep.memory_bridge import reinforce_solidify_failure_in_graph
         from evolver.gep.memory_graph import record_outcome
 
         gene_id = last_run.get("selected_gene_id")
@@ -231,6 +264,7 @@ def record_solidify_failure(
             outcome={"status": "failed", "error": error},
             run_id=last_run.get("run_id"),
         )
+        reinforce_solidify_failure_in_graph(last_run, error=error)
     except Exception as exc:
         logger.debug("[Cognition] failed to record solidify failure: %s", exc)
 

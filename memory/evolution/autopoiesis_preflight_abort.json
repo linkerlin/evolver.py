@@ -1,0 +1,34 @@
+{
+  "timestamp": 1781246917.7194073,
+  "reason": "test abort",
+  "report": {
+    "timestamp": "2026-06-12T06:48:37.718477+00:00",
+    "system_state": {
+      "rules_version": "unknown",
+      "evolution_dir_exists": true,
+      "living_memory_exists": false,
+      "solidify_pending": true,
+      "genes_count": 1,
+      "capsules_count": 0,
+      "events_count": 58,
+      "last_run_id": "run_1781240754547_c40b6329"
+    },
+    "friction_summary": {
+      "total": 1,
+      "by_category": {
+        "preflight_abort": 1
+      },
+      "auto_encoded": 0
+    },
+    "evolution": {
+      "rules_version": "1.0.0",
+      "autopoiesis_enabled": false,
+      "evolution_count": 0,
+      "new_rules_this_run": 0
+    },
+    "recommendations": [
+      "Solidify pending \u2014 run `evolver solidify`",
+      "Living memory not initialized \u2014 friction will seed LESSONS_LEARNED.md"
+    ]
+  }
+}

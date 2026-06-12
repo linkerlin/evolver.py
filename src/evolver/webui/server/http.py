@@ -41,7 +41,7 @@ class WebUiServer:
 
     def _build_app(self) -> FastAPI:
         app = FastAPI(title="Evolver WebUI")
-        app.include_router(webui_router, prefix="/api")
+        app.include_router(webui_router)
 
         @app.get("/", response_class=HTMLResponse)
         async def index() -> str:

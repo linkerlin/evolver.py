@@ -15,3 +15,16 @@ class TestDashboardSse:
     def test_no_meta_refresh(self) -> None:
         html = render_dashboard()
         assert "http-equiv" not in html
+
+    def test_includes_pipeline_insights(self) -> None:
+        html = render_dashboard()
+        assert 'id="insights-diagnosis"' in html
+        assert 'id="insights-hub"' in html
+        assert 'id="insights-autopoiesis"' in html
+        assert 'id="insights-memory-sync"' in html
+        assert "/api/insights" in html
+
+    def test_sse_refreshes_insights_on_event(self) -> None:
+        html = render_dashboard()
+        assert "scheduleInsightsRefresh" in html
+        assert "insights-memory-sync" in html

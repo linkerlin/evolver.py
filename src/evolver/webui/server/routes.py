@@ -17,6 +17,7 @@ from evolver.gep.asset_store import load_capsules, load_genes, read_all_events
 from evolver.webui.observer import (
     format_interactions,
     personality_data,
+    pipeline_insights,
     pipeline_timeline,
     runs_history,
     safety_events,
@@ -39,6 +40,14 @@ def _err(message: str, code: str = "internal_error") -> JSONResponse:
 # ---------------------------------------------------------------------------
 # Status
 # ---------------------------------------------------------------------------
+
+
+@router.get("/api/insights")
+async def api_insights() -> JSONResponse:
+    try:
+        return _ok(pipeline_insights())
+    except Exception as exc:
+        return _err(str(exc))
 
 
 @router.get("/api/status")

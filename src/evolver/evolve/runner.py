@@ -14,6 +14,7 @@ from typing import Any
 from evolver.config import IDLE_FETCH_INTERVAL_MS
 from evolver.evolve import guards
 from evolver.evolve.pipeline import (
+    autopoiesis_phase,
     collect_phase,
     dispatch_phase,
     enrich_phase,
@@ -65,15 +66,35 @@ async def _run_single_cycle(*, is_loop: bool = False) -> dict[str, Any]:
     preflight = await guards.run_preflight_checks(is_loop=is_loop)
     if preflight.abort:
         print(f"Preflight abort: {preflight.reason}")
+        try:
+            from evolver.gep.autopoiesis import run_preflight_abort_self_report
+
+            abort_report = run_preflight_abort_self_report(preflight.reason or "unknown")
+            if abort_report:
+                ctx["autopoiesis_preflight_abort"] = abort_report
+        except Exception:
+            pass
         return ctx
+    if preflight.repair_loop_degraded:
+        print(f"Preflight degraded (repair-only): {preflight.reason}")
+        ctx["repair_loop_degraded"] = True
+        ctx["autopoiesis_repair_bias"] = True
+        ctx["IS_RANDOM_DRIFT"] = False
 
     ctx = await collect_phase(ctx)
     ctx = await signals_phase(ctx)
     ctx = await hub_phase(ctx)
     ctx = await enrich_phase(ctx)
+    ctx = await autopoiesis_phase(ctx)
     ctx = await select_phase(ctx)
     ctx = await dispatch_phase(ctx)
     ctx = await run_post_cycle_hooks(ctx)
+    try:
+        from evolver.gep.autopoiesis import clear_preflight_abort_report
+
+        clear_preflight_abort_report()
+    except Exception:
+        pass
     return ctx
 
 

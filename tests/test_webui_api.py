@@ -9,6 +9,25 @@ from evolver.webui.app import app
 client = TestClient(app)
 
 
+class TestApiInsights:
+    def test_insights(self, monkeypatch, tmp_path):
+        import evolver.gep.paths as paths_mod
+
+        monkeypatch.setattr(
+            "evolver.webui.observer.insights.get_solidify_state_path",
+            lambda: tmp_path / "solidify.json",
+        )
+        monkeypatch.setattr(
+            "evolver.evolve.pipeline.collect.read_real_session_log",
+            lambda: "no errors here",
+        )
+        resp = client.get("/api/insights")
+        assert resp.status_code == 200
+        data = resp.json()
+        assert "hub_quality_gate" in data
+        assert "failure_diagnosis" in data
+
+
 class TestApiStatus:
     def test_status(self, monkeypatch, tmp_path):
         import evolver.gep.paths as paths_mod

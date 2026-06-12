@@ -10,9 +10,11 @@ from .redact import redact_text
 from .runs import runs_history
 from .safety import safety_events
 from .skills import skills_status
+from .insights import pipeline_insights
 from .status import system_status
 
 __all__ = [
+    "pipeline_insights",
     "format_interactions",
     "personality_data",
     "pipeline_timeline",

@@ -101,3 +101,21 @@ def test_get_memory_advice_drift_respects_ban(
         drift_enabled=True,
     )
     assert "gene_repair_failing" in advice["bannedGeneIds"]
+
+
+def test_record_signal_gene_preference_overrides_advice(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("EVOLUTION_DIR", str(tmp_path))
+    monkeypatch.setenv("MEMORY_GRAPH_PATH", str(tmp_path / "memory_graph.jsonl"))
+    signals = ["error_timeout"]
+    mg.record_signal_gene_preference(gene_id="gene_solidify_winner", signals=signals)
+    advice = mg.get_memory_advice(
+        signals=signals,
+        genes=[
+            {"id": "gene_solidify_winner", "type": "Gene"},
+            {"id": "gene_other", "type": "Gene"},
+        ],
+    )
+    assert advice["preferredGeneId"] == "gene_solidify_winner"
+    assert advice["solidifyPreferredGeneId"] == "gene_solidify_winner"

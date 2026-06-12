@@ -11,6 +11,7 @@
 | 守护进程循环 | `uv run evolver --loop` |
 | 审查模式 | `uv run evolver --review` |
 | 应用待定变异 | `uv run evolver solidify` |
+| Autopoiesis 自检 | `uv run evolver self-report [--no-write] [--json]` |
 | 蒸馏 LLM 响应 | `uv run evolver distill --response-file=<path>` |
 | 从 Hub 获取技能 | `uv run evolver fetch <query>` |
 | 同步资源 | `uv run evolver sync [--scope=...]` |
@@ -52,9 +53,15 @@ gep/                GEP（基因组进化协议）核心
   personality.py    人格配置文件（严谨度、风险容忍度）
   prompt.py         GEP 提示词组装
   sanitize.py       资源字段输入净化
-  selector.py       Gene/Capsule 与信号匹配
+  selector.py       Gene/Capsule 与信号匹配（含 living_memory 评分调节）
   signals.py        信号收集与分类
   solidify.py       应用基因 → 验证 → 持久化 → 发布
+  autopoiesis.py    Autopoiesis 编排（SelfReport + homeostasis + viability）
+  self_report.py    摩擦捕获 → autopoiesis_rules.json + LESSONS_LEARNED.md
+  living_memory.py  活记忆加载（LESSONS_LEARNED YAML frontmatter）
+  memory_bridge.py  living_memory ↔ memory_graph ↔ signals 桥接
+  autopoiesis_rules.py  guard 规则 → pending/autopoiesis 信号
+  learning_signals.py   平台/依赖环境学习信号
   strategy.py       进化策略选择
   sync.py           Hub 同步：获取任务、下载资源
   validator/        验证者守护进程（文件存在，安全模型待完善）
@@ -65,9 +72,10 @@ evolve/             进化流水线
     collect.py      扫描 memory/ 之运行时日志与错误模式
     signals.py      从收集数据中分类信号
     hub.py          向 Hub 查询匹配之资源与任务
-    enrich.py       以 Hub 数据丰富上下文 + 认知蒸馏/回忆
-    select.py       选择最佳 Gene/Capsule
-    dispatch.py     生成 GEP 提示词（含回忆注入），写入分发输出
+    enrich.py       以 Hub 数据丰富上下文 + 认知蒸馏/回忆 + living_memory 桥接
+    autopoiesis.py  SelfReport / homeostasis（enrich 之后、select 之前）
+    select.py       选择最佳 Gene/Capsule（repair bias + innovation 记录）
+    dispatch.py     生成 GEP 提示词（含回忆 + autopoiesis_context），写入分发输出
   post_cycle.py     周期末钩子（ATP auto-buyer、task pickup）
 proxy/              本地 HTTP 代理（127.0.0.1:19820）
   mailbox/store.py  本地邮箱 JSONL 存储（较完整）
@@ -116,11 +124,12 @@ atp/                Agent 交易协议市场
 ### 数据流（单周期）
 
 ```
-起飞前检查 → 收集 → 信号 → Hub → 丰富 → 选择 → 分发
+起飞前检查 → 收集 → 信号 → Hub → 丰富 → Autopoiesis → 选择 → 分发
+                              ↑ preflight abort 时只读 SelfReport（no-write）
                                                    ↓
                                               [GEP 提示词]
                                                    ↓
-                                                 固化
+                                                 固化 → 活记忆 / innovation 反馈
 ```
 
 上下文为一纯 `dict[str, Any]`，贯穿各流水线阶段。
@@ -135,6 +144,15 @@ atp/                Agent 交易协议市场
 - `candidates.jsonl`、`external_candidates.jsonl`
 - `failed_capsules.json`
 - `pending_signals.json`
+- `autopoiesis_rules.json`——Autopoiesis guard 规则（摩擦自动编码）
+
+活记忆与自检（`<EVOLUTION_DIR>/`，默认 `memory/evolution/`）：
+
+- `LESSONS_LEARNED.md`——活记忆器官（YAML frontmatter + 摩擦点）
+- `self_report.json`——最近自检报告
+- `autopoiesis.jsonl`——AutopoiesisTick 追加日志
+- `autopoiesis_state.json`——跨周期 Hub 降级标志
+- `innovation_log.jsonl`——创新尝试 ROI 追踪
 
 资源完整性通过存于 `asset_id` 中之 `sha256:` 内容哈希验证之。
 
@@ -209,6 +227,10 @@ atp/                Agent 交易协议市场
 | `EVOLVE_STRATEGY` | `balanced` | 进化策略 |
 | `EVOLVE_BRIDGE` | auto | Git worktree 变异 |
 | `EVOLVER_ROLLBACK_MODE` | `stash` | 回滚策略 |
+| `EVOLVER_AUTOPOIESIS` | `1` | 启用 Autopoiesis 阶段 |
+| `EVOLVER_AUTOPOIESIS_WRITE` | `1` | 持久化规则/活记忆（`0`=dry-run） |
+| `EVOLVER_REPAIR_LOOP_DEGRADED` | `1` | repair-loop 降级运行（非硬 abort） |
+| `EVOLVER_LEARNING_SIGNALS` | `1` | 注入环境学习信号 |
 
 ## 坑阱篇
 

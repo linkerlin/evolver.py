@@ -10,6 +10,7 @@ from typing import Any
 
 from evolver.gep.bridge import render_sessions_spawn_call, write_prompt_artifact
 from evolver.gep.prompt import build_gep_prompt
+from evolver.gep.memory_bridge import serialize_memory_advice
 from evolver.gep.solidify import write_state_for_solidify
 
 
@@ -24,6 +25,16 @@ def _write_solidify_state(ctx: dict[str, Any]) -> None:
         "mutation": ctx.get("mutation"),
         "personality_state": ctx.get("personality_state"),
         "parent_event_id": ctx.get("parent_event_id"),
+        "failure_diagnosis": ctx.get("failure_diagnosis"),
+        "hub_quality_gate": ctx.get("hub_quality_gate"),
+        "hub_hit": ctx.get("hub_hit"),
+        "hub_response": ctx.get("hub_response"),
+        "hub_service_hits": ctx.get("hub_service_hits"),
+        "hub_assets": ctx.get("hub_assets"),
+        "autopoiesis": ctx.get("autopoiesis"),
+        "memory_advice": serialize_memory_advice(ctx.get("memory_advice")),
+        "memory_graph_friction_synced": ctx.get("memory_graph_friction_synced"),
+        "innovation_attempt_id": ctx.get("innovation_attempt_id"),
     }
     write_state_for_solidify(last_run)
 
@@ -51,6 +62,7 @@ async def dispatch_phase(ctx: dict[str, Any]) -> dict[str, Any]:
         ctx.get("mutation_directive", ""),
         ctx.get("health_report", ""),
         ctx.get("recall_section", ""),
+        ctx.get("autopoiesis_context", ""),
     ]
     prompt = build_gep_prompt(
         now_iso=ctx.get("scan_time_iso", ""),

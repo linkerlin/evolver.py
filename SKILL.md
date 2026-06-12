@@ -30,6 +30,7 @@ pip install -e .
 | `evolver --loop` | Daemon mode: continuous cycles | ✅ |
 | `evolver --review` | Review pending solidify state | ✅ |
 | `evolver solidify` | Apply pending mutations | ✅ |
+| `evolver self-report` | Autopoiesis self-check + rule evolution | ✅ |
 | `evolver webui` | Start the observability dashboard (SSE live events) | ✅ |
 | `evolver proxy` | Start the local A2A Proxy | ✅ (core routes wired) |
 | `evolver start` | Start the daemon (cross-platform) | ✅ |
@@ -90,6 +91,57 @@ The dashboard API runs at `http://127.0.0.1:8080`:
 - `GET /api/runs` — Evolution run history
 - `GET /api/safety` — Safety events
 - `GET /events/stream` — SSE evolution event stream (live dashboard)
+
+### Autopoiesis Governance (md2video port)
+
+Self-maintaining evolution loop wired into the GEP pipeline:
+
+```
+collect (living_memory) → signals (guard rules) → hub → enrich
+  → autopoiesis (SelfReport + homeostasis) → select → dispatch → solidify
+       ↑___________________________________________|  (solidify failure → friction)
+```
+
+| Component | Path | Role |
+|---|---|---|
+| Living memory | `memory/evolution/LESSONS_LEARNED.md` | YAML friction history + human-readable lessons |
+| Guard rules | `.evolver/gep/autopoiesis_rules.json` | Auto-encoded checks → `autopoiesis:{rule_id}` signals |
+| Self-report | `memory/evolution/self_report.json` | Per-cycle machine-readable report |
+| Tick log | `memory/evolution/autopoiesis.jsonl` | Append-only AutopoiesisTick events |
+
+**Integration with GEP evolution:**
+
+- `signals_phase` loads `autopoiesis_rules.json` guard signal keys
+- `autopoiesis_phase` merges freshly encoded signals into `ctx["signals"]` (same cycle)
+- `autopoiesis_repair_bias` forces `mutation.category=repair` in `select_phase`
+- `dispatch` injects `autopoiesis_context` (living memory warnings + viability) into GEP prompt
+- `record_solidify_failure` captures solidify errors as friction → living memory
+- `hub_degraded` sets one-shot `skip_hub_calls` on the next cycle via `autopoiesis_state.json`
+
+```bash
+uv run evolver self-report              # full self-check + rule evolution
+uv run evolver self-report --no-write --json   # CI-safe dry run
+```
+
+| Variable | Default | Description |
+|---|---|---|
+| `EVOLVER_AUTOPOIESIS` | `1` | Enable autopoiesis phase |
+| `EVOLVER_AUTOPOIESIS_WRITE` | `1` | Persist rules/lessons/reports (`0` = dry run) |
+| `EVOLVER_REPAIR_LOOP_DEGRADED` | `1` | Repair-loop trips → degraded repair-only cycle (not hard abort) |
+| `EVOLVER_LEARNING_SIGNALS` | `1` | Inject platform/lock learning signals in `signals_phase` |
+
+**P3 integrations (selector + solidify + preflight):**
+
+- `selector` applies `livingMemoryHints` score penalties / repair boosts
+- `post_solidify_hooks` records `solidify_success` friction (no auto rule encode)
+- `preflight abort` runs read-only SelfReport → `ctx["autopoiesis_preflight_abort"]`
+
+**P2 integrations (memory + innovation):**
+
+- `memory_bridge` merges living-memory hints into `memory_advice` and `ctx["signals"]` at enrich
+- `learning_signals` feeds `learning_signal:*` strings into signals phase
+- `select` records `innovation_attempt_id`; `post_solidify_hooks` records innovation outcomes
+- `compute_viability` reads innovation ROI as coupling factor
 
 ### GEP Cognition (feature flags)
 

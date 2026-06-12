@@ -31,6 +31,11 @@ def test_build_mutation_repair_for_errors() -> None:
     assert m["category"] == "repair"
 
 
+def test_build_mutation_force_category_repair() -> None:
+    m = mutation.build_mutation(signals=["user_feature_request"], force_category="repair")
+    assert m["category"] == "repair"
+
+
 def test_build_mutation_innovate_for_drift() -> None:
     m = mutation.build_mutation(signals=["stable_success_plateau"], drift_enabled=True)
     assert m["category"] == "innovate"

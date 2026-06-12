@@ -10,6 +10,8 @@ from evolver.gep.learning_signals import (
     detect_missing_annotations,
     detect_platform_signals,
     gather_all_learning_signals,
+    gather_pipeline_learning_signals,
+    learning_signal_to_string,
 )
 
 
@@ -87,3 +89,14 @@ class TestGatherAll:
     def test_combines_sources(self, tmp_path: Path):
         signals = gather_all_learning_signals(tmp_path)
         assert isinstance(signals, list)
+
+
+class TestPipelineLearningSignals:
+    def test_learning_signal_to_string(self):
+        s = learning_signal_to_string({"type": "dependency_conflict", "severity": "warning"})
+        assert s == "learning_signal:dependency_conflict:warning"
+
+    def test_gather_pipeline_learning_signals(self, tmp_path: Path):
+        strings = gather_pipeline_learning_signals(tmp_path)
+        assert isinstance(strings, list)
+        assert any(s.startswith("learning_signal:") for s in strings)

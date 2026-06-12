@@ -301,6 +301,20 @@ def consume_pending_signals() -> list[str]:
         return signals
 
 
+def append_pending_signals(new_signals: list[str]) -> None:
+    """Append autopoiesis-derived signals without clearing existing entries."""
+    if not new_signals:
+        return
+    with with_file_lock():
+        path = pending_signals_path()
+        data = read_json_if_exists(path) or {"signals": []}
+        existing = list(data.get("signals", []))
+        for signal in new_signals:
+            if signal not in existing:
+                existing.append(signal)
+        atomic_write_json(path, {"signals": existing, "note": data.get("note", "")})
+
+
 # --- Validation command helper ---
 
 

@@ -9,6 +9,8 @@ from typing import Any
 
 from evolver.gep.asset_store import read_recent_failed_capsules
 from evolver.gep.cognition import enrich_cycle_context
+from evolver.gep.hub_gate import enrich_hub_quality
+from evolver.gep.memory_bridge import bidirectional_memory_sync
 from evolver.gep.memory_graph import get_memory_advice, record_signal_snapshot
 
 
@@ -43,7 +45,18 @@ async def enrich_phase(ctx: dict[str, Any]) -> dict[str, Any]:
             "explanation": "memory advice unavailable",
             "totalAttempts": 0,
         }
-    ctx["memory_advice"] = advice
+    sync = bidirectional_memory_sync(
+        living_memory=ctx.get("living_memory"),
+        advice=advice,
+        signals=list(signals),
+        run_id=ctx.get("run_id"),
+    )
+    ctx["memory_advice"] = sync["memory_advice"]
+    if sync["signals_added"]:
+        ctx["signals"] = sync["signals"]
+        ctx["living_memory_signals_merged"] = sync["signals_added"]
+    if sync["living_memory_graph_sync"].get("synced"):
+        ctx["memory_graph_friction_synced"] = sync["living_memory_graph_sync"]
 
     # Recent failed capsules
     try:
@@ -58,6 +71,12 @@ async def enrich_phase(ctx: dict[str, Any]) -> dict[str, Any]:
         ctx["plateau_override"] = {"severity": "required"}
     elif any(s.startswith("plateau_pivot_suggested") for s in signals):
         ctx["plateau_override"] = {"severity": "suggested"}
+
+    if ctx.get("hub_service_hits") or ctx.get("hub_assets") or ctx.get("hub_response"):
+        try:
+            ctx["hub_quality_gate"] = enrich_hub_quality(ctx)
+        except Exception:
+            ctx["hub_quality_gate"] = {"services": [], "assets": []}
 
     enrich_cycle_context(ctx)
     return ctx

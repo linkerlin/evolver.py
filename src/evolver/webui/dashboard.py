@@ -108,6 +108,16 @@ tr:hover { background: rgba(88,166,255,0.05); }
 .badge-innovate { background: rgba(63,185,80,0.15); color: var(--success); }
 .badge-default { background: rgba(139,148,158,0.15); color: var(--muted); }
 footer { padding: 1.5rem 2rem; border-top: 1px solid var(--border); color: var(--muted); font-size: 0.8rem; text-align: center; }
+.insight-panel { font-size: 0.875rem; }
+.insight-panel .muted { color: var(--muted); margin: 0; }
+.insight-meta { display: flex; gap: 0.5rem; align-items: center; margin-bottom: 0.5rem; flex-wrap: wrap; }
+.insight-cause { margin: 0.25rem 0; font-weight: 500; }
+.insight-rec { margin: 0.25rem 0 0; color: var(--muted); }
+.badge-category { background: rgba(88,166,255,0.15); color: var(--accent); }
+.badge-verdict-approve { background: rgba(63,185,80,0.15); color: var(--success); }
+.badge-verdict-revise { background: rgba(210,153,34,0.15); color: var(--warn); }
+.badge-verdict-reject { background: rgba(248,81,73,0.15); color: var(--danger); }
+.insight-table { margin-top: 0.5rem; }
 """
 
 
@@ -236,6 +246,30 @@ def render_dashboard() -> str:
         age = int(now - p.get("last_seen", 0))
         peers_rows += f"<tr><td>{pid}</td><td>{endpoint}</td><td>{age}s ago</td></tr>\n"
 
+    insights_section = """
+    <div class="section">
+      <h2>🔍 Pipeline Insights</h2>
+      <div class="grid" style="grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));">
+        <div class="card insight-panel">
+          <h3>Failure Diagnosis</h3>
+          <div id="insights-diagnosis"><p class="muted">Loading…</p></div>
+        </div>
+        <div class="card insight-panel">
+          <h3>Hub Quality Gate</h3>
+          <div id="insights-hub"><p class="muted">Loading…</p></div>
+        </div>
+        <div class="card insight-panel">
+          <h3>Autopoiesis</h3>
+          <div id="insights-autopoiesis"><p class="muted">Loading…</p></div>
+        </div>
+        <div class="card insight-panel">
+          <h3>Memory Sync</h3>
+          <div id="insights-memory-sync"><p class="muted">Loading…</p></div>
+        </div>
+      </div>
+    </div>
+    """
+
     peers_section = f"""
     <div class="section">
       <h2>🌐 Peers ({len(peers)})</h2>
@@ -267,6 +301,7 @@ def render_dashboard() -> str:
       {genes_section}
       {caps_section}
       {events_section}
+      {insights_section}
       {peers_section}
       {controls}
     </main>
@@ -297,6 +332,136 @@ def render_dashboard() -> str:
         if (!logEl) return;
         logEl.textContent += msg + '\n';
         logEl.scrollTop = logEl.scrollHeight;
+      }
+      function esc(s) {
+        const d = document.createElement('div');
+        d.textContent = s == null ? '' : String(s);
+        return d.innerHTML;
+      }
+      function verdictClass(v) {
+        return v === 'approve' ? 'badge-verdict-approve' : v === 'reject' ? 'badge-verdict-reject' : 'badge-verdict-revise';
+      }
+      function apoStatusClass(s) {
+        return s === 'stable' ? 'badge-verdict-approve' : s === 'stressed' ? 'badge-verdict-revise' : 'badge-verdict-reject';
+      }
+      function renderInsights(data) {
+        const diagEl = document.getElementById('insights-diagnosis');
+        const hubEl = document.getElementById('insights-hub');
+        const apoEl = document.getElementById('insights-autopoiesis');
+        const memSyncEl = document.getElementById('insights-memory-sync');
+        if (!diagEl || !hubEl || !data) return;
+        const d = data.failure_diagnosis;
+        if (!d) {
+          diagEl.innerHTML = '<p class="muted">未在 session 日志中检测到 error/traceback 签名。</p>';
+        } else {
+          diagEl.innerHTML =
+            '<div class="insight-meta"><span class="badge badge-category">' + esc(d.category) +
+            '</span><span class="muted">置信度 ' + Math.round((d.confidence || 0) * 100) + '%</span></div>' +
+            '<p class="insight-cause">' + esc(d.cause) + '</p>' +
+            '<p class="insight-rec">' + esc(d.recommendation) + '</p>';
+        }
+        const gate = data.hub_quality_gate || { services: [], assets: [] };
+        const services = gate.services || [];
+        const assets = gate.assets || [];
+        if (!services.length && !assets.length) {
+          const hit = data.hub_hit && data.hub_hit.reason ? '(Hub: ' + esc(data.hub_hit.reason) + ')' : '';
+          hubEl.innerHTML = '<p class="muted">暂无 Hub 服务质量审查数据。' + hit + '</p>';
+          return;
+        }
+        let html = '';
+        if (services.length) {
+          html += '<table class="insight-table"><thead><tr><th>Service</th><th>审查</th><th>分数</th></tr></thead><tbody>';
+          services.forEach(function(s) {
+            const rev = (s.review || {});
+            html += '<tr><td>' + esc(s.service_id || '?') + '</td><td><span class="badge ' +
+              verdictClass(rev.verdict) + '">' + esc(rev.verdict || '?') + '</span></td><td>' +
+              esc(rev.score != null ? rev.score.toFixed(0) : '?') + '</td></tr>';
+          });
+          html += '</tbody></table>';
+        }
+        if (assets.length) {
+          html += '<p class="muted" style="margin-top:0.75rem">资产校验: ' + assets.length + ' 项</p><ul>';
+          assets.forEach(function(a) {
+            const hv = a.hash_valid;
+            const mark = hv === true ? '✓' : hv === false ? '✗' : '—';
+            html += '<li>' + mark + ' ' + esc(a.asset_id || a.summary || '?') + '</li>';
+          });
+          html += '</ul>';
+        }
+        hubEl.innerHTML = html;
+        if (apoEl) {
+          let apoHtml = '';
+          const pfa = data.preflight_abort;
+          if (pfa && pfa.reason) {
+            apoHtml += '<p class="insight-rec" style="color:var(--warn,#e6a700)">⚠ Preflight abort: ' +
+              esc(pfa.reason) + '</p>';
+          }
+          const inv = data.innovation_summary;
+          if (inv && inv.last_30d && !inv.last_30d.insufficient_data) {
+            apoHtml += '<p class="muted">Innovation ROI (30d): ' +
+              Math.round((inv.last_30d.roi || 0) * 100) + '% · rec: ' + esc(inv.recommendation) + '</p>';
+          }
+          const apo = data.autopoiesis;
+          if (!apo) {
+            apoEl.innerHTML = apoHtml + '<p class="muted">暂无 Autopoiesis 数据（等待下一进化周期）。</p>';
+          } else {
+            const sr = apo.self_report || {};
+            const fs = sr.friction_summary || {};
+            const evo = sr.evolution || {};
+            const v = apo.viability || {};
+            const h = apo.homeostasis || {};
+            const pct = Math.round((v.score || 0) * 100);
+            const actions = (h.actions || []).join(', ') || '—';
+            const lm = apo.living_memory || {};
+            apoEl.innerHTML = apoHtml +
+              '<div class="insight-meta"><span class="badge ' + apoStatusClass(v.status || 'stressed') + '">' +
+              esc(v.status || 'unknown') + '</span><span class="muted">viability ' + pct + '%</span></div>' +
+              '<p class="muted">摩擦点 ' + esc(fs.total || 0) + ' · 演化规则 ' + esc(evo.evolution_count || 0) +
+              ' · 活记忆 ' + esc(lm.total_friction_points || 0) + ' 条</p>' +
+              '<p class="insight-rec">homeostasis: ' + esc(actions) + '</p>';
+          }
+        }
+        if (memSyncEl) {
+          const ms = data.memory_sync;
+          if (!ms) {
+            memSyncEl.innerHTML = '<p class="muted">暂无记忆同步数据。</p>';
+          } else {
+            const cats = (ms.friction_categories || []).join(', ') || '—';
+            const lmCats = (ms.living_memory_categories || []).slice(0, 4).join(', ') || '—';
+            const banned = (ms.banned_genes || []).join(', ') || '—';
+            const lastSync = ms.last_run_friction_synced || {};
+            memSyncEl.innerHTML =
+              '<p class="muted">活记忆 ' + esc(ms.living_memory_friction_total || 0) +
+              ' 条 · 图摩擦事件 ' + esc(ms.friction_events_in_graph || 0) +
+              ' · 已同步 ' + esc(ms.synced_friction_ids || 0) + '</p>' +
+              '<p class="muted">摩擦类别: ' + esc(cats) + '</p>' +
+              '<p class="muted">活记忆类别: ' + esc(lmCats) + '</p>' +
+              '<p class="muted">禁用基因: ' + esc(banned) + '</p>' +
+              '<p class="muted">偏好: ' + esc(ms.solidify_preferred_gene || ms.preferred_gene || '—') +
+              ' · hints ' + esc(ms.unified_hints_count || 0) +
+              (lastSync.synced ? ' · 上周期同步 ' + esc(lastSync.synced) : '') + '</p>';
+          }
+        }
+      }
+      var _insightsRefreshTimer = null;
+      function scheduleInsightsRefresh() {
+        if (_insightsRefreshTimer) return;
+        _insightsRefreshTimer = setTimeout(function() {
+          _insightsRefreshTimer = null;
+          refreshInsights();
+        }, 500);
+      }
+      function refreshInsights() {
+        fetch('/api/insights').then(function(r) { return r.json(); }).then(renderInsights).catch(function() {
+          const diagEl = document.getElementById('insights-diagnosis');
+          const hubEl = document.getElementById('insights-hub');
+          const apoEl = document.getElementById('insights-autopoiesis');
+          const memSyncEl = document.getElementById('insights-memory-sync');
+          if (diagEl) diagEl.innerHTML = '<p class="muted">无法加载 insights</p>';
+          if (hubEl) hubEl.innerHTML = '<p class="muted">无法加载 insights</p>';
+          if (apoEl) apoEl.innerHTML = '<p class="muted">无法加载 insights</p>';
+          if (memSyncEl) memSyncEl.innerHTML = '<p class="muted">无法加载 insights</p>';
+        });
       }
       let ws = null;
       function connectWs() {
@@ -329,6 +494,8 @@ def render_dashboard() -> str:
         ws.send(JSON.stringify(obj));
       };
       connectWs();
+      refreshInsights();
+      setInterval(refreshInsights, 30000);
       if (window.EvolverSSE) {
         EvolverSSE.onConnect(function(live) {
           if (!indicator) return;
@@ -352,6 +519,7 @@ def render_dashboard() -> str:
             files + ' / ' + lines + '</td>';
           tbody.insertBefore(tr, tbody.firstChild);
           toast('New event: ' + gid + ' → ' + status, status === 'success');
+          scheduleInsightsRefresh();
         });
         EvolverSSE.connect('/events/stream');
       }

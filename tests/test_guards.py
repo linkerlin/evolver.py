@@ -26,6 +26,27 @@ def test_repair_loop_circuit_breaker_empty() -> None:
     assert cb["consecutive"] == 0
 
 
+def test_repair_loop_degraded_preflight(tmp_path, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("EVOLUTION_DIR", str(tmp_path))
+    monkeypatch.setenv("GEP_ASSETS_DIR", str(tmp_path / "gep"))
+    monkeypatch.setenv("EVOLVER_REPAIR_LOOP_DEGRADED", "1")
+    from evolver.gep.asset_store import append_event_jsonl
+    from evolver.gep.paths import get_gep_assets_dir
+
+    get_gep_assets_dir().mkdir(parents=True, exist_ok=True)
+    for _ in range(3):
+        append_event_jsonl(
+            {
+                "type": "EvolutionEvent",
+                "mutation": {"category": "repair"},
+                "outcome": {"status": "failed"},
+            }
+        )
+    result = asyncio.run(guards.run_preflight_checks(is_dry_run=False))
+    assert result.abort is False
+    assert result.repair_loop_degraded is True
+
+
 def test_repair_loop_circuit_breaker_trips(tmp_path, monkeypatch: pytest.MonkeyPatch) -> None:
 
     monkeypatch.setenv("EVOLUTION_DIR", str(tmp_path))

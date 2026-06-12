@@ -16,6 +16,7 @@ from typing import Any, cast
 class PreflightResult:
     abort: bool = False
     reason: str | None = None
+    repair_loop_degraded: bool = False
 
 
 @dataclass
@@ -140,13 +141,19 @@ async def run_preflight_checks(is_loop: bool = False, is_dry_run: bool = False) 
         )
     cb = check_repair_loop_circuit_breaker()
     if cb["tripped"]:
-        return PreflightResult(
-            abort=True,
-            reason=(
-                f"repair loop detected ({cb['consecutive']}/{cb['threshold']} "
-                "consecutive failed repair cycles)"
-            ),
+        degraded_ok = os.environ.get("EVOLVER_REPAIR_LOOP_DEGRADED", "1").lower() not in (
+            "0",
+            "false",
+            "no",
+            "off",
         )
+        reason = (
+            f"repair loop detected ({cb['consecutive']}/{cb['threshold']} "
+            "consecutive failed repair cycles)"
+        )
+        if degraded_ok:
+            return PreflightResult(abort=False, reason=reason, repair_loop_degraded=True)
+        return PreflightResult(abort=True, reason=reason)
 
     # User lock
     user_lock = Path(os.environ.get("EVOLVER_USER_LOCK", "")) or (

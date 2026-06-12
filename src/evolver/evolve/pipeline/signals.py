@@ -8,7 +8,12 @@ from __future__ import annotations
 from typing import Any
 
 from evolver.gep.asset_store import consume_pending_signals, load_capsules, load_genes
+from evolver.gep.autopoiesis_rules import guard_check_signal_keys, merge_signal_keys
 from evolver.gep.cognition import augment_signals
+from evolver.gep.learning_signals import (
+    gather_pipeline_learning_signals,
+    is_learning_signals_enabled,
+)
 from evolver.gep.signals import extract_signals as gep_extract_signals
 
 # Must match actionable signals that prevent saturation gating
@@ -61,6 +66,21 @@ async def signals_phase(ctx: dict[str, Any]) -> dict[str, Any]:
             signals.append(s)
 
     signals = augment_signals(signals)
+    if is_learning_signals_enabled():
+        signals, learning_added = merge_signal_keys(signals, gather_pipeline_learning_signals())
+        if learning_added:
+            ctx["learning_signals_merged"] = learning_added
+    signals, guard_added = merge_signal_keys(signals, guard_check_signal_keys())
+    if guard_added:
+        ctx["autopoiesis_guard_signals"] = guard_added
+    try:
+        from evolver.gep.autopoiesis import preflight_abort_signal_keys  # noqa: PLC0415
+
+        signals, pfa_added = merge_signal_keys(signals, preflight_abort_signal_keys())
+        if pfa_added:
+            ctx["preflight_abort_signals_merged"] = pfa_added
+    except Exception:
+        pass
     ctx["signals"] = signals
     ctx["genes"] = load_genes()
     ctx["capsules"] = load_capsules()

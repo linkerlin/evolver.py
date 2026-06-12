@@ -67,6 +67,15 @@ def _build_parser() -> argparse.ArgumentParser:
     watch_p.add_argument("--once", action="store_true", help="Check once and exit")
     sub.add_parser("solidify", help="Apply pending mutation")
     sub.add_parser("review", help="Review pending solidify")
+    sr_p = sub.add_parser("self-report", help="Autopoiesis self-report and rule evolution")
+    sr_p.add_argument(
+        "--capture",
+        nargs=3,
+        metavar=("CATEGORY", "DESC", "RESOLUTION"),
+        help="Capture one friction point",
+    )
+    sr_p.add_argument("--no-write", action="store_true", help="Report only; do not persist")
+    sr_p.add_argument("--json", action="store_true", help="Machine-readable JSON output")
     exec_p = sub.add_parser("exec", help="Execute bridge (opt-in)")
     exec_p.add_argument("--cmd", default=None, help="Command to execute")
     exec_p.add_argument("--timeout", type=int, default=180, help="Timeout in seconds")
@@ -174,6 +183,9 @@ def main(argv: Sequence[str] | None = None) -> int:
         return _cmd_watch(args)
     if command == "solidify":
         return _cmd_solidify(args)
+
+    if command == "self-report":
+        return _cmd_self_report(args)
 
     if command == "fetch":
         return asyncio.run(_cmd_fetch(args))
@@ -327,6 +339,31 @@ def _cmd_solidify(_args: argparse.Namespace) -> int:
         f"Solidify failed: {result.get('error')} details={result.get('details')}", file=sys.stderr
     )
     return 1
+
+
+def _cmd_self_report(args: argparse.Namespace) -> int:
+    """Run Autopoiesis self-report (md2video harness/self_report.py equivalent)."""
+    from evolver.gep.autopoiesis import run_self_report_cli
+
+    category = description = resolution = None
+    if args.capture:
+        category, description, resolution = args.capture
+    data = run_self_report_cli(
+        category=category,
+        description=description,
+        resolution=resolution,
+        no_write=args.no_write,
+    )
+    if args.json:
+        print(json.dumps(data, ensure_ascii=False, indent=2))
+    else:
+        fs = data.get("friction_summary", {})
+        evo = data.get("evolution", {})
+        print(
+            f"Self-report: friction={fs.get('total', 0)} "
+            f"evolution_count={evo.get('evolution_count', 0)}"
+        )
+    return 0
 
 
 async def _cmd_fetch(args: argparse.Namespace) -> int:

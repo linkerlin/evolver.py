@@ -82,8 +82,11 @@ def build_mutation(
     drift_enabled: bool = False,
     personality_state: dict[str, Any] | None = None,
     allow_high_risk: bool = False,
+    force_category: str | None = None,
 ) -> Mutation:
-    category = _choose_category(signals, drift_enabled=drift_enabled)
+    category = force_category or _choose_category(signals, drift_enabled=drift_enabled)
+    if category not in VALID_CATEGORIES:
+        category = _choose_category(signals, drift_enabled=drift_enabled)
 
     high_risk_personality = is_high_risk_personality(personality_state)
     if category == "innovate" and high_risk_personality:

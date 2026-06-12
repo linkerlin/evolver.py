@@ -1,29 +1,103 @@
 {
   "last_run": {
-    "run_id": "run_1781016445120_f6f3e90a",
+    "run_id": "run_1781240754547_c40b6329",
     "signals": [
-      "stable_success_plateau"
+      "stable_success_plateau",
+      "learning_signal:platform_warning:info",
+      "autopoiesis:hub_offline_guard"
     ],
-    "selected_gene_id": "gene_innovate_basic",
+    "selected_gene_id": null,
     "selected_capsule_id": null,
     "mutation": {
       "type": "Mutation",
-      "id": "mut_1781016445174_493bdb0f",
+      "id": "mut_1781240756094_8429dcd6",
       "category": "innovate",
       "trigger_signals": [
-        "stable_success_plateau"
+        "stable_success_plateau",
+        "learning_signal:platform_warning:info",
+        "autopoiesis:hub_offline_guard"
       ],
-      "target": "gene_innovate_basic",
-      "expected_effect": "Address signals: stable_success_plateau",
+      "target": null,
+      "expected_effect": "Address signals: stable_success_plateau, learning_signal:platform_warning:info, autopoiesis:hub_offline_guard",
       "risk_level": "low",
       "drift_enabled": false,
-      "gene_id": "gene_innovate_basic"
+      "gene_id": null
     },
     "personality_state": {
       "rigor": 0.5,
       "creativity": 0.5,
       "risk_tolerance": 0.3
     },
-    "parent_event_id": null
+    "parent_event_id": null,
+    "failure_diagnosis": null,
+    "hub_quality_gate": null,
+    "hub_hit": {
+      "reason": "offline",
+      "error": "Client error '404 Not Found' for url 'https://evomap.ai/v1/a2a/tasks'\nFor more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/404"
+    },
+    "hub_response": null,
+    "hub_service_hits": null,
+    "hub_assets": null,
+    "autopoiesis": {
+      "self_report": {
+        "timestamp": "2026-06-12T05:05:56.066177+00:00",
+        "system_state": {
+          "rules_version": "unknown",
+          "evolution_dir_exists": true,
+          "living_memory_exists": false,
+          "solidify_pending": true,
+          "genes_count": 1,
+          "capsules_count": 0,
+          "events_count": 58,
+          "last_run_id": "run_1781240723749_a863d661"
+        },
+        "friction_summary": {
+          "total": 1,
+          "by_category": {
+            "hub_offline": 1
+          },
+          "auto_encoded": 1
+        },
+        "evolution": {
+          "rules_version": "1.0.0",
+          "autopoiesis_enabled": true,
+          "evolution_count": 1,
+          "new_rules_this_run": 1
+        },
+        "recommendations": [
+          "Solidify pending \u2014 run `evolver solidify`",
+          "Living memory not initialized \u2014 friction will seed LESSONS_LEARNED.md"
+        ]
+      },
+      "living_memory": {
+        "loaded": false,
+        "total_friction_points": 0,
+        "evolution_count": 0,
+        "recent_friction_points": []
+      },
+      "viability": {
+        "score": 0.753,
+        "status": "stable",
+        "boundary": 0.85,
+        "metabolism": 0.64,
+        "homeostasis": 1.0,
+        "coupling": 0.35,
+        "factors": [
+          "hub_offline"
+        ]
+      },
+      "homeostasis": {
+        "status": "stable",
+        "actions": [
+          "maintain"
+        ],
+        "drift_allowed": true,
+        "skip_hub_recommended": false
+      },
+      "tick_id": "apo_1781240756076_f6b3288c",
+      "report_path": null,
+      "friction_captured_this_run": 1
+    },
+    "innovation_attempt_id": "inv_1781240756094_e4bea1a3"
   }
 }

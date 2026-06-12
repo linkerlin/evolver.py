@@ -10,6 +10,8 @@ import time
 from pathlib import Path
 from typing import Any
 
+from evolver.gep.analyzer import analyze, diagnosis_to_dict
+from evolver.gep.living_memory import format_risk_warnings, load_living_memory
 from evolver.gep.paths import get_repo_root, get_workspace_root
 
 
@@ -53,6 +55,15 @@ def read_real_session_log(max_chars: int = 8_000) -> str:
     # Read most recently modified
     logs.sort(key=lambda p: p.stat().st_mtime, reverse=True)
     return _read_file_snippet(logs[0], max_chars=max_chars)
+
+
+def diagnose_session_log(log: str) -> dict[str, Any] | None:
+    if not log or log.startswith("["):
+        return None
+    lower = log.lower()
+    if not any(token in lower for token in ("traceback", "error", "exception")):
+        return None
+    return diagnosis_to_dict(analyze(log))
 
 
 def get_mutation_directive(log: str) -> str:
@@ -117,7 +128,13 @@ async def collect_phase(ctx: dict[str, Any]) -> dict[str, Any]:
     ctx["user_snippet"] = read_user_snippet()
     ctx["session_log"] = read_real_session_log()
     ctx["mutation_directive"] = get_mutation_directive(ctx["session_log"])
+    ctx["failure_diagnosis"] = diagnose_session_log(ctx["session_log"])
     ctx["health_report"] = check_system_health()
+    living_memory = load_living_memory()
+    ctx["living_memory"] = living_memory
+    warnings = format_risk_warnings(living_memory)
+    if warnings:
+        ctx["living_memory_warnings"] = warnings
     ctx["scan_time_ms"] = int(time.time() * 1000)
     ctx["file_list"] = []
     return ctx

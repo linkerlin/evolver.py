@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import json
 import logging
+import os
 import platform
 import sys
 from pathlib import Path
@@ -151,3 +152,28 @@ def gather_all_learning_signals(root: Path | None = None) -> list[dict[str, Any]
     signals.extend(detect_missing_annotations(root))
     logger.info("[LearningSignals] Gathered %d signals", len(signals))
     return signals
+
+
+def is_learning_signals_enabled() -> bool:
+    return os.environ.get("EVOLVER_LEARNING_SIGNALS", "1").lower() not in (
+        "0",
+        "false",
+        "no",
+        "off",
+    )
+
+
+def learning_signal_to_string(sig: dict[str, Any]) -> str:
+    """Encode a structured learning signal as a GEP pipeline string."""
+    sig_type = str(sig.get("type") or "learning")
+    severity = str(sig.get("severity") or "info")
+    return f"learning_signal:{sig_type}:{severity}"
+
+
+def gather_pipeline_learning_signals(root: Path | None = None) -> list[str]:
+    """Lightweight learning signals for per-cycle pipeline (no full src scan)."""
+    from evolver.gep.paths import get_repo_root
+
+    repo = root or get_repo_root() or Path.cwd()
+    raw = detect_platform_signals() + detect_lock_conflicts(repo)
+    return [learning_signal_to_string(s) for s in raw]

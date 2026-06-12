@@ -232,6 +232,76 @@ def _write_state(state: dict[str, Any]) -> None:
     tmp.replace(path)
 
 
+def read_sync_state() -> dict[str, Any]:
+    """Read cross-store sync metadata (living_memory ↔ memory_graph)."""
+    sync = _read_state().get("sync")
+    return dict(sync) if isinstance(sync, dict) else {}
+
+
+def patch_sync_state(updates: dict[str, Any]) -> dict[str, Any]:
+    """Merge keys into ``memory_graph_state.json`` sync section."""
+    state = _read_state()
+    sync = state.setdefault("sync", {})
+    if not isinstance(sync, dict):
+        sync = {}
+        state["sync"] = sync
+    sync.update(updates)
+    _write_state(state)
+    return dict(sync)
+
+
+def record_friction_observation(
+    *,
+    signals: list[str],
+    friction: dict[str, Any],
+    source: str = "living_memory",
+    run_id: str | None = None,
+) -> dict[str, Any]:
+    """Record a living-memory friction point as a memory_graph event."""
+    event = {
+        "type": "MemoryGraphEvent",
+        "kind": "friction",
+        "id": _new_id("fric"),
+        "ts": time.strftime("%Y-%m-%dT%H:%M:%S.", time.gmtime())
+        + f"{int((time.time() % 1) * 1000):03d}Z",
+        "signal": {"key": compute_signal_key(signals), "signals": list(signals)},
+        "friction": {
+            "id": friction.get("id"),
+            "category": friction.get("category"),
+            "description": str(friction.get("description", ""))[:300],
+            "rule_id": friction.get("rule_id"),
+        },
+        "source": source,
+    }
+    if run_id:
+        event["run_id"] = run_id
+    return _append_event(event)
+
+
+def record_signal_gene_preference(
+    *,
+    gene_id: str,
+    signals: list[str],
+    source: str = "solidify_success",
+) -> dict[str, Any]:
+    """Remember a gene that solidified successfully for a signal key."""
+    key = compute_signal_key(signals)
+    state = _read_state()
+    prefs = state.setdefault("preferred_by_signal", {})
+    if not isinstance(prefs, dict):
+        prefs = {}
+        state["preferred_by_signal"] = prefs
+    entry = {
+        "gene_id": gene_id,
+        "source": source,
+        "ts": time.strftime("%Y-%m-%dT%H:%M:%S.", time.gmtime())
+        + f"{int((time.time() % 1) * 1000):03d}Z",
+    }
+    prefs[key] = entry
+    _write_state(state)
+    return {"signalKey": key, **entry}
+
+
 def get_memory_advice(
     *,
     signals: list[str] | None,
@@ -242,8 +312,24 @@ def get_memory_advice(
     genes = list(genes) if isinstance(genes, list) else []
     key = compute_signal_key(signals)
 
+    solidify_preferred: str | None = None
+    prefs = _read_state().get("preferred_by_signal") or {}
+    if isinstance(prefs, dict):
+        pref_entry = prefs.get(key)
+        if isinstance(pref_entry, dict) and pref_entry.get("gene_id"):
+            solidify_preferred = str(pref_entry["gene_id"])
+
     events = try_read_memory_graph_events()
     outcomes = [e for e in events if e.get("kind") == "outcome"]
+    friction_events = [e for e in events if e.get("kind") == "friction"]
+    friction_cats: set[str] = set()
+    for evt in friction_events:
+        if evt.get("signal", {}).get("key") != key:
+            continue
+        fr = evt.get("friction") or {}
+        cat = fr.get("category")
+        if cat:
+            friction_cats.add(str(cat))
 
     gene_stats: dict[str, dict[str, Any]] = {}
     for evt in outcomes:
@@ -272,17 +358,26 @@ def get_memory_advice(
                 best_rate = rate
                 preferred = gene_id
 
+    if solidify_preferred and solidify_preferred not in banned:
+        preferred = solidify_preferred
+
     explanation_parts = [
         f"signal_key={key}",
         f"matching_outcomes={len([e for e in outcomes if e.get('signal', {}).get('key') == key])}",
     ]
     if banned:
         explanation_parts.append(f"banned={','.join(banned)}")
+    if solidify_preferred:
+        explanation_parts.append(f"solidify_preferred={solidify_preferred}")
+    if friction_cats:
+        explanation_parts.append(f"friction_categories={','.join(sorted(friction_cats)[:5])}")
 
     return {
         "currentSignalKey": key,
         "preferredGeneId": preferred,
         "bannedGeneIds": banned,
+        "solidifyPreferredGeneId": solidify_preferred,
+        "frictionCategories": sorted(friction_cats),
         "explanation": "; ".join(explanation_parts),
     }
 
@@ -297,10 +392,14 @@ __all__ = [
     "get_memory_advice",
     "get_memory_graph_path",
     "read_all",
+    "patch_sync_state",
+    "read_sync_state",
     "record_attempt",
     "record_external_candidate",
+    "record_friction_observation",
     "record_hypothesis",
     "record_outcome",
+    "record_signal_gene_preference",
     "record_signal_snapshot",
     "try_read_memory_graph_events",
 ]

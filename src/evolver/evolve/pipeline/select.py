@@ -33,11 +33,23 @@ def compute_adaptive_strategy_policy(ctx: dict[str, Any]) -> dict[str, Any]:
 
 async def select_phase(ctx: dict[str, Any]) -> dict[str, Any]:
     policy = compute_adaptive_strategy_policy(ctx)
-    signals = ctx.get("signals", [])
+    if ctx.get("autopoiesis_repair_bias"):
+        policy = {**policy, "repair": True, "optimize": False, "innovate": False}
+    signals = list(ctx.get("signals", []))
     genes = ctx.get("genes", [])
     capsules = ctx.get("capsules", [])
     memory_advice = ctx.get("memory_advice") or {}
     drift_enabled = bool(ctx.get("IS_RANDOM_DRIFT", False))
+
+    recent_events = ctx.get("recent_events", [])
+    personality = adapt_personality(load_personality(), recent_events=recent_events)
+
+    force_category: str | None = None
+    if ctx.get("autopoiesis_repair_bias"):
+        for tag in ("repair_loop", "autopoiesis:repair_loop_guard"):
+            if tag not in signals:
+                signals.append(tag)
+        force_category = "repair"
 
     selection = select_gene_and_capsule(
         {
@@ -77,11 +89,24 @@ async def select_phase(ctx: dict[str, Any]) -> dict[str, Any]:
         signals=signals,
         selected_gene=selected_gene,
         drift_enabled=drift_enabled,
+        personality_state=personality,
+        force_category=force_category,
     )
 
-    # Load and optionally adapt personality based on recent events
-    recent_events = ctx.get("recent_events", [])
-    personality = adapt_personality(load_personality(), recent_events=recent_events)
+    mutation_category = str(mutation.get("category", ""))
+    if mutation_category == "innovate" or drift_enabled:
+        try:
+            from evolver.ops.innovation import record_innovation_attempt
+
+            inv = record_innovation_attempt(
+                gene_id=selected_gene.get("id") if selected_gene else None,
+                strategy="innovate" if drift_enabled else mutation_category,
+                hypothesis=ctx.get("hypothesis_id", ""),
+                run_id=ctx.get("run_id"),
+            )
+            ctx["innovation_attempt_id"] = inv["id"]
+        except Exception:
+            pass
 
     ctx["selected_gene"] = selected_gene
     ctx["selected_capsule_id"] = selected_capsule.get("id") if selected_capsule else None

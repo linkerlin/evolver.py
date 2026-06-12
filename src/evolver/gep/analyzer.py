@@ -195,6 +195,16 @@ _MATCHERS = [
 # ---------------------------------------------------------------------------
 
 
+def diagnosis_to_dict(diag: Diagnosis) -> dict[str, Any]:
+    return {
+        "confidence": diag.confidence,
+        "category": diag.category.value,
+        "cause": diag.cause,
+        "recommendation": diag.recommendation,
+        "relevant_lines": list(diag.relevant_lines),
+    }
+
+
 def analyze(failure_text: str, *, context: dict[str, Any] | None = None) -> Diagnosis:
     """Analyze a failure text and return a structured diagnosis.
 

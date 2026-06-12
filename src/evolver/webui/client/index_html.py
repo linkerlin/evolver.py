@@ -42,6 +42,16 @@ HTML_TEMPLATE = """<!DOCTYPE html>
         {event_items}
       </ul>
     </section>
+    <section class="card" id="insights-section">
+      <h2>Pipeline Insights</h2>
+      <div id="insights-diagnosis"><p class="muted">Loading…</p></div>
+      <hr style="border-color:var(--border);margin:1rem 0">
+      <h3 style="font-size:0.9rem;margin:0 0 0.5rem">Hub Quality Gate</h3>
+      <div id="insights-hub"><p class="muted">Loading…</p></div>
+      <hr style="border-color:var(--border);margin:1rem 0">
+      <h3 style="font-size:0.9rem;margin:0 0 0.5rem">Autopoiesis</h3>
+      <div id="insights-autopoiesis"><p class="muted">Loading…</p></div>
+    </section>
   </main>
   <footer>
     <p>Evolver.py v1.89.2 — <a href="https://github.com/evolver-ai/evolver.py">GitHub</a></p>
@@ -50,6 +60,7 @@ HTML_TEMPLATE = """<!DOCTYPE html>
 <script>
   window.__INITIAL_STATE__ = {initial_state_json};
 </script>
+<script src="/app.js"></script>
 </body>
 </html>
 """

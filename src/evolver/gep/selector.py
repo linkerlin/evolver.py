@@ -12,6 +12,7 @@ from typing import Any
 
 from evolver.config import GENE_EPIGENETIC_HARD_BOOST
 from evolver.gep.env_fingerprint import capture_env_fingerprint, env_fingerprint_key
+from evolver.gep.memory_bridge import living_memory_score_adjustment
 
 
 def tokenize(text: str) -> list[str]:
@@ -127,6 +128,7 @@ def select_gene(
     drift_enabled = bool(options.get("driftEnabled", False))
     effective_pop = options.get("effectivePopulationSize", max(1, len(genes)))
     memory_evidence = options.get("memoryEvidence", 0)
+    living_memory_hints = list(options.get("livingMemoryHints") or [])
 
     drift_intensity = compute_drift_intensity(
         drift_enabled=drift_enabled,
@@ -144,6 +146,12 @@ def select_gene(
         if is_epigenetically_suppressed(gene):
             continue
         score = _score_gene(gene, signals)
+        if living_memory_hints:
+            score += living_memory_score_adjustment(
+                gene,
+                living_memory_hints=living_memory_hints,
+                signals=signals,
+            )
         if score > 0:
             candidates.append({"gene": gene, "score": score})
 
@@ -226,6 +234,7 @@ def select_gene_and_capsule(ctx: dict[str, Any]) -> dict[str, Any]:
             "preferredGeneId": preferred,
             "driftEnabled": drift_enabled,
             "memoryEvidence": memory_evidence,
+            "livingMemoryHints": memory_advice.get("livingMemoryHints") or [],
         },
     )
 
