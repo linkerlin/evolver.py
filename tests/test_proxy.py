@@ -29,7 +29,7 @@ class TestHealth:
 
 class TestProxyForward:
     def test_invalid_json(self, client: TestClient) -> None:
-        response = client.post("/v1/a2a/proxy/hello", data="not-json")
+        response = client.post("/v1/a2a/proxy/hello", content=b"not-json")
         assert response.status_code == 400
         assert response.json()["error"] == "invalid_json"
 

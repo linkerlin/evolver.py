@@ -430,7 +430,9 @@ def render_dashboard() -> str:
             const lmCats = (ms.living_memory_categories || []).slice(0, 4).join(', ') || '—';
             const banned = (ms.banned_genes || []).join(', ') || '—';
             const lastSync = ms.last_run_friction_synced || {};
-            memSyncEl.innerHTML =
+            const pfaPending = ms.preflight_abort_pending
+              ? '<p class="insight-rec" style="color:var(--warn,#e6a700)">⚠ Preflight 恢复中</p>' : '';
+            memSyncEl.innerHTML = pfaPending +
               '<p class="muted">活记忆 ' + esc(ms.living_memory_friction_total || 0) +
               ' 条 · 图摩擦事件 ' + esc(ms.friction_events_in_graph || 0) +
               ' · 已同步 ' + esc(ms.synced_friction_ids || 0) + '</p>' +

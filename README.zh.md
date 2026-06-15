@@ -55,13 +55,15 @@ src/evolver/
 ├── evolve/
 │   ├── runner.py       # 周期编排（单次 + 守护循环）
 │   ├── guards.py       # 起飞前检查（负载、RSS、冷却）
-│   └── pipeline/       # 六阶段流水线（异步函数）
-│       ├── collect.py      # 扫描运行时日志与错误模式
-│       ├── signals.py      # 提取并分类信号
-│       ├── hub.py          # 向 Hub 查询匹配的资产/任务
-│       ├── enrich.py       # 丰富上下文 + 认知（回忆/蒸馏）
-│       ├── select.py       # 选择最佳 Gene/Capsule
-│       └── dispatch.py     # 构建含回忆注入的 GEP 提示词
+│   ├── post_cycle.py   # 周期末钩子（ATP auto-buyer）
+│   └── pipeline/       # 七阶段流水线 + preflight（异步函数）
+│       ├── collect.py      # 日志扫描 + living_memory
+│       ├── signals.py      # 信号 + guard/preflight/learning
+│       ├── hub.py          # Hub 查询
+│       ├── enrich.py       # memory_bridge 双向同步
+│       ├── autopoiesis.py  # SelfReport + homeostasis
+│       ├── select.py       # Gene/Capsule 选择
+│       └── dispatch.py     # GEP 提示词 + solidify 状态
 ├── gep/                # GEP（基因组进化协议）核心
 │   ├── schemas/        # Pydantic 模型：Gene、Capsule、Task、Protocol
 │   ├── asset_store.py  # JSON/JSONL 持久化与叠加语义
@@ -71,7 +73,7 @@ src/evolver/
 │   ├── signals.py      # 信号收集与分类
 │   ├── validator/      # 沙箱执行器、报告器、质押引导
 │   └── ...             # 55+ 模块
-├── proxy/              # 本地 HTTP 代理（127.0.0.1:19820）
+├── proxy/              # 本地 HTTP 代理（CLI 默认 8081；路由 /v1/a2a）
 │   ├── server/routes.py    # FastAPI 路由（task/ATP/extensions）
 │   ├── router/             # LLM 路由、特性开关、SSE 流式
 │   ├── extensions/         # DM、会话、技能更新、追踪控制
@@ -97,8 +99,8 @@ src/evolver/
     ├── client/           # 内嵌 JS/CSS（SSE、bootstrap、i18n）
     └── observer/         # 数据聚合模块
 
-tests/                  # 129 个测试文件，1206+ 用例（pytest）
-scripts/                # 5 个 CLI 辅助脚本（计划 17 个）
+tests/                  # 130+ 测试文件，1250+ 用例（pytest）
+scripts/                # 17 个 CLI 辅助脚本
 assets/gep/             # 种子基因库
 memory/                 # 运行时数据（graph JSONL、reviews JSONL）
 ```
@@ -118,7 +120,7 @@ memory/                 # 运行时数据（graph JSONL、reviews JSONL）
 | `EVOLVER_VALIDATOR_ENABLED` | `true` | 启用验证者守护进程 |
 | `EVOLVER_ATP_DAILY_BUDGET` | `10` | ATP 每日预算 |
 | `EVOLVER_WEBUI_PORT` | `8080` | WebUI 端口 |
-| `EVOLVER_PROXY_PORT` | `19820` | 代理端口 |
+| `EVOLVER_PROXY_PORT` | `8081` | 本地代理端口（`EVOMAP_PROXY_PORT` 别名）；可用 `evolver proxy --port` 覆盖 |
 | `A2A_HUB_URL` | `https://evomap.ai` | Hub URL |
 | `A2A_NODE_ID` | 自动生成 | 节点身份 |
 | `GITHUB_TOKEN` | — | GitHub API 令牌 |
@@ -130,16 +132,16 @@ memory/                 # 运行时数据（graph JSONL、reviews JSONL）
 
 ## 实现状态
 
-> **总体评估**（2026-06-11）：**1239 测试通过**，**mypy strict 清零**（181 文件）。核心循环可端到端运行；ATP 与 Hub 资产 fetch 为主要缺口。
+> **总体评估**（2026-06-11）：**1250+ 测试通过**，**mypy strict 清零**。核心循环含 Autopoiesis + memory_bridge；ATP CLI 参数与 Proxy 端口统一为主要缺口。
 
 | 子系统 | 状态 | 说明 |
 |---|---|---|
 | **GEP 数据层** | ~90% | `asset_store`、schemas、`solidify`、`sanitize`、`crypto` 生产级 |
 | **GEP 高级认知** | ~75% | `cognition.py` 接线回忆/反思/蒸馏；探索/课程由 feature flag 控制 |
-| **进化流水线** | ~85% | 六阶段已实现；dispatch 注入回忆 |
-| **Proxy 基础设施** | ~85% | 路由、router SSE、extensions、`trace/` 环形缓冲；Hub asset fetch/search |
-| **ATP 市场** | ~55% | 本地订单 + 信号缺口自动下单 + default_handler 自动交付 |
-| **IDE 适配器** | ~70% | Claude Code、Codex、Kiro、OpenCode + 运行时脚本 |
+| **进化流水线** | ~90% | 7 阶段 + preflight + post_cycle；Autopoiesis 与 memory_bridge 已接线 |
+| **Proxy 基础设施** | ~85% | 路由前缀 `/v1/a2a`；默认端口 8081；SSE LLM 中继 |
+| **ATP 市场** | ~55% | 本地结算 + Proxy ATP 路由；CLI `buy`/`orders` 参数不完整 |
+| **IDE 适配器** | ~65% | 4 个 IDE 模块 + 脚本；`setup-hooks` 仅 4 平台 |
 | **Ops 运维** | ~75% | `lifecycle`、`health_check`、`skills_monitor`、`innovation`、`trigger` |
 | **WebUI** | ~65% | Observer API、SSE 客户端、实时仪表盘；非完整 SPA |
 | **验证者** | ~50% | 沙箱框架存在；生产级网络隔离待完善 |

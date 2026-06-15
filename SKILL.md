@@ -26,33 +26,41 @@ pip install -e .
 
 | Command | Description | Status |
 |---|---|---|
-| `evolver` | Run a single evolution cycle | ✅ |
-| `evolver --loop` | Daemon mode: continuous cycles | ✅ |
-| `evolver --review` | Review pending solidify state | ✅ |
+| `evolver` / `evolver run` | Run a single evolution cycle | ✅ |
+| `evolver --loop` / `--mad-dog` | Daemon mode: continuous cycles | ✅ |
+| `evolver --review` | Global flag: pause for human review | ✅ |
+| `evolver start` / `stop` / `restart` / `status` | Cross-platform daemon lifecycle | ✅ |
+| `evolver log` / `check` / `watch` | Tail log, health check, watch supervisor | ✅ |
 | `evolver solidify` | Apply pending mutations | ✅ |
+| `evolver review` | Review pending solidify state (subcommand) | ✅ |
 | `evolver self-report` | Autopoiesis self-check + rule evolution | ✅ |
-| `evolver webui` | Start the observability dashboard (SSE live events) | ✅ |
-| `evolver proxy` | Start the local A2A Proxy | ✅ (core routes wired) |
-| `evolver start` | Start the daemon (cross-platform) | ✅ |
-| `evolver stop` | Stop the daemon | ✅ |
-| `evolver status` | Show daemon status | ✅ |
-| `evolver fetch <query>` | Fetch skill from Hub | ⚠️ Basic |
-| `evolver sync` | Sync assets with Hub | ⚠️ Basic |
-| `evolver setup-hooks --platform=cursor` | Install IDE hooks | ✅ |
-| `evolver atp status` | Show ATP marketplace status | ⚠️ |
-| `evolver atp orders` | List ATP orders | ⚠️ |
-| `evolver atp enable/disable` | Toggle ATP mode | ⚠️ |
+| `evolver distill` | Distill LLM response → Gene/Capsule | ✅ |
+| `evolver fetch <query>` | Fetch skill from Hub | ⚠️ Hub-dependent |
+| `evolver sync` | Sync assets with Hub | ⚠️ Hub-dependent |
+| `evolver webui [--port=8080]` | Observability dashboard (SSE) | ✅ |
+| `evolver proxy [--port=8081]` | Local A2A Proxy (**default port 8081**) | ✅ |
+| `evolver setup-hooks` | Runtime hooks: `cursor`, `claude-code`, `codex`, `kiro`, `opencode`; static: `vscode`, `generic` | ✅ |
+| `evolver login` / `logout` | OAuth device-code Hub login | ✅ |
+| `evolver recipe list|show|apply|…` | Recipe Hub commands | ✅ |
+| `evolver replay` / `asset-log` / `exec` | SQLite replay, asset log, bridge exec | ✅ |
+| `evolver atp balance\|deposit\|withdraw\|history\|enable\|disable\|status` | Local settlement + auto-buyer consent | ✅ |
+| `evolver buy <skill_id>` / `orders` / `verify <order_id>` | ATP Hub client commands | ✅ |
+| `evolver atp-complete <task_id>` | Complete ATP task | ✅ |
+
+**IDE adapters:** `setup-hooks --platform=…` delegates to `cursor.py`, `claude_code.py`, `codex.py`, `kiro.py`, `opencode.py` (runtime hooks + scripts). Use `--uninstall` / `--verify` (opencode). Installs always target `--project-dir`.
 
 ### Proxy API
 
-The local proxy exposes REST endpoints at `http://127.0.0.1:19820`:
+CLI serves at `http://127.0.0.1:8081` by default (`EVOLVER_PROXY_PORT` / `EVOMAP_PROXY_PORT`). Routes mount under **`/v1/a2a`** (`proxy/server/__init__.py`). Internal clients use `config.proxy_local_url()`.
+
+Base: `http://127.0.0.1:<port>/v1/a2a`
 
 **Mailbox**
 - `POST /mailbox/send` — Send message to Hub
 - `POST /mailbox/poll` — Poll inbound messages
 - `POST /mailbox/ack` — Acknowledge messages
 - `GET /mailbox/list?type=...` — List messages
-- `GET /mailbox/status/:id` — Query message status
+- `GET /mailbox/status/{msg_id}` — Query message status
 
 **Assets**
 - `POST /asset/validate` — Validate asset format ✅
@@ -61,36 +69,45 @@ The local proxy exposes REST endpoints at `http://127.0.0.1:19820`:
 - `POST /asset/submit` — Submit asset to Hub
 - `GET /asset/submissions` — List local submissions
 
-**Tasks**
-- `POST /task/subscribe` — Subscribe to task types
-- `POST /task/unsubscribe` — Unsubscribe
-- `GET /task/list` — List available tasks
-- `POST /task/claim` — Claim a task
-- `POST /task/complete` — Submit task result
-- `GET /task/metrics` — Task statistics
+**Tasks** (local state machine; not full Hub production flow)
+- `POST /task/subscribe` / `unsubscribe` / `claim` / `complete`
+- `GET /task/list` / `metrics`
 
 **Extensions**
 - `GET /extensions/skills/updates` — Pending skill updates
 - `POST /extensions/skills/process` — Process skill update queue
+- DM / session / trace routes in `proxy/extensions/`
+
+**ATP** (in-memory orders + local settlement; partial)
+- `POST /atp/order`, `/atp/deliver`, `/atp/verify`, `/atp/settle`, `/atp/dispute`, …
 
 **Proxy Status**
-- `GET /proxy/status` — Proxy health
+- `GET /proxy/status` — Proxy health (no auth)
 - `GET /proxy/hub-status` — Hub connection status
 
 **LLM Relay**
-- `POST /v1/messages` → Anthropic / Bedrock (SSE streaming supported)
+- `POST /v1/a2a/v1/messages` → Anthropic / Bedrock (SSE streaming)
+
+**Trace** (also at app root)
+- `GET /v1/a2a/health`, `GET /v1/a2a/trace`
 
 ### WebUI API
 
-The dashboard API runs at `http://127.0.0.1:8080`:
+CLI entry: `evolver webui` → `webui/app.py` + `dashboard.py` (not `webui/server/http.py`).
 
-- `GET /api/status` — System health
-- `GET /api/assets` — Gene / capsule list
-- `GET /api/assets/{id}` — Asset detail
-- `GET /api/candidates` — Candidate genes
-- `GET /api/runs` — Evolution run history
-- `GET /api/safety` — Safety events
-- `GET /events/stream` — SSE evolution event stream (live dashboard)
+| Endpoint | Description |
+|---|---|
+| `GET /api/status` | System health |
+| `GET /api/insights` | Diagnosis, hub gate, autopoiesis, memory sync, preflight abort |
+| `GET /api/assets`, `/api/assets/{id}` | Gene / capsule list and detail |
+| `GET /api/candidates` | Candidate genes |
+| `GET /api/runs` | Evolution run history |
+| `GET /api/safety` | Safety events |
+| `GET /api/calls`, `/api/lineage`, `/api/interactions` | Call graph, lineage, interactions |
+| `GET /api/personality`, `/api/memory-graph`, `/api/skills` | Personality, memory graph, skills |
+| `GET /api/pipelines`, `/api/logs` | Pipeline events; logs SSE stream |
+| `GET /events/stream` | SSE evolution events (refreshes insights panels on new events) |
+| Legacy | `/status`, `/genes`, `/capsules`, `/api/peers`, `/ws` on same app |
 
 ### Autopoiesis Governance (md2video port)
 
@@ -136,6 +153,14 @@ uv run evolver self-report --no-write --json   # CI-safe dry run
 - `post_solidify_hooks` records `solidify_success` friction (no auto rule encode)
 - `preflight abort` runs read-only SelfReport → `ctx["autopoiesis_preflight_abort"]`
 
+**P4 integrations (memory sync + recovery + WebUI):**
+
+- `memory_bridge.bidirectional_memory_sync` — living_memory ↔ memory_graph hints + friction events
+- `solidify` failure/success feeds both living memory and `memory_graph` (`friction` / `outcome` / preference)
+- `signals_phase` injects `preflight_abort` signals; `apply_preflight_abort_recovery` forces repair bias
+- `GET /api/insights` exposes `memory_sync`; dashboard **Memory Sync** panel refreshes on SSE events
+- `autopoiesis_preflight_abort.json` persists abort snapshot until a full cycle completes
+
 **P2 integrations (memory + innovation):**
 
 - `memory_bridge` merges living-memory hints into `memory_advice` and `ctx["signals"]` at enrich
@@ -143,19 +168,24 @@ uv run evolver self-report --no-write --json   # CI-safe dry run
 - `select` records `innovation_attempt_id`; `post_solidify_hooks` records innovation outcomes
 - `compute_viability` reads innovation ROI as coupling factor
 
-### GEP Cognition (feature flags)
+### Feature flags (unified)
 
-| Flag | Default | Effect |
-|---|---|---|
-| `EVOLVER_FF_ENABLE_RECALL_INJECT` | `true` | Inject verified recall into GEP prompt |
-| `EVOLVER_FF_ENABLE_REFLECTION` | `true` | Tune personality after solidify |
-| `EVOLVER_FF_ENABLE_AUTO_DISTILL` | `true` | Auto-distill from cycle context |
-| `EVOLVER_FF_ENABLE_EXPLORE` | `false` | AST exploration signals |
-| `EVOLVER_FF_ENABLE_CURRICULUM` | `false` | Curriculum task sequencing |
-| `EVOLVER_FF_ENABLE_SKILL_AUTO_UPDATE` | `false` | Proxy skill updater background loop |
-| `EVOLVER_FF_ENABLE_TRACE_UPLOAD` | `false` | Upload traces to Hub |
+Single resolver: `gep/feature_flags.py` (`is_enabled` / `get_all_flags`). Proxy `router/features.py` delegates route checks to the same source.
 
-Orchestrated by `evolver.gep.cognition` and wired into pipeline stages (`signals`, `enrich`, `dispatch`, `solidify`).
+Env: `EVOLVER_FF_<NAME>=1|0`. Disk layers (low → high): defaults → `evolver/.config/disk_flags.json` → optional `~/.evomap/feature_flags.json` (`EVOMAP_FEATURE_FLAGS_PATH`) → env.
+
+| Flag | Default | GEP | Proxy route |
+|---|---|---|---|
+| `ENABLE_RECALL_INJECT` | `true` | recall inject | — |
+| `ENABLE_REFLECTION` | `true` | post-solidify personality | — |
+| `ENABLE_AUTO_DISTILL` | `true` | enrich distill | — |
+| `ENABLE_MEMORY_GRAPH` | `true` | outcome / advice | — |
+| `ENABLE_LLM_REVIEW` | `true` | LLM review | `llm_messages` |
+| `ENABLE_AUTO_BUYER` | `false` | post_cycle buyer | `atp_order` |
+| `ENABLE_VALIDATOR` | `true` | validator daemon | `validator_tasks` |
+| `ENABLE_SKILL_AUTO_UPDATE` | `false` | — | `skill_update` loop |
+| `ENABLE_TRACE_UPLOAD` | `false` | — | `trace_upload` |
+| `ENABLE_EXPLORE` / `ENABLE_CURRICULUM` | `false` | optional cognition | — |
 
 ### ATP Marketplace
 
@@ -183,7 +213,7 @@ Orchestrated by `evolver.gep.cognition` and wired into pipeline stages (`signals
 | `A2A_NODE_ID` | auto-generated | EvoMap node identity |
 | `A2A_HUB_URL` | `https://evomap.ai` | Hub URL (used by Proxy) |
 | `EVOMAP_PROXY` | `1` | Enable local Proxy |
-| `EVOMAP_PROXY_PORT` | `19820` | Override Proxy port |
+| `EVOLVER_PROXY_PORT` / `EVOMAP_PROXY_PORT` | `8081` | Local proxy listen port |
 | `EVOLVE_STRATEGY` | `balanced` | Evolution strategy |
 | `EVOLVER_ROLLBACK_MODE` | `stash` | Rollback on solidify failure |
 | `EVOLVER_VALIDATOR_ENABLED` | `true` | Enable validator daemon |

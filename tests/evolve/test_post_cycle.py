@@ -41,6 +41,25 @@ async def test_post_cycle_runs_auto_buyer_when_enabled(
 
 
 @pytest.mark.asyncio
+async def test_post_cycle_issue_reporter(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(
+        "evolver.atp.atp_task_pickup.pick_one",
+        AsyncMock(return_value=None),
+    )
+    monkeypatch.setattr(
+        "evolver.gep.issue_reporter.report_recurring_failures",
+        lambda **_: ["https://github.com/o/r/issues/1"],
+    )
+    monkeypatch.setattr(
+        "evolver.gep.memory_graph.read_all",
+        lambda limit=500: [{"type": "attempt", "timestamp": 1, "outcome": "fail"}],
+    )
+    ctx = {"signals": ["log_error"]}
+    result = await run_post_cycle_hooks(ctx)
+    assert result["issue_reporter_urls"] == ["https://github.com/o/r/issues/1"]
+
+
+@pytest.mark.asyncio
 async def test_post_cycle_task_pickup_instruction(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(
         "evolver.atp.atp_task_pickup.pick_one",

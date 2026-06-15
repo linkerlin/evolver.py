@@ -51,3 +51,32 @@ def test_resolve_hub_url_allows_http_with_insecure(monkeypatch: pytest.MonkeyPat
     monkeypatch.setenv("A2A_HUB_URL", "http://insecure.example.com")
     monkeypatch.setenv("EVOMAP_HUB_ALLOW_INSECURE", "1")
     assert config.resolve_hub_url() == "http://insecure.example.com"
+
+
+def test_resolve_proxy_port_default(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.delenv("EVOLVER_PROXY_PORT", raising=False)
+    monkeypatch.delenv("EVOMAP_PROXY_PORT", raising=False)
+    assert config.resolve_proxy_port() == config.DEFAULT_PROXY_PORT == 8081
+
+
+def test_resolve_proxy_port_env_override(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("EVOLVER_PROXY_PORT", "9090")
+    assert config.resolve_proxy_port() == 9090
+
+
+def test_resolve_webui_port_default(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.delenv("EVOLVER_WEBUI_PORT", raising=False)
+    assert config.resolve_webui_port() == config.DEFAULT_WEBUI_PORT == 8080
+
+
+def test_resolve_webui_port_env_override(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("EVOLVER_WEBUI_PORT", "3000")
+    assert config.resolve_webui_port() == 3000
+
+
+def test_proxy_local_url(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.delenv("EVOLVER_PROXY_PORT", raising=False)
+    monkeypatch.delenv("EVOMAP_PROXY_PORT", raising=False)
+    url = config.proxy_local_url("v1/messages")
+    assert url.endswith("/v1/a2a/v1/messages")
+    assert ":8081" in url

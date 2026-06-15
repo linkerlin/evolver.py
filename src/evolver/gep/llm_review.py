@@ -113,8 +113,10 @@ def _call_llm(prompt: str, timeout: float = 10.0) -> str:
     try:
         import httpx
 
+        from evolver.config import proxy_local_url
+
         resp = httpx.post(
-            "http://127.0.0.1:19820/v1/messages",
+            proxy_local_url("v1/messages"),
             json={
                 "model": "claude-3-5-sonnet-20241022",
                 "max_tokens": 1024,

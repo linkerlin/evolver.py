@@ -55,13 +55,15 @@ src/evolver/
 ├── evolve/
 │   ├── runner.py       # Cycle orchestration (single + daemon loop)
 │   ├── guards.py       # Preflight checks (load, RSS, cooldown)
-│   └── pipeline/       # Six-phase pipeline (async functions)
-│       ├── collect.py      # Scan runtime logs and error patterns
-│       ├── signals.py      # Extract and classify signals
-│       ├── hub.py          # Query Hub for matching assets/tasks
-│       ├── enrich.py       # Enrich context + cognition (recall/distill)
-│       ├── select.py       # Select best Gene/Capsule
-│       └── dispatch.py     # Build GEP prompt with recall injection
+│   ├── post_cycle.py   # Post-cycle hooks (ATP auto-buyer)
+│   └── pipeline/       # Seven pipeline phases + preflight (async functions)
+│       ├── collect.py      # Scan logs + load living_memory
+│       ├── signals.py      # Signals + guard/preflight/learning keys
+│       ├── hub.py          # Query Hub; consume autopoiesis skip flag
+│       ├── enrich.py       # Memory advice + bidirectional_memory_sync
+│       ├── autopoiesis.py  # SelfReport + homeostasis + viability
+│       ├── select.py       # Select Gene/Capsule + innovation record
+│       └── dispatch.py     # GEP prompt + solidify state persistence
 ├── gep/                # GEP (Genome Evolution Protocol) core
 │   ├── schemas/        # Pydantic models: Gene, Capsule, Task, Protocol
 │   ├── asset_store.py  # JSON/JSONL persistence with overlay semantics
@@ -71,7 +73,7 @@ src/evolver/
 │   ├── signals.py      # Signal collection and classification
 │   ├── validator/      # Sandbox executor, reporter, stake bootstrap
 │   └── ...             # 55+ modules
-├── proxy/              # Local HTTP proxy (127.0.0.1:19820)
+├── proxy/              # Local HTTP proxy (CLI default 127.0.0.1:8081; routes under /v1/a2a)
 │   ├── server/routes.py    # FastAPI route matrix (task/ATP/extensions)
 │   ├── router/             # LLM routing, features, SSE streaming
 │   ├── extensions/         # DM, session, skill updater, trace control
@@ -97,8 +99,8 @@ src/evolver/
     ├── client/           # Inline JS/CSS (SSE, bootstrap, i18n)
     └── observer/         # Data aggregation modules
 
-tests/                  # 129 test files, 1206+ tests (pytest)
-scripts/                # 5 CLI helper scripts (17 planned)
+tests/                  # 130+ test files, 1250+ tests (pytest)
+scripts/                # 17 CLI helper scripts (see Scripts section)
 assets/gep/             # Seed gene library
 memory/                 # Runtime data (graph JSONL, reviews JSONL)
 ```
@@ -118,7 +120,7 @@ memory/                 # Runtime data (graph JSONL, reviews JSONL)
 | `EVOLVER_VALIDATOR_ENABLED` | `true` | Enable validator daemon |
 | `EVOLVER_ATP_DAILY_BUDGET` | `10` | ATP daily budget |
 | `EVOLVER_WEBUI_PORT` | `8080` | WebUI port |
-| `EVOLVER_PROXY_PORT` | `19820` | Proxy port |
+| `EVOLVER_PROXY_PORT` | `8081` | Local proxy port (`EVOMAP_PROXY_PORT` alias); override with `evolver proxy --port` |
 | `A2A_HUB_URL` | `https://evomap.ai` | Hub URL |
 | `A2A_NODE_ID` | auto-generated | Node identity |
 | `GITHUB_TOKEN` | — | GitHub API token |
@@ -136,10 +138,10 @@ memory/                 # Runtime data (graph JSONL, reviews JSONL)
 |---|---|---|
 | **GEP Data Layer** | ~90% | `asset_store`, schemas, `solidify`, `sanitize`, `crypto` production-grade |
 | **GEP Cognition** | ~75% | `cognition.py` wires recall/reflection/distill; explore/curriculum behind flags |
-| **Evolution Pipeline** | ~85% | Six phases implemented; recall injected at dispatch |
-| **Proxy Infrastructure** | ~85% | Routes, router SSE, extensions, `trace/` ring buffer; Hub asset fetch/search |
-| **ATP Marketplace** | ~55% | Local order state + gap-based auto-buyer + default-handler auto-deliver |
-| **IDE Adapters** | ~70% | Claude Code, Codex, Kiro, OpenCode adapters + hook scripts |
+| **Evolution Pipeline** | ~90% | 7 phases + preflight + post_cycle; Autopoiesis + memory_bridge wired |
+| **Proxy Infrastructure** | ~85% | Routes under `/v1/a2a`; SSE LLM relay; trace store; port default 8081 |
+| **ATP Marketplace** | ~60% | Local settlement + proxy ATP routes; CLI `buy`/`orders`/`atp` argparse wired |
+| **IDE Adapters** | ~65% | 4 IDE adapter modules + 4 runtime scripts; `setup-hooks` covers 4 platforms |
 | **Ops** | ~75% | `lifecycle`, `health_check`, `skills_monitor`, `innovation`, `trigger` |
 | **WebUI** | ~65% | Observer API, SSE client, live dashboard; not a full SPA |
 | **Validator** | ~50% | Sandbox framework exists; production network isolation pending |
@@ -199,14 +201,21 @@ python scripts/validate_modules.py
 
 ## Architecture
 
-### Evolution Pipeline (6 Phases)
+### Evolution Pipeline
 
-1. **Collect** — Read MEMORY.md, session logs, system health
-2. **Signals** — Extract actionable signals from corpus
-3. **Select** — Choose Gene + Capsule with epigenetic bias
-4. **Enrich** — Augment with memory advice, hub hits, plateau detection
-5. **Hub** — Coordinate with EvoMap Hub / local Proxy
-6. **Dispatch** — Build GEP prompt, write solidify state
+**Preflight** (`guards.py`) → optional abort with persisted SelfReport snapshot.
+
+| Phase | Module | Role |
+|---|---|---|
+| 1. Collect | `collect.py` | Session logs, failure diagnosis, `living_memory` |
+| 2. Signals | `signals.py` | Extract signals; guard / preflight / learning keys |
+| 3. Hub | `hub.py` | Hub tasks/assets; hub quality gate data |
+| 4. Enrich | `enrich.py` | Memory graph advice, `bidirectional_memory_sync` |
+| 5. Autopoiesis | `autopoiesis.py` | SelfReport, viability, homeostasis, repair bias |
+| 6. Select | `select.py` | Gene/Capsule + mutation category |
+| 7. Dispatch | `dispatch.py` | GEP prompt (`recall` + `autopoiesis_context`), solidify state |
+
+**Post-cycle** (`post_cycle.py`) — ATP auto-buyer tick. **Solidify** (`evolver solidify`) runs separately via `gep/solidify.py`.
 
 ### Key Concepts
 

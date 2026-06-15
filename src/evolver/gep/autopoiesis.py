@@ -123,6 +123,10 @@ def compute_viability(ctx: dict[str, Any]) -> ViabilityReport:
         homeostasis = max(0.2, 1.0 - conf * 0.6)
         factors.append(f"diagnosis:{diag.get('category', 'unknown')}")
 
+    if ctx.get("preflight_abort_recovery") or read_preflight_abort_report():
+        homeostasis *= 0.75
+        factors.append("preflight_abort_recovery")
+
     memory = ctx.get("living_memory") or {}
     if memory.get("loaded") and memory.get("high_friction_points"):
         homeostasis *= 0.85
@@ -247,6 +251,11 @@ def format_autopoiesis_context(ctx: dict[str, Any]) -> str:
     for item in (ctx.get("living_memory_guard_items") or [])[:3]:
         if isinstance(item, dict) and item.get("message"):
             parts.append(str(item["message"]))
+    if ctx.get("preflight_abort_recovery"):
+        reason = ctx.get("preflight_abort_reason") or "previous cycle blocked"
+        parts.append(
+            f"preflight_abort_recovery: resolve blocker ({reason[:120]}) before innovate"
+        )
     return "\n".join(parts)
 
 
@@ -472,6 +481,22 @@ def preflight_abort_signal_keys() -> list[str]:
         if slug:
             keys.append(f"preflight_abort:{slug}")
     return keys
+
+
+def apply_preflight_abort_recovery(ctx: dict[str, Any]) -> bool:
+    """After preflight abort, bias the next cycle toward safe repair (not drift)."""
+    signals = ctx.get("signals") or []
+    if "preflight_abort" not in signals:
+        return False
+    ctx["preflight_abort_recovery"] = True
+    ctx["autopoiesis_repair_bias"] = True
+    ctx["IS_RANDOM_DRIFT"] = False
+    ctx["skip_hub_calls"] = True
+    ctx["hub_skip_reason"] = "preflight_abort_recovery"
+    data = read_preflight_abort_report()
+    if isinstance(data, dict) and data.get("reason"):
+        ctx["preflight_abort_reason"] = str(data["reason"])
+    return True
 
 
 def clear_preflight_abort_report() -> None:

@@ -97,7 +97,7 @@ def _build_parser() -> argparse.ArgumentParser:
     replay_p.add_argument("--limit", type=int, default=100, help="Max events to replay")
     webui_p = sub.add_parser("webui", help="Launch the WebUI dashboard")
     webui_p.add_argument("--host", default="127.0.0.1", help="Bind host")
-    webui_p.add_argument("--port", type=int, default=8080, help="Bind port")
+    webui_p.add_argument("--port", type=int, default=None, help="Bind port (default: EVOLVER_WEBUI_PORT or 8080)")
     login_p = sub.add_parser("login", help="OAuth device-code login")
     login_p.add_argument("--hub-url", default=None, help="Override Hub URL")
     login_p.add_argument("--mock", action="store_true", help="Generate a mock token (dev mode)")
@@ -106,11 +106,17 @@ def _build_parser() -> argparse.ArgumentParser:
     hooks_p.add_argument(
         "--platform",
         default="auto",
-        help="IDE platform: cursor, claude-code, vscode, generic, auto",
+        help="IDE platform: cursor, claude-code, vscode, generic, codex, kiro, opencode, auto",
     )
     hooks_p.add_argument("--project-dir", default=".", help="Target project directory")
     hooks_p.add_argument("--force", action="store_true", help="Overwrite existing hook files")
     hooks_p.add_argument("--dry-run", action="store_true", help="Preview changes without writing")
+    hooks_p.add_argument("--uninstall", action="store_true", help="Remove evolver runtime hooks")
+    hooks_p.add_argument(
+        "--verify",
+        action="store_true",
+        help="Verify hook installation (currently opencode)",
+    )
     reset_p = sub.add_parser("reset-local-secret", help="Reset local node secret")
     reset_p.add_argument("--project-dir", default=".", help="Project directory containing .env")
     reset_p.add_argument("--also-node-id", action="store_true", help="Also regenerate A2A_NODE_ID")
@@ -119,14 +125,41 @@ def _build_parser() -> argparse.ArgumentParser:
     token_p.add_argument("--generate", action="store_true", help="Create a new token")
     token_p.add_argument("--role", default="readonly", help="Token role: readonly or admin")
     token_p.add_argument("--revoke", default=None, help="Revoke a token")
-    sub.add_parser("atp-complete", help="Complete an ATP task")
-    sub.add_parser("buy", help="Place an ATP order")
-    sub.add_parser("orders", help="List ATP orders")
-    sub.add_parser("verify", help="Verify an ATP delivery")
-    sub.add_parser("atp", help="ATP marketplace controls")
+    atp_complete_p = sub.add_parser("atp-complete", help="Complete an ATP task")
+    atp_complete_p.add_argument("task_id", nargs="?", default="", help="Task ID to complete")
+    buy_p = sub.add_parser("buy", help="Place an ATP order")
+    buy_p.add_argument("skill_id", nargs="?", default="", help="Skill ID to purchase")
+    buy_p.add_argument("--quantity", type=int, default=1, help="Order quantity")
+    orders_p = sub.add_parser("orders", help="List ATP orders")
+    orders_p.add_argument("--status", default=None, help="Filter by order status")
+    orders_p.add_argument("--limit", type=int, default=20, help="Max orders to list")
+    verify_p = sub.add_parser("verify", help="Verify an ATP delivery")
+    verify_p.add_argument("order_id", nargs="?", default="", help="Order ID to verify")
+    verify_p.add_argument("--reject", action="store_true", help="Reject delivery")
+    atp_p = sub.add_parser("atp", help="ATP local settlement + auto-buyer controls")
+    atp_sub = atp_p.add_subparsers(dest="atp_action")
+    atp_sub.add_parser("balance", help="Show local settlement balance (default)")
+    atp_deposit = atp_sub.add_parser("deposit", help="Credit local settlement ledger")
+    atp_deposit.add_argument("amount", type=float, help="Amount to deposit")
+    atp_deposit.add_argument("--reason", default="cli deposit", help="Ledger reason")
+    atp_withdraw = atp_sub.add_parser("withdraw", help="Debit local settlement ledger")
+    atp_withdraw.add_argument("amount", type=float, help="Amount to withdraw")
+    atp_withdraw.add_argument("--reason", default="cli withdraw", help="Ledger reason")
+    atp_history = atp_sub.add_parser("history", help="Show settlement transaction history")
+    atp_history.add_argument("--limit", type=int, default=20, help="Max transactions")
+    atp_sub.add_parser("enable", help="Enable ATP auto-buyer consent")
+    atp_sub.add_parser("disable", help="Disable ATP auto-buyer consent")
+    atp_sub.add_parser("status", help="Show ATP auto-buyer consent status")
+    from evolver.config import PROXY_HOST, resolve_proxy_port
+
     proxy_p = sub.add_parser("proxy", help="Start the A2A proxy server")
-    proxy_p.add_argument("--host", default="127.0.0.1", help="Bind host")
-    proxy_p.add_argument("--port", type=int, default=8081, help="Bind port")
+    proxy_p.add_argument("--host", default=PROXY_HOST, help="Bind host")
+    proxy_p.add_argument(
+        "--port",
+        type=int,
+        default=None,
+        help="Bind port (default: EVOLVER_PROXY_PORT or 8081)",
+    )
     recipe_p = sub.add_parser("recipe", help="Recipe Hub commands")
     recipe_sub = recipe_p.add_subparsers(dest="recipe_action")
     recipe_list = recipe_sub.add_parser("list", help="List available recipes")
@@ -242,9 +275,6 @@ def main(argv: Sequence[str] | None = None) -> int:
 
     if command == "atp-complete":
         return asyncio.run(_cmd_atp_complete(args))
-
-    if command == "atp":
-        return asyncio.run(_cmd_atp(args))
 
     if command == "recipe":
         return asyncio.run(_cmd_recipe(args))
@@ -432,12 +462,13 @@ def _cmd_webui(args: argparse.Namespace) -> int:
     """Launch the FastAPI WebUI dashboard."""
     import uvicorn
 
-    from evolver.webui.app import app
+    from evolver.config import resolve_webui_port
+    from evolver.webui.server.http import create_app
 
     host = getattr(args, "host", "127.0.0.1")
-    port = getattr(args, "port", 8080)
+    port = args.port if args.port is not None else resolve_webui_port()
     print(f"Starting Evolver WebUI at http://{host}:{port}/")
-    uvicorn.run(app, host=host, port=port, log_level="info")
+    uvicorn.run(create_app(), host=host, port=port, log_level="info")
     return 0
 
 
@@ -700,6 +731,8 @@ def _cmd_setup_hooks(args: argparse.Namespace) -> int:
             project_dir=args.project_dir,
             force=args.force,
             dry_run=args.dry_run,
+            uninstall=args.uninstall,
+            verify=args.verify,
         )
     except Exception as exc:
         print(f"Setup-hooks failed: {exc}", file=sys.stderr)
@@ -796,11 +829,12 @@ def _cmd_proxy(args: argparse.Namespace) -> int:
     """Launch the A2A proxy server."""
     import uvicorn
 
+    from evolver.config import resolve_proxy_port
     from evolver.proxy.server import app
 
     host = getattr(args, "host", "127.0.0.1")
-    port = getattr(args, "port", 8081)
-    print(f"Starting Evolver A2A Proxy at http://{host}:{port}/")
+    port = getattr(args, "port", None) or resolve_proxy_port()
+    print(f"Starting Evolver A2A Proxy at http://{host}:{port}/v1/a2a/")
     uvicorn.run(app, host=host, port=port, log_level="info")
     return 0
 
@@ -808,9 +842,11 @@ def _cmd_proxy(args: argparse.Namespace) -> int:
 async def _cmd_buy(args: argparse.Namespace) -> int:
     from evolver.atp.client import buy
 
-    result = await buy(
-        skill_id=getattr(args, "skill_id", getattr(args, "skill-id", "")), quantity=args.quantity
-    )
+    skill_id = str(getattr(args, "skill_id", "") or "").strip()
+    if not skill_id:
+        print("buy: skill_id is required", file=sys.stderr)
+        return 2
+    result = await buy(skill_id=skill_id, quantity=int(args.quantity))
     if not result.get("ok"):
         print(f"Buy failed: {result.get('error')}", file=sys.stderr)
         return 1
@@ -835,10 +871,11 @@ async def _cmd_orders(args: argparse.Namespace) -> int:
 async def _cmd_verify(args: argparse.Namespace) -> int:
     from evolver.atp.client import verify_delivery
 
-    result = await verify_delivery(
-        order_id=getattr(args, "order_id", getattr(args, "order-id", "")),
-        approval=not args.reject,
-    )
+    order_id = str(getattr(args, "order_id", "") or "").strip()
+    if not order_id:
+        print("verify: order_id is required", file=sys.stderr)
+        return 2
+    result = await verify_delivery(order_id=order_id, approval=not args.reject)
     if not result.get("ok"):
         print(f"Verify failed: {result.get('error')}", file=sys.stderr)
         return 1
@@ -849,7 +886,11 @@ async def _cmd_verify(args: argparse.Namespace) -> int:
 async def _cmd_atp_complete(args: argparse.Namespace) -> int:
     from evolver.atp.client import complete_task
 
-    result = await complete_task(task_id=getattr(args, "task_id", getattr(args, "task-id", "")))
+    task_id = str(getattr(args, "task_id", "") or "").strip()
+    if not task_id:
+        print("atp-complete: task_id is required", file=sys.stderr)
+        return 2
+    result = await complete_task(task_id=task_id)
     if not result.get("ok"):
         print(f"Complete failed: {result.get('error')}", file=sys.stderr)
         return 1

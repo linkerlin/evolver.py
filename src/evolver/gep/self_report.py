@@ -75,7 +75,8 @@ class SelfReport:
         capsules = load_capsules()
         events = read_all_events()
         solidify = self._load_json(self.solidify_path)
-        last_run = solidify.get("last_run") if isinstance(solidify.get("last_run"), dict) else {}
+        raw_last_run = solidify.get("last_run")
+        last_run: dict[str, Any] = raw_last_run if isinstance(raw_last_run, dict) else {}
 
         self.system_state = {
             "rules_version": self._load_json(self.rules_path).get("version", "unknown"),

@@ -16,7 +16,10 @@
 | 从 Hub 获取技能 | `uv run evolver fetch <query>` |
 | 同步资源 | `uv run evolver sync [--scope=...]` |
 | 启动 WebUI | `uv run evolver webui [--port=8080]` |
-| 启动本地代理 | `uv run evolver proxy` |
+| 启动本地代理 | `uv run evolver proxy [--port=8081]` |
+| 守护进程生命周期 | `uv run evolver start` / `stop` / `restart` / `status` / `log` |
+| 健康检查 | `uv run evolver check` / `watch` |
+| Recipe Hub | `uv run evolver recipe list|show|apply|…` |
 | 运行测试 | `uv run pytest` |
 | 运行测试（排除慢速） | `uv run pytest -m "not slow"` |
 | 代码检查 | `uv run ruff check src tests` |
@@ -68,7 +71,7 @@ gep/                GEP（基因组进化协议）核心
 evolve/             进化流水线
   runner.py         编排器：单周期 + 守护循环
   guards.py         起飞前检查（负载、RSS、冷却）
-  pipeline/         六阶段流水线（各为 async 函数，取/返 ctx）
+  pipeline/         七阶段流水线 + preflight + post_cycle（各为 async 函数，取/返 ctx）
     collect.py      扫描 memory/ 之运行时日志与错误模式
     signals.py      从收集数据中分类信号
     hub.py          向 Hub 查询匹配之资源与任务
@@ -77,7 +80,7 @@ evolve/             进化流水线
     select.py       选择最佳 Gene/Capsule（repair bias + innovation 记录）
     dispatch.py     生成 GEP 提示词（含回忆 + autopoiesis_context），写入分发输出
   post_cycle.py     周期末钩子（ATP auto-buyer、task pickup）
-proxy/              本地 HTTP 代理（127.0.0.1:19820）
+proxy/              本地 HTTP 代理（CLI 默认 127.0.0.1:8081；路由前缀 /v1/a2a）
   mailbox/store.py  本地邮箱 JSONL 存储（较完整）
   sync/             双向同步引擎（较完整）
   lifecycle/        生命周期管理器（hello/heartbeat + ATP 信号处理）
@@ -87,7 +90,8 @@ proxy/              本地 HTTP 代理（127.0.0.1:19820）
   task/monitor.py   任务监控（已接入 routes）
   trace/store.py    请求追踪环形缓冲（Hub 转发诊断）
 webui/              FastAPI 只读仪表盘
-  app.py            仪表盘应用 + `/events/stream` SSE
+  server/http.py    `create_app()` 统一工厂 + `WebUiServer` 嵌入式服务
+  app.py            向后兼容：`app = create_app()`
   dashboard.py      暗色 HTML 仪表盘（实时事件表）
   observer/         数据聚合模块（已实现）
   client/           内嵌 JS/CSS（sse、bootstrap、i18n、static）
@@ -103,8 +107,8 @@ ops/                健康检查、清理、叙事日志
   trigger.py        外部触发器（已实现）
 adapters/           IDE 钩子生成器
   hook_adapter.py   共享适配器逻辑（较完整）
-  setup_hooks.py    安装静态配置文件（Cursor/VSCode/Claude Code 基础）
-  cursor.py         Cursor 适配器（部分实现）
+  setup_hooks.py    CLI 入口：adapter 平台运行时 hooks + vscode/generic 静态配置
+  cursor.py         Cursor hooks.json 适配器
   scripts/          运行时脚本（session_start, signal_detect, session_end 深度有限）
   claude_code.py    Claude Code 适配器（已实现）
   codex.py          Codex 适配器（已实现，功能略少于 Cursor）
@@ -125,7 +129,7 @@ atp/                Agent 交易协议市场
 
 ```
 起飞前检查 → 收集 → 信号 → Hub → 丰富 → Autopoiesis → 选择 → 分发
-                              ↑ preflight abort 时只读 SelfReport（no-write）
+  ↑ abort 时 SelfReport + 持久化；下周期 signals 注入 preflight_abort + repair bias
                                                    ↓
                                               [GEP 提示词]
                                                    ↓
@@ -152,6 +156,8 @@ atp/                Agent 交易协议市场
 - `self_report.json`——最近自检报告
 - `autopoiesis.jsonl`——AutopoiesisTick 追加日志
 - `autopoiesis_state.json`——跨周期 Hub 降级标志
+- `autopoiesis_preflight_abort.json`——上次 preflight abort 快照（成功周期后清除）
+- `memory_graph_state.json`——`preferred_by_signal`、living_memory 摩擦同步元数据
 - `innovation_log.jsonl`——创新尝试 ROI 追踪
 
 资源完整性通过存于 `asset_id` 中之 `sha256:` 内容哈希验证之。
@@ -245,6 +251,9 @@ atp/                Agent 交易协议市场
 - **`canary.py` 为子进程运行**：其在 `solidify` 提交之前于子进程中运行。测试中勿直接从中导入。
 - **种子数据**：`src/evolver/assets/gep/genes.seed.json` 为捆绑之默认基因。测试不应修改之——用 `GEP_ASSETS_DIR` 覆盖。
 - **测试隔离**：环境变量总是用 `monkeypatch.setenv`，勿直接用 `os.environ`。`temp_workspace` fixture 为此常用路径处理之。
-- **曾为空之模块**：`proxy/router/`、`proxy/extensions/`、`webui/client/` 等已填充；`proxy/trace/` 仍缺失。修改前确认目标模块是否已实现。
-- **Proxy 路由深度**：`proxy/server/routes.py` 路由均已实现，但 `/task/*`、部分 `/atp/*` 为本地状态机；Hub 长连接与 SSE streaming 仍待深化。
+- **Proxy 路径前缀**：所有 `routes.py` 路由挂载于 `/v1/a2a`（如 `/v1/a2a/mailbox/send`）。LLM 中继为 `/v1/a2a/v1/messages`。
+- **Proxy 端口**：默认 `8081`；`config.resolve_proxy_port()` / `proxy_local_url()` 为统一入口；`EVOLVER_PROXY_PORT` 可覆盖。
+- **Proxy 路由深度**：`/task/*`、部分 `/atp/*` 为本地内存状态机，非 Hub 生产级任务流。
+- **IDE 双轨**：`setup-hooks` 对 `cursor`/`claude-code`/`codex`/`kiro`/`opencode` 调用各 adapter `install()`；`vscode`/`generic` 仍写静态配置。`--project-dir` 为安装根，不回落 `$HOME`。
+- **Feature flags**：`proxy/router/features.py` 委托 `gep/feature_flags.py`；`EVOLVER_FF_*` 对 GEP 与 Proxy 路由同时生效。
 - **许可证差异**：本移植使用 Apache-2.0，Node.js 参考实现使用 GPL-3.0-or-later。如引入 Node 版之测试或文档，须注意许可证兼容性。

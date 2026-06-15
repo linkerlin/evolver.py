@@ -50,6 +50,20 @@ async def run_post_cycle_hooks(ctx: dict[str, Any]) -> dict[str, Any]:
     except Exception as exc:
         logger.debug("[post_cycle] ATP task pickup skipped: %s", exc)
 
+    try:
+        from evolver.gep.issue_reporter import report_recurring_failures
+        from evolver.gep.memory_graph import read_all
+
+        events = ctx.get("recent_events")
+        if not isinstance(events, list) or not events:
+            events = read_all(limit=500)
+        created = report_recurring_failures(events=events)
+        if created:
+            ctx["issue_reporter_urls"] = created
+            logger.info("[post_cycle] issue reporter created %s issue(s)", len(created))
+    except Exception as exc:
+        logger.debug("[post_cycle] issue reporter skipped: %s", exc)
+
     return ctx
 
 

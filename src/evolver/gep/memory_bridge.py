@@ -284,7 +284,16 @@ def build_memory_sync_summary(
     if not isinstance(ban_notified, dict):
         ban_notified = {}
 
+    preflight_pending = False
+    try:
+        from evolver.gep.autopoiesis import read_preflight_abort_report  # noqa: PLC0415
+
+        preflight_pending = read_preflight_abort_report() is not None
+    except Exception:
+        pass
+
     return {
+        "preflight_abort_pending": preflight_pending,
         "living_memory_loaded": bool(living.get("loaded")),
         "living_memory_friction_total": int(living.get("total_friction_points") or 0),
         "living_memory_categories": list(living.get("all_categories") or [])[:8],
@@ -371,7 +380,12 @@ def living_memory_score_adjustment(
                 if rule in pattern.replace("_", ""):
                     delta -= 0.3
 
-    repair_tags = ("repair_loop", "autopoiesis:repair_loop_guard")
+    repair_tags = (
+        "repair_loop",
+        "autopoiesis:repair_loop_guard",
+        "preflight_abort",
+        "autopoiesis:preflight_abort",
+    )
     if category == "repair" and any(tag in signals for tag in repair_tags):
         delta += 0.25
 

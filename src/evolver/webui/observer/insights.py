@@ -14,12 +14,14 @@ from evolver.gep.paths import get_solidify_state_path
 
 
 def _live_failure_diagnosis() -> dict[str, Any] | None:
-    return diagnose_session_log(read_real_session_log())
+    result = diagnose_session_log(read_real_session_log())
+    return result if isinstance(result, dict) else None
 
 
 def _hub_gate_from_run(last_run: dict[str, Any]) -> dict[str, Any]:
-    if last_run.get("hub_quality_gate"):
-        return last_run["hub_quality_gate"]
+    gate = last_run.get("hub_quality_gate")
+    if isinstance(gate, dict):
+        return gate
     if not (
         last_run.get("hub_service_hits")
         or last_run.get("hub_assets")
@@ -40,8 +42,9 @@ def _hub_gate_from_run(last_run: dict[str, Any]) -> dict[str, Any]:
 
 def pipeline_insights() -> dict[str, Any]:
     """Aggregate failure diagnosis and hub quality data for the dashboard."""
-    state = read_json_if_exists(get_solidify_state_path()) or {}
-    last_run = state.get("last_run") if isinstance(state.get("last_run"), dict) else {}
+    state: dict[str, Any] = read_json_if_exists(get_solidify_state_path()) or {}
+    raw_last_run = state.get("last_run")
+    last_run: dict[str, Any] = raw_last_run if isinstance(raw_last_run, dict) else {}
 
     diagnosis = last_run.get("failure_diagnosis")
     diagnosis_source = "last_run" if diagnosis else "session_log"

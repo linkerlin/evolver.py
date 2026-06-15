@@ -132,8 +132,10 @@ def _submit_single(report: dict[str, Any]) -> bool:
             "execution_time_ms": report.get("execution_time_ms", 0),
             "sandbox_version": report.get("sandbox_version", "unknown"),
         }
+        from evolver.config import proxy_local_url
+
         resp = httpx.post(
-            "http://127.0.0.1:19820/a2a/validator/report",
+            proxy_local_url("proxy/validator/report"),
             json=payload,
             headers={"Content-Type": "application/json"},
             timeout=15.0,

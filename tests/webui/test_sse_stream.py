@@ -40,7 +40,7 @@ class TestEventsStream:
                 return []
             return [{"id": "evt-1", "type": "cycle_end"}]
 
-        monkeypatch.setattr("evolver.webui.app.read_all_events", _read_events)
+        monkeypatch.setattr("evolver.webui.server.legacy_routes.read_all_events", _read_events)
         body = webui_client.get("/events/stream", headers={"x-test-mode": "1"}).text
         parsed = _parse_sse_data(body)
         assert any(evt.get("id") == "evt-1" for evt in parsed)
@@ -48,7 +48,7 @@ class TestEventsStream:
     def test_stream_sends_keepalive_ping(
         self, webui_client: TestClient, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        monkeypatch.setattr("evolver.webui.app.read_all_events", lambda: [])
+        monkeypatch.setattr("evolver.webui.server.legacy_routes.read_all_events", lambda: [])
         body = webui_client.get("/events/stream", headers={"x-test-mode": "1"}).text
         assert ":ping" in body
 

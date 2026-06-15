@@ -185,8 +185,18 @@ def _query_stake_status(node_id: str) -> dict[str, Any] | None:
     try:
         import httpx
 
+        from evolver.adapters.auth import load_auth
+        from evolver.config import resolve_hub_url
+        from evolver.gep.a2a_protocol import build_hub_headers
+
+        headers = build_hub_headers()
+        auth = load_auth()
+        if auth:
+            headers["Authorization"] = f"Bearer {auth['access_token']}"
         resp = httpx.get(
-            f"http://127.0.0.1:19820/a2a/validator/stake-status?node_id={node_id}",
+            f"{resolve_hub_url()}/v1/a2a/validator/stake-status",
+            params={"node_id": node_id},
+            headers=headers,
             timeout=10.0,
         )
         if resp.status_code == 200:

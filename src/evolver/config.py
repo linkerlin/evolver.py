@@ -85,6 +85,52 @@ SECRET_CACHE_TTL_MS: Final = env_positive_int("EVOLVER_SECRET_CACHE_TTL_MS", 60_
 HUB_SEARCH_TIMEOUT_MS: Final = env_positive_int("EVOLVER_HUB_SEARCH_TIMEOUT_MS", 8_000)
 
 PUBLIC_DEFAULT_HUB_URL: Final = "https://evomap.ai"
+DEFAULT_PROXY_PORT: Final = 8081
+DEFAULT_WEBUI_PORT: Final = 8080
+PROXY_HOST: Final = env_str("EVOLVER_PROXY_HOST", env_str("EVOMAP_PROXY_HOST", "127.0.0.1"))
+
+
+def resolve_proxy_port() -> int:
+    """Local A2A proxy listen port.
+
+    Precedence: ``EVOLVER_PROXY_PORT`` → ``EVOMAP_PROXY_PORT`` → ``8081``.
+    """
+    for key in ("EVOLVER_PROXY_PORT", "EVOMAP_PROXY_PORT"):
+        raw = os.environ.get(key)
+        if raw is None or raw == "":
+            continue
+        try:
+            port = int(raw)
+        except ValueError:
+            continue
+        if 0 < port < 65536:
+            return port
+    return DEFAULT_PROXY_PORT
+
+
+def proxy_base_url() -> str:
+    """Base URL for the local proxy, e.g. ``http://127.0.0.1:8081``."""
+    return f"http://{PROXY_HOST}:{resolve_proxy_port()}"
+
+
+def proxy_local_url(path: str) -> str:
+    """URL under the local proxy ``/v1/a2a`` prefix (no leading slash required)."""
+    suffix = path.lstrip("/")
+    return f"{proxy_base_url()}/v1/a2a/{suffix}"
+
+
+def resolve_webui_port() -> int:
+    """WebUI listen port (``EVOLVER_WEBUI_PORT``, default ``8080``)."""
+    raw = os.environ.get("EVOLVER_WEBUI_PORT")
+    if raw is None or raw == "":
+        return DEFAULT_WEBUI_PORT
+    try:
+        port = int(raw)
+    except ValueError:
+        return DEFAULT_WEBUI_PORT
+    if 0 < port < 65536:
+        return port
+    return DEFAULT_WEBUI_PORT
 
 
 def resolve_hub_url() -> str:
@@ -262,6 +308,13 @@ __all__ = [
     "env_int",
     "env_positive_int",
     "env_str",
+    "DEFAULT_PROXY_PORT",
+    "DEFAULT_WEBUI_PORT",
+    "PROXY_HOST",
+    "proxy_base_url",
+    "proxy_local_url",
     "resolve_hub_url",
+    "resolve_proxy_port",
+    "resolve_webui_port",
     "reuse_attribution_mode",
 ]

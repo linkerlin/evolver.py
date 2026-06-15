@@ -120,6 +120,15 @@ def test_serialize_memory_advice_converts_banned_set():
     assert set(out["bannedGeneIds"]) == {"g1", "g2"}
 
 
+def test_build_memory_sync_summary_preflight_pending(monkeypatch: pytest.MonkeyPatch):
+    monkeypatch.setattr(
+        "evolver.gep.autopoiesis.read_preflight_abort_report",
+        lambda: {"reason": "x", "report": {}},
+    )
+    summary = build_memory_sync_summary()
+    assert summary["preflight_abort_pending"] is True
+
+
 def test_build_memory_sync_summary(tmp_path, monkeypatch: pytest.MonkeyPatch):
     monkeypatch.setenv("EVOLUTION_DIR", str(tmp_path))
     monkeypatch.setenv("MEMORY_GRAPH_PATH", str(tmp_path / "memory_graph.jsonl"))

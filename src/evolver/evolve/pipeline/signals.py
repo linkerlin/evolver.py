@@ -74,16 +74,26 @@ async def signals_phase(ctx: dict[str, Any]) -> dict[str, Any]:
     if guard_added:
         ctx["autopoiesis_guard_signals"] = guard_added
     try:
-        from evolver.gep.autopoiesis import preflight_abort_signal_keys  # noqa: PLC0415
+        from evolver.gep.autopoiesis import (  # noqa: PLC0415
+            apply_preflight_abort_recovery,
+            preflight_abort_signal_keys,
+        )
 
         signals, pfa_added = merge_signal_keys(signals, preflight_abort_signal_keys())
         if pfa_added:
             ctx["preflight_abort_signals_merged"] = pfa_added
+        ctx["signals"] = signals
+        if apply_preflight_abort_recovery(ctx):
+            signals = list(ctx["signals"])
     except Exception:
         pass
     ctx["signals"] = signals
     ctx["genes"] = load_genes()
     ctx["capsules"] = load_capsules()
     ctx["recent_events"] = ctx.get("recent_events", [])
-    ctx["skip_hub_calls"] = should_skip_hub_calls(signals)
+    skip_hub = should_skip_hub_calls(signals)
+    if ctx.get("preflight_abort_recovery"):
+        skip_hub = True
+        ctx.setdefault("hub_skip_reason", "preflight_abort_recovery")
+    ctx["skip_hub_calls"] = skip_hub
     return ctx

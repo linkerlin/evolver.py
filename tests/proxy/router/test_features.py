@@ -21,10 +21,12 @@ class TestRefreshFeatureFlags:
         assert isinstance(flags, dict)
         assert "enable_validator" in flags
 
-    def test_defaults(self):
+    def test_defaults(self, monkeypatch: pytest.MonkeyPatch):
+        monkeypatch.delenv("EVOLVER_FF_ENABLE_LLM_REVIEW", raising=False)
         flags = refresh_feature_flags()
         assert flags["enable_validator"] is True
-        assert flags["enable_llm_review"] is False
+        assert flags["enable_llm_review"] is True
+        assert flags["enable_skill_auto_update"] is False
 
     def test_env_override(self, monkeypatch: pytest.MonkeyPatch):
         monkeypatch.setenv("EVOLVER_FF_enable_llm_review", "1")
@@ -37,13 +39,12 @@ class TestRefreshFeatureFlags:
         assert flags["enable_validator"] is False
 
     def test_disk_flags(self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path):
-        from evolver.proxy.router import features
+        from evolver.gep.feature_flags import invalidate_cache
 
         flag_file = tmp_path / "feature_flags.json"
         flag_file.write_text(json.dumps({"enable_explore": True}), encoding="utf-8")
         monkeypatch.setenv("EVOMAP_FEATURE_FLAGS_PATH", str(flag_file))
-        # Reset cache to force disk re-read
-        features._last_refresh = 0.0
+        invalidate_cache()
         flags = refresh_feature_flags()
         assert flags["enable_explore"] is True
 
@@ -60,14 +61,17 @@ class TestIsRouteEnabled:
     def test_unknown_route_defaults_enabled(self):
         assert is_route_enabled("some_new_route") is True
 
-    def test_llm_review_disabled_by_default(self):
-        assert is_route_enabled("llm_messages") is False
+    def test_llm_review_enabled_by_default(self, monkeypatch: pytest.MonkeyPatch):
+        monkeypatch.delenv("EVOLVER_FF_ENABLE_LLM_REVIEW", raising=False)
+        assert is_route_enabled("llm_messages") is True
 
 
 class TestGetDisabledRoutes:
-    def test_default(self):
+    def test_default(self, monkeypatch: pytest.MonkeyPatch):
+        monkeypatch.delenv("EVOLVER_FF_ENABLE_LLM_REVIEW", raising=False)
+        monkeypatch.delenv("EVOLVER_FF_ENABLE_AUTO_BUYER", raising=False)
         disabled = get_disabled_routes()
-        assert "llm_messages" in disabled
+        assert "llm_messages" not in disabled
         assert "atp_order" in disabled
 
     def test_after_enable(self, monkeypatch: pytest.MonkeyPatch):

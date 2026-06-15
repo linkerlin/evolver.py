@@ -62,7 +62,9 @@ def _proxy_alive() -> bool:
 
         sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         sock.settimeout(1.0)
-        sock.connect(("127.0.0.1", 19820))
+        from evolver.config import PROXY_HOST, resolve_proxy_port
+
+        sock.connect((PROXY_HOST, resolve_proxy_port()))
         sock.close()
         return True
     except Exception:

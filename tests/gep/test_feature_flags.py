@@ -77,3 +77,28 @@ class TestDefaultFlags:
     def test_known_flags_exist(self):
         for name in DEFAULT_FLAGS:
             assert isinstance(DEFAULT_FLAGS[name], bool)
+
+    def test_proxy_flags_in_defaults(self):
+        assert "enable_skill_auto_update" in DEFAULT_FLAGS
+        assert "enable_trace_upload" in DEFAULT_FLAGS
+
+
+class TestLegacyEvomapDisk:
+    def test_legacy_path_overlay(self, monkeypatch, tmp_path):
+        from evolver.gep.feature_flags import invalidate_cache
+
+        flag_file = tmp_path / "feature_flags.json"
+        flag_file.write_text(json.dumps({"enable_explore": True}), encoding="utf-8")
+        monkeypatch.setenv("EVOMAP_FEATURE_FLAGS_PATH", str(flag_file))
+        with patch("evolver.gep.feature_flags._get_config_dir", return_value=tmp_path / "cfg"):
+            invalidate_cache()
+            assert is_enabled("enable_explore") is True
+
+
+class TestProxyDelegation:
+    def test_refresh_matches_get_all_flags(self, monkeypatch):
+        from evolver.gep.feature_flags import get_all_flags
+        from evolver.proxy.router.features import refresh_feature_flags
+
+        monkeypatch.setenv("EVOLVER_FF_ENABLE_TRACE_UPLOAD", "1")
+        assert refresh_feature_flags() == get_all_flags()
