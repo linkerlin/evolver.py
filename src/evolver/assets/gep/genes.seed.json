@@ -1,71 +1,384 @@
 {
+  "version": 2,
   "genes": [
     {
       "type": "Gene",
-      "id": "gene_repair_basic",
+      "id": "gene_gep_repair_from_errors",
       "category": "repair",
       "signals_match": [
+        "error|错误|异常|エラー|오류",
+        "exception|异常|例外|예외",
+        "failed|失败|失敗|실패|fail",
+        "unstable|不稳定|不安定|불안정",
         "log_error",
-        "errsig",
-        "recurring_errsig",
-        "error",
-        "exception",
-        "failed"
+        "test_failure"
+      ],
+      "preconditions": [
+        "signals contains error-related indicators"
       ],
       "strategy": [
-        "Inspect the most recent error traceback or stderr output.",
-        "Locate the file and line causing the failure.",
-        "Write a minimal patch that fixes the root cause.",
-        "Add or update a regression test that reproduces the failure.",
-        "Run the test suite to confirm the fix."
+        "Extract structured signals from logs and user instructions",
+        "Select an existing Gene by signals match (no improvisation)",
+        "Estimate blast radius (files, lines) before editing",
+        "Apply smallest reversible patch",
+        "Validate using declared validation steps; rollback on failure",
+        "Solidify knowledge: append EvolutionEvent, update Gene/Capsule store"
       ],
+      "constraints": {
+        "max_files": 20,
+        "forbidden_paths": [".git", "node_modules", ".venv"]
+      },
       "validation": [
-        "python -m pytest tests/ -x -q"
+        "python scripts/validate_modules.py",
+        "python -m pytest tests/ -x -q -m \"not slow\""
       ]
     },
     {
       "type": "Gene",
-      "id": "gene_optimize_basic",
+      "id": "gene_gep_optimize_prompt_and_assets",
       "category": "optimize",
       "signals_match": [
-        "perf_bottleneck",
-        "protocol",
-        "prompt",
-        "audit",
-        "refactor",
-        "cleanup"
+        "protocol|协议|プロトコル|프로토콜",
+        "gep",
+        "prompt|提示词|提示|プロンプト|프롬프트",
+        "audit|审计|監査|감사",
+        "reusable|可复用|再利用|재사용"
+      ],
+      "preconditions": [
+        "need stricter, auditable evolution protocol outputs"
       ],
       "strategy": [
-        "Profile or inspect the slow / noisy code path.",
-        "Identify a low-risk refactor or caching opportunity.",
-        "Apply the change and keep the public API stable.",
-        "Run existing tests and a targeted benchmark.",
-        "Summarize the measured improvement."
+        "Extract signals and determine selection rationale via Selector JSON",
+        "Prefer reusing existing Gene/Capsule; only create if no match exists",
+        "Refactor prompt assembly to embed assets (genes, capsules, parent event)",
+        "Reduce noise and ambiguity; enforce strict output schema",
+        "Validate by running evolver run and ensuring no runtime errors",
+        "Solidify: record EvolutionEvent, update Gene definitions, create Capsule on success"
       ],
+      "constraints": {
+        "max_files": 20,
+        "forbidden_paths": [".git", "node_modules", ".venv"]
+      },
       "validation": [
-        "python -m pytest tests/ -x -q"
+        "python scripts/validate_modules.py",
+        "python -m pytest tests/ -x -q -m \"not slow\""
       ]
     },
     {
       "type": "Gene",
-      "id": "gene_innovate_basic",
+      "id": "gene_gep_innovate_from_opportunity",
       "category": "innovate",
       "signals_match": [
-        "user_feature_request",
-        "user_improvement_suggestion",
-        "capability_gap",
+        "user_feature_request|功能请求|機能リクエスト|기능요청",
+        "user_improvement_suggestion|改进建议|改善提案|개선제안",
+        "perf_bottleneck|性能瓶颈|パフォーマンス|성능병목",
+        "capability_gap|能力缺口|機能ギャップ|역량공백",
         "stable_success_plateau",
-        "external_opportunity"
+        "external_opportunity|外部机会|外部機会|외부기회",
+        "bounty_task"
+      ],
+      "preconditions": [
+        "at least one opportunity signal is present",
+        "no active log_error signals (stability first)"
       ],
       "strategy": [
-        "Understand the feature request in the current codebase context.",
-        "Design the smallest vertical slice that demonstrates value.",
-        "Add the new behavior behind a clear API or CLI surface.",
-        "Write tests that exercise the happy path and edge cases.",
-        "Update README / USER.md if user-facing behavior changed."
+        "Extract opportunity signals and identify the specific user need or system gap",
+        "Search existing Genes and Capsules for partial matches (avoid reinventing)",
+        "Design a minimal, testable implementation plan (prefer small increments)",
+        "Estimate blast radius; innovate changes may touch more files but must stay within constraints",
+        "Implement the change with clear validation criteria",
+        "Validate using declared validation steps; rollback on failure",
+        "Solidify: record EvolutionEvent with intent=innovate, create new Gene if pattern is novel, create Capsule on success"
       ],
+      "constraints": {
+        "max_files": 25,
+        "forbidden_paths": [".git", "node_modules", ".venv"]
+      },
       "validation": [
-        "python -m pytest tests/ -x -q"
+        "python scripts/validate_modules.py",
+        "python -m pytest tests/ -x -q -m \"not slow\""
+      ]
+    },
+    {
+      "type": "Gene",
+      "id": "gene_gep_optimize_tool_usage",
+      "summary": "Optimize tool execution patterns by reducing redundant calls, improving tool selection strategy, and enforcing tool-use constraints to prevent bypass.",
+      "category": "optimize",
+      "signals_match": [
+        "high_tool_usage:exec",
+        "repeated_tool_usage:exec",
+        "tool_bypass|工具绕过|ツール迂回|도구우회",
+        "tool_loop|工具循环|ツールループ|도구반복",
+        "high_tool_usage"
+      ],
+      "preconditions": [
+        "agent repeatedly invokes the same tool without progress",
+        "tool execution bypass patterns detected",
+        "no active error signals (errors would take repair priority)"
+      ],
+      "strategy": [
+        "Analyze tool usage patterns to identify the root cause of repetition",
+        "Introduce strategy-level guardrails: prefer single-shot commands, batch related operations, add explicit retry limits",
+        "If tool_bypass detected, strengthen constraint enforcement in prompt assembly or tool routing",
+        "Estimate blast radius; changes should target tool routing, prompt constraints, or signal deduplication logic",
+        "Validate by confirming no regressions in existing tests and signal extraction accuracy",
+        "Solidify: record EvolutionEvent with intent=optimize, update Capsule on success"
+      ],
+      "constraints": {
+        "max_files": 15,
+        "forbidden_paths": [".git", "node_modules", ".venv"]
+      },
+      "validation": [
+        "python scripts/validate_modules.py",
+        "python -m pytest tests/ -x -q -m \"not slow\""
+      ],
+      "routing_hint": { "tier": "mid", "reasoning_level": "medium" }
+    },
+    {
+      "type": "Gene",
+      "id": "gene_distilled_s2g-env-vars",
+      "summary": "Vercel environment variable expert guidance. Use when working with .env files, vercel env commands, OIDC tokens, or managing environment-specific configuration.",
+      "category": "optimize",
+      "signals_match": [
+        "use_when_working_with",
+        "env_files",
+        "vercel_env_commands",
+        "oidc_tokens",
+        "vercel_env_pull",
+        "env_local_overwrite",
+        "oidc_token_expiry",
+        "dotenv_cli"
+      ],
+      "preconditions": ["Skill env-vars has just been executed locally"],
+      "strategy": [
+        "Identify the dominant trigger signals from the Skill description.",
+        "Apply the smallest targeted change that satisfies the Skill workflow.",
+        "Run the Skill validation commands and abort if any fails."
+      ],
+      "constraints": {
+        "max_files": 12,
+        "forbidden_paths": [".git", "node_modules", ".venv"]
+      },
+      "validation": ["python --version"],
+      "routing_hint": { "tier": "cheap", "reasoning_level": "low" },
+      "schema_version": "1.6.0",
+      "_source": {
+        "kind": "skill2gep",
+        "skill_name": "env-vars",
+        "skill_platform": "vercel"
+      }
+    },
+    {
+      "type": "Gene",
+      "id": "gene_tool_integrity",
+      "category": "repair",
+      "signals_match": ["tool_bypass|工具绕过|ツール迂回|도구우회"],
+      "preconditions": [
+        "agent used shell/exec to perform an action that a registered tool can handle"
+      ],
+      "strategy": [
+        "Always prefer registered tools over ad-hoc scripts or shell workarounds",
+        "If a registered tool fails, report the actual error honestly and attempt to fix the root cause",
+        "Never fabricate explanations -- describe actual actions transparently",
+        "Do not create temporary scripts in extension or project directories"
+      ],
+      "constraints": {
+        "max_files": 4,
+        "forbidden_paths": [".git", "node_modules", ".venv"]
+      },
+      "validation": ["python -m pytest tests/ -x -q -m \"not slow\""],
+      "anti_patterns": ["tool_bypass"],
+      "routing_hint": { "tier": "cheap", "reasoning_level": "low" }
+    },
+    {
+      "type": "Gene",
+      "id": "gene_publish_feishu_doc",
+      "category": "innovate",
+      "signals_match": [
+        "publish_markdown_to_feishu",
+        "create_feishu_doc",
+        "export_report_to_feishu",
+        "把结果发到飞书文档",
+        "发布飞书文档",
+        "把报告导出到飞书",
+        "publish results to a feishu doc",
+        "export notes to lark document",
+        "飞书文档",
+        "发布到飞书",
+        "导出到飞书",
+        "发到飞书",
+        "lark文档",
+        "飞书文档|lark doc|feishu doc"
+      ],
+      "strategy": [
+        "Verify the toolchain: run `lark-cli doctor` and require ok:true with at least one ready identity",
+        "Always use the Docs v2 API (v1 is deprecated): pass `--api-version v2`",
+        "Write the body as Lark-flavored Markdown to a temp file and pass `--content @file.md --doc-format markdown` to avoid shell-escaping bugs",
+        "Create with the user identity so the doc is human-owned: `lark-cli docs +create --api-version v2 --as user --doc-format markdown --content @file.md`",
+        "To place it in a folder or wiki add `--parent-token <token>` (use `--parent-position my_library` for the personal space)",
+        "Parse data.document.url from the JSON response and return it to the user; use `docs +update --api-version v2` with the document_id to amend instead of recreating"
+      ],
+      "validation": ["python --version"],
+      "constraints": {
+        "max_files": 2,
+        "forbidden_paths": [".git", "node_modules", "~/.lark-cli/config.json"]
+      },
+      "preconditions": [
+        "lark-cli installed and on PATH (npm i -g @larksuite/cli)",
+        "lark-cli auth status reports a ready user or bot identity"
+      ],
+      "summary": "Publish Markdown content as a Feishu/Lark document via the official lark-cli (Docs v2). Use --as user for human-owned docs and @file content for long bodies; return the resulting document URL.",
+      "schema_version": "1.6.0",
+      "epigenetic_marks": [],
+      "learning_history": [],
+      "anti_patterns": [],
+      "routing_hint": null,
+      "avoid": [
+        "using the deprecated Docs v1 API or the v1 --markdown flag",
+        "passing long markdown inline (shell-escaping corrupts it) instead of --content @file",
+        "overwriting ~/.lark-cli/config.json (holds the app secret and tokens)"
+      ]
+    },
+    {
+      "type": "Gene",
+      "id": "gene_conventional_git_commit",
+      "category": "optimize",
+      "signals_match": [
+        "git_commit",
+        "create_commit",
+        "commit_changes",
+        "conventional_commit",
+        "提交代码",
+        "生成提交信息",
+        "write a commit message",
+        "stage and commit"
+      ],
+      "strategy": [
+        "Inspect the change: `git diff --staged` if anything is staged, else `git diff`, plus `git status --porcelain`",
+        "Pick a Conventional Commits type (feat/fix/docs/style/refactor/perf/test/build/ci/chore/revert) and optional scope from what actually changed",
+        "Stage logically-grouped files explicitly (git add <paths>); NEVER stage or commit secrets (.env, credentials, private keys)",
+        "Write a present-tense imperative description under 72 chars; add a body/footer for breaking changes (type! or BREAKING CHANGE:) and issue refs (Closes #N)",
+        "Commit one logical change with `git commit -m` (heredoc for multi-line)",
+        "Safety: never touch git config, never --force/hard-reset/--no-verify without explicit request, never force-push main; if a hook fails, fix and make a NEW commit (do not amend)"
+      ],
+      "validation": ["python --version"],
+      "constraints": {
+        "max_files": 50,
+        "forbidden_paths": [".git", "node_modules", ".venv"]
+      },
+      "preconditions": ["a git repository with staged or unstaged changes"],
+      "summary": "Create a Conventional Commits-style git commit: analyze the diff to pick type/scope, stage logical groups (never secrets), and write an imperative <72-char message.",
+      "schema_version": "1.6.0",
+      "avoid": [
+        "committing secrets or unrelated changes in one commit",
+        "amending or force-pushing to bypass a failing hook",
+        "past-tense or vague messages like \"updated stuff\""
+      ]
+    },
+    {
+      "type": "Gene",
+      "id": "gene_poll_bugbot_review",
+      "category": "optimize",
+      "signals_match": [
+        "poll_bugbot",
+        "bugbot_review",
+        "wait_for_ci_review",
+        "pr_review_gate",
+        "等bugbot",
+        "等待评审",
+        "check bugbot",
+        "review the pr",
+        "pr opened"
+      ],
+      "strategy": [
+        "Poll the \"Cursor Bugbot\" check via `gh pr view --json statusCheckRollup` every ~60s until status=COMPLETED (cap ~10min); filter by name, not index",
+        "On SUCCESS: safe to merge ONLY if no other required check is red AND zero open inline comments from the cursor[bot] login",
+        "On NEUTRAL: do NOT treat as pass — fetch inline comments, surface path/line/severity, hand back to the human",
+        "On FAILURE/ACTION_REQUIRED: surface findings, do not merge",
+        "Auto-merge (squash + delete-branch) only when explicitly authorized AND conclusion is SUCCESS"
+      ],
+      "validation": ["python --version"],
+      "constraints": {
+        "max_files": 1,
+        "forbidden_paths": [".git", "node_modules", ".venv"]
+      },
+      "preconditions": ["an open GitHub PR in a repo where Cursor Bugbot runs"],
+      "summary": "Wait for Cursor Bugbot on a GitHub PR, then gate on the conclusion: SUCCESS may merge, NEUTRAL/FAILURE always pauses to surface inline findings.",
+      "schema_version": "1.6.0",
+      "avoid": [
+        "treating NEUTRAL as pass (it has shipped real bugs before)",
+        "filtering comments on \"cursor\" instead of \"cursor[bot]\"",
+        "auto-merging without explicit authorization or with CI red"
+      ]
+    },
+    {
+      "type": "Gene",
+      "id": "gene_gateway_timeout_recovery",
+      "category": "repair",
+      "signals_match": [
+        "gateway_timeout",
+        "upstream_timeout",
+        "http_524",
+        "request_timed_out",
+        "超时了",
+        "网关超时",
+        "遇到超时",
+        "retry on timeout",
+        "operation timed out"
+      ],
+      "strategy": [
+        "Treat it as transient or size-driven, not a logic failure; do not report it as a hard failure before recovering",
+        "Retry the SAME operation verbatim exactly ONCE; do not loop",
+        "If it times out again, STOP retrying the monolith: split the work along a natural seam (per-file/dir/endpoint/record/section/time-window) into small independent units",
+        "Dispatch the units as parallel subagents in a single batch so each finishes under the gateway deadline; merge their results",
+        "If one unit itself times out, apply this same procedure recursively to that slice"
+      ],
+      "validation": ["python --version"],
+      "constraints": {
+        "max_files": 1,
+        "forbidden_paths": [".git", "node_modules", ".venv"]
+      },
+      "preconditions": ["a tool call / fetch / subagent returned a gateway-class timeout (524/522/502/504)"],
+      "summary": "Recover from a gateway/upstream timeout: retry the same call once, and if it still times out, decompose the work into parallel subagents and merge — never loop the monolithic call.",
+      "schema_version": "1.6.0",
+      "avoid": [
+        "retrying the same large call more than once",
+        "serial retries instead of parallel decomposition",
+        "surfacing the timeout as a hard failure before recovering"
+      ]
+    },
+    {
+      "type": "Gene",
+      "id": "gene_github_webhook_listener",
+      "category": "innovate",
+      "signals_match": [
+        "github_webhook_listener",
+        "bugbot_webhook",
+        "passive_pr_notifications",
+        "设置webhook",
+        "部署webhook监听",
+        "notify when bugbot finishes",
+        "webhook tunnel"
+      ],
+      "strategy": [
+        "Run the idempotent deploy: a loopback listener validating GitHub X-Hub-Signature-256 HMAC via hmac.compare_digest, writing vetted payloads to an inbox directory",
+        "Expose it via a cloudflared quick tunnel (outbound-only, no inbound port); a path-watcher re-PATCHes the GitHub webhook config whenever the tunnel URL changes",
+        "Keep listener + tunnel alive with systemd --user units hardened (ProtectSystem=strict, NoNewPrivileges, MemoryDenyWriteExecute); a SessionStart hook drains the inbox and re-validates PR state via gh api before surfacing",
+        "Security invariants: HMAC on every request, X-GitHub-Delivery dedup against replay, write-only sink (never exec/template/deserialize payload)",
+        "Add repos with deploy script; rotate the secret every 90 days and immediately on any leak; never trust the inbox payload without re-fetching"
+      ],
+      "validation": ["python --version"],
+      "constraints": {
+        "max_files": 20,
+        "forbidden_paths": [".git", "node_modules", ".venv"]
+      },
+      "preconditions": ["a developer machine with systemd --user and cloudflared available"],
+      "summary": "Deploy a per-developer GitHub webhook listener (HMAC-validated, cloudflared tunnel, systemd-kept) that drops PR/Bugbot events into an inbox for the next session to surface.",
+      "schema_version": "1.6.0",
+      "avoid": [
+        "opening an inbound port instead of an outbound cloudflared tunnel",
+        "trusting the webhook payload without HMAC validation and PR re-fetch",
+        "execing or deserializing anything from the payload"
       ]
     }
   ]

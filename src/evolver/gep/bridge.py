@@ -6,10 +6,30 @@ Equivalent to evolver/src/gep/bridge.js.
 from __future__ import annotations
 
 import json
+import os
 from pathlib import Path
 from typing import Any, cast
 
 from evolver.config import PROMPT_MAX_CHARS
+
+#: Values of ``EVOLVE_BRIDGE`` that explicitly disable the bridge.
+_BRIDGE_FALSE_VALUES = frozenset({"false", "0", "off", "no"})
+
+
+def determine_bridge_enabled() -> bool:
+    """Decide whether the git worktree mutation bridge is active.
+
+    Precedence (mirrors ``determineBridgeEnabled`` in ``evolve.js``):
+      1. ``EVOLVE_BRIDGE`` explicitly set to a falsy value → False (overrides
+         everything, even ``OPENCLAW_WORKSPACE``).
+      2. ``EVOLVE_BRIDGE`` set to any other non-empty value → True.
+      3. ``EVOLVE_BRIDGE`` unset or empty → True iff ``OPENCLAW_WORKSPACE``
+         is set (i.e. running inside an OpenClaw session).
+    """
+    raw = os.environ.get("EVOLVE_BRIDGE", "")
+    if raw:
+        return raw.strip().lower() not in _BRIDGE_FALSE_VALUES
+    return bool(os.environ.get("OPENCLAW_WORKSPACE"))
 
 
 def clip(text: str, max_chars: int = PROMPT_MAX_CHARS) -> str:
@@ -21,7 +41,7 @@ def clip(text: str, max_chars: int = PROMPT_MAX_CHARS) -> str:
 
 def write_prompt_artifact(prompt: str, path: Path | str | None = None) -> Path:
     if path is None:
-        from evolver.gep.paths import get_evolution_dir
+        from evolver.gep.paths import get_evolution_dir  # noqa: PLC0415
 
         path = get_evolution_dir() / "last_prompt.md"
     p = Path(path)
@@ -35,7 +55,7 @@ def render_sessions_spawn_call(payload: dict[str, Any]) -> str:
     return "sessions_spawn(" + json.dumps(payload, ensure_ascii=False, separators=(",", ":")) + ")"
 
 
-def extract_first_spawn_payload(text: str | None) -> str | None:
+def extract_first_spawn_payload(text: str | None) -> str | None:  # noqa: PLR0912
     """Extract the raw JSON string from the first sessions_spawn(...) call."""
     if not isinstance(text, str) or not text:
         return None

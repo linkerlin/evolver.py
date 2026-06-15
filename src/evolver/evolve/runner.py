@@ -23,6 +23,7 @@ from evolver.evolve.pipeline import (
     signals_phase,
 )
 from evolver.evolve.post_cycle import run_post_cycle_hooks
+from evolver.gep.bridge import determine_bridge_enabled
 from evolver.gep.instance_lock import instance_lock_ctx
 from evolver.gep.paths import get_cycle_progress_path
 from evolver.ops.cleanup import run_cleanup
@@ -30,6 +31,14 @@ from evolver.ops.cleanup import run_cleanup
 # Daemon loop coordination
 _shutdown_requested: bool = False
 _shutdown_event: asyncio.Event | None = None
+
+#: When bridge mode is active, a dispatched sessions_spawn(...) starts a "pending
+#: bridge run". If the run does not complete within this timeout (seconds), the
+#: loop treats it as stale and breaks — preventing a "Ralph-loop" where the
+#: daemon keeps re-spawning sessions that never finish (#559).
+BRIDGE_STALE_TIMEOUT_S: float = float(
+    __import__("os").environ.get("EVOLVER_BRIDGE_STALE_TIMEOUT_S", "600")
+)
 
 
 def _current_event() -> asyncio.Event | None:
@@ -54,7 +63,7 @@ def _build_initial_context() -> dict[str, Any]:
         "IS_RANDOM_DRIFT": False,
         "IS_REVIEW_MODE": False,
         "IS_DRY_RUN": False,
-        "bridge_enabled": guards.determine_bridge_enabled(),
+        "bridge_enabled": determine_bridge_enabled(),
         "AGENT_NAME": __import__("os").environ.get("AGENT_NAME", "main"),
         "scan_time_iso": datetime.datetime.now(datetime.UTC).isoformat().replace("+00:00", "Z"),
     }
@@ -103,7 +112,7 @@ async def run() -> None:
     await _run_single_cycle(is_loop=False)
 
 
-async def run_loop(
+async def run_loop(  # noqa: PLR0912, PLR0915
     *,
     interval_ms: int | None = None,
     review_mode: bool = False,
@@ -136,9 +145,26 @@ async def run_loop(
 
         cycle_count = 0
         last_cleanup_cycle = 0
+        # Track a pending bridge-mode run to detect staleness (#559).
+        pending_bridge_ts: float | None = None
 
         while not shutdown.is_set() and not _shutdown_requested:
             cycle_count += 1
+
+            # Stale bridge-run detection: if the previous cycle dispatched a
+            # sessions_spawn(...) in bridge mode and it hasn't completed within
+            # BRIDGE_STALE_TIMEOUT_S, break the loop instead of re-spawning
+            # forever (the "Ralph-loop" fix #559).
+            if pending_bridge_ts is not None:
+                stale_age = time.time() - pending_bridge_ts
+                if stale_age > BRIDGE_STALE_TIMEOUT_S:
+                    print(
+                        f"[loop] Bridge-mode pending run is stale "
+                        f"({stale_age:.0f}s > {BRIDGE_STALE_TIMEOUT_S:.0f}s). "
+                        "Breaking loop to avoid re-spawn storm (#559)."
+                    )
+                    break
+
             _write_cycle_progress(cycle_count, consecutive_errors)
 
             try:
@@ -157,8 +183,15 @@ async def run_loop(
                     if shutdown.is_set() or _shutdown_requested:
                         break
 
-                await _run_single_cycle(is_loop=True)
+                ctx = await _run_single_cycle(is_loop=True)
                 consecutive_errors = 0
+
+                # Track pending bridge runs: if the cycle produced a spawn
+                # directive in bridge mode, stamp the timestamp.
+                if ctx.get("bridge_enabled") and ctx.get("bridge_spawn_dispatched"):
+                    pending_bridge_ts = time.time()
+                else:
+                    pending_bridge_ts = None
             except asyncio.CancelledError:
                 raise
             except Exception as exc:

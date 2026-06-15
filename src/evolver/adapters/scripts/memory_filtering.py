@@ -1,23 +1,74 @@
-"""Shared memory filtering for adapter runtime scripts."""
+"""Shared memory filtering for adapter runtime scripts.
+
+Equivalent to ``evolver/src/adapters/scripts/_memoryFiltering.js``.
+
+Two functions:
+  - :func:`filter_relevant_outcomes` — filter a pre-read list of entries
+    (mirrors ``filterRelevantOutcomes`` in the Node reference).
+  - :func:`filter_relevant_memories` — read and filter from the graph file
+    (Python-original convenience wrapper).
+"""
 
 from __future__ import annotations
 
 import json
 import time
+from datetime import datetime
 from pathlib import Path
 from typing import Any
+
+DEFAULT_MIN_SCORE = 0.5
+DEFAULT_MAX_AGE_S = 7 * 24 * 60 * 60  # 7 days
+DEFAULT_MAX_OUTCOMES = 3
+
+
+def filter_relevant_outcomes(
+    entries: list[dict[str, Any]],
+    *,
+    min_score: float = DEFAULT_MIN_SCORE,
+    max_age_s: float = DEFAULT_MAX_AGE_S,
+    max_outcomes: int = DEFAULT_MAX_OUTCOMES,
+) -> list[dict[str, Any]]:
+    """Filter evolution memory outcomes to reduce noise.
+
+    Mirrors ``filterRelevantOutcomes`` in ``_memoryFiltering.js``:
+      - Keep only ``success`` outcomes (failed ones have no learning value).
+      - Drop low-confidence outcomes (score < *min_score*).
+      - Enforce a time bound (older than *max_age_s* dropped).
+      - Limit to the *max_outcomes* most recent.
+    """
+    now = time.time()
+    kept: list[dict[str, Any]] = []
+    for entry in entries:
+        outcome = entry.get("outcome")
+        if not isinstance(outcome, dict) or outcome.get("status") != "success":
+            continue
+        score = outcome.get("score", 0)
+        if not isinstance(score, (int, float)) or score < min_score:
+            continue
+        ts_val = entry.get("timestamp", "")
+        ts = 0.0
+        if isinstance(ts_val, str) and ts_val:
+            try:
+                ts = datetime.fromisoformat(ts_val.replace("Z", "+00:00")).timestamp()
+            except ValueError:
+                ts = 0.0
+        if ts and now - ts > max_age_s:
+            continue
+        kept.append(entry)
+    return kept[-max_outcomes:] if max_outcomes > 0 else kept
 
 
 def filter_relevant_memories(
     *,
-    workspace: Path,
-    scope: str = "workspace",
+    workspace: Path | None = None,  # noqa: ARG001 (kept for API compat)
+    scope: str = "workspace",  # noqa: ARG001 (kept for API compat)
     limit: int = 5,
     min_score: float = 0.0,
 ) -> list[dict[str, Any]]:
-    """Return the most relevant memories for the current context."""
+    """Read the memory graph and return the most relevant memories."""
     try:
-        from evolver.gep.paths import get_memory_dir
+        from evolver.gep.paths import get_memory_dir  # noqa: PLC0415
     except ImportError:
         return []
 
@@ -29,29 +80,27 @@ def filter_relevant_memories(
     entries: list[dict[str, Any]] = []
     try:
         with open(graph_file, encoding="utf-8") as f:
-            for line in f:
-                line = line.strip()
-                if not line:
+            for raw_line in f:
+                stripped = raw_line.strip()
+                if not stripped:
                     continue
                 try:
-                    record = json.loads(line)
+                    record = json.loads(stripped)
                 except json.JSONDecodeError:
                     continue
-                entries.append(record)
+                if isinstance(record, dict):
+                    entries.append(record)
     except OSError:
         return []
 
-    # Time decay: newer memories score higher
     now = time.time()
     scored: list[tuple[float, dict[str, Any]]] = []
     for rec in entries:
         ts = rec.get("ts", 0)
         if isinstance(ts, str):
             try:
-                from datetime import datetime
-
                 ts = datetime.fromisoformat(ts.replace("Z", "+00:00")).timestamp()
-            except Exception:
+            except ValueError:
                 ts = 0
         age_days = (now - ts) / 86400 if ts else 0
         decay = 0.5 ** (age_days / 7)  # half-life 7 days
@@ -70,3 +119,12 @@ def filter_relevant_memories(
         }
         for score, rec in scored[:limit]
     ]
+
+
+__all__ = [
+    "DEFAULT_MAX_AGE_S",
+    "DEFAULT_MAX_OUTCOMES",
+    "DEFAULT_MIN_SCORE",
+    "filter_relevant_memories",
+    "filter_relevant_outcomes",
+]

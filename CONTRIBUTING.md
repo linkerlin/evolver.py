@@ -51,7 +51,7 @@ pytest tests/ -q
 
 All new code must pass `uv run mypy src` (strict) before submission. The full `ruff check` suite may report pre-existing style warnings; fix any issues in files you touch.
 
-Current baseline (2026-06-11): **1218 tests** (`pytest`), **mypy 0 errors**.
+Current baseline (2026-06-15): **1331 tests** (`pytest`), **mypy 0 errors**.
 
 ## Testing
 
@@ -72,10 +72,15 @@ Current baseline (2026-06-11): **1218 tests** (`pytest`), **mypy 0 errors**.
 
 ## Commit Guidelines
 
-- Use conventional commits: `feat:`, `fix:`, `test:`, `docs:`, `refactor:`
-- Keep commits atomic and focused.
-- Reference related issues when applicable.
-- Format: `[<subsystem>] <description>` for clarity, e.g. `[gep] add file locking to asset_store`
+- Use **conventional commits** with an optional scope:
+  `feat(gep):`, `fix(proxy):`, `test(atp):`, `docs:`, `refactor(ops):`, `chore:`
+- Keep commits atomic and focused on a single concern.
+- Reference related issues or PRs when applicable, e.g. `fix(sanitize): skip path/URL env values (#568)`.
+- Format: `<type>(<scope>): <description>` — see the Node.js reference repo's
+  history for examples (`feat(hooks):`, `fix(loop):`, `refactor:`).
+- Releases bump `version` in `pyproject.toml` following SemVer and add a
+  `## [x.y.z]` entry to `CHANGELOG.md`. `scripts/check_changelog.py` enforces
+  consistency.
 
 ## Pull Request Process
 

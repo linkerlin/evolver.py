@@ -37,7 +37,7 @@ class Constraints(BaseModel):
 class Gene(BaseModel):
     """Gene model equivalent to Node GEP Gene schema."""
 
-    model_config = ConfigDict(extra="forbid", validate_assignment=True)
+    model_config = ConfigDict(extra="forbid", validate_assignment=True, populate_by_name=True)
 
     type: Literal["Gene"] = "Gene"
     id: str | None = None
@@ -55,6 +55,8 @@ class Gene(BaseModel):
     routing_hint: RoutingHint | None = None
     tool_policy: ToolPolicy | None = None
     asset_id: str | None = None
+    avoid: list[str] = Field(default_factory=list)
+    source: dict[str, Any] | None = Field(default=None, alias="_source")
 
     @field_validator("category")
     @classmethod

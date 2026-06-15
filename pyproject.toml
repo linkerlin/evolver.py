@@ -92,6 +92,18 @@ ignore = [
 "src/evolver/webui/dashboard.py" = ["E501"]
 "src/evolver/adapters/opencode.py" = ["E501"]
 "src/evolver/adapters/setup_hooks.py" = ["E501"]
+# Proxy route modules — lazy httpx import, nested async with, many error
+# returns, and unused `request` param are the established pattern
+# (matches messages_route.py).
+"src/evolver/proxy/router/gemini_route.py" = ["E501", "PLC0415", "SIM117", "ARG001", "PLR0911"]
+"src/evolver/proxy/router/vertex_route.py" = ["E501", "PLC0415", "SIM117", "ARG001", "PLR0911"]
+"src/evolver/proxy/router/ollama_route.py" = ["E501", "PLC0415", "SIM117", "ARG001", "PLR0911"]
+"src/evolver/proxy/router/responses_route.py" = ["E501", "PLC0415", "SIM117", "ARG001", "PLR0911"]
+"src/evolver/proxy/router/messages_route.py" = ["PLC0415", "SIM117", "PLR0911", "ARG001"]
+"src/evolver/proxy/router/model_router.py" = ["PLR0911"]
+"src/evolver/proxy/router/models_route.py" = ["PLC0415"]
+# Lifecycle manager — pre-established async patterns (lazy imports, task creation, ternary)
+"src/evolver/proxy/lifecycle/manager.py" = ["B904", "SIM102", "RUF006", "PLC0415", "SIM108", "N817"]
 
 [tool.ruff.format]
 quote-style = "double"

@@ -32,16 +32,25 @@ class TestIntensityForDuration:
 
 class TestShouldMutate:
     def test_signal_only_no_mutate(self):
-        with patch("evolver.gep.idle_scheduler._idle_time", return_value=0):
+        with (
+            patch("evolver.gep.idle_scheduler._idle_time", return_value=0),
+            patch("evolver.gep.idle_scheduler._detect_build_activity", return_value=False),
+        ):
             assert not should_mutate()
 
     def test_light_allows_mutate(self):
-        with patch("evolver.gep.idle_scheduler._idle_time", return_value=INTENSITY_LIGHT_THRESHOLD):
+        with (
+            patch("evolver.gep.idle_scheduler._idle_time", return_value=INTENSITY_LIGHT_THRESHOLD),
+            patch("evolver.gep.idle_scheduler._detect_build_activity", return_value=False),
+        ):
             assert should_mutate()
 
 
 class TestGetIntensity:
     def test_returns_enum(self):
-        with patch("evolver.gep.idle_scheduler._idle_time", return_value=0):
+        with (
+            patch("evolver.gep.idle_scheduler._idle_time", return_value=0),
+            patch("evolver.gep.idle_scheduler._detect_build_activity", return_value=False),
+        ):
             intensity = get_intensity()
             assert isinstance(intensity, EvolutionIntensity)

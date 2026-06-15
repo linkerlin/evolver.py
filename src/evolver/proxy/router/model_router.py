@@ -77,9 +77,26 @@ def resolve_model(
 
 
 def select_upstream_for_model(model: str) -> str:
-    """Select upstream based on model name."""
-    if "bedrock" in model.lower() or model.startswith("anthropic."):
+    """Select upstream based on model name.
+
+    Detects: bedrock (``anthropic.*`` prefix), gemini (``gemini-*`` prefix),
+    vertex (``vertex-*`` prefix), ollama (``ollama:*`` prefix),
+    openai (``gpt-*``/``o[0-9]-*`` prefix). Defaults to the configured
+    upstream preference.
+    """
+    lower = model.lower()
+    if "bedrock" in lower or model.startswith("anthropic."):
         return "bedrock"
+    if lower.startswith("gemini-"):
+        if os.environ.get("VERTEX_PROJECT") or os.environ.get("GOOGLE_CLOUD_PROJECT"):
+            return "vertex"
+        return "gemini"
+    if lower.startswith("vertex-"):
+        return "vertex"
+    if lower.startswith("ollama:"):
+        return "ollama"
+    if lower.startswith(("gpt-", "o1-", "o3-", "o4-")):
+        return "openai"
     return get_upstream_preference()
 
 

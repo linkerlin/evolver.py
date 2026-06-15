@@ -49,6 +49,16 @@ REAUTH_BACKOFF_CAP_MS = 4 * 60 * 60 * 1000
 WALL_CLOCK_DRIFT_THRESHOLD_S = 90
 WALL_CLOCK_DRIFT_CLEAR_REAUTH_S = 30 * 60
 
+# L1: ERROR_BACKOFF — after 3 consecutive reauth failures, enter backoff (max 5 min).
+ERROR_BACKOFF_THRESHOLD = 3
+ERROR_BACKOFF_CAP_MS = 5 * 60 * 1000
+
+# L5: Rate limiting — min interval between heartbeats (burst protection).
+MIN_HEARTBEAT_INTERVAL_MS = 30_000  # 30s
+
+# L4: Stale secret — a secret older than this (without refresh) is considered stale.
+SECRET_STALE_TTL_S = 7 * 24 * 60 * 60  # 7 days
+
 
 # ---------------------------------------------------------------------------
 # Exceptions
@@ -77,6 +87,15 @@ class LifecycleState:
     last_reauth_at: float | None = None
     force_update_in_flight: bool = False
     force_update_last_attempt_at: float | None = None
+    # L1: ERROR_BACKOFF state
+    in_error_backoff: bool = False
+    error_backoff_until: float | None = None
+    # L4: secret staleness tracking
+    secret_set_at: float | None = None
+    # L5: rate limiting
+    last_heartbeat_attempt_at: float | None = None
+    # L7: legacy node ID migration
+    original_node_id: str | None = None
 
 
 # ---------------------------------------------------------------------------
@@ -132,6 +151,17 @@ class LifecycleManager:
 
         s.node_id = store_id or os.environ.get("A2A_NODE_ID", "").strip() or None
         s.last_heartbeat_at = self._store.get_state("last_heartbeat_at")
+        # L4: load secret age
+        s.secret_set_at = self._store.get_state("secret_set_at")
+        # L7: load original node ID for legacy fallback
+        s.original_node_id = self._store.get_state("original_node_id")
+        # Migrate legacy node ID if needed.
+        if s.node_id:
+            for prefix in self._LEGACY_NODE_ID_PREFIXES:
+                if s.node_id.startswith(prefix):
+                    s.original_node_id = s.node_id
+                    s.node_id = s.node_id[len(prefix):]
+                    break
         return s
 
     def _save_state(self) -> None:
@@ -139,6 +169,8 @@ class LifecycleManager:
         self._store.set_state("node_secret", self._state.node_secret)
         self._store.set_state("node_secret_source", self._state.node_secret_source)
         self._store.set_state("last_heartbeat_at", self._state.last_heartbeat_at)
+        self._store.set_state("secret_set_at", self._state.secret_set_at)
+        self._store.set_state("original_node_id", self._state.original_node_id)
 
     # ------------------------------------------------------------------
     # Hello
@@ -190,8 +222,18 @@ class LifecycleManager:
     # Heartbeat
     # ------------------------------------------------------------------
 
-    async def heartbeat(self, *, _skip_reauth: bool = False) -> dict[str, Any]:
+    async def heartbeat(self, *, _skip_reauth: bool = False) -> dict[str, Any]:  # noqa: PLR0911
         """Send a heartbeat to the Hub."""
+        # L1: Skip if in ERROR_BACKOFF.
+        if self._is_in_error_backoff():
+            return {"ok": False, "error": "error_backoff"}
+
+        # L5: Rate limit check.
+        if not _skip_reauth and not self._check_rate_limit():
+            return {"ok": False, "error": "rate_limited"}
+
+        self._state.last_heartbeat_attempt_at = time.time()
+
         if not self._state.node_id:
             return {"ok": False, "error": "no_node_id"}
 
@@ -298,6 +340,7 @@ class LifecycleManager:
         # Restore old secret for next attempt
         self._state.node_secret = old_secret
         self._state.reauth_failures += 1
+        self._enter_error_backoff()  # L1: may enter ERROR_BACKOFF
         self._save_state()
         return {"ok": False, "error": "reauth_failed"}
 
@@ -412,6 +455,175 @@ class LifecycleManager:
                 self._poke_event.clear()
             except TimeoutError:
                 pass
+
+    # ------------------------------------------------------------------
+    # L1: ERROR_BACKOFF — enter/exit backoff state after repeated reauth failures
+    # ------------------------------------------------------------------
+
+    def _enter_error_backoff(self) -> None:
+        """Enter ERROR_BACKOFF state after ERROR_BACKOFF_THRESHOLD reauth failures."""
+        if self._state.reauth_failures >= ERROR_BACKOFF_THRESHOLD:
+            self._state.in_error_backoff = True
+            backoff = min(
+                ERROR_BACKOFF_CAP_MS,
+                REAUTH_BACKOFF_BASE_MS * (2 ** (self._state.reauth_failures - 1)),
+            )
+            self._state.error_backoff_until = time.time() + backoff / 1000.0
+            logger.warning(
+                "[Lifecycle] Entering ERROR_BACKOFF for %.0f s (reauth_failures=%d)",
+                backoff / 1000.0,
+                self._state.reauth_failures,
+            )
+
+    def _is_in_error_backoff(self) -> bool:
+        """Return True if currently in ERROR_BACKOFF and the timeout hasn't elapsed."""
+        if not self._state.in_error_backoff:
+            return False
+        if self._state.error_backoff_until and time.time() < self._state.error_backoff_until:
+            return True
+        # Backoff period elapsed — exit.
+        self._state.in_error_backoff = False
+        self._state.error_backoff_until = None
+        return False
+
+    # ------------------------------------------------------------------
+    # L2: TLS enforcement
+    # ------------------------------------------------------------------
+
+    @staticmethod
+    def enforce_tls(url: str | None = None) -> dict[str, Any]:
+        """Validate that the Hub URL uses HTTPS.
+
+        Returns ``{ok: bool, url: str, warnings: list[str]}``.
+        In production (``EVOLVER_ENV=production``), non-HTTPS URLs are rejected.
+        In development, a warning is issued but the URL is accepted.
+        """
+        hub_url = url or resolve_hub_url()
+        warnings: list[str] = []
+        is_production = os.environ.get("EVOLVER_ENV", "").lower() == "production"
+
+        if not hub_url:
+            return {"ok": False, "url": "", "warnings": ["hub_url_empty"]}
+
+        if hub_url.startswith("https://"):
+            return {"ok": True, "url": hub_url, "warnings": []}
+
+        if hub_url.startswith("http://"):
+            msg = f"Hub URL is not HTTPS: {hub_url}"
+            if is_production:
+                return {"ok": False, "url": hub_url, "warnings": [msg, "tls_rejected_in_production"]}  # noqa: E501
+            warnings.append(msg)
+            warnings.append("tls_warning_dev_only")
+            return {"ok": True, "url": hub_url, "warnings": warnings}
+
+        # No protocol — assume HTTPS is needed.
+        warnings.append(f"Hub URL has no protocol: {hub_url}")
+        return {"ok": True, "url": hub_url, "warnings": warnings}
+
+    # ------------------------------------------------------------------
+    # L3: Offline permit — atomic flag for hub-verify offline mode
+    # ------------------------------------------------------------------
+
+    def acquire_offline_permit(self) -> bool:
+        """Atomically acquire an offline permit for hub-verify.
+
+        Returns True if acquired (or already held), False if contended.
+        The permit prevents two concurrent verify-while-offline races.
+        """
+        current = self._store.get_state("offline_permit_holder")
+        if current == self._state.node_id:
+            return True  # already held
+        if current:
+            return False  # held by another node
+        self._store.set_state("offline_permit_holder", self._state.node_id)
+        # Re-read to confirm we won the race.
+        holder = self._store.get_state("offline_permit_holder")
+        return bool(holder == self._state.node_id)
+
+    def release_offline_permit(self) -> None:
+        """Release the offline permit (only if we hold it)."""
+        current = self._store.get_state("offline_permit_holder")
+        if current == self._state.node_id:
+            self._store.set_state("offline_permit_holder", None)
+
+    # ------------------------------------------------------------------
+    # L4: Stale node secret detection and rotation
+    # ------------------------------------------------------------------
+
+    def is_secret_stale(self) -> bool:
+        """Return True if the node secret hasn't been refreshed in SECRET_STALE_TTL_S."""
+        if not self._state.secret_set_at:
+            return True  # never set → stale
+        return time.time() - self._state.secret_set_at > SECRET_STALE_TTL_S
+
+    async def rotate_stale_secret(self) -> dict[str, Any]:
+        """Rotate the node secret if it's stale.
+
+        Calls ``hello(rotate_secret=True)`` to get a fresh secret from the Hub.
+        """
+        if not self.is_secret_stale():
+            return {"ok": True, "rotated": False, "reason": "not_stale"}
+        logger.info("[Lifecycle] Node secret is stale, rotating...")
+        result = await self.hello(rotate_secret=True)
+        if result.get("ok"):
+            self._state.secret_set_at = time.time()
+            self._save_state()
+            return {"ok": True, "rotated": True}
+        return result
+
+    # ------------------------------------------------------------------
+    # L5: Rate limiting
+    # ------------------------------------------------------------------
+
+    def _check_rate_limit(self) -> bool:
+        """Return True if enough time has passed since the last heartbeat attempt.
+
+        Prevents burst-sending heartbeats when the loop is poked repeatedly.
+        """
+        if self._state.last_heartbeat_attempt_at is None:
+            return True
+        elapsed_ms = (time.time() - self._state.last_heartbeat_attempt_at) * 1000
+        return bool(elapsed_ms >= MIN_HEARTBEAT_INTERVAL_MS)
+
+    # ------------------------------------------------------------------
+    # L7: Node ID legacy fallback
+    # ------------------------------------------------------------------
+
+    _LEGACY_NODE_ID_PREFIXES = ("evomap-", "node-", "a2a-")
+
+    def resolve_legacy_node_id(self) -> str | None:
+        """Detect and migrate a legacy-format node ID.
+
+        Legacy IDs used prefixes like ``evomap-`` or ``node-``. This method
+        strips the prefix and stores the original for backward compatibility.
+        If the current node_id has no legacy prefix, returns it unchanged.
+        """
+        nid = self._state.node_id
+        if not nid:
+            return None
+        for prefix in self._LEGACY_NODE_ID_PREFIXES:
+            if nid.startswith(prefix):
+                # Store original for backward-compat lookups.
+                if not self._state.original_node_id:
+                    self._state.original_node_id = nid
+                migrated = nid[len(prefix):]
+                logger.info(
+                    "[Lifecycle] Migrating legacy node ID: %s -> %s",
+                    nid,
+                    migrated,
+                )
+                self._state.node_id = migrated
+                self._save_state()
+                return migrated
+        return nid
+
+    def get_effective_node_id(self) -> str | None:
+        """Return the node ID, checking legacy fallback if needed."""
+        nid = self._state.node_id
+        if nid:
+            return nid
+        # Fallback to original (legacy) if current is somehow cleared.
+        return self._state.original_node_id
 
     # ------------------------------------------------------------------
     # Version comparison
