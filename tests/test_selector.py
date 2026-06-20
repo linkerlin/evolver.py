@@ -115,3 +115,45 @@ def test_is_epigenetically_suppressed_wrong_env() -> None:
         "epigenetic_marks": [{"context": "aix/sparc/v0.0.0", "boost": -0.5}],
     }
     assert selector.is_epigenetically_suppressed(gene) is False
+
+
+def test_562_banned_sole_match_yields_null() -> None:
+    """When the only matching gene is banned, select_gene returns null.
+
+    This is the #562 escape hatch: a banned sole-match gene yields null so
+    the pipeline forces mutation of a fresh gene, restoring diversity.
+    """
+    gene = {
+        "type": "Gene",
+        "id": "gene_auto_6279e076",
+        "signals_match": ["memory_missing", "memory.md missing"],
+        "strategy": ["check memory"],
+        "validation": ['node -e "true"'],
+    }
+    signals = ["memory_missing"]
+
+    # Baseline: sole match is selected even at max drift (the dominance trap).
+    baseline = selector.select_gene(
+        [gene],
+        signals,
+        {
+            "driftEnabled": True,
+            "effectivePopulationSize": 1,
+        },
+    )
+    assert baseline["selected"] is not None
+    assert baseline["selected"]["id"] == gene["id"]
+
+    # With the inert ban applied, the sole match is filtered out -> null.
+    banned = selector.select_gene(
+        [gene],
+        signals,
+        {
+            "driftEnabled": True,
+            "effectivePopulationSize": 1,
+            "bannedGeneIds": {gene["id"]},
+        },
+    )
+    assert banned["selected"] is None, (
+        "a banned sole-match gene must yield null so the pipeline forces mutation"
+    )

@@ -13,7 +13,32 @@ import time
 from pathlib import Path
 from typing import Any, cast
 
+from evolver.config import GENE_INERT_BAN_STREAK
 from evolver.gep.paths import get_evolution_dir, get_memory_graph_path
+
+# Outcome notes that indicate a zero-work ("inert") success — the gene ran but
+# produced no real artifact. These must NOT build Bayesian confidence, and a
+# gene whose trailing history is entirely inert must be banned so the selector
+# falls through to mutation (EvoMap/evolver#562).
+_INERT_NOTE_MARKERS: tuple[str, ...] = (
+    "stable_no_error",
+    "heuristic_delta",
+    "predictive",
+)
+
+
+def _is_inert_outcome(outcome: dict[str, Any]) -> bool:
+    """Return True if a success outcome is actually zero-work (inert).
+
+    An outcome counts as inert when ``status == 'success'`` but the ``note``
+    indicates no real error was cleared / no artifact produced.  Inert
+    outcomes build no confidence and accumulate a consecutive-trailing streak
+    that, once it reaches :data:`GENE_INERT_BAN_STREAK`, bans the gene (#562).
+    """
+    if str(outcome.get("status", "")).lower() != "success":
+        return False
+    note = str(outcome.get("note", "")).lower()
+    return any(marker in note for marker in _INERT_NOTE_MARKERS)
 
 
 def _graph_path() -> Path:
@@ -302,11 +327,45 @@ def record_signal_gene_preference(
     return {"signalKey": key, **entry}
 
 
-def get_memory_advice(
+def _count_trailing_inert(
+    outcomes: list[dict[str, Any]], signal_key: str, gene_id: str
+) -> tuple[int, bool]:
+    """Count consecutive trailing inert outcomes for *gene_id* on *signal_key*.
+
+    Walks the chronological outcome list (oldest→newest) and counts how many
+    of the *trailing* (most-recent) entries are inert.  A single real success
+    or failure breaks the inert streak.
+
+    Returns ``(trailing_inert_count, has_any_real_success)``.
+    """
+    relevant: list[dict[str, Any]] = []
+    has_real_success = False
+    for evt in outcomes:
+        if evt.get("signal", {}).get("key") != signal_key:
+            continue
+        g = evt.get("gene")
+        if not g or g.get("id") != gene_id:
+            continue
+        outcome = evt.get("outcome") or {}
+        relevant.append(outcome)
+        if outcome.get("status") == "success" and not _is_inert_outcome(outcome):
+            has_real_success = True
+
+    # Count trailing inert (iterate newest→oldest).
+    trailing = 0
+    for outcome in reversed(relevant):
+        if _is_inert_outcome(outcome):
+            trailing += 1
+        else:
+            break
+    return trailing, has_real_success
+
+
+def get_memory_advice(  # noqa: PLR0912, PLR0915
     *,
     signals: list[str] | None,
     genes: list[dict[str, Any]] | None,
-    drift_enabled: bool = False,
+    drift_enabled: bool = False,  # noqa: ARG001
 ) -> dict[str, Any]:
     signals = list(signals) if isinstance(signals, list) else []
     genes = list(genes) if isinstance(genes, list) else []
@@ -338,10 +397,13 @@ def get_memory_advice(
             continue
         if evt.get("signal", {}).get("key") != key:
             continue
-        stats = gene_stats.setdefault(gene_id, {"attempts": 0, "successes": 0, "failures": 0})
+        stats = gene_stats.setdefault(
+            gene_id, {"attempts": 0, "successes": 0, "failures": 0}
+        )
         stats["attempts"] += 1
-        status = evt.get("outcome", {}).get("status")
-        if status == "success":
+        outcome = evt.get("outcome") or {}
+        status = outcome.get("status")
+        if status == "success" and not _is_inert_outcome(outcome):
             stats["successes"] += 1
         elif status == "failed":
             stats["failures"] += 1
@@ -357,6 +419,24 @@ def get_memory_advice(
             if rate > best_rate:
                 best_rate = rate
                 preferred = gene_id
+
+    # #562: a gene whose trailing outcomes are ALL inert (zero-work) must not
+    # be preferred — it climbed to p~1.0 on non-evidence.  Additionally, ban a
+    # gene after GENE_INERT_BAN_STREAK consecutive trailing inert outcomes with
+    # no real success, so the selector yields null and the pipeline mutates.
+    for gene_id in list(gene_stats):
+        trailing_inert, has_real_success = _count_trailing_inert(
+            outcomes, key, gene_id
+        )
+        if has_real_success:
+            # Real work was done — never punish old idle cycles.
+            continue
+        # No real success at all: if *every* outcome is inert, don't prefer.
+        attempts = gene_stats[gene_id]["attempts"]
+        if 0 < attempts <= trailing_inert and preferred == gene_id:
+            preferred = None
+        if trailing_inert >= GENE_INERT_BAN_STREAK:
+            banned.add(gene_id)
 
     if solidify_preferred and solidify_preferred not in banned:
         preferred = solidify_preferred

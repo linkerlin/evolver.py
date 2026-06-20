@@ -1,8 +1,8 @@
 {
-  "timestamp": 1781562077.4750373,
+  "timestamp": 1781945579.3572803,
   "reason": "test abort",
   "report": {
-    "timestamp": "2026-06-15T22:21:17.474007+00:00",
+    "timestamp": "2026-06-20T08:52:59.356955+00:00",
     "system_state": {
       "rules_version": "unknown",
       "evolution_dir_exists": true,
@@ -10,7 +10,7 @@
       "solidify_pending": true,
       "genes_count": 1,
       "capsules_count": 0,
-      "events_count": 69,
+      "events_count": 73,
       "last_run_id": "run_1781240754547_c40b6329"
     },
     "friction_summary": {

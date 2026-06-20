@@ -83,7 +83,8 @@ evolve/             进化流水线
 proxy/              本地 HTTP 代理（CLI 默认 127.0.0.1:8081；路由前缀 /v1/a2a）
   mailbox/store.py  本地邮箱 JSONL 存储（较完整）
   sync/             双向同步引擎（较完整）
-  lifecycle/        生命周期管理器（hello/heartbeat + ATP 信号处理）
+  lifecycle/        生命周期管理器（hello/heartbeat + ATP 信号处理 + 节点密钥版本化 +
+                    Hub 不可达指数退避 + 反滥用遥测心跳 + 心跳强制更新 + 最后更新确认）
   server/routes.py  FastAPI 路由矩阵（task/ATP/extensions/asset/validate 已接线）
   router/           模型路由/特性路由/缓存透传/messages_route（含 Anthropic/Bedrock SSE）
   extensions/       DM/会话/技能更新/追踪控制 + SkillUpdateLoop + AtpDeliverLoop
@@ -237,6 +238,11 @@ atp/                Agent 交易协议市场
 | `EVOLVER_AUTOPOIESIS_WRITE` | `1` | 持久化规则/活记忆（`0`=dry-run） |
 | `EVOLVER_REPAIR_LOOP_DEGRADED` | `1` | repair-loop 降级运行（非硬 abort） |
 | `EVOLVER_LEARNING_SIGNALS` | `1` | 注入环境学习信号 |
+| `EVOLVER_GENE_INERT_BAN_STREAK` | `8` | 惰性基因禁用阈值——连续 N 次零工作结果后禁选 (#562) |
+| `EVOLVER_ANTI_ABUSE_TELEMETRY` | `heartbeat` | 反滥用遥测模式（`heartbeat`/`off`，空值视为 heartbeat） |
+| `EVOLVER_OUTCOME_REPORT` | `off` | 结果上报模式——向 Hub 上报复用结果以获归因 (P4-a Slice B) |
+| `EVOLVER_FORCE_UPDATE_RETRY_COOLDOWN_MS` | `300000` (5min) | Hub 推送强制更新的最小间隔冷却 |
+| `A2A_NODE_SECRET_VERSION` | （无） | 节点密钥版本号——Hub 轮换密钥时递增，客户端据此检测陈旧 secret |
 
 ## 坑阱篇
 

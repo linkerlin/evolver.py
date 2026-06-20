@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
 
 import pytest
@@ -119,3 +120,133 @@ def test_record_signal_gene_preference_overrides_advice(
     )
     assert advice["preferredGeneId"] == "gene_solidify_winner"
     assert advice["solidifyPreferredGeneId"] == "gene_solidify_winner"
+
+
+# ---------------------------------------------------------------------------
+# Regression tests for EvoMap/evolver#562 — inert (stable_no_error) outcomes
+# must not build confidence, and a gene with GENE_INERT_BAN_STREAK consecutive
+# trailing inert outcomes (and no real success) must be banned.
+# ---------------------------------------------------------------------------
+
+_INERT_GENE = {"id": "gene_auto_6279e076", "category": "repair"}
+_INERT_SIGNALS = ["memory_missing"]
+
+
+def _write_outcome_seq(
+    tmp_path: Path, gene_id: str, signals: list[str], seq: list[dict[str, str]]
+) -> None:
+    """Write a chronological outcome sequence to the memory graph."""
+    key = mg.compute_signal_key(signals)
+    lines = []
+    for i, o in enumerate(seq):
+        lines.append(
+            json.dumps(
+                {
+                    "type": "MemoryGraphEvent",
+                    "kind": "outcome",
+                    "id": f"mge562_{i}",
+                    "ts": f"2026-06-01T00:00:{i:02d}.000Z",
+                    "signal": {"key": key, "signals": signals},
+                    "gene": {"id": gene_id, "category": "repair"},
+                    "action": {"id": f"act562_{i}"},
+                    "outcome": {
+                        "status": o["status"],
+                        "score": 0.15 if o["status"] == "failed" else 0.6,
+                        "note": o["note"],
+                    },
+                }
+            )
+        )
+    (tmp_path / "memory_graph.jsonl").write_text("\n".join(lines) + "\n", encoding="utf-8")
+
+
+def _inert(n: int) -> list[dict[str, str]]:
+    return [{"status": "success", "note": "stable_no_error|heuristic_delta|predictive"}] * n
+
+
+def _real(n: int) -> list[dict[str, str]]:
+    return [{"status": "success", "note": "error_cleared"}] * n
+
+
+def test_562_inert_outcomes_do_not_build_confidence(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A gene whose entire history is inert must NOT be preferred."""
+    monkeypatch.setenv("EVOLUTION_DIR", str(tmp_path))
+    monkeypatch.setenv("MEMORY_GRAPH_PATH", str(tmp_path / "memory_graph.jsonl"))
+    _write_outcome_seq(tmp_path, _INERT_GENE["id"], _INERT_SIGNALS, _inert(20))
+    advice = mg.get_memory_advice(
+        signals=_INERT_SIGNALS, genes=[{**_INERT_GENE, "type": "Gene"}], drift_enabled=False
+    )
+    assert advice["preferredGeneId"] is None, (
+        "zero-work successes must not count as positive evidence"
+    )
+
+
+def test_562_real_successes_do_build_confidence(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Control: the same gene WITH real successes IS preferred."""
+    monkeypatch.setenv("EVOLUTION_DIR", str(tmp_path))
+    monkeypatch.setenv("MEMORY_GRAPH_PATH", str(tmp_path / "memory_graph.jsonl"))
+    _write_outcome_seq(tmp_path, _INERT_GENE["id"], _INERT_SIGNALS, _real(20))
+    advice = mg.get_memory_advice(
+        signals=_INERT_SIGNALS, genes=[{**_INERT_GENE, "type": "Gene"}], drift_enabled=False
+    )
+    assert advice["preferredGeneId"] == _INERT_GENE["id"]
+
+
+def test_562_inert_streak_ban_at_threshold(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Gene banned after GENE_INERT_BAN_STREAK consecutive inert outcomes."""
+    from evolver.config import GENE_INERT_BAN_STREAK
+
+    monkeypatch.setenv("EVOLUTION_DIR", str(tmp_path))
+    monkeypatch.setenv("MEMORY_GRAPH_PATH", str(tmp_path / "memory_graph.jsonl"))
+    _write_outcome_seq(tmp_path, _INERT_GENE["id"], _INERT_SIGNALS, _inert(GENE_INERT_BAN_STREAK))
+    for drift in (False, True):
+        advice = mg.get_memory_advice(
+            signals=_INERT_SIGNALS,
+            genes=[{**_INERT_GENE, "type": "Gene"}],
+            drift_enabled=drift,
+        )
+        assert _INERT_GENE["id"] in advice["bannedGeneIds"], (
+            f"stuck-inert gene must be banned (drift={drift})"
+        )
+
+
+def test_562_not_banned_below_streak_threshold(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Gene NOT banned below the streak threshold."""
+    from evolver.config import GENE_INERT_BAN_STREAK
+
+    monkeypatch.setenv("EVOLUTION_DIR", str(tmp_path))
+    monkeypatch.setenv("MEMORY_GRAPH_PATH", str(tmp_path / "memory_graph.jsonl"))
+    _write_outcome_seq(
+        tmp_path, _INERT_GENE["id"], _INERT_SIGNALS, _inert(GENE_INERT_BAN_STREAK - 1)
+    )
+    advice = mg.get_memory_advice(
+        signals=_INERT_SIGNALS, genes=[{**_INERT_GENE, "type": "Gene"}], drift_enabled=False
+    )
+    assert _INERT_GENE["id"] not in advice["bannedGeneIds"]
+
+
+def test_562_real_success_resets_inert_streak(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A single real success resets the consecutive inert streak."""
+    from evolver.config import GENE_INERT_BAN_STREAK
+
+    monkeypatch.setenv("EVOLUTION_DIR", str(tmp_path))
+    monkeypatch.setenv("MEMORY_GRAPH_PATH", str(tmp_path / "memory_graph.jsonl"))
+    # 7 inert, 1 real, 7 inert => 14 total but only 7 trailing (< threshold).
+    seq = _inert(GENE_INERT_BAN_STREAK - 1) + _real(1) + _inert(GENE_INERT_BAN_STREAK - 1)
+    _write_outcome_seq(tmp_path, _INERT_GENE["id"], _INERT_SIGNALS, seq)
+    advice = mg.get_memory_advice(
+        signals=_INERT_SIGNALS, genes=[{**_INERT_GENE, "type": "Gene"}], drift_enabled=False
+    )
+    assert _INERT_GENE["id"] not in advice["bannedGeneIds"], (
+        "a gene that ever does real work must not be punished for old idle cycles"
+    )

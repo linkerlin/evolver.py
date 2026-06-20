@@ -5,7 +5,7 @@
 
 **Python 3.12+ 移植版本**，源自 [`@evomap/evolver`](https://github.com/EvoMap/evolver) —— 一个基于 GEP（基因组进化协议）的 AI 智能体自进化引擎。
 
-本移植目标是在使用现代 Python 工具链的同时，与 Node.js 参考实现（v1.89.3）达成**完全行为等价**：
+本移植目标是在使用现代 Python 工具链的同时，与 Node.js 参考实现（v1.89.14）达成**完全行为等价**：
 
 - **Python 3.12+** — `asyncio`、类型参数语法（`list[str]`）、`tomllib`
 - **uv** — 高速 Python 包管理

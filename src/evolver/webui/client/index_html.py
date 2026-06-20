@@ -54,7 +54,7 @@ HTML_TEMPLATE = """<!DOCTYPE html>
     </section>
   </main>
   <footer>
-    <p>Evolver.py v1.89.2 — <a href="https://github.com/evolver-ai/evolver.py">GitHub</a></p>
+    <p>Evolver.py v1.89.14 — <a href="https://github.com/evolver-ai/evolver.py">GitHub</a></p>
   </footer>
 </div>
 <script>

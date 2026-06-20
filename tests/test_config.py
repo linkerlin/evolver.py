@@ -80,3 +80,36 @@ def test_proxy_local_url(monkeypatch: pytest.MonkeyPatch) -> None:
     url = config.proxy_local_url("v1/messages")
     assert url.endswith("/v1/a2a/v1/messages")
     assert ":8081" in url
+
+
+# ---------------------------------------------------------------------------
+# Gap 4+5: Anti-abuse telemetry mode + Outcome report mode
+# ---------------------------------------------------------------------------
+
+
+def test_anti_abuse_telemetry_mode_default_heartbeat(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.delenv("EVOLVER_ANTI_ABUSE_TELEMETRY", raising=False)
+    assert config.anti_abuse_telemetry_mode() == "heartbeat"
+
+
+def test_anti_abuse_telemetry_mode_empty_is_heartbeat(monkeypatch: pytest.MonkeyPatch) -> None:
+    """An empty value counts as UNSET — default-on behavior preserved."""
+    monkeypatch.setenv("EVOLVER_ANTI_ABUSE_TELEMETRY", "")
+    assert config.anti_abuse_telemetry_mode() == "heartbeat"
+
+
+def test_anti_abuse_telemetry_mode_explicit_off(monkeypatch: pytest.MonkeyPatch) -> None:
+    for v in ("0", "false", "no", "off"):
+        monkeypatch.setenv("EVOLVER_ANTI_ABUSE_TELEMETRY", v)
+        assert config.anti_abuse_telemetry_mode() == "off"
+
+
+def test_outcome_report_mode_default_off(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.delenv("EVOLVER_OUTCOME_REPORT", raising=False)
+    assert config.outcome_report_mode() == "off"
+
+
+def test_outcome_report_mode_on(monkeypatch: pytest.MonkeyPatch) -> None:
+    for v in ("on", "enforce", "true"):
+        monkeypatch.setenv("EVOLVER_OUTCOME_REPORT", v)
+        assert config.outcome_report_mode() == "on"

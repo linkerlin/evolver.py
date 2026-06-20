@@ -5,6 +5,55 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased] — Sprint 9: v1.89.14 parity (7 gaps closed)
+
+### Gap 1: Inert Gene Ban (#562)
+- `gep/memory_graph.py`: `stable_no_error`/`heuristic_delta`/`predictive` outcomes
+  now classified as **inert** — they build no Bayesian confidence and no longer
+  count as successes for `preferredGeneId`.
+- New `_count_trailing_inert()`: after `GENE_INERT_BAN_STREAK` (=8) consecutive
+  trailing inert outcomes with no real success, the gene is added to
+  `bannedGeneIds` so the selector yields null and the pipeline mutates.
+- A single real success (e.g. `error_cleared`) resets the inert streak.
+- 5 regression tests ported from `test/issue562InertGeneBan.test.js`.
+
+### Gap 2: Node Secret Versioning
+- `proxy/lifecycle/manager.py`: `parse_node_secret_version()`, `node_secret_version`
+  property (store > env precedence), stale-secret detection (store version < env
+  version → Hub rotated → clear store secret).
+- `hello()`/`heartbeat()` persist the Hub-returned `node_secret_version`.
+
+### Gap 3: Hub-Unreachable Exponential Backoff
+- `proxy/lifecycle/manager.py`: `_record_hub_unreachable()` / `_record_hub_reachable()`
+  / `_hub_unreachable_wait_ms()` / `hub_unreachable_backoff_ms()` — exponential
+  backoff (5s→15min cap) on network errors (ConnectError/TimeoutException).
+- `hello()`/`heartbeat()` check backoff before sending and record
+  reachable/unreachable on success/failure.
+
+### Gap 4: Anti-Abuse Telemetry Heartbeat
+- `gep/anti_abuse_telemetry.py`: `build_heartbeat_anti_abuse()` — privacy-preserving
+  envelope with HMAC-pseudonymized device/workspace hashes, source-confidence
+  labels (hub_required/hub_service/hub_observed), integrity hashes, task timing.
+- `config.py`: `ANTI_ABUSE_TELEMETRY_MODE` (default `heartbeat`, explicit opt-out).
+- `proxy/lifecycle/manager.py`: heartbeat `meta.anti_abuse` injection when mode=heartbeat.
+
+### Gap 5: Outcome Report Mode (P4-a Slice B)
+- `config.py`: `OUTCOME_REPORT_MODE` (default `off`) + `outcome_report_mode()`
+  resolver (on/enforce/true → `on`).
+
+### Gap 6: Force-Update from Heartbeat
+- `proxy/lifecycle/manager.py`: `_maybe_trigger_force_update_from_heartbeat()` with
+  `EVOLVER_FORCE_UPDATE_RETRY_COOLDOWN_MS` (default 5min) — prevents Hub from
+  hot-spinning force-updates on every heartbeat.
+
+### Gap 7: Last-Update Ack
+- `proxy/lifecycle/manager.py`: `read_pending_last_update()` / `set_pending_last_update()`;
+  heartbeat carries `last_update_ack` + `node_secret_version` in payload.
+
+### Stats
+- **Tests**: 1573 → **1609** (+36 new tests, 0 regressions)
+- **Baseline**: tracking v1.89.11 → **v1.89.14** parity on lifecycle + GEP selection
+
 ## [Unreleased] — Sprint 0-8 catch-up against evolver v1.89.11
 
 ### Sprint 0: Engineering baseline

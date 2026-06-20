@@ -1,13 +1,13 @@
 # evolver.py 完善路线图（详尽版）
 
-> 基于 `./evolver/` (Node.js 原版 **v1.89.11**) 与 `./evolver.py/` (Python 移植版 v1.89.2) 的逐文件、逐函数、逐契约对比分析。
+> 基于 `./evolver/` (Node.js 原版 **v1.89.14**) 与 `./evolver.py/` (Python 移植版 v1.89.14) 的逐文件、逐函数、逐契约对比分析。
 > 差距按 **CRITICAL / HIGH / MEDIUM / LOW** 四级标注。
 > 优先级按 **P0 (阻塞发布) / P1 (核心功能) / P2 (增强体验) / P3 (锦上添花)** 排序。
 > 每项任务均附 **验收标准 (DoD)**、**依赖关系**、**参考源文件**、**测试对标**。
 >
-> **2026-06-15 基线更新**：对标版本从 v1.89.3 提升至 **v1.89.11**（落后 9 个 patch）。
-> 详细差距分析与 8 周追赶 Sprint 计划见 **[`演进方案.md`](演进方案.md)**。
-> 以下标注 🆕 的项为 v1.89.3→v1.89.11 新增、本路线图此前未覆盖的增量。
+> **2026-06-20 Sprint 9 更新**：对标版本从 v1.89.11 追平至 **v1.89.14**。
+> 7 项差距（惰性基因禁用、节点密钥版本化、Hub 不可达退避、反滥用遥测心跳、结果上报模式、心跳强制更新、最后更新确认）已实现。
+> 详细分析见 **[`演进方案.md`](演进方案.md)** Sprint 9 章节。
 
 ---
 
@@ -247,12 +247,16 @@ P3 打磨层
                    ERROR_BACKOFF ← UNAUTHORIZED
   ```
 - **DoD**:
-  - [ ] 正常启动流程：hello → auth → heartbeat
-  - [ ] 401 触发 reauth，3 次失败后进入 ERROR_BACKOFF（最大 5min）
+  - [x] 正常启动流程：hello → auth → heartbeat
+  - [x] 401 触发 reauth，3 次失败后进入 ERROR_BACKOFF（最大 5min）
+  - [x] Node Secret 版本化（Gap 2）：`parse_node_secret_version()`、`node_secret_version` 属性（store > env）、stale 检测
+  - [x] Hub-Unreachable 指数退避（Gap 3）：`_record_hub_unreachable()` / `_record_hub_reachable()` / `_hub_unreachable_wait_ms()`
+  - [x] 反滥用遥测心跳信封（Gap 4）：heartbeat `meta.anti_abuse` 注入
+  - [x] 心跳强制更新（Gap 6）：`_maybe_trigger_force_update_from_heartbeat()` 含冷却
+  - [x] 最后更新确认（Gap 7）：`read_pending_last_update()` / `set_pending_last_update()`
   - [ ] 网络断开后自动恢复，不丢失 outbound 队列消息
   - [ ] macOS 睡眠唤醒后检测到时钟跳变，立即发送恢复心跳
 - **依赖**: `gep/a2a_protocol.py`, `gep/config.py`
-- **测试对标**: `test/lifecycleHeartbeatLoopResilience.test.js`, `test/lifecycleLastUpdateAck.test.js`, `test/lifecycleStaleNodeSecret.test.js`, `test/heartbeatResilienceRound*.test.js`
 
 #### P0.2.2 `evolver/proxy/mailbox/store.py` — 本地邮箱存储
 - **功能**: 基于 SQLite + JSONL 的本地消息持久化，缓冲所有 Hub 流量。

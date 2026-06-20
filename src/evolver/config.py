@@ -226,6 +226,46 @@ def reuse_attribution_mode() -> str:
     return "shadow" if v == "shadow" else "off"
 
 
+# --- Outcome report mode (P4-a Slice B) ---
+# Opt-in Hub reuse-OUTCOME reporting. When 'on', the evolver POSTs
+# {signals, status, used_asset_ids} to the Hub so the reuse-reward attribution
+# pipeline gets data. MONEY-ADJACENT — default 'off'.
+OUTCOME_REPORT_MODE: Final = env_str("EVOLVER_OUTCOME_REPORT", "off")
+
+
+def outcome_report_mode() -> str:
+    """Resolve the outcome-report mode: 'on' or 'off'.
+
+    Accepts on/enforce/true → 'on'; everything else → 'off'.
+    Mirrors ``outcomeReportMode`` in the Node.js config.
+    """
+    raw = os.environ.get("EVOLVER_OUTCOME_REPORT")
+    v = str(raw if raw is not None else OUTCOME_REPORT_MODE or "off").lower().strip()
+    return "on" if v in ("on", "enforce", "true") else "off"
+
+
+# --- Anti-abuse telemetry mode ---
+# In heartbeat mode (default), clients attach a small ``meta.anti_abuse``
+# envelope with low-sensitive hashes and source-confidence labels. Opt-out
+# is explicit only — an empty value counts as UNSET.
+ANTI_ABUSE_TELEMETRY_MODE: Final = env_str("EVOLVER_ANTI_ABUSE_TELEMETRY", "heartbeat")
+
+
+def anti_abuse_telemetry_mode() -> str:
+    """Resolve the anti-abuse telemetry mode: 'heartbeat' or 'off'.
+
+    Empty/whitespace counts as UNSET (default-on). Explicit opt-out via
+    0/false/no/off. Mirrors ``antiAbuseTelemetryMode`` in the Node.js config.
+    """
+    raw = os.environ.get("EVOLVER_ANTI_ABUSE_TELEMETRY")
+    v = str(raw if raw is not None else "").lower().strip()
+    if v == "":
+        return "heartbeat"
+    if v in ("0", "false", "no", "off"):
+        return "off"
+    return "heartbeat" if v in ("1", "true", "yes", "on", "heartbeat") else "off"
+
+
 # --- Validator mode (opt-out) ---
 def _validator_enabled() -> bool:
     v = (os.environ.get("EVOLVER_VALIDATOR_ENABLED") or "").lower().strip()
@@ -243,6 +283,7 @@ VALIDATOR_BATCH_TIMEOUT_MS: Final = env_int("EVOLVER_VALIDATOR_BATCH_TIMEOUT_MS"
 
 __all__ = [
     "ACTIVE_WINDOW_MS",
+    "ANTI_ABUSE_TELEMETRY_MODE",
     "BLAST_RADIUS_HARD_CAP_FILES",
     "BLAST_RADIUS_HARD_CAP_LINES",
     "BROADCAST_SCORE_THRESHOLD",
@@ -252,6 +293,8 @@ __all__ = [
     "CLEANUP_MAX_AGE_MS",
     "CLEANUP_MAX_FILES",
     "CLEANUP_MIN_KEEP",
+    "DEFAULT_PROXY_PORT",
+    "DEFAULT_WEBUI_PORT",
     "DORMANT_TTL_MS",
     "EVENT_POLL_TIMEOUT_MS",
     "GENE_BAN_BEST_THRESHOLD",
@@ -273,10 +316,12 @@ __all__ = [
     "MEMORY_GRAPH_READ_LIMIT",
     "MIN_PUBLISH_SCORE",
     "NARRATIVE_SUMMARY_MAX_CHARS",
+    "OUTCOME_REPORT_MODE",
     "PACKAGE_DESC_CACHE_TTL_MS",
     "PER_FILE_BYTES",
     "PER_SESSION_BYTES",
     "PROMPT_MAX_CHARS",
+    "PROXY_HOST",
     "PUBLIC_DEFAULT_HUB_URL",
     "RECENCY_GUARD_MS",
     "REPAIR_LOOP_THRESHOLD",
@@ -303,14 +348,13 @@ __all__ = [
     "VALIDATOR_REPORT_TIMEOUT_MS",
     "VALIDATOR_STAKE_AMOUNT",
     "VALIDATOR_STAKE_TIMEOUT_MS",
+    "anti_abuse_telemetry_mode",
     "env_bool",
     "env_float",
     "env_int",
     "env_positive_int",
     "env_str",
-    "DEFAULT_PROXY_PORT",
-    "DEFAULT_WEBUI_PORT",
-    "PROXY_HOST",
+    "outcome_report_mode",
     "proxy_base_url",
     "proxy_local_url",
     "resolve_hub_url",

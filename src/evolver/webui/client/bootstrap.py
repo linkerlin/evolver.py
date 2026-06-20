@@ -13,7 +13,7 @@ BOOTSTRAP_JS = """
   const app = window.EvolverApp;
 
   app.state = window.__INITIAL_STATE__ || {};
-  app.version = '1.89.2';
+  app.version = '1.89.14';
 
   app.renderInsights = function(data) {
     var diagEl = document.getElementById('insights-diagnosis');
