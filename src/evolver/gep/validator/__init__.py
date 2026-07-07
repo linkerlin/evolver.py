@@ -279,8 +279,17 @@ def _map_status(result: SandboxResult) -> str:
 _default_daemon: ValidatorDaemon | None = None
 
 
-def start_validator() -> ValidatorDaemon:
-    """Start the global validator daemon."""
+def start_validator() -> ValidatorDaemon | None:
+    """Start the global validator daemon.
+
+    Returns ``None`` (no-op) under solo mode — solo hard-cuts the validator
+    even when ``EVOLVER_VALIDATOR_ENABLED`` is on (the "no escape valve" rule).
+    """
+    from evolver.solo.breaker import is_solo_active
+
+    if is_solo_active():
+        logger.info("[ValidatorDaemon] solo mode active — validator disabled")
+        return None
     global _default_daemon
     if _default_daemon is None:
         _default_daemon = ValidatorDaemon()

@@ -67,3 +67,4 @@
 {"type": "llm_review", "timestamp": 1781943567.845787, "approved": false, "confidence": 0.0, "concerns": ["LLM call failed: timeout"], "latency_ms": 0.17380714416503906}
 {"type": "llm_review", "timestamp": 1781944300.995903, "approved": false, "confidence": 0.0, "concerns": ["LLM call failed: timeout"], "latency_ms": 0.16164779663085938}
 {"type": "llm_review", "timestamp": 1781945580.317659, "approved": false, "confidence": 0.0, "concerns": ["LLM call failed: timeout"], "latency_ms": 0.39458274841308594}
+{"type": "llm_review", "timestamp": 1783343524.0033176, "approved": false, "confidence": 0.0, "concerns": ["LLM call failed: timeout"], "latency_ms": 0.3437995910644531}

@@ -11,6 +11,8 @@ from collections.abc import Sequence
 from pathlib import Path
 from typing import Any
 
+from evolver.solo.git_guard import guard_git_subcommand
+
 CRITICAL_PROTECTED_PREFIXES = (
     ".env",
     ".git/",
@@ -30,6 +32,10 @@ def run_cmd(
     args: Sequence[str], cwd: Path | str | None = None, timeout: float | None = None
 ) -> str:
     """Run a git command and return stripped stdout. Raises on non-zero exit."""
+    # Solo local-git-only guard: refuse network subcommands at the choke point.
+    blocked = guard_git_subcommand(args[0] if args else None)
+    if blocked:
+        raise RuntimeError(blocked)
     result = subprocess.run(
         ["git", *args],
         cwd=cwd,

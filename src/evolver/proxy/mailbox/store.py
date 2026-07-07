@@ -58,6 +58,7 @@ class Message:
     expires_at: int | None = None
     retry_count: int = 0
     error: str | None = None
+    next_retry_at: int | None = None
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)
@@ -312,11 +313,15 @@ class MailboxStore:
     ) -> list[Message]:
         """Poll pending outbound messages, sorted by priority then FIFO."""
         candidates: list[Message] = []
+        now_ms = int(time.time() * 1000)
         for msg_id in self._outbound:
             msg = self._messages.get(msg_id)
             if msg is None or msg.status != "pending":
                 continue
             if channel is not None and msg.channel != channel:
+                continue
+            # Skip retryable-deferred messages whose backoff window hasn't elapsed.
+            if msg.next_retry_at is not None and msg.next_retry_at > now_ms:
                 continue
             candidates.append(msg)
         candidates.sort(key=lambda m: (_PRIORITY_RANK.get(m.priority, 1), m.created_at))
@@ -393,6 +398,36 @@ class MailboxStore:
                     "fields": {"retry_count": msg.retry_count, "error": msg.error},
                 }
             )
+
+    def defer(
+        self,
+        msg_id: str,
+        *,
+        error: str | None = None,
+        next_retry_at: int | None = None,
+    ) -> bool:
+        """Defer a retryable failure: set error + backoff, keep status pending.
+
+        Unlike :meth:`increment_retry`, this does NOT burn a retry count — the
+        message stays pending and is skipped by :meth:`poll_outbound` until
+        ``next_retry_at`` (ms epoch) has passed.
+        """
+        with self._lock:
+            msg = self._messages.get(msg_id)
+            if msg is None:
+                return False
+            if error is not None:
+                msg.error = error
+            if next_retry_at is not None:
+                msg.next_retry_at = next_retry_at
+            fields: dict[str, Any] = {}
+            if error is not None:
+                fields["error"] = error
+            if next_retry_at is not None:
+                fields["next_retry_at"] = next_retry_at
+            if fields:
+                self._append_jsonl({"_op": "update", "id": msg_id, "fields": fields})
+        return True
 
     def list(
         self,

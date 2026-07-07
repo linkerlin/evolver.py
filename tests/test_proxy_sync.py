@@ -41,11 +41,9 @@ async def test_outbound_flush_batch(store: MailboxStore, monkeypatch: pytest.Mon
     async def fake_post(*args: Any, **kwargs: Any) -> MagicMock:
         resp = MagicMock()
         resp.status_code = 200
-        resp.json.return_value = {
-            "results": [
-                {"id": store.poll_outbound(limit=1)[0].id, "status": "accepted"},
-            ]
-        }
+        # Node v1.90.0 semantics: accept every message actually sent in the batch.
+        ids = [m["id"] for m in kwargs.get("json", {}).get("messages", [])]
+        resp.json.return_value = {"results": [{"id": i, "status": "accepted"} for i in ids]}
         return resp
 
     monkeypatch.setattr(
@@ -55,7 +53,9 @@ async def test_outbound_flush_batch(store: MailboxStore, monkeypatch: pytest.Mon
 
     out = OutboundSync(store=store)
     result = await out.flush()
-    assert result["sent"] == 1
+    # Both messages were sent (batch size) and synced (accepted).
+    assert result["sent"] == 2
+    assert result["synced"] == 2
 
 
 @pytest.mark.asyncio

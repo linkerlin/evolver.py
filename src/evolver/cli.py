@@ -52,6 +52,11 @@ def _build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--verbose", "-v", action="store_true", help="Verbose logging")
     parser.add_argument("--loop", action="store_true", help="Run as a background daemon")
     parser.add_argument("--mad-dog", action="store_true", help="Alias for --loop")
+    parser.add_argument(
+        "--solo",
+        action="store_true",
+        help="Constrained-wild offline mode: hard-cut network/ATP/validator; implies --loop",
+    )
     parser.add_argument("--review", action="store_true", help="Pause for human review")
 
     sub = parser.add_subparsers(dest="command")
@@ -125,6 +130,27 @@ def _build_parser() -> argparse.ArgumentParser:
     token_p.add_argument("--generate", action="store_true", help="Create a new token")
     token_p.add_argument("--role", default="readonly", help="Token role: readonly or admin")
     token_p.add_argument("--revoke", default=None, help="Revoke a token")
+    traj_p = sub.add_parser("trajectory", help="Export proxy traces into coding trajectories")
+    traj_p.add_argument("--input", default=None, help="Input JSONL trace file")
+    traj_p.add_argument(
+        "--output", default=None, help="Output JSONL (default: <input>.trajectories.jsonl)"
+    )
+    traj_p.add_argument(
+        "--node-secret", default=None, help="Node secret (literal) or path to a file holding it"
+    )
+    traj_p.add_argument(
+        "--hub-private-key", default=None, help="Path to a PEM-encoded Hub private key"
+    )
+    traj_p.add_argument(
+        "--node-secret-keyring",
+        default=None,
+        help='Keyring JSON mapping secret_version→secret, e.g. \'{"2":"ab..."}\'',
+    )
+    traj_p.add_argument(
+        "--allow-partial",
+        action="store_true",
+        help="Skip undecryptable rows instead of failing closed",
+    )
     atp_complete_p = sub.add_parser("atp-complete", help="Complete an ATP task")
     atp_complete_p.add_argument("task_id", nargs="?", default="", help="Task ID to complete")
     buy_p = sub.add_parser("buy", help="Place an ATP order")
@@ -191,8 +217,17 @@ def main(argv: Sequence[str] | None = None) -> int:
     if args.verbose:
         os.environ["EVOLVER_VERBOSE"] = "true"
 
-    is_loop = args.loop or args.mad_dog
+    is_loop = args.loop or args.mad_dog or getattr(args, "solo", False)
     command = args.command
+
+    # Solo activation MUST happen before dispatch (and before any service reads
+    # config) so the env overrides + resolve_hub_url() cut take effect at the
+    # source — the "no escape valve" rule.
+    if getattr(args, "solo", False):
+        from evolver.solo import activate, print_solo_banner
+
+        activate()
+        print_solo_banner()
 
     # Default / run / evolve commands -> single cycle or daemon loop.
     if command in (None, "run", "/evolve") or is_loop:
@@ -251,6 +286,9 @@ def main(argv: Sequence[str] | None = None) -> int:
 
     if command == "webui-token":
         return _cmd_webui_token(args)
+
+    if command == "trajectory":
+        return _cmd_trajectory(args)
 
     if command == "reset-local-secret":
         return _cmd_reset_local_secret(args)
@@ -440,6 +478,117 @@ async def _cmd_run(_args: argparse.Namespace) -> int:
     return 0
 
 
+def _cmd_trajectory(args: argparse.Namespace) -> int:  # noqa: PLR0911, PLR0912, PLR0915
+    """Export proxy traces or session logs into coding trajectories (G10.1).
+
+    Auto-detects the input kind: a Codex/Claude Code session JSONL (or a
+    directory of them) is parsed as runtime sessions; otherwise the input is
+    treated as proxy-trace JSONL (decrypted when ``--node-secret`` /
+    ``--hub-private-key`` is given).
+    """
+    import json as _json
+    from pathlib import Path
+
+    from evolver.gep.trajectory import (
+        build_trajectories,
+        read_trace_rows,
+        read_trace_rows_detailed,
+        write_trajectories_to_path,
+    )
+    from evolver.gep.trajectory.sources import build_trajectory_from_session_log
+
+    if not args.input:
+        print("trajectory: --input <path> is required", file=sys.stderr)
+        return 2
+    input_path = Path(args.input)
+    if not input_path.exists():
+        print(f"trajectory: input not found: {input_path}", file=sys.stderr)
+        return 1
+    output_path = Path(args.output) if args.output else input_path.with_suffix(".trajectories.jsonl")
+
+    # Session-log path: a session JSONL file, or a directory of them.
+    session_files: list[Path]
+    if input_path.is_dir():
+        session_files = sorted(input_path.rglob("*.jsonl"))
+    else:
+        session_files = [input_path]
+    session_trajectories = []
+    for sf in session_files:
+        try:
+            traj = build_trajectory_from_session_log(sf)
+        except OSError:
+            traj = None
+        if traj is not None:
+            session_trajectories.append(traj)
+
+    # If every input parsed as a session log, use those directly.
+    if session_trajectories and len(session_trajectories) == len(
+        [f for f in session_files if f.is_file()]
+    ):
+        try:
+            write_trajectories_to_path(output_path, session_trajectories)
+        except Exception as exc:  # noqa: BLE001
+            print(f"trajectory export failed: {exc}", file=sys.stderr)
+            return 1
+        print(
+            f"Wrote {len(session_trajectories)} session trajectory(ies) → {output_path}"
+        )
+        return 0
+
+    # Otherwise: proxy-trace JSONL (single file).
+    if input_path.is_dir():
+        print("trajectory: input directory held no recognised session logs", file=sys.stderr)
+        return 1
+
+    node_secret = args.node_secret
+    if node_secret:
+        secret_path = Path(node_secret)
+        if secret_path.exists() and secret_path.is_file():
+            node_secret = secret_path.read_text(encoding="utf-8").strip()
+    hub_private_key = None
+    if args.hub_private_key:
+        hub_path = Path(args.hub_private_key)
+        if not hub_path.exists():
+            print(f"trajectory: hub private key not found: {hub_path}", file=sys.stderr)
+            return 2
+        hub_private_key = hub_path.read_text(encoding="utf-8")
+    keyring = None
+    if args.node_secret_keyring:
+        try:
+            keyring = _json.loads(args.node_secret_keyring)
+        except ValueError:
+            print("trajectory: --node-secret-keyring must be JSON {version: secret}", file=sys.stderr)
+            return 2
+
+    try:
+        if node_secret or hub_private_key or keyring:
+            detailed = read_trace_rows_detailed(
+                input_path,
+                node_secret=node_secret,
+                hub_private_key=hub_private_key,
+                node_secret_keyring=keyring,
+                allow_partial=args.allow_partial,
+            )
+            rows = detailed["rows"]
+            stats = detailed["stats"]
+        else:
+            rows = read_trace_rows(input_path)
+            stats = {"total_rows": len(rows), "encrypted_rows": 0, "decrypt_failures": 0}
+        trajectories = build_trajectories(rows)
+        write_trajectories_to_path(output_path, trajectories)
+    except Exception as exc:  # noqa: BLE001
+        print(f"trajectory export failed: {exc}", file=sys.stderr)
+        return 1
+    enc = stats.get("encrypted_rows", 0)
+    fails = stats.get("decrypt_failures", 0)
+    print(
+        f"Wrote {len(trajectories)} trajectory(ies) from {stats.get('total_rows', len(rows))}"
+        f" row(s) → {output_path}"
+        + (f" (encrypted={enc}, skipped={fails})" if enc or fails else "")
+    )
+    return 0
+
+
 async def _cmd_loop(args: argparse.Namespace) -> int:
     """Daemon loop with graceful shutdown."""
     import signal
@@ -447,14 +596,22 @@ async def _cmd_loop(args: argparse.Namespace) -> int:
     from evolver.evolve.runner import request_shutdown, run_loop
 
     loop = asyncio.get_running_loop()
+    # Windows' ProactorEventLoop doesn't implement add_signal_handler; guard so
+    # --loop/--solo work cross-platform (SIGINT still flows via KeyboardInterrupt).
     for sig in (signal.SIGINT, signal.SIGTERM):
-        loop.add_signal_handler(sig, request_shutdown)
+        try:
+            loop.add_signal_handler(sig, request_shutdown)
+        except (NotImplementedError, RuntimeError, ValueError):
+            pass
 
     try:
         await run_loop(review_mode=args.review)
     finally:
         for sig in (signal.SIGINT, signal.SIGTERM):
-            loop.remove_signal_handler(sig)
+            try:
+                loop.remove_signal_handler(sig)
+            except (NotImplementedError, RuntimeError, ValueError):
+                pass
     return 0
 
 

@@ -1,6 +1,6 @@
 # evolver.py 完善路线图（详尽版）
 
-> 基于 `./evolver/` (Node.js 原版 **v1.89.14**) 与 `./evolver.py/` (Python 移植版 v1.89.14) 的逐文件、逐函数、逐契约对比分析。
+> 基于 `./evolver/` (Node.js 原版 **v1.90.0**，已出 v2.0.0-beta) 与 `./evolver.py/` (Python 移植版 v1.89.14) 的逐文件、逐函数、逐契约对比分析。
 > 差距按 **CRITICAL / HIGH / MEDIUM / LOW** 四级标注。
 > 优先级按 **P0 (阻塞发布) / P1 (核心功能) / P2 (增强体验) / P3 (锦上添花)** 排序。
 > 每项任务均附 **验收标准 (DoD)**、**依赖关系**、**参考源文件**、**测试对标**。
@@ -8,6 +8,17 @@
 > **2026-06-20 Sprint 9 更新**：对标版本从 v1.89.11 追平至 **v1.89.14**。
 > 7 项差距（惰性基因禁用、节点密钥版本化、Hub 不可达退避、反滥用遥测心跳、结果上报模式、心跳强制更新、最后更新确认）已实现。
 > 详细分析见 **[`演进方案.md`](演进方案.md)** Sprint 9 章节。
+>
+> **2026-07-06 Sprint 10 更新**：evolver/ 连发至 **v1.90.0**（并出 v2.0.0-beta.0/beta.1）。
+> 本期单期增量最大（src/ +5668 行、test/ +13198 行），定位 **17 项差距**，最重者为：
+> - **G10.1 多源轨迹导出**（trajectoryExport 测试 3316 行 + 9 专项）——蒸馏/归因数据底座，evolver.py 仅 81 行存根
+> - **G10.2 Solo 模式**（`--solo` 受约束野性 / 断路器 + git 守卫）——全新 `solo/` 子系统
+> - **G10.3 CLI Contracts**（`reuse`/`publish` v1，cliContracts 1190 行 + 测试 2021 行）——provenance/脱敏 gate/重签
+> - **G10.4 GEP Recipe 组合**（skill2recipes，⚠️ 与现有模板 `recipe/` 同名异物）
+> - **G10.5 Host Error Classifier (#571)**——4xx 宿主错误不误 ban 基因
+> - G10.8/9 force-update 强化、outbound 韧性；G10.17 v2.0.0 单体化跟踪策略
+>
+> 详细分析与 6 周计划见 **[`演进方案.md`](演进方案.md)** Sprint 10 章节。
 
 ---
 
@@ -25,6 +36,53 @@
 > | 新增模块 | — | 🆕 execBridge、conversationSniffer、5 条多 Provider 路由 |
 >
 > **追赶策略**：按 `演进方案.md` 的 Sprint 0-8 推进，每 Sprint 末更新本表勾选状态。
+
+---
+
+## 2026-07-06 Sprint 10 增补（对标 v1.89.14 → v1.90.0）
+
+> 触发：evolver/ 于 06-18~07-03 连发至 v1.90.0（+ v2.0.0-beta），src/ +5668 行 / test/ +13198 行，
+> 单期增量最大。经 tag diff + 明文测试契约提取，定位 17 项差距。Sprint 1-8 经实测已基本落地
+> （217 源文件 / 159 测试文件），故聚焦 v1.89.14 之后未覆盖增量。详见 **[`演进方案.md`](演进方案.md)** Sprint 10。
+
+### S10-A 新增任务（P0/P1）
+
+| 任务 | 优先级 | 目标 | DoD | 参考（测试即契约） |
+|---|---|---|---|---|
+| **G10.5** `gep/host_error_classifier.py` | **P0** ✅ **已完成** | 新建 ~50 行；`is_host_client_error()`+非全局正则；接入 `signals.py` | 4xx 宿主错误出 `host_llm_client_error`，**不**触发 ban_gene/failure_loop | `hostClientErrorSignals.test.js`(86) → `tests/gep/test_host_error_classifier.py`(5 用例) |
+| **G10.2** `solo/`（`--solo`） | **P0** ✅ **已完成** | 新 `solo/breaker.py`+`solo/git_guard.py`；CLI `--solo`；runner/guards 接入 | 断网（覆盖 A2A_HUB_URL）+ 禁 Validator + 禁 ATP；banner 一致；新 env 接 config | `soloMode.test.js`(97) → `tests/solo/test_solo.py`(11 用例，含 subprocess 冒烟) |
+| **G10.1** `gep/trajectory/` | **P0** 🟡 **Slice 1+2+3a 完成** | 新子包：`builder`/`io`/`crypto`/`sources`；`evolver trajectory` CLI | ✅ Slice 1+2+3a：builder(分组/turn/tool-call/provider 归一/语言/失败/stats) + io(原子/symlink/0600) + crypto(AES-GCM node-secret+keyring+RSA hub-key+回退+fail-closed) + **sources(Codex rollout + Claude Code transcript + OpenAI generic-chat 解析、源分类、test/edit/failure 检测)** + **全流式 tool-arg 重建（Anthropic/OpenAI Chat+snapshot 去重/OpenAI Responses）** + CLI 自动检测 session/proxy+目录递归；27 用例。⏳ Slice 3b 余项：Cursor vscdb(SQLite)、Gemini、Kimi（bespoke 低频源） | `trajectoryExport.test.js`(3316) + 9 专项 → `tests/gep/trajectory/`(27) |
+| **G10.3** `gep/cli_contracts.py` | **P1** | 统一 `reuse`/`publish` v1：provenance + 脱敏 gate + 重哈希重签 + 幂等 | 2021 行测试逐条对标 | `cliContracts.test.js`(2021) |
+| **G10.8** `force_update.py` 强化 | **P1** ✅ **已完成** | 212→≥500：failure codes、keep-list、mid-copy wedge、concurrency guard、idempotent | sentinels(BUSY/NOOP) + 模块级 mutex(finally) + 幂等 floor(操作符/v 归一化、反降级) + 冻结 coded failures + Zip Slip 安全解压 | 5 个 forceUpdate 测试 → `test_force_update.py`(+19 用例) |
+| **G10.9** `proxy/sync/outbound.py` | **P1** ✅ **已完成** | 91→≥250：批量重试、离线恢复、指数退避 | body-size 分批 + 413 隔离/退避 + retryable/terminal + trace 门控 + 脱敏；`store.defer`/`next_retry_at` | `proxyOutboundSync.test.js`(+429) → `tests/test_proxy_outbound_sync.py`(11 用例) |
+| **G10.4** `gep/skill2recipes.py` + `skill2gep_audit.py` | **P1** | Skill→GEP Recipe 组合（manifest: steps/optional/condition/price）；保留现有模板 `recipe/`，命名分离 | manifest 解析 + 每步 validation allow-list + publish/dry-run | `skill2recipes.test.js`(212)+`recipeHub` |
+
+### S10-B 深化任务（P2）
+
+| 任务 | 目标 | 参考 |
+|---|---|---|
+| **G10.6** `proxy/client_settings.py`（405） | 客户端设置层（区别 `server/settings`） | `proxy/clientSettings.js` |
+| **G10.7** `proxy/mailbox/state.py`（207） | mailbox 元数据状态机（与 store 分离） | `proxy/mailbox/state.js` |
+| **G10.10** `ops/lifecycle.py` 358→≥550 | proxy health 接入 | `lifecycleProxyHealth.test.js`(279) |
+| **G10.11** manager 深化 | stale node secret / token reuse / Round3-9 收尾 | manager 已 778，查漏补缺 |
+| **G10.12** `oauth_login.py` 117→≥300 | OAuth 设备码流深化 | `oauthLogin.test.js`(+488) |
+| **G10.13** `skill2gep.py` 435→≥600 | 反蒸馏再深化 | `skill2gep.test.js`(+240) |
+| **G10.14** `session_start.py` 211→≥300 | 工作区作用域深化 | `sessionStartScope.test.js`(+151) |
+
+### S10-C 数据 / 跟踪（P3）
+
+- **G10.16** Sentinel arena rollout Gene (#586) 入 `genes.seed.json`。
+- **G10.17** v2.0.0 单体化跟踪策略：v2.0.0 正式版后 src/ 不再存在，跟踪源切为 **`test/*.test.js` + index.js 行为契约**；本 Sprint 末把当前可读 src/ 契约固化进 `演进方案.md`。
+
+### Sprint 10 验收（声称等价 v1.90.0）
+
+- [ ] G10.1 trajectory export 五源 + 加密/脱敏/原子写/fails-closed 测试通过
+- [ ] G10.2 `--solo` 三平台断网 + 禁 Validator/ATP
+- [ ] G10.3 reuse/publish provenance + 脱敏 hard-gate + 重签 + 幂等对标
+- [ ] G10.4 skill2recipes 与现有 recipe/ 命名不冲突
+- [ ] G10.5 host 4xx 不误 ban 基因
+- [ ] G10.8/9 force-update/outbound 测试对标
+- [ ] 回归：`uv run pytest` / `ruff check` / `mypy src` 全绿，0 回归
 
 ---
 
@@ -1614,7 +1672,7 @@ P3 打磨层
 
 ## 验收总纲
 
-声称 **evolver.py v1.90.0** "功能等价"于 Node.js 版 v1.89.2 的最低标准：
+声称 **evolver.py** 追平 Node.js 版 **v1.90.0** 的最低标准（当前 evolver.py v1.89.14，详见 Sprint 10）：
 
 1. [ ] **P0 全部完成**: ATP 完整闭环、Proxy 生产级、IDE 运行时 hooks、验证者系统
 2. [ ] **守护进程稳定**: `evolver start` 可在 Windows/macOS/Linux 连续运行 7 天无崩溃
@@ -1625,6 +1683,6 @@ P3 打磨层
 
 ---
 
-*最后更新: 2026-06-11（P2: skill_updater/trace_control Hub 集成 + ruff format）*
-*基于对比: evolver (Node.js v1.89.3, ~172 源文件, ~164 测试文件) vs evolver.py (Python v1.89.2, ~174 源文件, **124 测试文件**, **1172 tests passed**)*
-*剩余差距: Hub 深度集成、GEP 高级认知完整版、mypy 清零、SSE streaming、scripts/ 工具链*
+*最后更新: 2026-07-06（Sprint 10：v1.89.14 → v1.90.0 增补；trajectory/solo/cliContracts/recipe/host-error-classifier 等 17 项差距）*
+*基于对比: evolver (Node.js v1.90.0 + v2.0.0-beta，src/ 删除单体化) vs evolver.py (Python v1.89.14, ~217 源文件, **159 测试文件**, **1609 tests passed**)；Sprint 1-9 已落地，Sprint 10 待办*
+*剩余差距: 多源轨迹导出、Solo 模式、CLI Contracts(reuse/publish)、GEP Recipe 组合、host 错误分类、force-update/outbound 强化（见 Sprint 10）*

@@ -11,6 +11,8 @@ import re
 import subprocess
 from typing import Any, cast
 
+from evolver.gep.host_error_classifier import is_host_client_error
+
 # Opportunity signal names (shared with mutation.py and personality.py).
 OPPORTUNITY_SIGNALS = [
     "user_feature_request",
@@ -685,6 +687,12 @@ def extract_signals(
 
     history = analyze_recent_history(recent_events or [])
 
+    # #571: a host/LLM client error (4xx: bad request / auth / quota) is NOT a
+    # Gene failure. Detect it once on the full corpus so the failure-streak and
+    # ban/innovation paths below can be suppressed, then surface the actionable
+    # host_llm_client_error signal instead.
+    host_client_error = is_host_client_error(corpus)
+
     error_hit = bool(
         re.search(
             r'\[error\]|error:|exception:|iserror":true|"status":\s*"error"|"status":\s*"failed"|错误\s*[：:]|异常\s*[：:]|报错\s*[：:]|失败\s*[：:]',
@@ -774,7 +782,9 @@ def extract_signals(
         signals.append("explore_opportunity")
 
     # Failure streak
-    if history["consecutiveFailureCount"] >= 3:
+    # ponytail: host client errors are not Gene failures — skip attribution
+    # entirely so a 4xx/quota storm cannot ban a gene or force innovation.
+    if not host_client_error and history["consecutiveFailureCount"] >= 3:
         signals.append(f"consecutive_failure_streak_{history['consecutiveFailureCount']}")
         if history["consecutiveFailureCount"] >= 5:
             signals.append("failure_loop_detected")
@@ -786,8 +796,11 @@ def extract_signals(
             if top_gene:
                 signals.append(f"ban_gene:{top_gene}")
 
-    if history["recentFailureRatio"] >= 0.75:
+    if not host_client_error and history["recentFailureRatio"] >= 0.75:
         signals.extend(["high_failure_ratio", "force_innovation_after_repair_loop"])
+
+    if host_client_error and "host_llm_client_error" not in signals:
+        signals.append("host_llm_client_error")
 
     # Plateau from scores
     avg_score = history.get("avgScore")

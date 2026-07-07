@@ -142,6 +142,11 @@ def resolve_hub_url() -> str:
       3. EVOLVER_DEFAULT_HUB_URL
       4. PUBLIC_DEFAULT_HUB_URL
     """
+    # Solo "no escape valve": even with a hub URL set, return "" so every hub
+    # call bails with no_hub_url. Inline check (not an import) to avoid coupling
+    # config -> solo; matches solo.breaker.SOLO_ENV.
+    if os.environ.get("EVOLVER_SOLO", "") == "1":
+        return ""
     raw = (
         os.environ.get("A2A_HUB_URL")
         or os.environ.get("EVOMAP_HUB_URL")
@@ -183,6 +188,8 @@ SESSION_ARCHIVE_TRIGGER: Final = env_int("EVOLVER_SESSION_ARCHIVE_TRIGGER", 100)
 SESSION_ARCHIVE_KEEP: Final = env_int("EVOLVER_SESSION_ARCHIVE_KEEP", 50)
 MEMORY_FRAGMENT_MAX_CHARS: Final = env_int("EVOLVER_MEMORY_FRAGMENT_MAX_CHARS", 50_000)
 IDLE_FETCH_INTERVAL_MS: Final = env_int("EVOLVER_IDLE_FETCH_INTERVAL_MS", 600_000)
+# Solo / loop testability: exit the daemon loop after N cycles (0 = unlimited).
+MAX_CYCLES_PER_PROCESS: Final = env_int("EVOLVER_MAX_CYCLES_PER_PROCESS", 0)
 PROMPT_MAX_CHARS: Final = env_int("EVOLVER_PROMPT_MAX_CHARS", 24_000)
 ACTIVE_WINDOW_MS: Final = 24 * 60 * 60 * 1_000
 TARGET_BYTES: Final = 120_000
@@ -308,6 +315,7 @@ __all__ = [
     "HTTP_TRANSPORT_TIMEOUT_MS",
     "HUB_SEARCH_TIMEOUT_MS",
     "IDLE_FETCH_INTERVAL_MS",
+    "MAX_CYCLES_PER_PROCESS",
     "LEAK_CHECK_MODE",
     "LOCK_MAX_AGE_MS",
     "MAX_REGEX_PATTERN_LEN",

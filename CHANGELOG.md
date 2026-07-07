@@ -5,6 +5,132 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased] — Sprint 10: v1.89.14 → v1.90.0 catch-up
+
+### Gap 1: Trajectory export — foundation + decryption + session sources (G10.1, partial)
+- `gep/trajectory/` (new package): ports the core of `trajectoryExport.test.js`.
+  - `builder.py` — `build_trajectories()` / `build_trajectory_from_rows()`:
+    group proxy-trace rows by session into `evomap.coding_trajectory.v1`
+    trajectories; per-turn extraction (provider, endpoint, response_id,
+    previous_response_id, request/response bodies, reasoning, encrypted_content,
+    per-turn tokens, error); tool-call extraction across Anthropic `/v1/messages`,
+    OpenAI `/v1/responses`, `/v1/chat/completions` (declared tools vs actual
+    invocations; Anthropic `tool_use` deduped by id); **full streamed
+    tool-argument reconstruction** (Anthropic `input_json_delta`; OpenAI Chat
+    delta + full-snapshot dedup; OpenAI Responses delta + `.done` override);
+    Bedrock provider normalisation; language detection (keywords + file
+    extensions); failure-correction marking; test-execution / code-edit /
+    `test_commands` detection from tool inputs; stats (`turns`, tokens,
+    `has_tool_calls`, `tool_call_count`, `tool_types`, `has_test_execution`,
+    `has_code_edit`, `test_commands`).
+  - `io.py` — `write_trajectories()`: atomic (temp + `os.replace`); a pre-placed
+    symlink is **not followed** (PR #294 C4); owner-only `0o600` on POSIX.
+  - `crypto.py` — `read_trace_rows_detailed()` / `decrypt_trace_row()`: AES-256-GCM
+    under a node-secret-derived key with `secret_version` keyring selection;
+    RSA-OAEP-SHA256 hub-key envelope unwrap with node-secret fallback;
+    **fail-closed** (3 distinct messages) unless `--allow-partial`.
+  - `sources.py` — non-proxy session logs: **Codex rollout** JSONL
+    (`session_meta` + `response_item` records — message/reasoning/function_call/
+    function_call_output/custom_tool_call/tool_search*), **Claude Code
+    transcript** JSONL (`user`/`assistant` with `message.content` blocks), and
+    **OpenAI generic-chat** messages JSONL (top-level role-tagged records,
+    `prompt_tokens`/`completion_tokens`, `thinking`+`signature`, OpenAI
+    `tool_calls`/`tool` outputs) — with reasoning turns, custom tool calls,
+    tool-search events, and test-execution / code-edit / failure-correction
+    detection; plus `detect_source()` classification.
+  - CLI: `evolver trajectory --input <file|dir> --output [...]` auto-detects
+    session logs vs proxy traces, recurses directories, and decrypts with
+    `--node-secret`/`--hub-private-key`/`--node-secret-keyring`/`--allow-partial`.
+- `tests/gep/trajectory/` (27 cases: 11 builder incl. full streaming + 10 crypto + 6 sources).
+- **Deferred (niche vendor sources)**: Cursor vscdb (SQLite), Gemini
+  CLI+Gateway, Kimi Wire — bespoke low-frequency parsers, each with its own
+  format-specific test file.
+
+### Gap 8: Force-update hardening (v1.90.0 contract)
+- `force_update.py` (262→490+ lines): ports the portable subset of Node's
+  `forceUpdate*.test.js` (Node-specific npx/degit/package.json/index.js/exit-78
+  mechanics are N/A for Python and intentionally omitted).
+  - **Sentinels** — `FORCE_UPDATE_BUSY` / `FORCE_UPDATE_NOOP` (distinct
+    singletons; identity-comparable, no truthy collision).
+  - **Concurrency guard** — module-level mutex in `execute_force_update()`: a
+    re-entrant call mid-upgrade returns `FORCE_UPDATE_BUSY` without
+    re-downloading; mutex resets via `finally` (and on throw). (Fills a gap: the
+    docstring claimed a file-lock guard that was never implemented.)
+  - **Idempotent floor** — `required_version` is a *minimum floor*, not an exact
+    target: operator (`>=`/`>`/`=`) + leading-`v` normalisation; an install that
+    already satisfies the floor returns `FORCE_UPDATE_NOOP` (no downgrade, no
+    re-download). Anti-downgrade guard (#213): an unparsable current version is
+    refused, not silently satisfied.
+  - **Coded frozen failures** — every failure is an immutable result carrying a
+    stable `code` + `detail`; `is_force_update_failure()` + `FORCE_UPDATE_FAIL_CODES`
+    registry.
+  - **Safe extraction** — `_safe_extract()` refuses Zip-Slip (path-traversal)
+    entries (keep-list/tarball-fallback safety).
+  - `report_force_update_outcome(noop/updated)` persists status (`skipped`/
+    `success`); `noop` wins defensively.
+- `tests/test_force_update.py` (+19 cases).
+
+### Gap 9: Outbound sync resilience (v1.90.0 contract)
+- `proxy/sync/outbound.py` (108→290+ lines): ports `proxyOutboundSync.test.js`.
+  - **Body-size budgeting** — one size-bounded batch per flush
+    (`EVOMAP_OUTBOUND_SYNC_MAX_BODY_BYTES` env, overridable by store state after
+    a 413); a single message that cannot fit is rejected, not sent.
+  - **413 handling** — single-message 413 quarantines; multi-message 413 backs
+    the budget down and leaves all messages pending (1 Hub call).
+  - **Retryable vs terminal** — retryable per-message failures defer (status
+    pending, retry count untouched, `next_retry_at` set); terminal finalises.
+    `terminal` wins over retry hints (PR #301).
+  - **proxy_trace gating** — `proxy_trace` dropped when
+    `trace_collection_enabled` store state is `False`.
+  - **Redaction** — Hub non-2xx response text redacted before persistence.
+  - Rich result shape: `sent`/`synced`/`dropped`/`deferred`/`payload_too_large`/
+    `error`/`responses`.
+- `proxy/mailbox/store.py`: `Message.next_retry_at` field; `poll_outbound`
+  skips deferred-not-due messages; new `defer()` (backoff without burning retry).
+- `tests/test_proxy_outbound_sync.py` (new, 11 cases); `test_proxy_sync.py`
+  updated to Node v1.90.0 `sent`=batch-size semantics.
+- Encryption-envelope validation of `proxy_trace` payloads deferred to G10.1.
+
+### Gap 5: Host Error Classifier (#571)
+- `gep/host_error_classifier.py` (new): `is_host_client_error()` + non-global
+  `HOST_PROVIDER_ERR_RE` — classifies 4xx provider errors (invalid_api_key /
+  insufficient_quota / rate limit / MaxTokens / HTTP 4xx) with bare-number-safe
+  context. `None`/non-str/empty → `False`.
+- `gep/signals.py`: under a host client error the failure-streak path is
+  skipped — no `ban_gene` / `failure_loop_detected` / `consecutive_failure_streak`
+  / `force_innovation_after_repair_loop`; the actionable `host_llm_client_error`
+  signal is surfaced instead. An LLM quota/auth storm can no longer ban a gene.
+- `tests/gep/test_host_error_classifier.py` (new, 5 cases): ports
+  `hostClientErrorSignals.test.js`.
+
+### Gap 2: Solo mode (`--solo` / constrained-wild / "Mad Dog")
+- `solo/` subsystem (new): `breaker.py` (network "no escape valve" hard cut) +
+  `git_guard.py` (local-git-only guard, wired into `git_ops.run_cmd`) +
+  `__init__.py` (banner). Solo state = `EVOLVER_SOLO` env (process-wide,
+  import-race-safe).
+- `cli.py`: `--solo` flag (implies `--loop`); activates before dispatch so env
+  overrides + hub cut land at the source. Even a user-set `A2A_HUB_URL` is
+  ignored. Validator daemon + ATP auto-spend + task pickup are hard-cut in both
+  the startup path (`start_validator` returns `None`; ATP envs forced off) and
+  the in-cycle path (`post_cycle` guards).
+- `config.py`: `resolve_hub_url()` returns `""` under solo (no escape valve);
+  new `MAX_CYCLES_PER_PROCESS` (`EVOLVER_MAX_CYCLES_PER_PROCESS`, 0=unlimited).
+- `evolve/runner.py`: daemon loop honours `MAX_CYCLES_PER_PROCESS` (exits after
+  N cycles — solo/CI testability).
+- Fix: `cli._cmd_loop` now guards `add_signal_handler`/`remove_signal_handler`
+  against `NotImplementedError` so `--loop`/`--solo` work on Windows
+  (ProactorEventLoop lacks signal-handler support).
+- `tests/solo/test_solo.py` (new, 11 cases): ports `soloMode.test.js`, including
+  a subprocess smoke test asserting banner + service cut + clean exit.
+
+### Stats
+- **Tests**: +73 (5 host-error + 11 solo + 11 outbound + 19 force-update +
+  27 trajectory); 0 regressions (1 pre-existing cognition test failure unrelated).
+- **Baseline**: tracking v1.89.14 → **v1.90.0** (G10.5, G10.2, G10.8, G10.9
+  closed; G10.1 trajectory core complete — proxy + full streaming + crypto +
+  Codex/Claude/generic sources — Cursor/Gemini/Kimi vendor sources deferred;
+  G10.3 cliContracts / G10.4 recipe pending).
+
 ## [Unreleased] — Sprint 9: v1.89.14 parity (7 gaps closed)
 
 ### Gap 1: Inert Gene Ban (#562)

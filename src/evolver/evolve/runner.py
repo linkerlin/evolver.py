@@ -11,7 +11,7 @@ import secrets
 import time
 from typing import Any
 
-from evolver.config import IDLE_FETCH_INTERVAL_MS
+from evolver.config import IDLE_FETCH_INTERVAL_MS, MAX_CYCLES_PER_PROCESS
 from evolver.evolve import guards
 from evolver.evolve.pipeline import (
     autopoiesis_phase,
@@ -218,6 +218,13 @@ async def run_loop(  # noqa: PLR0912, PLR0915
                     print(f"[loop] Cleanup error: {exc}")
 
             # Sleep until next cycle or shutdown
+            # Solo/CI testability: stop after a bounded number of cycles.
+            if MAX_CYCLES_PER_PROCESS and cycle_count >= MAX_CYCLES_PER_PROCESS:
+                print(
+                    f"[loop] Reached EVOLVER_MAX_CYCLES_PER_PROCESS="
+                    f"{MAX_CYCLES_PER_PROCESS}. Exiting."
+                )
+                break
             try:
                 await asyncio.wait_for(shutdown.wait(), timeout=interval)
             except TimeoutError:

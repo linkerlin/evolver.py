@@ -25,8 +25,11 @@ async def run_post_cycle_hooks(ctx: dict[str, Any]) -> dict[str, Any]:
         return ctx
 
     from evolver.gep.feature_flags import is_enabled
+    from evolver.solo.breaker import is_solo_active
 
-    if is_enabled("enable_auto_buyer"):
+    # Solo "禁ATP": cut auto-spend and task pickup at the in-cycle path even if
+    # the user forced ATP on (the startup path already overrode the env).
+    if not is_solo_active() and is_enabled("enable_auto_buyer"):
         try:
             from evolver.atp import auto_buyer
 
@@ -40,15 +43,16 @@ async def run_post_cycle_hooks(ctx: dict[str, Any]) -> dict[str, Any]:
             logger.warning("[post_cycle] ATP auto-buyer failed: %s", exc)
             ctx["atp_auto_buyer_error"] = str(exc)
 
-    try:
-        from evolver.atp.atp_task_pickup import pick_one
+    if not is_solo_active():
+        try:
+            from evolver.atp.atp_task_pickup import pick_one
 
-        spawn = await pick_one()
-        if spawn:
-            ctx["atp_spawn_instruction"] = spawn
-            logger.info("[post_cycle] ATP task pickup produced spawn instruction")
-    except Exception as exc:
-        logger.debug("[post_cycle] ATP task pickup skipped: %s", exc)
+            spawn = await pick_one()
+            if spawn:
+                ctx["atp_spawn_instruction"] = spawn
+                logger.info("[post_cycle] ATP task pickup produced spawn instruction")
+        except Exception as exc:
+            logger.debug("[post_cycle] ATP task pickup skipped: %s", exc)
 
     try:
         from evolver.gep.issue_reporter import report_recurring_failures
