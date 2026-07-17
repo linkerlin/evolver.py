@@ -3,9 +3,9 @@
 [![Python 3.12+](https://img.shields.io/badge/Python-%3E%3D%203.12-blue.svg)](https://python.org/)
 [![License: Apache-2.0](https://img.shields.io/badge/License-Apache--2.0-blue.svg)](https://opensource.org/licenses/Apache-2.0)
 
-**Python 3.12+ port of [`@evomap/evolver`](https://github.com/EvoMap/evolver)** — a GEP-powered self-evolution engine for AI agents.
+**a GEP-powered self-evolution engine for AI agents.**
 
-This port aims for **full behavioral equivalence** with the Node.js reference implementation (v1.89.14) while using modern Python tooling:
+This project aims for **full behavioral equivalence**  while using modern Python tooling:
 
 - **Python 3.12+** — `asyncio`, type parameter syntax (`list[str]`), `tomllib`
 - **uv** — fast Python package management
