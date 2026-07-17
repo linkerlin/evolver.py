@@ -3,9 +3,9 @@
 [![Python 3.12+](https://img.shields.io/badge/Python-%3E%3D%203.12-blue.svg)](https://python.org/)
 [![License: Apache-2.0](https://img.shields.io/badge/License-Apache--2.0-blue.svg)](https://opensource.org/licenses/Apache-2.0)
 
-**Python 3.12+ 移植版本**，源自 [`@evomap/evolver`](https://github.com/EvoMap/evolver) —— 一个基于 GEP（基因组进化协议）的 AI 智能体自进化引擎。
+**一个基于 GEP（基因组进化协议）的 AI 智能体自进化引擎。**
 
-本移植目标是在使用现代 Python 工具链的同时，与 Node.js 参考实现（v1.89.14）达成**完全行为等价**：
+本项目的目标是使用现代 Python 工具链实现：
 
 - **Python 3.12+** — `asyncio`、类型参数语法（`list[str]`）、`tomllib`
 - **uv** — 高速 Python 包管理
