@@ -3,7 +3,7 @@
 [![Python 3.12+](https://img.shields.io/badge/Python-%3E%3D%203.12-blue.svg)](https://python.org/)
 [![License: Apache-2.0](https://img.shields.io/badge/License-Apache--2.0-blue.svg)](https://opensource.org/licenses/Apache-2.0)
 
-**a GEP-powered self-evolution engine for AI agents.**
+**A GEP-powered self-evolution engine for AI agents.**
 
 This project aims for **full behavioral equivalence**  while using modern Python tooling:
 
