@@ -93,6 +93,18 @@ def _build_parser() -> argparse.ArgumentParser:
     fetch_p.add_argument("query", nargs="?", default="", help="Search query or asset id")
     fetch_p.add_argument("--limit", type=int, default=5, help="Max results to fetch")
     fetch_p.add_argument("--dry-run", action="store_true", help="Show what would be installed")
+    reuse_p = sub.add_parser("reuse", help="Reuse a Hub asset locally (reuse.v1 contract)")
+    reuse_p.add_argument(
+        "contract_args",
+        nargs=argparse.REMAINDER,
+        help="Contract args, e.g. --id <asset_id> --json",
+    )
+    publish_p = sub.add_parser("publish", help="Publish a Gene+Capsule bundle (publish.v1 contract)")
+    publish_p.add_argument(
+        "contract_args",
+        nargs=argparse.REMAINDER,
+        help="Contract args, e.g. --asset <id> --capsule <id> --json [--dry-run]",
+    )
     sync_p = sub.add_parser("sync", help="Sync assets with the Hub")
     sync_p.add_argument("--dry-run", action="store_true", help="Show what would be synced")
     sync_p.add_argument("--scope", default=None, help="Sync scope filter")
@@ -257,6 +269,12 @@ def main(argv: Sequence[str] | None = None) -> int:
 
     if command == "fetch":
         return asyncio.run(_cmd_fetch(args))
+
+    if command == "reuse":
+        return asyncio.run(_cmd_reuse(args))
+
+    if command == "publish":
+        return asyncio.run(_cmd_publish(args))
 
     if command == "webui":
         return _cmd_webui(args)
@@ -464,6 +482,24 @@ async def _cmd_fetch(args: argparse.Namespace) -> int:
             action = "would install" if args.dry_run else "installed"
             print(f"  {action.upper()} {item.get('type')} {item.get('id')}")
     return 0
+
+
+async def _cmd_reuse(args: argparse.Namespace) -> int:
+    from evolver.gep.cli_contracts import run_reuse_command
+
+    contract_args = list(args.contract_args or [])
+    if contract_args and contract_args[0] == "--":
+        contract_args = contract_args[1:]
+    return await run_reuse_command(contract_args)
+
+
+async def _cmd_publish(args: argparse.Namespace) -> int:
+    from evolver.gep.cli_contracts import run_publish_command
+
+    contract_args = list(args.contract_args or [])
+    if contract_args and contract_args[0] == "--":
+        contract_args = contract_args[1:]
+    return await run_publish_command(contract_args)
 
 
 async def _cmd_run(_args: argparse.Namespace) -> int:

@@ -78,7 +78,7 @@
 
 - [ ] G10.1 trajectory export 五源 + 加密/脱敏/原子写/fails-closed 测试通过
 - [ ] G10.2 `--solo` 三平台断网 + 禁 Validator/ATP
-- [ ] G10.3 reuse/publish provenance + 脱敏 hard-gate + 重签 + 幂等对标
+- [x] G10.3 reuse/publish 核心+扩展契约（`cli_contracts.py` + CLI + **39** 项测试：provenance/hash/auth/leak/credits/rehash-resign/OAuth-only）；剩余 ~27 项 Node 测试待移植
 - [ ] G10.4 skill2recipes 与现有 recipe/ 命名不冲突
 - [ ] G10.5 host 4xx 不误 ban 基因
 - [ ] G10.8/9 force-update/outbound 测试对标

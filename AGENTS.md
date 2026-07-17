@@ -1,6 +1,6 @@
 # AGENTS.md — evolver.py
 
-> Python 3.12+ 之移植也，源于 [`@evomap/evolver`](https://github.com/EvoMap/evolver)，乃以 GEP 为驱动之 AI 智能体自进化引擎。
+> 以 GEP 为驱动之 AI 智能体自进化引擎。
 
 ## 命令篇
 

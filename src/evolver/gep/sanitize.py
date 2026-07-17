@@ -40,6 +40,14 @@ _PATTERNS: dict[str, re.Pattern[str]] = {
     ),
 }
 
+_LEAK_ONLY_PATTERNS: dict[str, re.Pattern[str]] = {
+    "internal_ip": re.compile(
+        r"\b(?:10\.\d{1,3}\.\d{1,3}\.\d{1,3}|"
+        r"172\.(?:1[6-9]|2\d|3[01])\.\d{1,3}\.\d{1,3}|"
+        r"192\.168\.\d{1,3}\.\d{1,3})(?::\d{2,5})?\b"
+    ),
+}
+
 # Env value heuristics that indicate a *path* or *URL* rather than a secret.
 # Reporting these as "leaks" produced false positives in the reverse scan
 # (Node.js fix #568, 2026-06-11). We skip env values whose shape matches one
@@ -97,7 +105,7 @@ def scan_for_leaks(text: str | bytes) -> list[dict[str, Any]]:
     if isinstance(text, bytes):
         text = text.decode("utf-8", errors="replace")
     leaks: list[dict[str, Any]] = []
-    for name, pattern in _PATTERNS.items():
+    for name, pattern in {**_PATTERNS, **_LEAK_ONLY_PATTERNS}.items():
         for match in pattern.finditer(text):
             leaks.append(
                 {
