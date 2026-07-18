@@ -2,8 +2,13 @@
 
 from __future__ import annotations
 
+import errno
 import hashlib
+import json
+import logging
 import os
+import re
+import shutil
 import zipfile
 from pathlib import Path
 
@@ -14,6 +19,7 @@ from evolver.force_update import (
     FORCE_UPDATE_BUSY,
     FORCE_UPDATE_FAIL_CODES,
     FORCE_UPDATE_NOOP,
+    KEEP_LIST,
     _backup_dir,
     _normalize_version_floor,
     _parse_version,
@@ -22,9 +28,13 @@ from evolver.force_update import (
     _satisfies_floor,
     _verify_checksum,
     apply_update,
+    check_install_guard,
     execute_force_update,
     force_update,
+    has_strong_evolver_install_markers,
+    install_downloaded_tree,
     is_force_update_failure,
+    is_force_update_keep_entry,
     is_newer,
     report_force_update_outcome,
 )
@@ -292,3 +302,300 @@ class TestSafeExtract:
         assert (dest / "sub" / "inner.txt").read_text() == "inner"
         # The traversal entry must not escape dest.
         assert not (tmp_path / "escaped.txt").exists()
+
+
+# ---------------------------------------------------------------------------
+# Sprint 14.2: keep-list expansion, mid-copy wedge, install-guard / bootstrap
+# ---------------------------------------------------------------------------
+
+
+def _write_pkg(root: Path, version: str, *, name: str = "@evomap/evolver") -> None:
+    (root / "package.json").write_text(
+        json.dumps({"name": name, "version": version}),
+        encoding="utf-8",
+    )
+
+
+def _populate_old_install(root: Path, version: str = "1.0.0") -> None:
+    _write_pkg(root, version)
+    (root / "index.js").write_text("// old", encoding="utf-8")
+    (root / "src").mkdir()
+    (root / "src" / "evolve.js").write_text("// old src", encoding="utf-8")
+
+
+def _populate_download(root: Path, version: str) -> None:
+    _write_pkg(root, version)
+    (root / "index.js").write_text(f"// v{version}", encoding="utf-8")
+    (root / "src").mkdir()
+    (root / "src" / "evolve.js").write_text(f"// src v{version}", encoding="utf-8")
+
+
+def _populate_keeplist_install(root: Path) -> None:
+    _populate_old_install(root)
+    (root / "node_modules").mkdir()
+    (root / "memory").mkdir()
+    (root / ".git").mkdir()
+    (root / "MEMORY.md").write_text("# mem\n", encoding="utf-8")
+    (root / ".env").write_text(
+        "A2A_HUB_URL=https://hub.example.com\nA2A_NODE_SECRET=s3cr3t\n",
+        encoding="utf-8",
+    )
+    (root / ".env.local").write_text("DEBUG=1\n", encoding="utf-8")
+    (root / "USER.md").write_text("# my notes\n", encoding="utf-8")
+    (root / ".evolver").mkdir()
+    (root / ".evolver" / "config.json").write_text('{"workspaceId":"wid_test"}', encoding="utf-8")
+    (root / "logs").mkdir()
+    (root / "logs" / "evolver.log").write_text("local log\n", encoding="utf-8")
+    (root / "skills").mkdir()
+    (root / "skills" / "mine.md").write_text("skill", encoding="utf-8")
+
+
+class TestKeepList:
+    def test_keep_list_covers_node_v18915_entries(self) -> None:
+        for name in (
+            "node_modules",
+            "memory",
+            ".git",
+            "MEMORY.md",
+            ".env",
+            ".env.local",
+            "USER.md",
+            ".evolver",
+            "logs",
+            "skills",
+            ".evomap",
+        ):
+            assert is_force_update_keep_entry(name), name
+            assert name in KEEP_LIST
+
+    def test_install_preserves_keep_list_and_replaces_code(self, tmp_path: Path) -> None:
+        install = tmp_path / "install"
+        download = tmp_path / "download"
+        install.mkdir()
+        download.mkdir()
+        _populate_keeplist_install(install)
+        _populate_download(download, "999.999.999")
+        # Release archive ships poisoned keep-list paths — must not win.
+        (download / ".env").write_text("A2A_NODE_SECRET=from-release\n", encoding="utf-8")
+        (download / "USER.md").write_text("# release\n", encoding="utf-8")
+        (download / "memory").mkdir()
+        (download / "memory" / "state.json").write_text('{"from":"release"}', encoding="utf-8")
+
+        result = install_downloaded_tree(install, download, required_version="999.999.999")
+        assert result.get("ok") is True or result.get("success") is True
+        assert (install / ".env").read_text(encoding="utf-8") == (
+            "A2A_HUB_URL=https://hub.example.com\nA2A_NODE_SECRET=s3cr3t\n"
+        )
+        assert (install / ".env.local").read_text(encoding="utf-8") == "DEBUG=1\n"
+        assert (install / "USER.md").read_text(encoding="utf-8") == "# my notes\n"
+        assert (install / ".evolver" / "config.json").read_text(encoding="utf-8") == (
+            '{"workspaceId":"wid_test"}'
+        )
+        assert (install / "logs" / "evolver.log").read_text(encoding="utf-8") == "local log\n"
+        assert (install / "memory").is_dir()
+        assert (install / ".git").is_dir()
+        assert (install / "MEMORY.md").read_text(encoding="utf-8") == "# mem\n"
+        assert (install / "skills" / "mine.md").read_text(encoding="utf-8") == "skill"
+        assert (install / "index.js").read_text(encoding="utf-8") == "// v999.999.999"
+        assert (install / "src" / "evolve.js").read_text(encoding="utf-8") == (
+            "// src v999.999.999"
+        )
+        assert (
+            json.loads((install / "package.json").read_text(encoding="utf-8"))["version"]
+            == "999.999.999"
+        )
+
+    def test_apply_update_also_respects_expanded_keep_list(self, tmp_path: Path) -> None:
+        target = tmp_path / "target"
+        source = tmp_path / "source"
+        target.mkdir()
+        source.mkdir()
+        (target / ".env").write_text("SECRET=local\n", encoding="utf-8")
+        (target / "USER.md").write_text("mine", encoding="utf-8")
+        (target / "code.py").write_text("old", encoding="utf-8")
+        (source / ".env").write_text("SECRET=release\n", encoding="utf-8")
+        (source / "code.py").write_text("new", encoding="utf-8")
+        result = apply_update(source, target)
+        assert result["success"] is True
+        assert (target / ".env").read_text(encoding="utf-8") == "SECRET=local\n"
+        assert (target / "USER.md").read_text(encoding="utf-8") == "mine"
+        assert (target / "code.py").read_text(encoding="utf-8") == "new"
+
+
+class TestMidCopyWedge:
+    def test_mid_copy_failure_leaves_old_package_json(self, tmp_path: Path) -> None:
+        install = tmp_path / "install"
+        download = tmp_path / "download"
+        install.mkdir()
+        download.mkdir()
+        _populate_old_install(install, "1.0.0")
+        _populate_download(download, "2.0.0")
+
+        real_copy_tree = shutil.copytree
+
+        def boom_src(src: Path, dst: Path) -> None:
+            if src.name == "src":
+                raise OSError(errno.ENOSPC, "no space left on device")
+            if dst.exists():
+                shutil.rmtree(dst)
+            real_copy_tree(src, dst)
+
+        fu._copy_tree_fn = boom_src  # type: ignore[assignment]
+        try:
+            result = install_downloaded_tree(install, download, required_version="2.0.0")
+        finally:
+            fu._copy_tree_fn = None
+
+        assert is_force_update_failure(result)
+        assert result["code"] == "copy_failed"
+        assert (install / "package.json").is_file()
+        assert (
+            json.loads((install / "package.json").read_text(encoding="utf-8"))["version"] == "1.0.0"
+        )
+
+    def test_next_attempt_self_heals_after_mid_copy_failure(self, tmp_path: Path) -> None:
+        install = tmp_path / "install"
+        download = tmp_path / "download"
+        install.mkdir()
+        download.mkdir()
+        _populate_old_install(install, "1.0.0")
+        _populate_download(download, "2.0.0")
+
+        real_copy_tree = shutil.copytree
+        fail_once = {"n": 0}
+
+        def boom_once(src: Path, dst: Path) -> None:
+            if src.name == "src" and fail_once["n"] == 0:
+                fail_once["n"] += 1
+                raise OSError(errno.ENOSPC, "no space left on device")
+            if dst.exists():
+                shutil.rmtree(dst)
+            real_copy_tree(src, dst)
+
+        fu._copy_tree_fn = boom_once  # type: ignore[assignment]
+        try:
+            first = install_downloaded_tree(install, download, required_version="2.0.0")
+            assert is_force_update_failure(first)
+            # Rebuild download (install_downloaded_tree may remove temp_target)
+            if not download.exists():
+                download.mkdir()
+                _populate_download(download, "2.0.0")
+            fu._copy_tree_fn = None
+            second = install_downloaded_tree(install, download, required_version="2.0.0")
+        finally:
+            fu._copy_tree_fn = None
+
+        assert second.get("ok") is True or second.get("success") is True
+        assert (
+            json.loads((install / "package.json").read_text(encoding="utf-8"))["version"] == "2.0.0"
+        )
+        assert (install / "src" / "evolve.js").read_text(encoding="utf-8") == "// src v2.0.0"
+        assert (install / "index.js").read_text(encoding="utf-8") == "// v2.0.0"
+
+    def test_package_json_commit_failure_restores_old_marker(self, tmp_path: Path) -> None:
+        install = tmp_path / "install"
+        download = tmp_path / "download"
+        install.mkdir()
+        download.mkdir()
+        _populate_old_install(install, "1.0.0")
+        _populate_download(download, "2.0.0")
+
+        def boom_pkg_commit(src: Path, dst: Path) -> None:
+            if src.name.endswith(".evolver-tmp") and dst.name == "package.json":
+                raise OSError(errno.EPERM, "package.json is locked")
+            os.replace(src, dst)
+
+        fu._rename_fn = boom_pkg_commit  # type: ignore[assignment]
+        try:
+            result = install_downloaded_tree(install, download, required_version="2.0.0")
+        finally:
+            fu._rename_fn = None
+
+        assert is_force_update_failure(result)
+        assert result["code"] == "copy_failed"
+        assert "package.json commit" in result["detail"]
+        assert (
+            json.loads((install / "package.json").read_text(encoding="utf-8"))["version"] == "1.0.0"
+        )
+        leftovers = [
+            p.name
+            for p in install.iterdir()
+            if re.fullmatch(r"package\.json\..*evolver-(tmp|old)", p.name)
+        ]
+        assert leftovers == []
+
+
+class TestInstallGuard:
+    def test_name_mismatch_fail_closed(self, tmp_path: Path) -> None:
+        root = tmp_path / "bad"
+        root.mkdir()
+        _write_pkg(root, "1.0.0", name="totally-unrelated")
+        result = check_install_guard(root)
+        assert is_force_update_failure(result)
+        assert result["code"] == "install_guard_name_mismatch"
+
+    def test_unreadable_without_markers_fail_closed(self, tmp_path: Path) -> None:
+        root = tmp_path / "empty"
+        root.mkdir()
+        result = check_install_guard(root)
+        assert is_force_update_failure(result)
+        assert result["code"] == "install_guard_unreadable"
+
+    def test_strong_markers_allow_bootstrap_recovery(
+        self, tmp_path: Path, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        root = tmp_path / "boot"
+        root.mkdir()
+        # Required marker + two others (no package.json).
+        fu_path = root / "src" / "evolver" / "force_update.py"
+        fu_path.parent.mkdir(parents=True)
+        fu_path.write_text(
+            "def execute_force_update(): ...\nFORCE_UPDATE_FAIL_CODES = set()\n",
+            encoding="utf-8",
+        )
+        paths_py = root / "src" / "evolver" / "gep" / "paths.py"
+        paths_py.parent.mkdir(parents=True)
+        paths_py.write_text(
+            "def get_repo_root(): ...\ndef get_evolver_install_root(): ...\n",
+            encoding="utf-8",
+        )
+        a2a = root / "src" / "evolver" / "gep" / "a2a_protocol.py"
+        a2a.write_text(
+            "def report_force_update_outcome(): ...\nA2A = True\n",
+            encoding="utf-8",
+        )
+        assert has_strong_evolver_install_markers(root) is True
+        with caplog.at_level(logging.WARNING):
+            result = check_install_guard(root)
+        assert result is None
+        assert "bootstrap recovery allowed" in caplog.text
+
+    def test_recover_package_json_from_evolver_old(self, tmp_path: Path) -> None:
+        root = tmp_path / "rec"
+        root.mkdir()
+        backup = root / "package.json.12345.evolver-old"
+        backup.write_text(
+            json.dumps({"name": "@evomap/evolver", "version": "1.2.3"}),
+            encoding="utf-8",
+        )
+        assert check_install_guard(root) is None
+        assert (root / "package.json").is_file()
+        assert not backup.exists()
+
+    def test_version_mismatch_and_incomplete_download(self, tmp_path: Path) -> None:
+        install = tmp_path / "install"
+        download = tmp_path / "download"
+        install.mkdir()
+        download.mkdir()
+        _populate_old_install(install)
+        _write_pkg(download, "3.0.0")
+        (download / "index.js").write_text("// v3", encoding="utf-8")
+        bad = install_downloaded_tree(install, download, required_version="9.0.0")
+        assert is_force_update_failure(bad)
+        assert bad["code"] == "downloaded_version_mismatch"
+
+        # Missing index → incomplete
+        (download / "index.js").unlink()
+        incomplete = install_downloaded_tree(install, download, required_version="3.0.0")
+        assert is_force_update_failure(incomplete)
+        assert incomplete["code"] == "download_incomplete"
