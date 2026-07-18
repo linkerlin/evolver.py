@@ -8,8 +8,21 @@ requests/responses for diagnostics and Hub forwarding.
 
 from __future__ import annotations
 
+import hashlib
 import time
 from typing import Any
+
+
+def hash_trace_value(value: Any, prefix: str = "hash") -> str:
+    """Stable short hash used for session / user / cwd redaction in traces.
+
+    Mirrors Node ``hashTraceValue``: ``{prefix}:{sha256(utf8)[:16]}``.
+    """
+    text = str(value or "")
+    if not text:
+        return ""
+    digest = hashlib.sha256(text.encode("utf-8")).hexdigest()[:16]
+    return f"{prefix}:{digest}"
 
 
 def extract_usage(response_body: dict[str, Any]) -> dict[str, int]:
@@ -65,4 +78,4 @@ def extract_trace_entry(
     return entry
 
 
-__all__ = ["extract_trace_entry", "extract_usage"]
+__all__ = ["extract_trace_entry", "extract_usage", "hash_trace_value"]

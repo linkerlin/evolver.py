@@ -1,18 +1,16 @@
-"""Session-log trajectory sources (G10.1 slice 3a).
+"""Session-log trajectory sources (G10.1 slice 3a + 3b).
 
 Parses non-proxy session transcripts into coding trajectories:
 
-* **Codex rollout** JSONL (``.codex/sessions/rollout-*.jsonl``) —
-  ``session_meta`` + ``response_item`` records (message / reasoning /
-  function_call / function_call_output / custom_tool_call / tool_search_*).
-* **Claude Code transcript** JSONL (``.claude/.../*.transcript.jsonl``) —
-  ``user`` / ``assistant`` records with ``message.content`` blocks.
+* **Codex rollout** JSONL (``.codex/sessions/rollout-*.jsonl``)
+* **Claude Code transcript** JSONL (``.claude/.../*.jsonl``)
+* **OpenAI generic-chat** messages JSONL
+* **Cursor** ``state.vscdb`` (SQLite) — :mod:`cursor_vscdb`
+* **Gemini CLI** session-*.{json,jsonl} — :mod:`gemini_cli`
+* **Kimi Wire** ``wire.jsonl`` — :mod:`kimi_wire`
 
-Each parser reuses the :mod:`builder` dataclasses and detects test execution,
-code edits, and failure-correction from the tool calls / outputs.
-
-Deferred to slice 3b: OpenAI generic messages, Cursor vscdb (SQLite), Gemini
-CLI+Gateway, Kimi Wire, and streamed tool-argument reconstruction.
+Slice 3b also adds runtime metadata (``thinking_empty``, ``system_prompt``)
+and the marked-session discovery gate (:mod:`marked_gate`).
 """
 
 from __future__ import annotations
@@ -100,6 +98,7 @@ def detect_source(records: list[dict[str, Any]], filename: str = "") -> str | No
 def build_codex_trajectory(records: list[dict[str, Any]], source_path: str = "") -> Trajectory:  # noqa: PLR0912, PLR0915
     session_id = ""
     task = ""
+    system_prompt = ""
     turns: list[Turn] = []
     input_tokens = 0
     output_tokens = 0
@@ -112,6 +111,9 @@ def build_codex_trajectory(records: list[dict[str, Any]], source_path: str = "")
         if rec.get("type") == "session_meta":
             payload = rec.get("payload") or {}
             session_id = str(payload.get("id") or session_id)
+            base = payload.get("base_instructions")
+            if isinstance(base, str) and base.strip() and not system_prompt:
+                system_prompt = base.strip()
             continue
         if rec.get("type") != "response_item":
             continue
@@ -221,7 +223,7 @@ def build_codex_trajectory(records: list[dict[str, Any]], source_path: str = "")
                 )
             )
 
-    return _finalise(
+    traj = _finalise(
         session_id=session_id or _fallback_session_id(source_path),
         task=task,
         turns=turns,
@@ -234,6 +236,9 @@ def build_codex_trajectory(records: list[dict[str, Any]], source_path: str = "")
         source_agent="codex",
         source_path=source_path,
     )
+    if system_prompt:
+        traj.system_prompt = system_prompt
+    return traj
 
 
 # ---------------------------------------------------------------------------
@@ -244,6 +249,7 @@ def build_claude_code_trajectory(  # noqa: PLR0912, PLR0915
 ) -> Trajectory:
     session_id = _fallback_session_id(source_path)
     task = ""
+    system_prompt = ""
     turns: list[Turn] = []
     input_tokens = 0
     output_tokens = 0
@@ -258,32 +264,54 @@ def build_claude_code_trajectory(  # noqa: PLR0912, PLR0915
         content = message.get("content") if isinstance(message, dict) else None
         created = rec.get("timestamp")
 
-        if rtype == "user" and isinstance(content, list):
-            for block in content:
-                if not isinstance(block, dict):
-                    continue
-                if block.get("type") == "text" and not task:
-                    task = str(block.get("text") or "")
-                elif block.get("type") == "tool_result":
-                    inner = block.get("content")
-                    failed = bool(block.get("is_error")) or _looks_like_failure(
-                        inner if isinstance(inner, str) else None
-                    )
-                    if failed:
-                        has_failure = True
-                    turns.append(
-                        Turn(
-                            provider="anthropic",
-                            endpoint="claude_code",
-                            created_at=created,
-                            is_failure_correction=failed,
-                            error=inner if isinstance(inner, str) else None,
-                            response_body={
-                                "tool_name": "tool_result",
-                                "tool_use_id": block.get("tool_use_id"),
-                            },
+        # FIX-8: system-role message → session-level system_prompt
+        if rtype == "system" or (isinstance(message, dict) and message.get("role") == "system"):
+            sys_text = ""
+            if isinstance(content, str):
+                sys_text = content
+            elif isinstance(content, list):
+                parts = [
+                    str(b.get("text") or "")
+                    for b in content
+                    if isinstance(b, dict) and b.get("type") in (None, "text")
+                ]
+                sys_text = "\n".join(p for p in parts if p)
+            elif isinstance(message, dict) and isinstance(message.get("content"), str):
+                sys_text = message["content"]
+            if sys_text.strip() and not system_prompt:
+                system_prompt = sys_text.strip()
+            continue
+
+        if rtype == "user":
+            # content may be a plain string (simplified fixtures) or block list
+            if isinstance(content, str) and content and not task:
+                task = content
+            elif isinstance(content, list):
+                for block in content:
+                    if not isinstance(block, dict):
+                        continue
+                    if block.get("type") == "text" and not task:
+                        task = str(block.get("text") or "")
+                    elif block.get("type") == "tool_result":
+                        inner = block.get("content")
+                        failed = bool(block.get("is_error")) or _looks_like_failure(
+                            inner if isinstance(inner, str) else None
                         )
-                    )
+                        if failed:
+                            has_failure = True
+                        turns.append(
+                            Turn(
+                                provider="anthropic",
+                                endpoint="claude_code",
+                                created_at=created,
+                                is_failure_correction=failed,
+                                error=inner if isinstance(inner, str) else None,
+                                response_body={
+                                    "tool_name": "tool_result",
+                                    "tool_use_id": block.get("tool_use_id"),
+                                },
+                            )
+                        )
 
         elif rtype == "assistant" and isinstance(message, dict):
             model = str(message.get("model") or "")
@@ -297,15 +325,31 @@ def build_claude_code_trajectory(  # noqa: PLR0912, PLR0915
                 providers.append(prov)
             reasoning: str | None = None
             encrypted: str | None = None
+            thinking_empty = False
             tool_calls: list[ToolCall] = []
             if isinstance(content, list):
                 for block in content:
                     if not isinstance(block, dict):
                         continue
-                    if block.get("type") == "thinking":
-                        reasoning = block.get("thinking") or reasoning
+                    btype = block.get("type")
+                    if btype == "thinking":
+                        think_text = block.get("thinking")
+                        if isinstance(think_text, str) and think_text:
+                            reasoning = think_text
+                        else:
+                            # FIX-7: empty thinking is preserved with marker
+                            thinking_empty = True
+                            if reasoning is None:
+                                reasoning = ""
                         encrypted = block.get("encrypted_signature") or encrypted
-                    elif block.get("type") == "tool_use":
+                    elif btype == "redacted_thinking":
+                        thinking_empty = True
+                        if reasoning is None:
+                            reasoning = ""
+                        encrypted = (
+                            block.get("data") or block.get("encrypted_signature") or encrypted
+                        )
+                    elif btype == "tool_use":
                         name = str(block.get("name") or "")
                         inp = block.get("input")
                         tool_calls.append(
@@ -327,10 +371,11 @@ def build_claude_code_trajectory(  # noqa: PLR0912, PLR0915
                     input_tokens=it,
                     output_tokens=ot,
                     tool_calls=tool_calls,
+                    thinking_empty=True if thinking_empty else None,
                 )
             )
 
-    return _finalise(
+    traj = _finalise(
         session_id=session_id,
         task=task,
         turns=turns,
@@ -343,6 +388,9 @@ def build_claude_code_trajectory(  # noqa: PLR0912, PLR0915
         source_agent="claude_code",
         source_path=source_path,
     )
+    if system_prompt:
+        traj.system_prompt = system_prompt
+    return traj
 
 
 # ---------------------------------------------------------------------------
@@ -526,9 +574,48 @@ def _finalise(
     )
 
 
-def build_trajectory_from_session_log(path: Path | str) -> Trajectory | None:
-    """Classify and parse a session-log JSONL into a trajectory (or None)."""
+def build_trajectory_from_session_log(  # noqa: PLR0911
+    path: Path | str,
+) -> Trajectory | None:
+    """Classify and parse a session-log (JSONL/JSON/vscdb) into a trajectory."""
     p = Path(path)
+    # Vendor path-based adapters (Slice 3b).
+    from evolver.gep.trajectory.cursor_vscdb import (  # noqa: PLC0415
+        build_cursor_trajectories_from_vscdb,
+        is_cursor_vscdb_path,
+    )
+    from evolver.gep.trajectory.gemini_cli import (  # noqa: PLC0415
+        build_gemini_cli_trajectory_from_path,
+        is_gemini_cli_path,
+    )
+    from evolver.gep.trajectory.kimi_wire import (  # noqa: PLC0415
+        build_kimi_wire_trajectory_from_path,
+        is_kimi_wire_path,
+    )
+
+    if is_cursor_vscdb_path(p):
+        sessions = build_cursor_trajectories_from_vscdb(p)
+        return sessions[0] if sessions else None
+    if is_gemini_cli_path(p):
+        return build_gemini_cli_trajectory_from_path(p)
+    if is_kimi_wire_path(p):
+        return build_kimi_wire_trajectory_from_path(p)
+
+    if not p.is_file():
+        return None
+    # Pretty-printed Gemini / generic JSON sessions.
+    if p.suffix.lower() == ".json":
+        try:
+            whole = json.loads(p.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            return None
+        if isinstance(whole, dict) and isinstance(whole.get("messages"), list):
+            from evolver.gep.trajectory.gemini_cli import (  # noqa: PLC0415
+                build_gemini_cli_trajectory,
+            )
+
+            return build_gemini_cli_trajectory(p.read_text(encoding="utf-8"), source_path=str(p))
+
     records = _read_jsonl(p)
     source = detect_source(records, p.name)
     if source == "codex":

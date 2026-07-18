@@ -129,6 +129,8 @@ class Turn:
     input_tokens: int = 0
     output_tokens: int = 0
     error: str | None = None
+    # FIX-7: empty/redacted thinking blocks are kept with this marker.
+    thinking_empty: bool | None = None
 
 
 @dataclass
@@ -157,6 +159,9 @@ class Trajectory:
     source_kind: str | None = None
     source_agent: str | None = None
     source_path: str | None = None
+    client_source: str | None = None
+    session_model: str | None = None
+    system_prompt: str | None = None
 
 
 # ---------------------------------------------------------------------------
@@ -401,6 +406,70 @@ def _extract_streamed_anthropic_tool_calls(response: dict[str, Any]) -> list[Too
     return calls
 
 
+def _gemini_parts_from_body(body: dict[str, Any]) -> list[dict[str, Any]]:
+    """Collect Gemini ``parts`` from candidates / events / contents."""
+    parts: list[dict[str, Any]] = []
+    for candidate in body.get("candidates") or []:
+        if not isinstance(candidate, dict):
+            continue
+        content = candidate.get("content") or {}
+        if isinstance(content, dict):
+            for part in content.get("parts") or []:
+                if isinstance(part, dict):
+                    parts.append(part)
+    for event in body.get("events") or []:
+        if not isinstance(event, dict):
+            continue
+        parts.extend(_gemini_parts_from_body(event))
+    for content in body.get("contents") or []:
+        if not isinstance(content, dict):
+            continue
+        for part in content.get("parts") or []:
+            if isinstance(part, dict):
+                parts.append(part)
+    return parts
+
+
+def _extract_gemini_tool_calls(request: dict[str, Any], response: dict[str, Any]) -> list[ToolCall]:
+    """Gemini / Vertex: camelCase ``functionCall`` / ``functionResponse`` parts (FIX-2)."""
+    actual: list[ToolCall] = []
+    for part in _gemini_parts_from_body(response) + _gemini_parts_from_body(request):
+        fc = part.get("functionCall")
+        if isinstance(fc, dict) and fc.get("name"):
+            args = fc.get("args")
+            actual.append(
+                ToolCall(
+                    name=str(fc["name"]),
+                    id=str(fc["id"]) if fc.get("id") else None,
+                    arguments=args,
+                    input=args,
+                )
+            )
+            continue
+        fr = part.get("functionResponse")
+        if isinstance(fr, dict):
+            actual.append(
+                ToolCall(
+                    name="tool_result",
+                    id=str(fr["id"]) if fr.get("id") else None,
+                    output=fr.get("response", fr),
+                    input=fr.get("response", fr),
+                )
+            )
+    return actual
+
+
+def _is_gemini_route(path: str, row: dict[str, Any]) -> bool:
+    p = path.lower()
+    upstream = str(row.get("upstream") or row.get("provider") or "").lower()
+    return (
+        "v1beta" in p
+        or "generatecontent" in p
+        or "gemini" in p
+        or upstream in ("gemini", "vertex", "google")
+    )
+
+
 def _extract_tool_calls(row: dict[str, Any]) -> list[ToolCall]:  # noqa: PLR0912, PLR0915
     """Extract tool calls from request + response across the three API shapes.
 
@@ -411,6 +480,13 @@ def _extract_tool_calls(row: dict[str, Any]) -> list[ToolCall]:  # noqa: PLR0912
     response = _parse_body(row.get("responseBody"))
     path = _row_endpoint(row)
     actual: list[ToolCall] = []
+
+    # Gemini / Vertex gateway (FIX-2): candidates[].content.parts[].functionCall
+    # — also walks streamed ``events`` when isStream is set (no reconstructed_stream).
+    if _is_gemini_route(path, row):
+        gemini_calls = _extract_gemini_tool_calls(request, response)
+        if gemini_calls:
+            return _declared_tools(request) + gemini_calls
 
     # Streamed responses carry reconstructed SSE events instead of a plain body.
     if response.get("reconstructed_stream") and (row.get("isStream") or response.get("events")):
