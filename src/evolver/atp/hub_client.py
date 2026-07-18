@@ -23,7 +23,12 @@ _BACKOFF_BASE_S = 1.0
 
 
 def _hub_url(path: str) -> str:
-    return f"{resolve_hub_url()}/v1/a2a/atp/{path}"
+    # resolve_hub_url already runs enforce_hub_scheme (TLS consistency).
+    return f"{resolve_hub_url().rstrip('/')}/v1/a2a/atp/{path.lstrip('/')}"
+
+
+def _tls_failure(exc: BaseException) -> dict[str, Any]:
+    return {"ok": False, "error": str(exc), "stage": "tls", "code": "tls_refused"}
 
 
 async def _post(
@@ -32,7 +37,10 @@ async def _post(
     headers: dict[str, str] | None = None,
     timeout_ms: int = HTTP_TRANSPORT_TIMEOUT_MS,
 ) -> dict[str, Any]:
-    url = _hub_url(path)
+    try:
+        url = _hub_url(path)
+    except ValueError as exc:
+        return _tls_failure(exc)
     h = build_hub_headers()
     if headers:
         h.update(headers)
@@ -60,7 +68,10 @@ async def _get(
     params: dict[str, Any] | None = None,
     timeout_ms: int = HTTP_TRANSPORT_TIMEOUT_MS,
 ) -> dict[str, Any]:
-    url = _hub_url(path)
+    try:
+        url = _hub_url(path)
+    except ValueError as exc:
+        return _tls_failure(exc)
     h = build_hub_headers()
     last_exc: Exception | None = None
     for attempt in range(_MAX_RETRIES):

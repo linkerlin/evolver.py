@@ -10,12 +10,12 @@ from typing import Any
 import httpx
 
 from evolver.adapters.auth import load_auth
-from evolver.config import resolve_hub_url
+from evolver.config import resolve_hub_base
 from evolver.gep.a2a_protocol import build_hub_headers
 
 
 def _atp_url(hub_url: str, path: str) -> str:
-    return f"{hub_url}/v1/atp/{path}"
+    return f"{hub_url.rstrip('/')}/v1/atp/{path}"
 
 
 def _auth_headers() -> dict[str, str]:
@@ -32,7 +32,10 @@ async def buy(
     hub_url: str | None = None,
 ) -> dict[str, Any]:
     """Place an order for a skill on the ATP marketplace."""
-    hub = hub_url or resolve_hub_url()
+    try:
+        hub = resolve_hub_base(hub_url)
+    except ValueError as exc:
+        return {"ok": False, "error": str(exc), "stage": "tls"}
     payload = {"skill_id": skill_id, "quantity": quantity}
     try:
         async with httpx.AsyncClient(http2=True, timeout=15.0) as client:
@@ -54,7 +57,10 @@ async def list_orders(
     hub_url: str | None = None,
 ) -> dict[str, Any]:
     """List ATP orders for the authenticated node."""
-    hub = hub_url or resolve_hub_url()
+    try:
+        hub = resolve_hub_base(hub_url)
+    except ValueError as exc:
+        return {"ok": False, "error": str(exc), "stage": "tls"}
     params: dict[str, Any] = {"limit": limit}
     if status:
         params["status"] = status
@@ -78,7 +84,10 @@ async def verify_delivery(
     hub_url: str | None = None,
 ) -> dict[str, Any]:
     """Verify (approve or reject) an ATP delivery."""
-    hub = hub_url or resolve_hub_url()
+    try:
+        hub = resolve_hub_base(hub_url)
+    except ValueError as exc:
+        return {"ok": False, "error": str(exc), "stage": "tls"}
     payload = {"approved": approval}
     try:
         async with httpx.AsyncClient(http2=True, timeout=15.0) as client:
@@ -100,7 +109,10 @@ async def complete_task(
     hub_url: str | None = None,
 ) -> dict[str, Any]:
     """Mark an ATP task as completed and submit results."""
-    hub = hub_url or resolve_hub_url()
+    try:
+        hub = resolve_hub_base(hub_url)
+    except ValueError as exc:
+        return {"ok": False, "error": str(exc), "stage": "tls"}
     payload = result_payload or {"status": "completed"}
     try:
         async with httpx.AsyncClient(http2=True, timeout=15.0) as client:

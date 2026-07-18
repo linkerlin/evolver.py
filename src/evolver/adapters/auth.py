@@ -13,7 +13,7 @@ from typing import Any, cast
 
 import httpx
 
-from evolver.config import resolve_hub_url
+from evolver.config import resolve_hub_base
 
 
 def _auth_path() -> Path:
@@ -67,7 +67,10 @@ async def start_device_flow(hub_url: str | None = None) -> dict[str, Any]:
     Returns a dict with ``ok``, ``device_code``, ``user_code``,
     ``verification_uri``, ``expires_in``, ``interval``.
     """
-    hub = hub_url or resolve_hub_url()
+    try:
+        hub = resolve_hub_base(hub_url)
+    except ValueError as exc:
+        return {"ok": False, "error": str(exc), "stage": "tls"}
     payload = {"client_id": "evolver-cli", "scope": "read write"}
     try:
         async with httpx.AsyncClient(timeout=30.0) as client:
@@ -91,7 +94,10 @@ async def poll_for_token(
     Returns a dict with ``ok``, ``access_token``, ``token_type``,
     ``expires_in``, and ``hub_url``.
     """
-    hub = hub_url or resolve_hub_url()
+    try:
+        hub = resolve_hub_base(hub_url)
+    except ValueError as exc:
+        return {"ok": False, "error": str(exc), "stage": "tls"}
     deadline = time.time() + expires_in
     payload = {
         "grant_type": "urn:ietf:params:oauth:grant-type:device_code",
@@ -162,7 +168,7 @@ async def login(
             "access_token": token,
             "token_type": "Bearer",
             "expires_at": time.time() + 3600,
-            "hub_url": hub_url or resolve_hub_url(),
+            "hub_url": resolve_hub_base(hub_url) if hub_url else resolve_hub_base(),
         }
         save_auth(result)
         return result

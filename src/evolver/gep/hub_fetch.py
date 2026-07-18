@@ -27,6 +27,8 @@ from typing import Any, cast
 
 import httpx
 
+from evolver.config import enforce_hub_scheme
+
 logger = logging.getLogger(__name__)
 
 DEFAULT_CACHE_TTL = 300.0  # 5 min
@@ -155,7 +157,11 @@ def hub_fetch(
     """Fetch *url* from the Hub with retry, cache, and circuit breaker.
 
     Returns the JSON response dict, or raises on failure.
+    Refuses ``http://`` unless ``EVOMAP_HUB_ALLOW_INSECURE=1``.
     """
+    # Shared TLS posture (Node hubFetch.enforceHubScheme).
+    url = enforce_hub_scheme(url)
+
     if not _cb.can_attempt():
         raise RuntimeError("Circuit breaker is OPEN")
 

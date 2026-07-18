@@ -23,6 +23,7 @@ from evolver.config import (
     HELLO_TIMEOUT_MS,
     HTTP_TRANSPORT_TIMEOUT_MS,
     HUB_SEARCH_TIMEOUT_MS,
+    enforce_hub_scheme,
     resolve_hub_url,
 )
 from evolver.gep.content_hash import compute_asset_id
@@ -229,10 +230,30 @@ def post_hub_envelope(
     timeout_ms: int = HTTP_TRANSPORT_TIMEOUT_MS,
 ) -> dict[str, Any]:
     """Synchronous Hub POST used by CLI contracts."""
-    base = (hub_url or get_hub_url() or "").rstrip("/")
+    try:
+        if hub_url is not None and str(hub_url).strip():
+            base = enforce_hub_scheme(str(hub_url).strip()).rstrip("/")
+        else:
+            base = (get_hub_url() or "").rstrip("/")
+    except ValueError as exc:
+        return {
+            "ok": False,
+            "status": 0,
+            "body": {"error": "tls_refused", "detail": str(exc)},
+        }
     if not base:
         return {"ok": False, "status": 0, "body": {"error": "no_hub_url"}}
-    url = f"{base}{endpoint_path}"
+    path = endpoint_path if endpoint_path.startswith("/") else f"/{endpoint_path}"
+    url = f"{base}{path}"
+    # Defence in depth: full request URL must also pass scheme check.
+    try:
+        enforce_hub_scheme(url)
+    except ValueError as exc:
+        return {
+            "ok": False,
+            "status": 0,
+            "body": {"error": "tls_refused", "detail": str(exc)},
+        }
     req_headers = headers or build_node_scoped_hub_headers()
     try:
         resp = httpx.post(

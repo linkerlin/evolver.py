@@ -13,7 +13,7 @@ from typing import Any
 
 import httpx
 
-from evolver.config import resolve_hub_url
+from evolver.config import resolve_hub_base
 from evolver.gep.a2a_protocol import build_hub_headers, get_node_id
 
 _PEERS: dict[str, dict[str, Any]] = {}
@@ -82,11 +82,14 @@ def get_peer_endpoint(node_id: str) -> str | None:
 
 async def discover_peers(hub_url: str | None = None) -> dict[str, Any]:
     """Fetch active peers from the EvoMap Hub."""
-    hub = hub_url or resolve_hub_url()
+    try:
+        hub = resolve_hub_base(hub_url)
+    except ValueError as exc:
+        return {"ok": False, "error": str(exc), "stage": "tls"}
     try:
         async with httpx.AsyncClient(http2=True, timeout=15.0) as client:
             resp = await client.get(
-                f"{hub}/v1/a2a/peers",
+                f"{hub.rstrip('/')}/v1/a2a/peers",
                 headers=build_hub_headers(),
             )
             resp.raise_for_status()
@@ -130,7 +133,10 @@ async def register_with_hub(
     hub_url: str | None = None,
 ) -> dict[str, Any]:
     """Register this node's endpoint with the Hub."""
-    hub = hub_url or resolve_hub_url()
+    try:
+        hub = resolve_hub_base(hub_url)
+    except ValueError as exc:
+        return {"ok": False, "error": str(exc), "stage": "tls"}
     payload = {
         "node_id": get_node_id(),
         "endpoint": endpoint,
@@ -139,7 +145,7 @@ async def register_with_hub(
     try:
         async with httpx.AsyncClient(http2=True, timeout=15.0) as client:
             resp = await client.post(
-                f"{hub}/v1/a2a/register",
+                f"{hub.rstrip('/')}/v1/a2a/register",
                 json=payload,
                 headers=build_hub_headers(),
             )

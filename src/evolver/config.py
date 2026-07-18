@@ -10,6 +10,7 @@ from __future__ import annotations
 import os
 import warnings
 from typing import Final
+from urllib.parse import urlparse
 
 _ENV_WARNED: set[str] = set()
 
@@ -133,6 +134,52 @@ def resolve_webui_port() -> int:
     return DEFAULT_WEBUI_PORT
 
 
+def hub_allow_insecure() -> bool:
+    """True only when ``EVOMAP_HUB_ALLOW_INSECURE`` is exactly ``"1"``.
+
+    Matches Node hubFetch: ``true`` / ``yes`` / ``0`` / padded values do **not**
+    disable TLS enforcement (Bugbot PR #160).
+    """
+    return os.environ.get("EVOMAP_HUB_ALLOW_INSECURE") == "1"
+
+
+def enforce_hub_scheme(url: str) -> str:
+    """Refuse non-``https://`` Hub URLs unless insecure bypass is set.
+
+    Shared posture for hubFetch, ATP hubClient, and any caller that takes a
+    Hub base or absolute URL (Node ``enforceHubScheme``).
+
+    Returns *url* unchanged on success. Raises :class:`ValueError` whose
+    message matches ``/must use https/i`` or ``/not a valid URL/i`` (and
+    includes ``tls_refused`` for cleartext refusals).
+    """
+    raw = str(url or "").strip()
+    if hub_allow_insecure():
+        return raw
+
+    try:
+        parsed = urlparse(raw)
+    except Exception as exc:
+        raise ValueError(f"[config] Hub URL is not a valid URL: {raw!r}") from exc
+
+    scheme = (parsed.scheme or "").lower()
+    if scheme == "https" and parsed.netloc:
+        return raw
+    if scheme == "http" and parsed.netloc:
+        raise ValueError(
+            f"[config] Hub URL must use https:// — got {raw!r} (tls_refused). "
+            "Set EVOMAP_HUB_ALLOW_INSECURE=1 to bypass (local dev / mock hub only)."
+        )
+    raise ValueError(f"[config] Hub URL is not a valid URL: {raw!r}")
+
+
+def resolve_hub_base(hub_url: str | None = None) -> str:
+    """Resolve Hub base URL, enforcing TLS on env default or *hub_url* override."""
+    if hub_url is not None and str(hub_url).strip():
+        return enforce_hub_scheme(str(hub_url).strip())
+    return resolve_hub_url()
+
+
 def resolve_hub_url() -> str:
     """Hub URL resolution with TLS enforcement.
 
@@ -153,16 +200,7 @@ def resolve_hub_url() -> str:
         or os.environ.get("EVOLVER_DEFAULT_HUB_URL")
         or PUBLIC_DEFAULT_HUB_URL
     )
-    if os.environ.get("EVOMAP_HUB_ALLOW_INSECURE") != "1":
-        from urllib.parse import urlparse
-
-        parsed = urlparse(raw)
-        if parsed.scheme != "https":
-            raise ValueError(
-                f"[config] Hub URL must use https:// — got {raw!r}. "
-                "Set EVOMAP_HUB_ALLOW_INSECURE=1 to bypass (local dev / mock hub only)."
-            )
-    return raw
+    return enforce_hub_scheme(raw)
 
 
 # --- Solidify & Validation ---
@@ -362,14 +400,17 @@ __all__ = [
     "VALIDATOR_STAKE_AMOUNT",
     "VALIDATOR_STAKE_TIMEOUT_MS",
     "anti_abuse_telemetry_mode",
+    "enforce_hub_scheme",
     "env_bool",
     "env_float",
     "env_int",
     "env_positive_int",
     "env_str",
+    "hub_allow_insecure",
     "outcome_report_mode",
     "proxy_base_url",
     "proxy_local_url",
+    "resolve_hub_base",
     "resolve_hub_url",
     "resolve_proxy_port",
     "resolve_webui_port",
