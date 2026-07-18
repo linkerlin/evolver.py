@@ -276,12 +276,38 @@ async def proxy_bedrock(request: Request, body: dict[str, Any]) -> JSONResponse 
 async def handle_messages(
     request: Request, body: dict[str, Any]
 ) -> JSONResponse | StreamingResponse:
-    """Route /v1/messages to the appropriate upstream."""
-    model = body.get("model", "")
-    upstream = select_upstream_for_model(model)
+    """Route /v1/messages to the appropriate upstream (format-aware)."""
+    model = str(body.get("model") or "")
+    lower = model.lower()
+
+    # Route by raw model id first (prefixes matter), then normalise body.model.
+    if lower.startswith("ollama:"):
+        upstream = "ollama"
+        body = {**body, "model": model.split(":", 1)[1] or "llama3"}
+    elif lower.startswith("vertex-"):
+        upstream = "vertex"
+        body = {**body, "model": model[len("vertex-") :]}
+    else:
+        upstream = select_upstream_for_model(model)
 
     if upstream == "bedrock":
         return await proxy_bedrock(request, body)
+    if upstream == "gemini":
+        from evolver.proxy.router.gemini_route import proxy_gemini
+
+        return await proxy_gemini(request, body)
+    if upstream == "vertex":
+        from evolver.proxy.router.vertex_route import proxy_vertex
+
+        return await proxy_vertex(request, body)
+    if upstream == "ollama":
+        from evolver.proxy.router.ollama_route import proxy_ollama
+
+        return await proxy_ollama(request, body)
+    if upstream == "openai":
+        from evolver.proxy.router.responses_route import proxy_openai
+
+        return await proxy_openai(request, body)
     return await proxy_anthropic(request, body)
 
 

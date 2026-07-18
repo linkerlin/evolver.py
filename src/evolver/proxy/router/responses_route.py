@@ -70,16 +70,13 @@ def _transform_to_openai(body: dict[str, Any]) -> dict[str, Any]:
     return payload
 
 
-async def proxy_openai(
-    request: Request, body: dict[str, Any]
-) -> JSONResponse | StreamingResponse:
+async def proxy_openai(request: Request, body: dict[str, Any]) -> JSONResponse | StreamingResponse:
     """Proxy request to OpenAI-compatible API."""
     import httpx
 
     headers = _build_openai_headers()
-    if not headers.get("Authorization", "").startswith("Bearer sk-") and not os.environ.get(
-        "OPENAI_API_KEY"
-    ):
+    api_key = os.environ.get("OPENAI_API_KEY", "").strip()
+    if not api_key:
         return JSONResponse({"error": "missing_openai_api_key"}, status_code=401)
 
     transformed = _transform_to_openai(body)

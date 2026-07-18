@@ -89,8 +89,23 @@ async def _proxy_lifespan(_app: FastAPI) -> AsyncIterator[None]:
     skill_loop.stop()
 
 
-app = FastAPI(title="Evolver A2A Proxy", version="1.0.0", lifespan=_proxy_lifespan)
-app.include_router(router, prefix="/v1/a2a")
+def create_proxy_app(*, enable_lifecycle: bool = True) -> FastAPI:
+    """Create a proxy FastAPI app.
+
+    *enable_lifecycle=False* skips hello/heartbeat (used by unit/E2E tests).
+    """
+    lifespan = _proxy_lifespan if enable_lifecycle else None
+    application = FastAPI(
+        title="Evolver A2A Proxy",
+        version="1.0.0",
+        lifespan=lifespan,
+    )
+    application.include_router(router, prefix="/v1/a2a")
+    return application
+
+
+app = create_proxy_app(enable_lifecycle=True)
+
 
 async def _forward_to_hub(
     path: str,

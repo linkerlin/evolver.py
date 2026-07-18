@@ -28,7 +28,9 @@ from evolver.proxy.extensions.dm_handler import DMHandler
 from evolver.proxy.extensions.session_handler import SessionHandler
 from evolver.proxy.extensions.skill_updater import SkillUpdater
 from evolver.proxy.mailbox.store import MailboxStore
+from evolver.proxy.router.gemini_route import proxy_gemini_native
 from evolver.proxy.router.messages_route import handle_messages
+from evolver.proxy.router.models_route import handle_models
 from evolver.proxy.task.monitor import TaskMonitor
 
 router = APIRouter()
@@ -361,7 +363,10 @@ async def asset_search(
     )
     if hub_result.get("ok"):
         assets = hub_result.get("assets", [])
-        results = [{"source": "hub", **a} if isinstance(a, dict) else {"source": "hub", "raw": a} for a in assets]
+        results = [
+            {"source": "hub", **a} if isinstance(a, dict) else {"source": "hub", "raw": a}
+            for a in assets
+        ]
         return JSONResponse(
             {
                 "ok": True,
@@ -873,5 +878,24 @@ async def llm_messages(
     body: dict[str, Any],
     _token: str = Depends(require_auth),
 ) -> JSONResponse | StreamingResponse:
-    """Proxy LLM messages to the configured upstream (Anthropic or Bedrock)."""
+    """Proxy LLM messages to the configured upstream (multi-provider)."""
     return await handle_messages(request=request, body=body)
+
+
+@router.get("/v1/models", response_model=None)
+async def llm_models(
+    _token: str = Depends(require_auth),
+) -> JSONResponse:
+    """Unified model list (OpenAI ``/v1/models`` schema)."""
+    return await handle_models()
+
+
+@router.post("/v1beta/models/{model_action}", response_model=None)
+async def gemini_native(
+    request: Request,
+    model_action: str,
+    body: dict[str, Any],
+    _token: str = Depends(require_auth),
+) -> JSONResponse | StreamingResponse:
+    """Native Gemini path: ``/v1beta/models/{model}:{action}`` (no translation)."""
+    return await proxy_gemini_native(request, model_action, body)

@@ -69,9 +69,7 @@ def _transform_to_gemini(body: dict[str, Any]) -> dict[str, Any]:
     return payload
 
 
-async def proxy_gemini(
-    request: Request, body: dict[str, Any]
-) -> JSONResponse | StreamingResponse:
+async def proxy_gemini(request: Request, body: dict[str, Any]) -> JSONResponse | StreamingResponse:
     """Proxy request to Google Gemini API."""
     import httpx
 
@@ -137,4 +135,58 @@ async def _proxy_gemini_stream(
     )
 
 
-__all__ = ["proxy_gemini"]
+async def proxy_gemini_native(
+    request: Request,
+    model_action: str,
+    body: dict[str, Any],
+) -> JSONResponse | StreamingResponse:
+    """Native Gemini passthrough: ``/v1beta/models/{model}:{action}``.
+
+    No Anthropic↔Gemini translation — body is forwarded as-is (Node E2E contract).
+    *model_action* is a single path segment like ``gemini-2.0-flash:generateContent``.
+    """
+    import httpx
+
+    headers = _build_gemini_headers()
+    # Prefer client-supplied goog key when present (SDK style).
+    client_key = request.headers.get("x-goog-api-key")
+    if client_key:
+        headers["x-goog-api-key"] = client_key
+    if not headers.get("x-goog-api-key"):
+        return JSONResponse({"error": "missing_gemini_api_key"}, status_code=401)
+
+    # model_action may include query already stripped by FastAPI; stream via action name.
+    is_stream = "streamGenerateContent" in model_action
+    url = f"{GEMINI_BASE_URL}/models/{model_action}"
+    # Preserve alt=sse when client requested it.
+    qs = str(request.url.query or "")
+    if qs:
+        url = f"{url}?{qs}"
+    elif is_stream and "alt=" not in model_action:
+        # Default stream to SSE when not specified (matches common SDK usage).
+        pass
+
+    try:
+        if is_stream and "alt=sse" in url:
+            return await _proxy_gemini_stream(url, headers, body)
+        async with httpx.AsyncClient(timeout=GEMINI_TIMEOUT) as client:
+            response = await client.post(url, headers=headers, json=body)
+        if response.status_code >= 500:
+            return JSONResponse(
+                {"error": "upstream_error", "detail": response.text[:500]},
+                status_code=502,
+            )
+        if response.status_code >= 400:
+            return JSONResponse(
+                {"error": "upstream_client_error", "detail": response.text[:500]},
+                status_code=response.status_code,
+            )
+        # Byte-faithful JSON passthrough.
+        return JSONResponse(response.json(), status_code=response.status_code)
+    except httpx.TimeoutException:
+        return JSONResponse({"error": "upstream_timeout"}, status_code=504)
+    except Exception as exc:
+        return JSONResponse({"error": "proxy_error", "detail": str(exc)}, status_code=502)
+
+
+__all__ = ["proxy_gemini", "proxy_gemini_native"]
