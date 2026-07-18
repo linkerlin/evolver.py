@@ -88,6 +88,7 @@ evolve/             进化流水线
 proxy/              本地 HTTP 代理（CLI 默认 127.0.0.1:8081；路由前缀 /v1/a2a）
   mailbox/store.py  本地邮箱 JSONL 存储（较完整）
   sync/             双向同步引擎（较完整）
+  event_delivery.py Hub 事件 SSE+poll 投递 + HubEventBridge（去重/失败本地重试）
   lifecycle/        生命周期管理器（hello/heartbeat + ATP 信号处理 + 节点密钥版本化 +
                     Hub 不可达指数退避 + 反滥用遥测心跳 + 心跳强制更新 + 最后更新确认）
   server/routes.py  FastAPI 路由矩阵（task/ATP/extensions/asset/validate 已接线）
