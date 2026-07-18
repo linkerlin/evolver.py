@@ -123,7 +123,7 @@ async def run() -> None:
     await _run_single_cycle(is_loop=False)
 
 
-async def run_loop(  # noqa: PLR0912, PLR0915
+async def run_loop(
     *,
     interval_ms: int | None = None,
     review_mode: bool = False,
