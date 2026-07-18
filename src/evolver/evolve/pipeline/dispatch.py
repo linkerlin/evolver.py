@@ -9,12 +9,42 @@ import json
 from typing import Any
 
 from evolver.gep.bridge import render_sessions_spawn_call, write_prompt_artifact
-from evolver.gep.prompt import build_gep_prompt
 from evolver.gep.memory_bridge import serialize_memory_advice
+from evolver.gep.prompt import build_gep_prompt
+from evolver.gep.reuse_attribution import utc_now_iso
 from evolver.gep.solidify import write_state_for_solidify
 
 
 def _write_solidify_state(ctx: dict[str, Any]) -> None:
+    # Derive reuse source_type for P4-a attribution (dispatch run-state).
+    hub_hit = ctx.get("hub_hit")
+    hub_assets = ctx.get("hub_assets") or []
+    source_type = "generated"
+    reused_asset_id = None
+    reused_chain_id = None
+    if ctx.get("selected_capsule_id") or (isinstance(hub_hit, dict) and hub_hit.get("id")):
+        source_type = "reused"
+        reused_asset_id = (
+            ctx.get("selected_capsule_id")
+            or (hub_hit.get("id") if isinstance(hub_hit, dict) else None)
+            or (hub_assets[0].get("id") if hub_assets and isinstance(hub_assets[0], dict) else None)
+        )
+        reused_chain_id = (
+            hub_hit.get("chain_id") if isinstance(hub_hit, dict) else None
+        ) or ctx.get("reused_chain_id")
+    elif ctx.get("external_candidates") or ctx.get("capability_candidates"):
+        source_type = "reference"
+        reused_asset_id = ctx.get("reused_asset_id")
+        reused_chain_id = ctx.get("reused_chain_id")
+
+    # Explicit override from enrich/select when present.
+    if ctx.get("source_type") in ("reused", "reference", "generated"):
+        source_type = str(ctx["source_type"])
+    if ctx.get("reused_asset_id"):
+        reused_asset_id = ctx.get("reused_asset_id")
+    if ctx.get("reused_chain_id") is not None:
+        reused_chain_id = ctx.get("reused_chain_id")
+
     last_run = {
         "run_id": ctx.get("run_id"),
         "signals": ctx.get("signals", []),
@@ -35,6 +65,11 @@ def _write_solidify_state(ctx: dict[str, Any]) -> None:
         "memory_advice": serialize_memory_advice(ctx.get("memory_advice")),
         "memory_graph_friction_synced": ctx.get("memory_graph_friction_synced"),
         "innovation_attempt_id": ctx.get("innovation_attempt_id"),
+        # P4-a reuse attribution surface (created_at correlates same-cycle).
+        "created_at": utc_now_iso(),
+        "source_type": source_type,
+        "reused_asset_id": reused_asset_id,
+        "reused_chain_id": reused_chain_id,
     }
     write_state_for_solidify(last_run)
 

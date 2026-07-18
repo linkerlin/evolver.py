@@ -24,7 +24,7 @@ from pathlib import Path
 from typing import Any, cast
 
 from evolver.config import GENE_INERT_BAN_STREAK
-from evolver.gep.paths import get_evolution_dir, get_memory_graph_path
+from evolver.gep.paths import get_evolution_dir, get_memory_graph_path, get_solidify_state_path
 
 # --- Rotation (#519) --------------------------------------------------------
 
@@ -354,6 +354,10 @@ def record_attempt(
         "action_id": action_id,
         "outcome_recorded": False,
         "ts": event["ts"],
+        "created_at": event["ts"],
+        "signal_key": compute_signal_key(signals),
+        "signals": list(signals),
+        "had_error": bool(signals),
     }
     _write_state(state)
     signal = cast(dict[str, Any], event.get("signal", {}))
@@ -367,6 +371,7 @@ def record_outcome(
     outcome: dict[str, Any],
     blast_radius: dict[str, Any] | None = None,
     run_id: str | None = None,
+    reuse_attribution: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     event = {
         "type": "MemoryGraphEvent",
@@ -381,12 +386,105 @@ def record_outcome(
     }
     if run_id:
         event["run_id"] = run_id
+    if isinstance(reuse_attribution, dict):
+        event["reuse_attribution"] = reuse_attribution
     _append_event(event)
 
     state = _read_state()
     if "last_action" in state:
         state["last_action"]["outcome_recorded"] = True
     _write_state(state)
+    return event
+
+
+def _read_solidify_last_run() -> dict[str, Any] | None:
+    """Best-effort read of ``evolution_solidify_state.json`` → last_run."""
+    try:
+        path = get_solidify_state_path()
+        if not path.exists():
+            return None
+        raw = json.loads(path.read_text(encoding="utf-8"))
+        if not isinstance(raw, dict):
+            return None
+        last_run = raw.get("last_run")
+        return last_run if isinstance(last_run, dict) else None
+    except (OSError, json.JSONDecodeError, TypeError, ValueError):
+        return None
+
+
+def record_outcome_from_state(
+    *,
+    signals: list[str] | None = None,
+    observations: Any = None,  # noqa: ARG001 — Node parity surface
+    selected_gene: dict[str, Any] | None = None,
+    blast_radius: dict[str, Any] | None = None,
+    run_id: str | None = None,
+) -> dict[str, Any] | None:
+    """Record an outcome, attaching reuse_attribution when shadow + same-cycle reuse.
+
+    Ports Node ``recordOutcomeFromState``: reads ``last_action`` from memory
+    graph state and ``last_run`` from solidify state, builds the attribution
+    block under :func:`evolver.gep.reuse_attribution.build_reuse_attribution`,
+    and optionally fire-and-forgets a Hub outcome report.
+    """
+    # Lazy: avoid import cycles with node_identity / a2a paths at module load.
+    from evolver.gep.node_identity import get_or_create_node_id  # noqa: PLC0415
+    from evolver.gep.reuse_attribution import (  # noqa: PLC0415
+        build_outcome_report_payload,
+        build_reuse_attribution,
+        post_outcome_report,
+    )
+
+    state = _read_state()
+    last_action = state.get("last_action") if isinstance(state.get("last_action"), dict) else None
+    last_run = _read_solidify_last_run()
+
+    current_signals = list(signals) if signals is not None else []
+    if not current_signals and isinstance(last_action, dict):
+        raw_sigs = last_action.get("signals")
+        if isinstance(raw_sigs, list):
+            current_signals = [str(s) for s in raw_sigs]
+
+    # Status: if prior attempt had_error and current signals empty → success
+    # (error cleared). Else success when no signals, failed when signals remain.
+    had_error = bool(last_action.get("had_error")) if isinstance(last_action, dict) else False
+    if had_error and not (signals or []):
+        status = "success"
+    elif signals:
+        status = "failed"
+    else:
+        status = "stable_no_error" if not had_error else "success"
+
+    gene = selected_gene
+    if gene is None and isinstance(last_action, dict) and last_action.get("gene_id"):
+        gene = {"id": last_action["gene_id"]}
+
+    attribution = build_reuse_attribution(last_run, last_action)
+    outcome: dict[str, Any] = {"status": status}
+    event = record_outcome(
+        signals=list(signals) if signals is not None else current_signals,
+        selected_gene=gene,
+        outcome=outcome,
+        blast_radius=blast_radius,
+        run_id=run_id or (last_run.get("run_id") if isinstance(last_run, dict) else None),
+        reuse_attribution=attribution,
+    )
+
+    # Optional Hub outcome report (P4-a Slice B) — best-effort, never blocks.
+    try:
+        sender_id = get_or_create_node_id()
+    except Exception:
+        sender_id = None
+    payload = build_outcome_report_payload(
+        last_run=last_run,
+        last_action=last_action,
+        signals=list(signals) if signals is not None else [],
+        status=status,
+        sender_id=sender_id,
+        attribution=attribution,
+    )
+    if payload is not None:
+        post_outcome_report(payload)
     return event
 
 
@@ -666,6 +764,7 @@ __all__ = [
     "record_friction_observation",
     "record_hypothesis",
     "record_outcome",
+    "record_outcome_from_state",
     "record_signal_gene_preference",
     "record_signal_snapshot",
     "rotate_memory_graph_now",
