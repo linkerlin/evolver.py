@@ -7,7 +7,6 @@ Installs/uninstalls evolver hooks into ``.cursor/hooks.json``.
 from __future__ import annotations
 
 import json
-import sys
 from pathlib import Path
 from typing import Any
 
@@ -18,31 +17,31 @@ from evolver.adapters.hook_adapter import (
     remove_evolver_hooks,
     remove_hook_scripts,
 )
+from evolver.uv_runtime import hook_command_string
 
 HOOK_SCRIPTS_DIR_NAME = "hooks"
 
 
 def build_hooks_json(evolver_root: Path, is_user_level: bool) -> dict[str, Any]:
-    scripts_base = "./hooks" if is_user_level else ".cursor/hooks"
     return {
         "version": 1,
         "hooks": {
             "sessionStart": [
                 {
-                    "command": f"{sys.executable} -m evolver.adapters.scripts.session_start",
+                    "command": hook_command_string("evolver.adapters.scripts.session_start"),
                     "timeout": 3,
                 },
             ],
             "afterFileEdit": [
                 {
-                    "command": f"{sys.executable} -m evolver.adapters.scripts.signal_detect",
+                    "command": hook_command_string("evolver.adapters.scripts.signal_detect"),
                     "matcher": "Write",
                     "timeout": 2,
                 },
             ],
             "stop": [
                 {
-                    "command": f"{sys.executable} -m evolver.adapters.scripts.session_end",
+                    "command": hook_command_string("evolver.adapters.scripts.session_end"),
                     "timeout": 8,
                     "loop_limit": 1,
                 },

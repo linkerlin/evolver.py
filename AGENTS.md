@@ -27,6 +27,9 @@
 | 自动格式化 | `uv run ruff format src tests` |
 | 类型检查 | `uv run mypy src` |
 | 通过 python 运行 | `uv run python -m evolver` |
+| uvx 一次性（无 sync） | `uvx --from . evolver run` / `uvx evolver …`（已发布时） |
+| 启动器选择 | `EVOLVER_LAUNCHER=auto\|uv\|uvx\|python`（守护重生 / hooks / `start`） |
+| 循环命令覆盖 | `EVOLVER_LOOP_COMMAND="uv run evolver --loop"` |
 
 ## 架构篇
 

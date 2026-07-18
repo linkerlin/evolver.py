@@ -261,6 +261,10 @@ SELF_PR_TIMEOUT_MS: Final = env_int("EVOLVER_SELF_PR_TIMEOUT_MS", 30_000)
 # --- Leak Check ---
 LEAK_CHECK_MODE: Final = env_str("EVOLVER_LEAK_CHECK", "strict")
 
+# --- Launcher (uv / uvx / python) ---
+# auto | uv | uvx | python — see evolver.uv_runtime
+EVOLVER_LAUNCHER: Final = env_str("EVOLVER_LAUNCHER", "auto")
+
 # --- Reuse attribution (P4-a Slice A) ---
 REUSE_ATTRIBUTION_MODE: Final = env_str("EVOLVER_REUSE_ATTRIBUTION", "off")
 
@@ -346,6 +350,7 @@ __all__ = [
     "DEFAULT_WEBUI_PORT",
     "DORMANT_TTL_MS",
     "EVENT_POLL_TIMEOUT_MS",
+    "EVOLVER_LAUNCHER",
     "GENE_BAN_BEST_THRESHOLD",
     "GENE_BAN_PER_KEY_ATTEMPTS",
     "GENE_EPIGENETIC_HARD_BOOST",

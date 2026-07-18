@@ -25,7 +25,6 @@ import os
 import platform
 import signal
 import subprocess
-import sys
 import time
 from collections.abc import Sequence
 from dataclasses import dataclass, field
@@ -100,20 +99,19 @@ def _loop_command() -> Sequence[str]:
     """Return the command line used to spawn the daemon loop.
 
     External supervisors can override via ``EVOLVER_LOOP_COMMAND``
-    (space-separated string). The default is ``sys.executable -m evolver --loop``.
+    (space-separated string). Otherwise uses :func:`evolver.uv_runtime.build_loop_command`
+    so ``uv run`` / ``uvx`` are preferred when available.
     """
-    env = os.environ.get("EVOLVER_LOOP_COMMAND")
-    if env:
-        return env.split()
-    return [sys.executable, "-m", "evolver", "--loop"]
+    from evolver.uv_runtime import build_loop_command
+
+    return build_loop_command()
 
 
 def _is_evolver_loop_process(proc: psutil.Process) -> bool:
     """Return *True* if *proc* looks like an evolver daemon loop.
 
-    We match on the full command line: it must contain both ``"evolver"``
-    and ``"--loop"`` (case-insensitive) and must **not** be the current
-    process (avoids matching the lifecycle manager itself).
+    Matches ``evolver --loop``, ``python -m evolver --loop``,
+    ``uv run evolver --loop``, and ``uvx evolver --loop``.
     """
     if proc.pid == os.getpid():
         return False
@@ -122,7 +120,13 @@ def _is_evolver_loop_process(proc: psutil.Process) -> bool:
     except (psutil.NoSuchProcess, psutil.AccessDenied):
         return False
     low = cmdline.lower()
-    return "evolver" in low and "--loop" in low
+    if "--loop" not in low:
+        return False
+    if "evolver" in low:
+        return True
+    from evolver.uv_runtime import is_uv_managed_cmdline
+
+    return is_uv_managed_cmdline(cmdline)
 
 
 def _list_evolver_processes() -> list[ProcessInfo]:
@@ -557,6 +561,14 @@ def is_current_loop_command(cmdline: str, *, repo_root: Path | str | None = None
     # python -m evolver --loop (no path) — treat as current only when no foreign path present
     if "-m" in low and "evolver" in low.lower():
         return True
+    # uv run / uvx evolver --loop (optionally with --project <root>)
+    from evolver.uv_runtime import is_uv_managed_cmdline
+
+    if is_uv_managed_cmdline(low):
+        if root_s in norm.lower() or "--project" in low.lower():
+            return True
+        # Bare `uv run evolver --loop` with cwd == repo is owned by process table logic
+        return "evolver" in low.lower()
     return False
 
 

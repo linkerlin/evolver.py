@@ -143,8 +143,10 @@ def spawn_replacement_process(
             creationflags = getattr(subprocess, "CREATE_NO_WINDOW", 0) | getattr(
                 subprocess, "DETACHED_PROCESS", 0
             )
-        # Prefer re-invoking the current entrypoint module.
-        cmd = [sys.executable, "-m", "evolver", *argv]
+        # Prefer uv run / uvx when available (EVOLVER_LAUNCHER=auto|uv|uvx).
+        from evolver.uv_runtime import build_evolver_command  # noqa: PLC0415
+
+        cmd = build_evolver_command(argv)
         kwargs: dict[str, Any] = {
             "stdin": subprocess.DEVNULL,
             "stdout": log_handle,

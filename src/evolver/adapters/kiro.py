@@ -8,7 +8,6 @@ from __future__ import annotations
 
 import json
 import re
-import sys
 from pathlib import Path
 from typing import Any
 
@@ -30,9 +29,10 @@ HOOK_FILES = {
 
 
 def build_hook_config(kind: str, scripts_base: str) -> dict[str, Any]:
-    executable = sys.executable.replace("\\", "/")
-    session_start_cmd = (
-        f"EVOLVER_SESSION_START_DEDUP=1 {executable} -m evolver.adapters.scripts.session_start"
+    from evolver.uv_runtime import hook_command_string
+
+    session_start_cmd = "EVOLVER_SESSION_START_DEDUP=1 " + hook_command_string(
+        "evolver.adapters.scripts.session_start"
     )
     templates: dict[str, dict[str, Any]] = {
         "session_start": {
@@ -60,7 +60,7 @@ def build_hook_config(kind: str, scripts_base: str) -> dict[str, Any]:
             "when": {"type": "postToolUse", "toolTypes": ["write"]},
             "then": {
                 "type": "runCommand",
-                "command": f"{executable} -m evolver.adapters.scripts.signal_detect",
+                "command": hook_command_string("evolver.adapters.scripts.signal_detect"),
                 "timeout": 2,
             },
             "_evolver_managed": True,
@@ -75,7 +75,7 @@ def build_hook_config(kind: str, scripts_base: str) -> dict[str, Any]:
             "when": {"type": "agentStop"},
             "then": {
                 "type": "runCommand",
-                "command": f"{executable} -m evolver.adapters.scripts.session_end",
+                "command": hook_command_string("evolver.adapters.scripts.session_end"),
                 "timeout": 8,
             },
             "_evolver_managed": True,

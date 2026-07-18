@@ -20,7 +20,7 @@ This project aims for **full behavioral equivalence**  while using modern Python
 ## Quick Start
 
 ```bash
-# Install dependencies
+# Install dependencies (project-local env)
 uv sync
 
 # Run a single evolution cycle
@@ -39,11 +39,39 @@ uv run evolver webui
 uv run evolver proxy
 ```
 
+### uvx (one-shot / no project install)
+
+When evolver is published (or you want tool isolation without `uv sync`):
+
+```bash
+# From PyPI (once published)
+uvx evolver --help
+uvx evolver run
+
+# From a local checkout (no global install)
+uvx --from . evolver run
+uvx --from . evolver --loop
+```
+
+### Launcher selection
+
+Daemon respawn, lifecycle `start`, and IDE hooks resolve how to re-invoke evolver via
+`EVOLVER_LAUNCHER`:
+
+| Value | Behaviour |
+|---|---|
+| `auto` (default) | Prefer `uv run evolver` when `uv` + project root exist; else `uvx`; else `python -m evolver` |
+| `uv` | Force `uv run [--project <root>] evolver …` |
+| `uvx` | Force `uvx [--from <root>] evolver …` (or `uv tool run` if no `uvx` shim) |
+| `python` | Force `python -m evolver …` |
+
+Supervisors can override the full argv with `EVOLVER_LOOP_COMMAND` (space-separated).
+
 ## Prerequisites
 
 - **[Python](https://python.org/)** >= 3.12
 - **[Git](https://git-scm.com/)** — Required. Evolver uses git for rollback, blast radius calculation, and solidify. Running in a non-git directory will fail with a clear error message.
-- **[uv](https://docs.astral.sh/uv/)** — Recommended package manager. Standard `pip` also works.
+- **[uv](https://docs.astral.sh/uv/)** — Recommended. Enables `uv sync`, `uv run`, and `uvx`. Standard `pip` / `python -m` also work.
 
 ## Project Structure
 

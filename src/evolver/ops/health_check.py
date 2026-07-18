@@ -220,6 +220,36 @@ def run_health_check(
                 )
             )
 
+    # Launcher (uv / uvx / python)
+    try:
+        from evolver.uv_runtime import describe_launcher
+
+        info = describe_launcher()
+        uv_path = info.get("uv")
+        uvx_path = info.get("uvx")
+        checks.append(
+            CheckResult(
+                name="launcher",
+                ok=True,
+                status=(
+                    f"mode={info.get('launcher')} "
+                    f"uv={'yes' if uv_path else 'no'} "
+                    f"uvx={'yes' if uvx_path else 'no'} "
+                    f"loop={info.get('resolved_loop')}"
+                ),
+                severity="info",
+            )
+        )
+    except Exception as exc:
+        checks.append(
+            CheckResult(
+                name="launcher",
+                ok=True,
+                status=f"unavailable: {exc}",
+                severity="info",
+            )
+        )
+
     # Overall status
     if critical_errors > 0:
         overall = "error"

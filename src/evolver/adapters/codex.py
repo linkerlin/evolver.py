@@ -9,7 +9,6 @@ from __future__ import annotations
 
 import json
 import re
-import sys
 from pathlib import Path
 from typing import Any
 
@@ -26,28 +25,28 @@ EVOLVER_MARKER = "<!-- evolver-evolution-memory -->"
 
 
 def build_hooks_json(evolver_root: Path) -> dict[str, Any]:
-    scripts_base = ".codex/hooks"
-    executable = sys.executable.replace("\\", "/")
+    from evolver.uv_runtime import hook_command_string
+
     return {
         "hooks": {
             "SessionStart": [
                 {
                     "type": "command",
-                    "command": f"{executable} -m evolver.adapters.scripts.session_start",
+                    "command": hook_command_string("evolver.adapters.scripts.session_start"),
                     "timeout": 3,
                 },
             ],
             "PostToolUse": [
                 {
                     "type": "command",
-                    "command": f"{executable} -m evolver.adapters.scripts.signal_detect",
+                    "command": hook_command_string("evolver.adapters.scripts.signal_detect"),
                     "timeout": 2,
                 },
             ],
             "Stop": [
                 {
                     "type": "command",
-                    "command": f"{executable} -m evolver.adapters.scripts.session_end",
+                    "command": hook_command_string("evolver.adapters.scripts.session_end"),
                     "timeout": 8,
                 },
             ],

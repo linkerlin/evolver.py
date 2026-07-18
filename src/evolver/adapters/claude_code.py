@@ -7,7 +7,6 @@ Installs/uninstalls evolver hooks into ``.claude/settings.json``.
 from __future__ import annotations
 
 import json
-import sys
 from pathlib import Path
 from typing import Any
 
@@ -25,8 +24,8 @@ EVOLVER_MARKER = "<!-- evolver-evolution-memory -->"
 
 def build_hooks(evolver_root: Path) -> dict[str, Any]:
     """Build the Claude Code hooks configuration."""
-    scripts_base = ".claude/hooks"
-    executable = sys.executable.replace("\\", "/")
+    from evolver.uv_runtime import hook_command_string
+
     return {
         "hooks": {
             "SessionStart": [
@@ -34,7 +33,9 @@ def build_hooks(evolver_root: Path) -> dict[str, Any]:
                     "hooks": [
                         {
                             "type": "command",
-                            "command": f"{executable} -m evolver.adapters.scripts.session_start",
+                            "command": hook_command_string(
+                                "evolver.adapters.scripts.session_start"
+                            ),
                             "timeout": 3,
                         },
                     ],
@@ -45,7 +46,7 @@ def build_hooks(evolver_root: Path) -> dict[str, Any]:
                     "hooks": [
                         {
                             "type": "command",
-                            "command": f"{executable} -m evolver.adapters.scripts.task_recall",
+                            "command": hook_command_string("evolver.adapters.scripts.task_recall"),
                             "timeout": 5,
                         },
                     ],
@@ -57,7 +58,9 @@ def build_hooks(evolver_root: Path) -> dict[str, Any]:
                     "hooks": [
                         {
                             "type": "command",
-                            "command": f"{executable} -m evolver.adapters.scripts.signal_detect",
+                            "command": hook_command_string(
+                                "evolver.adapters.scripts.signal_detect"
+                            ),
                             "timeout": 2,
                         },
                     ],
@@ -68,7 +71,7 @@ def build_hooks(evolver_root: Path) -> dict[str, Any]:
                     "hooks": [
                         {
                             "type": "command",
-                            "command": f"{executable} -m evolver.adapters.scripts.session_end",
+                            "command": hook_command_string("evolver.adapters.scripts.session_end"),
                             "timeout": 8,
                         },
                     ],
