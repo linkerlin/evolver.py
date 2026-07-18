@@ -18,7 +18,7 @@ from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
 
 from evolver.adapters.auth import load_auth
-from evolver.config import HTTP_TRANSPORT_TIMEOUT_MS, resolve_hub_url
+from evolver.config import HTTP_TRANSPORT_TIMEOUT_MS, resolve_hub_url, resolve_proxy_port
 from evolver.gep.a2a_protocol import build_hub_headers
 from evolver.gep.paths import get_repo_root
 from evolver.proxy.extensions.atp_deliver_loop import AtpDeliverLoop
@@ -31,6 +31,7 @@ from evolver.proxy.lifecycle.manager import LifecycleManager
 from evolver.proxy.mailbox.store import MailboxStore
 from evolver.proxy.server.routes import router
 from evolver.proxy.task.monitor import TaskMonitor
+from evolver.proxy.token import resolve_proxy_token
 from evolver.proxy.trace import get_trace_store
 
 logger = logging.getLogger(__name__)
@@ -47,7 +48,7 @@ def _lifecycle_enabled() -> bool:
 
 @asynccontextmanager
 async def _proxy_lifespan(_app: FastAPI) -> AsyncIterator[None]:
-    """Initialize mailbox, session, task monitor, and ATP local state."""
+    """Initialize mailbox, session, task monitor, token, and ATP local state."""
     root = get_repo_root() or Path.cwd()
     mailbox_dir = root / ".evolver" / "proxy-mailbox"
     mailbox_store = MailboxStore(mailbox_dir)
@@ -61,6 +62,24 @@ async def _proxy_lifespan(_app: FastAPI) -> AsyncIterator[None]:
     _app.state.atp_orders = {}
     _app.state.atp_proofs = []
     _app.state.claimed_tasks = {}
+
+    # Token mint/reuse before serving requests (Sprint 15.2).
+    port = int(os.environ.get("EVOLVER_PROXY_PORT") or resolve_proxy_port())
+    host = os.environ.get("EVOLVER_PROXY_HOST", "127.0.0.1")
+    try:
+        token_info = resolve_proxy_token(port=port, host=host, sync_client=True)
+        _app.state.proxy_token = token_info["token"]
+        _app.state.proxy_url = token_info["url"]
+        _app.state.proxy_token_source = token_info["source"]
+        logger.info(
+            "[Proxy] token %s (source=%s) url=%s",
+            "reused" if token_info["reused"] else "minted",
+            token_info["source"],
+            token_info["url"],
+        )
+    except Exception as exc:
+        logger.warning("[Proxy] token resolve failed: %s", exc)
+        _app.state.proxy_token = None
 
     lifecycle = LifecycleManager(store=mailbox_store)
     _app.state.lifecycle_manager = lifecycle

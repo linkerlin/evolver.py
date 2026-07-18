@@ -224,7 +224,7 @@ def _build_parser() -> argparse.ArgumentParser:
     atp_sub.add_parser("enable", help="Enable ATP auto-buyer consent")
     atp_sub.add_parser("disable", help="Disable ATP auto-buyer consent")
     atp_sub.add_parser("status", help="Show ATP auto-buyer consent status")
-    from evolver.config import PROXY_HOST, resolve_proxy_port
+    from evolver.config import PROXY_HOST
 
     proxy_p = sub.add_parser("proxy", help="Start the A2A proxy server")
     proxy_p.add_argument("--host", default=PROXY_HOST, help="Bind host")
@@ -233,6 +233,26 @@ def _build_parser() -> argparse.ArgumentParser:
         type=int,
         default=None,
         help="Bind port (default: EVOLVER_PROXY_PORT or 8081)",
+    )
+    proxy_tok = sub.add_parser(
+        "proxy-token",
+        help="Mint or reuse the local proxy bearer token (no server start)",
+    )
+    proxy_tok.add_argument(
+        "--port",
+        type=int,
+        default=None,
+        help="Port written into settings (default: EVOLVER_PROXY_PORT or 8081)",
+    )
+    proxy_tok.add_argument(
+        "--no-sync-client",
+        action="store_true",
+        help="Skip Claude client settings sync",
+    )
+    proxy_tok.add_argument(
+        "--json",
+        action="store_true",
+        help="Print full resolve result as JSON",
     )
     recipe_p = sub.add_parser("recipe", help="Recipe Hub commands")
     recipe_sub = recipe_p.add_subparsers(dest="recipe_action")
@@ -374,6 +394,9 @@ def main(argv: Sequence[str] | None = None) -> int:
 
     if command == "proxy":
         return _cmd_proxy(args)
+
+    if command == "proxy-token":
+        return _cmd_proxy_token(args)
 
     if command == "buy":
         return asyncio.run(_cmd_buy(args))
@@ -1112,11 +1135,48 @@ def _cmd_proxy(args: argparse.Namespace) -> int:
 
     from evolver.config import resolve_proxy_port
     from evolver.proxy.server import app
+    from evolver.proxy.token import resolve_proxy_token
 
     host = getattr(args, "host", "127.0.0.1")
     port = getattr(args, "port", None) or resolve_proxy_port()
-    print(f"Starting Evolver A2A Proxy at http://{host}:{port}/v1/a2a/")
+    # Pre-mint/reuse so EVOMAP_PROXY_TOKEN is set before uvicorn binds,
+    # and long-lived shells keep a stable ANTHROPIC_AUTH_TOKEN across restarts.
+    try:
+        info = resolve_proxy_token(port=int(port), host=str(host), sync_client=True)
+        print(f"Starting Evolver A2A Proxy at {info['url']}/v1/a2a/")
+        print(
+            f"  token: {info['source']}"
+            f"{' (reused)' if info['reused'] else ' (minted)'}"
+            f"  EVOMAP_PROXY_TOKEN={info['token'][:8]}…"
+        )
+    except Exception as exc:
+        print(f"Starting Evolver A2A Proxy at http://{host}:{port}/v1/a2a/")
+        print(f"  token resolve warning: {exc}", file=sys.stderr)
     uvicorn.run(app, host=host, port=port, log_level="info")
+    return 0
+
+
+def _cmd_proxy_token(args: argparse.Namespace) -> int:
+    """Mint or reuse the local proxy bearer token without starting the server."""
+    import json as _json
+
+    from evolver.config import PROXY_HOST, resolve_proxy_port
+    from evolver.proxy.token import resolve_proxy_token
+
+    port = getattr(args, "port", None) or resolve_proxy_port()
+    info = resolve_proxy_token(
+        port=int(port),
+        host=PROXY_HOST,
+        sync_client=not bool(getattr(args, "no_sync_client", False)),
+    )
+    if getattr(args, "json", False):
+        # Never dump full token secrets in logs by default; include when --json.
+        print(_json.dumps(info, indent=2, default=str))
+    else:
+        print(f"token_source={info['source']}")
+        print(f"reused={info['reused']}")
+        print(f"url={info['url']}")
+        print(f"token={info['token']}")
     return 0
 
 

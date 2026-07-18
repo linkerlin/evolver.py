@@ -32,6 +32,7 @@ from evolver.proxy.router.gemini_route import proxy_gemini_native
 from evolver.proxy.router.messages_route import handle_messages
 from evolver.proxy.router.models_route import handle_models
 from evolver.proxy.task.monitor import TaskMonitor
+from evolver.proxy.token import accepted_proxy_tokens, authorize_bearer
 
 router = APIRouter()
 
@@ -41,14 +42,9 @@ router = APIRouter()
 
 
 def _load_proxy_token() -> str | None:
-    env = os.environ.get("EVOMAP_PROXY_TOKEN", "").strip()
-    if env:
-        return env
-    token_file = __import__("pathlib").Path.home() / ".evomap" / "proxy-token"
-    if token_file.exists():
-        token = token_file.read_text(encoding="utf-8").strip()
-        return token or None
-    return None
+    """Primary proxy token (env → settings → file). Prefer :func:`authorize_bearer`."""
+    tokens = accepted_proxy_tokens()
+    return tokens[0] if tokens else None
 
 
 async def require_auth(request: Request) -> str:
@@ -56,8 +52,7 @@ async def require_auth(request: Request) -> str:
     if not header.lower().startswith("bearer "):
         raise HTTPException(status_code=401, detail="Missing bearer token")
     token = header[7:].strip()
-    expected = _load_proxy_token()
-    if expected and token != expected:
+    if not authorize_bearer(token):
         raise HTTPException(status_code=401, detail="Invalid token")
     return token
 
