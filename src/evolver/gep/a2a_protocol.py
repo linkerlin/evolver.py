@@ -42,7 +42,27 @@ def get_hub_url() -> str | None:
 
 
 def get_node_id() -> str | None:
-    return os.environ.get("A2A_NODE_ID")
+    """Resolve node id: env → legacy file → cache (no mint; CLI may mint elsewhere)."""
+    from evolver.gep.node_identity import (  # noqa: PLC0415
+        is_valid_node_id,
+        read_legacy_node_id,
+        resolve_node_id,
+        set_cached_node_id,
+    )
+
+    env = (os.environ.get("A2A_NODE_ID") or "").strip()
+    if env:
+        set_cached_node_id(env if is_valid_node_id(env) else None)
+        return env
+    resolved = resolve_node_id(allow_mint=False)
+    if resolved:
+        set_cached_node_id(resolved)
+        return resolved
+    legacy = read_legacy_node_id()
+    if legacy:
+        set_cached_node_id(legacy)
+        return legacy
+    return None
 
 
 def get_hub_node_secret() -> str | None:

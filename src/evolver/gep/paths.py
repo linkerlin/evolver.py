@@ -11,10 +11,15 @@ from pathlib import Path
 
 
 def get_evolver_home() -> Path:
-    """Return per-user evolver state dir. Default: ~/.evomap (matches Node)."""
-    raw = os.environ.get("EVOLVER_HOME") or os.environ.get("HOME")
+    """Return per-user evolver state dir (``~/.evomap``).
+
+    Matches Node ``getEvomapDir()``: when ``EVOLVER_HOME`` is set it is used
+    as the state directory itself (not as a parent that receives an extra
+    ``.evomap`` segment). Default remains ``Path.home() / ".evomap"``.
+    """
+    raw = os.environ.get("EVOLVER_HOME")
     if raw:
-        return Path(raw).expanduser() / ".evomap"
+        return Path(raw).expanduser()
     return Path.home() / ".evomap"
 
 

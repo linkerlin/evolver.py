@@ -49,7 +49,12 @@ gep/                GEP（基因组进化协议）核心
   distill.py        从 LLM 文本输出中提取 Gene/Capsule
   fetch.py          从 Hub 下载并安装资源
   git_ops.py        Git diff/回滚/状态辅助函数
-  instance_lock.py  基于 FileLock 之单实例守护
+  instance_lock.py  基于 FileLock 之单实例守护（守护循环）
+  canonical_identity_lock.py  进程身份感知规范锁（node_id 元组，v1.92.0）
+  node_identity.py  规范 node_id 解析/持久化/state-path 后缀（proxy↔A2A 统一）
+  validation_report.py  标准化 ValidationReport（vr_* + 内容寻址）
+  asset_call_log.py  资产调用 JSONL 日志 + 复用归因 rollup
+  savings_core.py   savings-core 规范公式（conformance 黄金向量）
   memory_graph.py   JSONL 记忆图谱存储与信号键查询
   cognition.py      高级认知编排：recall/explore/curriculum/reflection/distill 接线
   mutation.py       变异引擎：类别选择、变体生成
@@ -239,6 +244,10 @@ atp/                Agent 交易协议市场
 | `EVOLVER_REPAIR_LOOP_DEGRADED` | `1` | repair-loop 降级运行（非硬 abort） |
 | `EVOLVER_LEARNING_SIGNALS` | `1` | 注入环境学习信号 |
 | `EVOLVER_GENE_INERT_BAN_STREAK` | `8` | 惰性基因禁用阈值——连续 N 次零工作结果后禁选 (#562) |
+| `EVOLVER_MEMORY_GRAPH_MAX_SIZE_MB` | `100` | memory_graph.jsonl 超阈值 gzip 轮转 (#519) |
+| `EVOLVER_MEMORY_GRAPH_RETENTION_COUNT` | `7` | 轮转归档保留个数（`0`=全删） |
+| `EVOLVER_MEMORY_GRAPH_AUTO_ROTATE` | `true` | 设为 `false`/`0`/`no` 关闭自动轮转 |
+| `EVOLVER_ROTATE_GZIP_MAX_MB` | `32` | 轮转 gzip 上限；更大文件仅 rename 不压缩（防 OOM） |
 | `EVOLVER_ANTI_ABUSE_TELEMETRY` | `heartbeat` | 反滥用遥测模式（`heartbeat`/`off`，空值视为 heartbeat） |
 | `EVOLVER_OUTCOME_REPORT` | `off` | 结果上报模式——向 Hub 上报复用结果以获归因 (P4-a Slice B) |
 | `EVOLVER_FORCE_UPDATE_RETRY_COOLDOWN_MS` | `300000` (5min) | Hub 推送强制更新的最小间隔冷却 |

@@ -36,6 +36,13 @@ from evolver.config import (
     resolve_hub_url,
 )
 from evolver.gep.env_fingerprint import capture_env_fingerprint
+from evolver.gep.node_identity import (
+    is_valid_node_id,
+    mint_node_id,
+    persist_legacy_node_id,
+    read_legacy_node_id,
+    resolve_node_id,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -160,16 +167,30 @@ class LifecycleManager:
         version: str = "1.0.0",
         on_auth_error: Callable[[AuthError], None] | None = None,
         on_force_update: Callable[[], None] | None = None,
+        identity_provider: Callable[[], str | None] | None = None,
     ) -> None:
         self._store = store
         self._version = version
         self._on_auth_error = on_auth_error
         self._on_force_update = on_force_update
+        self._identity_provider = identity_provider
+        self._delivery_identity_listeners: set[Callable[[], None]] = set()
         self._state = self._load_state()
         self._hub_url = resolve_hub_url()
         self._task: asyncio.Task[None] | None = None
         self._shutdown_event = asyncio.Event()
         self._poke_event = asyncio.Event()
+        # H4: seed legacy ~/.evomap/node_id as soon as store id is known so
+        # pre-hello force_update outcomes never land at force_update_last.anon.
+        try:
+            early = self._store.get_state("node_id") if self._store else None
+            if is_valid_node_id(early):
+                persist_legacy_node_id(str(early))
+        except Exception as exc:
+            logger.warning(
+                "[Lifecycle] early persist of legacy node_id failed (non-fatal): %s",
+                exc,
+            )
 
     # ------------------------------------------------------------------
     # State persistence (via MailboxStore)
@@ -191,13 +212,11 @@ class LifecycleManager:
             os.environ.get("A2A_NODE_SECRET_VERSION")
             or os.environ.get("EVOMAP_NODE_SECRET_VERSION")
         )
-        store_version = parse_node_secret_version(
-            self._store.get_state("node_secret_version")
-        )
+        store_version = parse_node_secret_version(self._store.get_state("node_secret_version"))
         s.node_secret_version = store_version if store_version is not None else env_version
 
-        store_secret_valid = (
-            isinstance(store_secret, str) and bool(_NODE_SECRET_RE.match(store_secret))
+        store_secret_valid = isinstance(store_secret, str) and bool(
+            _NODE_SECRET_RE.match(store_secret)
         )
         if (
             store_secret_valid
@@ -230,7 +249,12 @@ class LifecycleManager:
             s.node_secret = env_secret
             s.node_secret_source = "env_seed"
 
-        s.node_id = store_id or os.environ.get("A2A_NODE_ID", "").strip() or None
+        # Identity precedence: store > env > legacy file (no mint on load).
+        resolved = resolve_node_id(store_id=store_id, allow_mint=False)
+        if resolved is None and store_id:
+            # Keep non-canonical store values (pre-migration legacy prefixes).
+            resolved = str(store_id).strip() or None
+        s.node_id = resolved
         s.last_heartbeat_at = self._store.get_state("last_heartbeat_at")
         # L4: load secret age
         s.secret_set_at = self._store.get_state("secret_set_at")
@@ -241,7 +265,7 @@ class LifecycleManager:
             for prefix in self._LEGACY_NODE_ID_PREFIXES:
                 if s.node_id.startswith(prefix):
                     s.original_node_id = s.node_id
-                    s.node_id = s.node_id[len(prefix):]
+                    s.node_id = s.node_id[len(prefix) :]
                     break
         return s
 
@@ -255,6 +279,57 @@ class LifecycleManager:
         self._store.set_state("original_node_id", self._state.original_node_id)
 
     # ------------------------------------------------------------------
+    # Identity surface (v1.92.0 nodeId unification)
+    # ------------------------------------------------------------------
+
+    @property
+    def node_id(self) -> str | None:
+        """Active node id (store-backed; mirrors Node ``nodeId`` getter)."""
+        if self._identity_provider is not None:
+            try:
+                provided = self._identity_provider()
+                if provided:
+                    return str(provided)
+            except Exception:
+                pass
+        store_id = self._store.get_state("node_id") if self._store else None
+        if store_id:
+            return str(store_id)
+        return self._state.node_id
+
+    # CamelCase alias for Node-facing parity in tests / integrations.
+    @property
+    def nodeId(self) -> str | None:  # noqa: N802
+        return self.node_id
+
+    def on_delivery_identity_change(self, listener: Callable[[], None]) -> Callable[[], None]:
+        """Register a listener fired when delivery identity (node/secret) changes.
+
+        Returns an unsubscribe callable.
+        """
+        if not callable(listener):
+            return lambda: None
+        self._delivery_identity_listeners.add(listener)
+
+        def _unsubscribe() -> None:
+            self._delivery_identity_listeners.discard(listener)
+
+        return _unsubscribe
+
+    # CamelCase alias.
+    def onDeliveryIdentityChange(  # noqa: N802
+        self, listener: Callable[[], None]
+    ) -> Callable[[], None]:
+        return self.on_delivery_identity_change(listener)
+
+    def _notify_delivery_identity_change(self) -> None:
+        for listener in list(self._delivery_identity_listeners):
+            try:
+                listener()
+            except Exception:
+                logger.warning("[Lifecycle] delivery identity listener failed")
+
+    # ------------------------------------------------------------------
     # Gap 2: Node secret versioning
     # ------------------------------------------------------------------
 
@@ -266,9 +341,7 @@ class LifecycleManager:
         store version takes precedence (it's what the Hub last gave us), and
         falls back to the env version.
         """
-        store_version = parse_node_secret_version(
-            self._store.get_state("node_secret_version")
-        )
+        store_version = parse_node_secret_version(self._store.get_state("node_secret_version"))
         if store_version is not None:
             return store_version
         return parse_node_secret_version(
@@ -321,18 +394,35 @@ class LifecycleManager:
     # Hello
     # ------------------------------------------------------------------
 
-    async def hello(self, *, rotate_secret: bool = False) -> dict[str, Any]:
+    async def hello(  # noqa: PLR0912, PLR0915
+        self, *, rotate_secret: bool = False
+    ) -> dict[str, Any]:
         """Register or re-register with the Hub."""
         # Gap 3: respect Hub-unreachable backoff.
         wait_ms = self._hub_unreachable_wait_ms()
         if wait_ms > 0:
             return {"ok": False, "error": "hub_unreachable_backoff", "wait_ms": wait_ms}
 
+        # Resolve identity before the wire call:
+        # store (already loaded) → env → legacy file → mint.
+        previous_id = self._state.node_id
+        if not self._state.node_id:
+            legacy = read_legacy_node_id()
+            if legacy:
+                self._state.node_id = legacy
+            else:
+                env_id = (os.environ.get("A2A_NODE_ID") or "").strip()
+                if env_id:
+                    self._state.node_id = env_id
+                else:
+                    self._state.node_id = mint_node_id()
+
         payload: dict[str, Any] = {
             "protocol": "gep-a2a",
             "protocol_version": "1.0.0",
             "message_type": "hello",
             "env_fingerprint": capture_env_fingerprint(),
+            "sender_id": self._state.node_id,
         }
         if self._state.node_id:
             payload["node_id"] = self._state.node_id
@@ -366,20 +456,43 @@ class LifecycleManager:
         # Gap 3: Hub is reachable — reset backoff.
         self._record_hub_reachable()
 
-        # Update local state from response
-        if body.get("node_id"):
-            self._state.node_id = body["node_id"]
-        if body.get("node_secret"):
-            self._state.node_secret = body["node_secret"]
+        # Prefer nested payload fields when Hub wraps the ack.
+        payload_body = body.get("payload") if isinstance(body.get("payload"), dict) else {}
+        hub_node_id = body.get("node_id") or payload_body.get("node_id")
+        hub_secret = body.get("node_secret") or payload_body.get("node_secret")
+
+        if hub_node_id:
+            self._state.node_id = str(hub_node_id)
+        if hub_secret:
+            self._state.node_secret = str(hub_secret)
             self._state.node_secret_source = "hub_rotate"
         # Gap 2: persist the secret version the Hub returned (if any).
         hub_version = parse_node_secret_version(
-            body.get("node_secret_version") or body.get("payload", {}).get("node_secret_version")
+            body.get("node_secret_version") or payload_body.get("node_secret_version")
         )
         if hub_version is not None:
             self._state.node_secret_version = hub_version
         self._save_state()
-        return {"ok": True, "hub_response": body}
+
+        # Unify legacy ~/.evomap/node_id with the id sent on the wire.
+        try:
+            if self._state.node_id:
+                persist_legacy_node_id(self._state.node_id)
+        except Exception as exc:
+            logger.warning(
+                "[Lifecycle] post-hello legacy node_id persist failed (non-fatal): %s",
+                exc,
+            )
+
+        if previous_id != self._state.node_id or hub_secret:
+            self._notify_delivery_identity_change()
+
+        return {
+            "ok": True,
+            "node_id": self._state.node_id,
+            "nodeId": self._state.node_id,
+            "hub_response": body,
+        }
 
     # ------------------------------------------------------------------
     # Heartbeat
@@ -475,8 +588,7 @@ class LifecycleManager:
         self._state.heartbeat_failures = 0
         # Gap 2: persist secret version if the Hub rotated.
         hub_version = parse_node_secret_version(
-            body.get("node_secret_version")
-            or body.get("payload", {}).get("node_secret_version")
+            body.get("node_secret_version") or body.get("payload", {}).get("node_secret_version")
         )
         if hub_version is not None and hub_version != self._state.node_secret_version:
             self._state.node_secret_version = hub_version
@@ -520,9 +632,7 @@ class LifecycleManager:
                 pass
         return 5 * 60 * 1000  # 5 min default
 
-    def _maybe_trigger_force_update_from_heartbeat(
-        self, directive: dict[str, Any]
-    ) -> bool:
+    def _maybe_trigger_force_update_from_heartbeat(self, directive: dict[str, Any]) -> bool:
         """Trigger a force-update from a heartbeat response, respecting cooldown.
 
         Returns True if triggered, False if skipped (in-flight or on cooldown).
@@ -782,7 +892,11 @@ class LifecycleManager:
         if hub_url.startswith("http://"):
             msg = f"Hub URL is not HTTPS: {hub_url}"
             if is_production:
-                return {"ok": False, "url": hub_url, "warnings": [msg, "tls_rejected_in_production"]}  # noqa: E501
+                return {
+                    "ok": False,
+                    "url": hub_url,
+                    "warnings": [msg, "tls_rejected_in_production"],
+                }
             warnings.append(msg)
             warnings.append("tls_warning_dev_only")
             return {"ok": True, "url": hub_url, "warnings": warnings}
@@ -877,7 +991,7 @@ class LifecycleManager:
                 # Store original for backward-compat lookups.
                 if not self._state.original_node_id:
                     self._state.original_node_id = nid
-                migrated = nid[len(prefix):]
+                migrated = nid[len(prefix) :]
                 logger.info(
                     "[Lifecycle] Migrating legacy node ID: %s -> %s",
                     nid,
