@@ -35,10 +35,10 @@ from typing import Any
 import psutil
 
 from evolver.config import MAX_SILENCE_MS
+from evolver.gep.paths import get_evolver_log_path, get_memory_dir, get_workspace_root
 
 # Cross-platform signal constant: Windows lacks SIGKILL.
 _SIGKILL = getattr(signal, "SIGKILL", signal.SIGTERM)
-from evolver.gep.paths import get_evolver_log_path, get_memory_dir, get_workspace_root
 
 logger = logging.getLogger(__name__)
 
@@ -425,6 +425,219 @@ def watch(*, once: bool = False) -> None:
             _tick()
     except KeyboardInterrupt:
         logger.info("[Watch] Stopped by user.")
+
+
+# ---------------------------------------------------------------------------
+# Proxy health (lifecycleProxyHealth — Node ops/lifecycle.js)
+# ---------------------------------------------------------------------------
+
+# Injected process table for hermetic tests (None → live psutil scan).
+_ProcessRow = dict[str, Any]
+_process_table_override: list[_ProcessRow] | None = None
+
+
+def _set_process_table_for_test(rows: list[_ProcessRow] | None) -> None:
+    """Test hook: inject a synthetic process table (Node _setProcessTableForTest)."""
+    global _process_table_override  # noqa: PLW0603
+    _process_table_override = rows
+
+
+def _reset_process_table_for_test() -> None:
+    """Test hook: clear the synthetic process table."""
+    global _process_table_override  # noqa: PLW0603
+    _process_table_override = None
+
+
+def expects_proxy(env: dict[str, str] | None = None) -> bool:
+    """True when the client env is configured to use the local EvoMap proxy.
+
+    Mirrors Node ``expectsProxy``: loopback ANTHROPIC_BASE_URL with auto-inject
+    marker, or EVOMAP_PROXY=1.
+    """
+    e = env if env is not None else dict(os.environ)
+    if str(e.get("EVOMAP_PROXY") or "").strip() == "1":
+        return True
+    if str(e.get("EVOMAP_PROXY_AUTO_INJECTED") or "").strip() == "1":
+        base = str(e.get("ANTHROPIC_BASE_URL") or e.get("EVOMAP_PROXY_URL") or "")
+        if "127.0.0.1" in base or "localhost" in base:
+            return True
+    # Codex loopback provider (optional)
+    home = e.get("HOME") or e.get("USERPROFILE") or ""
+    if home:
+        codex = Path(home) / ".codex" / "config.toml"
+        if codex.exists():
+            try:
+                text = codex.read_text(encoding="utf-8")
+            except OSError:
+                text = ""
+            if "evomap-proxy" in text and ("127.0.0.1" in text or "localhost" in text):
+                return True
+    return False
+
+
+def prepare_start_env(env: dict[str, str] | None = None) -> dict[str, str]:
+    """Return env dict with ``EVOMAP_PROXY=1`` when proxy mode is expected."""
+    out = dict(env if env is not None else os.environ)
+    if expects_proxy(out):
+        out["EVOMAP_PROXY"] = "1"
+    return out
+
+
+def _read_proxy_settings() -> dict[str, Any]:
+    """Load nested ``proxy`` block from proxy-settings.json (best-effort)."""
+    try:
+        from evolver.proxy.server.settings import load_settings
+
+        settings = load_settings()
+    except Exception:
+        return {}
+    proxy = settings.get("proxy")
+    if isinstance(proxy, dict):
+        return proxy
+    # Flat keys used by some Python paths
+    return {
+        "url": settings.get("proxy_url") or settings.get("url"),
+        "token": settings.get("proxy_token") or settings.get("token"),
+        "pid": settings.get("proxy_pid") or settings.get("pid"),
+    }
+
+
+def check_proxy_health(env: dict[str, str] | None = None) -> dict[str, Any]:
+    """Check whether the required local proxy is alive.
+
+    When proxy mode is not expected, returns ``{healthy: True, reason: 'not_required'}``.
+    When expected but pid is missing/stale, returns unhealthy with reason.
+    """
+    e = env if env is not None else dict(os.environ)
+    if not expects_proxy(e):
+        return {"healthy": True, "reason": "not_required", "proxyPid": None}
+
+    proxy = _read_proxy_settings()
+    pid_raw = proxy.get("pid")
+    try:
+        pid = int(pid_raw) if pid_raw is not None else None
+    except (TypeError, ValueError):
+        pid = None
+
+    if pid is None:
+        return {"healthy": False, "reason": "proxy_pid_missing", "proxyPid": None}
+    if not _is_pid_running(pid):
+        return {"healthy": False, "reason": "proxy_pid_stale", "proxyPid": pid}
+    return {"healthy": True, "reason": "ok", "proxyPid": pid}
+
+
+def should_restart_for_proxy(
+    loop_pids: list[int] | None = None,
+    env: dict[str, str] | None = None,
+) -> bool:
+    """True when a live loop exists but the required proxy is unhealthy."""
+    e = env if env is not None else dict(os.environ)
+    if not expects_proxy(e):
+        return False
+    health = check_proxy_health(e)
+    if health.get("healthy"):
+        return False
+    pids = loop_pids if loop_pids is not None else [p.pid for p in _list_evolver_processes()]
+    return bool(pids)
+
+
+def is_current_loop_command(cmdline: str, *, repo_root: Path | str | None = None) -> bool:
+    """True when *cmdline* is this repo's loop (absolute path into *repo_root*)."""
+    low = str(cmdline or "")
+    if "--loop" not in low.lower():
+        return False
+    root = Path(repo_root) if repo_root is not None else get_workspace_root()
+    root_s = str(root.resolve()).replace("\\", "/").lower()
+    norm = low.replace("\\", "/")
+    # Absolute script path under this repo
+    for token in norm.split():
+        if token.endswith("index.js") or token.endswith("evolver") or token.endswith(".py"):
+            if token.startswith("/") or (len(token) > 2 and token[1] == ":"):
+                return root_s in token.lower() or token.lower().startswith(root_s)
+    # python -m evolver --loop (no path) — treat as current only when no foreign path present
+    if "-m" in low and "evolver" in low.lower():
+        return True
+    return False
+
+
+def get_running_pids() -> list[int]:
+    """Return PIDs from live scan or injected process table."""
+    if _process_table_override is not None:
+        return [int(r["pid"]) for r in _process_table_override if "pid" in r]
+    return [p.pid for p in _list_evolver_processes()]
+
+
+def get_owned_loop_pids(candidate_pids: list[int] | None = None) -> list[int]:
+    """Return PIDs of loops owned by this repo (cwd + cmdline filter).
+
+    When a process table is injected for tests, rows must include ``pid``,
+    ``args``, and optionally ``cwd``.
+    """
+    repo = get_workspace_root().resolve()
+    owned: list[int] = []
+
+    def _consider(pid: int, args: str, cwd: str) -> None:
+        if candidate_pids is not None and pid not in candidate_pids:
+            return
+        if "--loop" not in args.lower():
+            return
+        tokens = args.split()
+        # Absolute path to a script?
+        abs_script: Path | None = None
+        for t in tokens:
+            p = Path(t)
+            if p.is_absolute() and (
+                t.endswith(".js") or t.endswith(".py") or t.endswith("evolver")
+            ):
+                abs_script = p
+                break
+        if abs_script is not None:
+            try:
+                resolved = abs_script.resolve()
+                if repo == resolved.parent or repo in resolved.parents:
+                    owned.append(pid)
+            except (OSError, RuntimeError):
+                pass
+            return
+        # Relative launch — require cwd == this repo.
+        if not cwd:
+            return
+        try:
+            if Path(cwd).resolve() == repo:
+                owned.append(pid)
+        except (OSError, RuntimeError):
+            pass
+
+    if _process_table_override is not None:
+        for row in _process_table_override:
+            try:
+                pid = int(row["pid"])
+            except (KeyError, TypeError, ValueError):
+                continue
+            _consider(pid, str(row.get("args") or ""), str(row.get("cwd") or ""))
+        return owned
+
+    for info in _list_evolver_processes():
+        _consider(info.pid, info.cmdline, str(get_workspace_root()))
+    return owned
+
+
+def stop_owned_loops() -> StopResult:
+    """Stop only loops owned by this repo (safer than stop-all)."""
+    pids = get_owned_loop_pids()
+    if not pids:
+        return StopResult(status="not_running")
+    killed: list[int] = []
+    for pid in pids:
+        try:
+            if platform.system() == "Windows":
+                os.kill(pid, signal.CTRL_BREAK_EVENT)
+            else:
+                os.kill(pid, signal.SIGTERM)
+            killed.append(pid)
+        except (OSError, ProcessLookupError):
+            pass
+    return StopResult(status="stopped" if killed else "not_running", killed=killed)
 
 
 # ---------------------------------------------------------------------------

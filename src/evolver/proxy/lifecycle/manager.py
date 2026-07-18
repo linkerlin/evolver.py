@@ -75,6 +75,12 @@ MIN_HEARTBEAT_INTERVAL_MS = 30_000  # 30s
 # L4: Stale secret — a secret older than this (without refresh) is considered stale.
 SECRET_STALE_TTL_S = 7 * 24 * 60 * 60  # 7 days
 
+# Round-5: unknown_node cache-poisoning backoff (Hub may cache a stale
+# "unknown_node" for ~7 min). Absolute deadline so poke/drift cannot bypass.
+UNKNOWN_NODE_BACKOFF_MS = 8 * 60 * 1000  # 8 min absolute window
+UNKNOWN_NODE_THRESHOLD = 2  # consecutive unknown_node hits before arming deadline
+HELLO_RECOVERY_DELAY_MS = 45_000  # delay after hello-ok recovery so cache refreshes
+
 
 # ---------------------------------------------------------------------------
 # Exceptions
@@ -119,6 +125,12 @@ class LifecycleState:
     # Gap 3: hub-unreachable exponential backoff — network errors (not auth).
     hub_unreachable_failures: int = 0
     hub_unreachable_until: float | None = None
+    # Round-5: unknown_node absolute backoff deadline (epoch ms).
+    unknown_node_streak: int = 0
+    unknown_node_backoff_until_ms: float = 0.0
+    pending_reschedule_delay_ms: float = 0.0
+    self_driving_poll_enabled: bool = False
+    self_driving_poll_backoff_ms: int = 0
 
 
 # ---------------------------------------------------------------------------
@@ -504,6 +516,17 @@ class LifecycleManager:
         if self._is_in_error_backoff():
             return {"ok": False, "error": "error_backoff"}
 
+        # Round-5: absolute unknown_node backoff deadline.
+        now_ms = time.time() * 1000.0
+        if self._state.unknown_node_backoff_until_ms > now_ms:
+            wait = int(self._state.unknown_node_backoff_until_ms - now_ms)
+            return {
+                "ok": False,
+                "error": "unknown_node_backoff",
+                "wait_ms": wait,
+                "unknownNodeBackoffUntil": self._state.unknown_node_backoff_until_ms,
+            }
+
         # L5: Rate limit check.
         if not _skip_reauth and not self._check_rate_limit():
             return {"ok": False, "error": "rate_limited"}
@@ -580,10 +603,36 @@ class LifecycleManager:
         except Exception as exc:
             return {"ok": False, "error": str(exc)}
 
-        # Gap 3: Hub is reachable — reset backoff.
+        # Gap 3: Hub is reachable — reset network backoff.
         self._record_hub_reachable()
 
-        # Success
+        # Round-5: Hub may return status=unknown_node while still HTTP 200
+        # (cached rejection). Arm absolute backoff; optional hello recovery.
+        status = str(body.get("status") or body.get("payload", {}).get("status") or "")
+        if status == "unknown_node":
+            self._arm_unknown_node_backoff()
+            self._state.heartbeat_failures += 1
+            # Best-effort re-hello so the next window can recover.
+            try:
+                hello_res = await self.hello()
+                if hello_res.get("ok"):
+                    # Hello recovered but still apply recovery delay so the
+                    # hub cache can refresh (Round-5 hello-recovery delay).
+                    if self._state.pending_reschedule_delay_ms < HELLO_RECOVERY_DELAY_MS:
+                        self._state.pending_reschedule_delay_ms = float(HELLO_RECOVERY_DELAY_MS)
+            except Exception as exc:
+                logger.debug("[Lifecycle] hello after unknown_node failed: %s", exc)
+            self._save_state()
+            return {
+                "ok": False,
+                "error": "unknown_node",
+                "hub_response": body,
+                "unknownNodeBackoffUntil": self._state.unknown_node_backoff_until_ms,
+                "pendingRescheduleDelayMs": self._state.pending_reschedule_delay_ms,
+            }
+
+        # Success path — clear unknown_node streak.
+        self._clear_unknown_node_backoff()
         self._state.last_heartbeat_at = int(time.time() * 1000)
         self._state.heartbeat_failures = 0
         # Gap 2: persist secret version if the Hub rotated.
@@ -743,8 +792,74 @@ class LifecycleManager:
         if self._task is not None:
             self._task.cancel()
 
-    def poke_heartbeat_loop(self) -> None:
+    def poke_heartbeat_loop(self) -> bool:
+        """Wake the heartbeat loop, or refuse while unknown_node backoff is hot.
+
+        Round-5/6 contract: while ``unknown_node_backoff_until_ms`` is in the
+        future, no poke (drift detector, SIGCONT, SSE) may schedule a tick.
+        Returns True if the poke was accepted.
+        """
+        now_ms = time.time() * 1000.0
+        if self._state.unknown_node_backoff_until_ms > now_ms:
+            logger.debug(
+                "[Lifecycle] poke refused — unknown_node backoff until %.0f",
+                self._state.unknown_node_backoff_until_ms,
+            )
+            return False
         self._poke_event.set()
+        return True
+
+    # Node camelCase alias
+    def pokeHeartbeat(self) -> bool:  # noqa: N802
+        return self.poke_heartbeat_loop()
+
+    def get_heartbeat_stats(self) -> dict[str, Any]:
+        """Ops-visible heartbeat internals (Round-5 getHeartbeatStats)."""
+        now_ms = time.time() * 1000.0
+        return {
+            "node_id": self._state.node_id,
+            "last_heartbeat_at": self._state.last_heartbeat_at,
+            "heartbeat_failures": self._state.heartbeat_failures,
+            "consecutiveFailures": self._state.heartbeat_failures,
+            "unknownNodeBackoffUntil": self._state.unknown_node_backoff_until_ms,
+            "unknownNodeStreak": self._state.unknown_node_streak,
+            "unknownNodeBackoffActive": self._state.unknown_node_backoff_until_ms > now_ms,
+            "pendingRescheduleDelayMs": self._state.pending_reschedule_delay_ms,
+            "selfDrivingPollEnabled": self._state.self_driving_poll_enabled,
+            "selfDrivingPollBackoffMs": self._state.self_driving_poll_backoff_ms,
+            "hub_unreachable_failures": self._state.hub_unreachable_failures,
+            "connection_status": self.connection_status,
+            "in_error_backoff": self._is_in_error_backoff(),
+        }
+
+    def getHeartbeatStats(self) -> dict[str, Any]:  # noqa: N802
+        return self.get_heartbeat_stats()
+
+    def _arm_unknown_node_backoff(self) -> None:
+        """Install absolute unknown_node backoff deadline (Round-5)."""
+        now_ms = time.time() * 1000.0
+        self._state.unknown_node_streak += 1
+        if self._state.unknown_node_streak >= UNKNOWN_NODE_THRESHOLD:
+            self._state.unknown_node_backoff_until_ms = now_ms + UNKNOWN_NODE_BACKOFF_MS
+            self._state.pending_reschedule_delay_ms = float(UNKNOWN_NODE_BACKOFF_MS)
+            logger.warning(
+                "[Lifecycle] unknown_node streak=%d — backoff until +%d ms",
+                self._state.unknown_node_streak,
+                UNKNOWN_NODE_BACKOFF_MS,
+            )
+        else:
+            # Hello-recovery delay even below threshold so cache can refresh.
+            self._state.pending_reschedule_delay_ms = float(HELLO_RECOVERY_DELAY_MS)
+
+    def _clear_unknown_node_backoff(self) -> None:
+        self._state.unknown_node_streak = 0
+        self._state.unknown_node_backoff_until_ms = 0.0
+        self._state.pending_reschedule_delay_ms = 0.0
+
+    def enable_self_driving_poll(self, *, enabled: bool = True, backoff_ms: int = 0) -> None:
+        """Toggle Round-5 self-driving Hub event poll (ops / event bridge)."""
+        self._state.self_driving_poll_enabled = enabled
+        self._state.self_driving_poll_backoff_ms = max(0, int(backoff_ms))
 
     @property
     def connection_status(self) -> str:
@@ -823,6 +938,13 @@ class LifecycleManager:
                 actual_interval = interval_ms / 1000.0
             else:
                 actual_interval = backoff / 1000.0
+            # Round-5: honour pending reschedule delay (hello-recovery / unknown_node).
+            if self._state.pending_reschedule_delay_ms > 0:
+                actual_interval = max(
+                    actual_interval, self._state.pending_reschedule_delay_ms / 1000.0
+                )
+                # Consume one-shot delay after applying it.
+                self._state.pending_reschedule_delay_ms = 0.0
 
             try:
                 await asyncio.wait_for(
