@@ -13,8 +13,10 @@ authentication (e.g. Google Drive, GitHub Apps). The flow:
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
 import time
+from pathlib import Path
 from typing import Any
 
 import httpx
@@ -29,6 +31,7 @@ def _get_keychain() -> WorkspaceKeychain:
     if _keychain is None:
         _keychain = WorkspaceKeychain()
     return _keychain
+
 
 logger = logging.getLogger(__name__)
 
@@ -130,6 +133,44 @@ def get_access_token(provider: str) -> str | None:
     return str(val) if val else None
 
 
+def load_valid_oauth_access_token(
+    *,
+    path: Path | None = None,
+    now_ms: int | None = None,
+) -> str | None:
+    """Load a non-expired OAuth access token from ``~/.evomap/oauth_token.json``.
+
+    Used by ``sync --dry-run`` OAuth-only auth (syncOAuthDryRun). Returns
+    ``None`` when missing, unreadable, or past ``expires_at``.
+    """
+    from evolver.gep.paths import get_evolver_home  # noqa: PLC0415
+
+    token_path = path or (get_evolver_home() / "oauth_token.json")
+    try:
+        if not token_path.is_file():
+            return None
+        data = json.loads(token_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError, UnicodeError):
+        return None
+    if not isinstance(data, dict):
+        return None
+    access = data.get("access_token")
+    if not isinstance(access, str) or not access.strip():
+        return None
+    expires_at = data.get("expires_at")
+    try:
+        exp = int(expires_at) if expires_at is not None else None
+    except (TypeError, ValueError):
+        exp = None
+    if exp is not None:
+        now = now_ms if now_ms is not None else int(time.time() * 1000)
+        # expires_at may be ms or s; treat values < 1e12 as seconds.
+        exp_ms = exp if exp > 1_000_000_000_000 else exp * 1000
+        if now >= exp_ms:
+            return None
+    return access.strip()
+
+
 def revoke_tokens(provider: str) -> None:
     """Remove stored OAuth tokens."""
     kc = _get_keychain()
@@ -139,6 +180,7 @@ def revoke_tokens(provider: str) -> None:
 
 __all__ = [
     "get_access_token",
+    "load_valid_oauth_access_token",
     "poll_for_token",
     "revoke_tokens",
     "start_device_flow",

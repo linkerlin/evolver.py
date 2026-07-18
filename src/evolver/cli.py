@@ -131,6 +131,11 @@ def _build_parser() -> argparse.ArgumentParser:
     )
     sync_p = sub.add_parser("sync", help="Sync assets with the Hub")
     sync_p.add_argument("--dry-run", action="store_true", help="Show what would be synced")
+    sync_p.add_argument(
+        "--force",
+        action="store_true",
+        help="Overwrite local Gene/Capsule when hub id collides",
+    )
     sync_p.add_argument("--scope", default=None, help="Sync scope filter")
     asset_log_p = sub.add_parser("asset-log", help="Show asset call log")
     asset_log_p.add_argument("--run", default=None, help="Filter by run ID")
@@ -143,7 +148,9 @@ def _build_parser() -> argparse.ArgumentParser:
     replay_p.add_argument("--limit", type=int, default=100, help="Max events to replay")
     webui_p = sub.add_parser("webui", help="Launch the WebUI dashboard")
     webui_p.add_argument("--host", default="127.0.0.1", help="Bind host")
-    webui_p.add_argument("--port", type=int, default=None, help="Bind port (default: EVOLVER_WEBUI_PORT or 8080)")
+    webui_p.add_argument(
+        "--port", type=int, default=None, help="Bind port (default: EVOLVER_WEBUI_PORT or 8080)"
+    )
     login_p = sub.add_parser("login", help="OAuth device-code login")
     login_p.add_argument("--hub-url", default=None, help="Override Hub URL")
     login_p.add_argument("--mock", action="store_true", help="Generate a mock token (dev mode)")
@@ -591,7 +598,9 @@ def _cmd_trajectory(args: argparse.Namespace) -> int:  # noqa: PLR0911, PLR0912,
     if not input_path.exists():
         print(f"trajectory: input not found: {input_path}", file=sys.stderr)
         return 1
-    output_path = Path(args.output) if args.output else input_path.with_suffix(".trajectories.jsonl")
+    output_path = (
+        Path(args.output) if args.output else input_path.with_suffix(".trajectories.jsonl")
+    )
 
     # Session-log path: a session JSONL file, or a directory of them.
     session_files: list[Path]
@@ -617,9 +626,7 @@ def _cmd_trajectory(args: argparse.Namespace) -> int:  # noqa: PLR0911, PLR0912,
         except Exception as exc:  # noqa: BLE001
             print(f"trajectory export failed: {exc}", file=sys.stderr)
             return 1
-        print(
-            f"Wrote {len(session_trajectories)} session trajectory(ies) → {output_path}"
-        )
+        print(f"Wrote {len(session_trajectories)} session trajectory(ies) → {output_path}")
         return 0
 
     # Otherwise: proxy-trace JSONL (single file).
@@ -644,7 +651,9 @@ def _cmd_trajectory(args: argparse.Namespace) -> int:  # noqa: PLR0911, PLR0912,
         try:
             keyring = _json.loads(args.node_secret_keyring)
         except ValueError:
-            print("trajectory: --node-secret-keyring must be JSON {version: secret}", file=sys.stderr)
+            print(
+                "trajectory: --node-secret-keyring must be JSON {version: secret}", file=sys.stderr
+            )
             return 2
 
     try:
@@ -857,7 +866,11 @@ async def _cmd_sync(args: argparse.Namespace) -> int:
     from evolver.gep.sync import sync_all
 
     try:
-        result = await sync_all(dry_run=args.dry_run, scope=getattr(args, "scope", None))
+        result = await sync_all(
+            dry_run=args.dry_run,
+            scope=getattr(args, "scope", None),
+            force=bool(getattr(args, "force", False)),
+        )
     except Exception as exc:
         print(f"Sync failed: {exc}", file=sys.stderr)
         return 1

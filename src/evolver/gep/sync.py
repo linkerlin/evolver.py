@@ -18,25 +18,65 @@ from evolver.gep.node_identity import (
     resolve_identity_tuple,
     resolve_readonly_node_id,
 )
+from evolver.gep.oauth_login import load_valid_oauth_access_token
+from evolver.gep.sync_asset import install_sync_asset, prepare_sync_asset
 
 logger = logging.getLogger(__name__)
+
+_AUTH_REQUIRED_MSG = "sync requires an existing node_secret or a valid OAuth access token"
+
+
+def _resolve_sync_auth(
+    *,
+    dry_run: bool,
+    identity: dict[str, Any],  # noqa: ARG001 — reserved for future node-scoped OAuth
+) -> dict[str, Any]:
+    """Pick Authorization for published sync: node secret, else OAuth (dry-run).
+
+    Dry-run never mints secrets; OAuth-only is accepted when the token file
+    is present and not expired (syncOAuthDryRun).
+    """
+    headers = build_identity_hub_headers(create=not dry_run)
+    if dry_run:
+        headers = build_identity_hub_headers(create=False)
+
+    if headers.get("Authorization"):
+        return {"ok": True, "headers": headers, "auth": "node_secret"}
+
+    oauth = load_valid_oauth_access_token()
+    if oauth:
+        headers = {
+            "Content-Type": "application/json",
+            "Authorization": f"Bearer {oauth}",
+        }
+        return {"ok": True, "headers": headers, "auth": "oauth"}
+
+    # Expired / missing OAuth: distinguish for clearer errors.
+    from evolver.gep.paths import get_evolver_home  # noqa: PLC0415
+
+    token_path = get_evolver_home() / "oauth_token.json"
+    if token_path.is_file() and dry_run:
+        return {"ok": False, "error": _AUTH_REQUIRED_MSG, "auth": "oauth_expired"}
+    return {"ok": False, "error": _AUTH_REQUIRED_MSG, "auth": "missing"}
 
 
 async def _sync_published_by_me(
     *,
     dry_run: bool,
     identity: dict[str, Any],
+    force: bool = False,  # noqa: ARG001 — install uses force at caller
 ) -> dict[str, Any]:
     """GET /a2a/assets/published-by-me with the resolved identity tuple."""
     hub = (get_hub_url() or "").rstrip("/")
     if not hub:
         return {"ok": False, "error": "no_hub_url", "requests": []}
 
+    auth = _resolve_sync_auth(dry_run=dry_run, identity=identity)
+    if not auth.get("ok"):
+        return {"ok": False, "error": auth.get("error"), "auth_failed": True}
+
     node_id = identity.get("node_id")
-    headers = build_identity_hub_headers(create=not dry_run)
-    # dry-run rebuilds headers without create; ensure readonly tuple used.
-    if dry_run:
-        headers = build_identity_hub_headers(create=False)
+    headers = auth["headers"]
 
     params: dict[str, str] = {}
     if node_id:
@@ -78,12 +118,16 @@ async def sync_all(  # noqa: PLR0912, PLR0915
     *,
     dry_run: bool = False,
     scope: str | None = None,
+    force: bool = False,
 ) -> dict[str, Any]:
     """High-level sync: tasks / hub events / published-by-me (scope-aware).
 
     When *dry_run* is True the identity tuple is resolved **read-only**
     (no mint, no credential writes) so mixed mailbox/persisted identities
     cannot cross-contaminate disk state (identityTupleSync).
+
+    *force* overwrites local Gene/Capsule id collisions when installing
+    prepared Hub assets (syncAsset install path).
     """
     installed: list[dict[str, Any]] = []
     errors: list[str] = []
@@ -103,7 +147,17 @@ async def sync_all(  # noqa: PLR0912, PLR0915
 
     scope_norm = (scope or "").strip().lower()
     if scope_norm in ("published", "published-by-me", "mine"):
-        pub = await _sync_published_by_me(dry_run=dry_run, identity=identity)
+        pub = await _sync_published_by_me(dry_run=dry_run, identity=identity, force=force)
+        if pub.get("auth_failed"):
+            return {
+                "ok": False,
+                "error": pub.get("error") or _AUTH_REQUIRED_MSG,
+                "installed": [],
+                "errors": [str(pub.get("error") or _AUTH_REQUIRED_MSG)],
+                "count": 0,
+                "dry_run": dry_run,
+                "scope": scope_norm,
+            }
         if pub.get("ok"):
             for asset in pub.get("assets") or []:
                 if not isinstance(asset, dict):
@@ -116,14 +170,33 @@ async def sync_all(  # noqa: PLR0912, PLR0915
                             "action": "would_sync",
                         }
                     )
-                else:
-                    installed.append(
+                    continue
+                # Real sync: normalize via prepareSyncAsset then install.
+                try:
+                    from datetime import UTC, datetime  # noqa: PLC0415
+
+                    synced_at = str(
+                        asset.get("synced_at")
+                        or asset.get("syncedAt")
+                        or datetime.now(UTC).isoformat().replace("+00:00", "Z")
+                    )
+                    prepared = prepare_sync_asset(
                         {
-                            "id": asset.get("id") or asset.get("asset_id"),
-                            "type": asset.get("type"),
-                            "action": "listed",
+                            "assetType": asset.get("type") or "Gene",
+                            "assetId": str(asset.get("asset_id") or asset.get("id") or "hub_asset"),
+                            "localId": str(asset.get("id") or "local"),
+                            "summary": str(asset.get("summary") or ""),
+                            "syncedAt": synced_at,
+                            "payload": asset,
                         }
                     )
+                    result = install_sync_asset(prepared, force=force)
+                    if result.get("ok"):
+                        installed.append(result)
+                    else:
+                        errors.append(f"install {prepared.get('id')}: {result.get('error')}")
+                except Exception as exc:
+                    errors.append(f"prepare/install: {exc}")
         else:
             errors.append(f"published: {pub.get('error')}")
         return {
@@ -139,6 +212,7 @@ async def sync_all(  # noqa: PLR0912, PLR0915
             },
             "dry_run": dry_run,
             "scope": scope_norm,
+            "force": force,
         }
 
     # Default path: tasks + hub events (pre-existing behaviour).
