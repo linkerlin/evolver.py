@@ -131,7 +131,7 @@ def spawn_replacement_process(
     log = Path(log_path) if log_path else Path("evolver-daemon.log")
     try:
         log.parent.mkdir(parents=True, exist_ok=True)
-        log_handle = open(log, "a", encoding="utf-8")  # noqa: SIM115
+        log_handle = open(log, "a", encoding="utf-8")
     except OSError as exc:
         logger.error("[Daemon] Spawn-replacement failed (%s): %s", reason, exc)
         return {"spawned": False, "reason": "spawn_error", "error": exc}
