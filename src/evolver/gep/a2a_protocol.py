@@ -42,36 +42,36 @@ def get_hub_url() -> str | None:
 
 
 def get_node_id() -> str | None:
-    """Resolve node id: env → legacy file → cache (no mint; CLI may mint elsewhere)."""
-    from evolver.gep.node_identity import (  # noqa: PLC0415
-        is_valid_node_id,
-        read_legacy_node_id,
-        resolve_node_id,
-        set_cached_node_id,
-    )
+    """Resolve node id (env → persisted → mailbox → mint+persist).
 
-    env = (os.environ.get("A2A_NODE_ID") or "").strip()
-    if env:
-        set_cached_node_id(env if is_valid_node_id(env) else None)
-        return env
-    resolved = resolve_node_id(allow_mint=False)
-    if resolved:
-        set_cached_node_id(resolved)
-        return resolved
-    legacy = read_legacy_node_id()
-    if legacy:
-        set_cached_node_id(legacy)
-        return legacy
-    return None
+    Matches Node ``getNodeId()``: first call may mint and write
+    ``~/.evomap/node_id`` under the canonical identity lock.
+    """
+    from evolver.gep.node_identity import get_or_create_node_id  # noqa: PLC0415
+
+    return get_or_create_node_id()
 
 
 def get_hub_node_secret() -> str | None:
-    return os.environ.get("A2A_NODE_SECRET")
+    """Resolve Hub node secret from env / identity tuple (no cross-node bleed)."""
+    env = (os.environ.get("A2A_NODE_SECRET") or os.environ.get("EVOMAP_NODE_SECRET") or "").strip()
+    if env:
+        # Prefer explicit env when set; identity tuple still used for version.
+        return env
+    from evolver.gep.node_identity import resolve_identity_tuple  # noqa: PLC0415
+
+    secret = resolve_identity_tuple(create=False).get("secret")
+    return str(secret) if secret else None
 
 
 def get_hub_node_secret_version() -> str | None:
-    raw = os.environ.get("A2A_NODE_SECRET_VERSION")
-    return raw.strip() if raw and raw.strip() else None
+    raw = os.environ.get("A2A_NODE_SECRET_VERSION") or os.environ.get("EVOMAP_NODE_SECRET_VERSION")
+    if raw and str(raw).strip():
+        return str(raw).strip()
+    from evolver.gep.node_identity import resolve_identity_tuple  # noqa: PLC0415
+
+    version = resolve_identity_tuple(create=False).get("version")
+    return str(version) if version is not None else None
 
 
 def build_hub_headers() -> dict[str, str]:
@@ -82,19 +82,11 @@ def build_hub_headers() -> dict[str, str]:
     return headers
 
 
-def build_node_scoped_hub_headers() -> dict[str, str]:
-    """Node-scoped Hub auth (node secret only, with optional secret version)."""
-    secret = get_hub_node_secret()
-    if not secret:
-        return {"Content-Type": "application/json"}
-    headers: dict[str, str] = {
-        "Content-Type": "application/json",
-        "Authorization": f"Bearer {secret}",
-    }
-    version = get_hub_node_secret_version()
-    if version:
-        headers["X-EvoMap-Node-Secret-Version"] = version
-    return headers
+def build_node_scoped_hub_headers(*, create: bool = True) -> dict[str, str]:
+    """Node-scoped Hub auth from the active identity tuple."""
+    from evolver.gep.node_identity import build_identity_hub_headers  # noqa: PLC0415
+
+    return build_identity_hub_headers(create=create)
 
 
 def _new_message_id() -> str:
