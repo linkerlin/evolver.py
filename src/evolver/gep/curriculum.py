@@ -232,6 +232,22 @@ def next_tasks(
     return candidates[:count]
 
 
+def frontier_tasks(*, count: int = 3) -> list[CurriculumTask]:
+    """Return the curriculum *frontier* — next incomplete tasks at current level.
+
+    Used by TTT-inspired signal injection (``curriculum_target:frontier:...``).
+    """
+    return next_tasks(count=count)
+
+
+def frontier_signals(*, count: int = 3) -> list[str]:
+    """Signal tokens marking the current curriculum frontier for predictive boost."""
+    from evolver.gep.ttt_inspired import curriculum_frontier_signals  # noqa: PLC0415
+
+    tasks = frontier_tasks(count=count)
+    return curriculum_frontier_signals([t.task_id for t in tasks])
+
+
 def ingest_exploration_tasks(exploration_signals: list[dict[str, Any]]) -> int:
     """Convert exploration signals into curriculum tasks.
 

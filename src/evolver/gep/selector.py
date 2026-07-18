@@ -14,6 +14,19 @@ from evolver.config import GENE_EPIGENETIC_HARD_BOOST
 from evolver.gep.env_fingerprint import capture_env_fingerprint, env_fingerprint_key
 from evolver.gep.memory_bridge import living_memory_score_adjustment
 
+# In-place (parameter-only) gene blast-radius hard caps — Node INPLACE_* constants.
+INPLACE_BLAST_MAX_FILES: int = 5
+INPLACE_BLAST_MAX_LINES: int = 100
+# Prefer inplace when its score is within this absolute gap of the top score.
+_INPLACE_PREFER_SCORE_GAP: float = 1.5
+
+
+def is_inplace_gene(gene: dict[str, Any] | None) -> bool:
+    """True when *gene* is marked ``execution_mode=inplace`` (parameter-only)."""
+    if not isinstance(gene, dict):
+        return False
+    return str(gene.get("execution_mode") or "").lower() == "inplace"
+
 
 def tokenize(text: str) -> list[str]:
     """Unicode-aware tokenization: keep CJK/JA/KO, split on ASCII punctuation/space."""
@@ -125,6 +138,7 @@ def select_gene(
     options = options or {}
     banned: set[str] = options.get("bannedGeneIds") or set()
     preferred = options.get("preferredGeneId")
+    prefer_inplace = bool(options.get("preferInplace", False))
     drift_enabled = bool(options.get("driftEnabled", False))
     effective_pop = options.get("effectivePopulationSize", max(1, len(genes)))
     memory_evidence = options.get("memoryEvidence", 0)
@@ -193,13 +207,81 @@ def select_gene(
         }
 
     selected = candidates[0]["gene"]
-    alternatives = [c["gene"] for c in candidates[1:4]]
+    selected_score = float(candidates[0]["score"])
+    # TTT: when preferInplace, pick an inplace gene within score gap of the top.
+    if prefer_inplace and not is_inplace_gene(selected):
+        top = selected_score
+        for c in candidates:
+            if (
+                is_inplace_gene(c["gene"])
+                and (top - float(c["score"])) <= _INPLACE_PREFER_SCORE_GAP
+            ):
+                selected = c["gene"]
+                selected_score = float(c["score"])
+                break
+
+    alternatives = [c["gene"] for c in candidates if c["gene"] is not selected][:3]
     return {
         "selected": selected,
         "alternatives": alternatives,
         "driftIntensity": drift_intensity,
         "driftMode": "score_ranked",
-        "score": candidates[0]["score"],
+        "score": selected_score,
+    }
+
+
+def select_multi_gene_chunk(
+    *,
+    genes: list[dict[str, Any]],
+    signals: list[str],
+    memory_advice: dict[str, Any] | None = None,
+    drift_enabled: bool = False,
+    max_genes: int = 3,
+) -> dict[str, Any]:
+    """Select a non-conflicting multi-gene chunk (one primary per category).
+
+    Genes that share a category compete; only the best-scoring survivor of each
+    category is kept so repair alternatives do not stack.
+    """
+    advice = memory_advice or {}
+    banned = set(advice.get("bannedGeneIds") or [])
+    if isinstance(banned, set):
+        banned_ids = banned
+    else:
+        banned_ids = set(banned)
+
+    scored: list[dict[str, Any]] = []
+    for gene in genes:
+        gid = gene.get("id")
+        if not gid or gid in banned_ids:
+            continue
+        if is_epigenetically_suppressed(gene):
+            continue
+        score = _score_gene(gene, signals)
+        if score <= 0:
+            continue
+        if gid == advice.get("preferredGeneId"):
+            score *= 1.5
+        scored.append({"gene": gene, "score": score})
+
+    scored.sort(key=lambda x: float(x["score"]), reverse=True)
+    chosen: list[dict[str, Any]] = []
+    seen_categories: set[str] = set()
+    for item in scored:
+        gene = item["gene"]
+        cat = str(gene.get("category") or gene.get("id") or "unknown")
+        if cat in seen_categories:
+            continue
+        seen_categories.add(cat)
+        chosen.append(gene)
+        if len(chosen) >= max_genes:
+            break
+
+    return {
+        "genes": chosen,
+        "primary": chosen[0] if chosen else None,
+        "count": len(chosen),
+        "driftEnabled": drift_enabled,
     }
 
 
@@ -257,10 +339,14 @@ def select_gene_and_capsule(ctx: dict[str, Any]) -> dict[str, Any]:
 
 
 __all__ = [
+    "INPLACE_BLAST_MAX_FILES",
+    "INPLACE_BLAST_MAX_LINES",
     "compute_drift_intensity",
     "is_epigenetically_suppressed",
+    "is_inplace_gene",
     "select_capsule",
     "select_gene",
     "select_gene_and_capsule",
+    "select_multi_gene_chunk",
     "tokenize",
 ]

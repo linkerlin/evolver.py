@@ -460,9 +460,18 @@ def record_outcome_from_state(
         gene = {"id": last_action["gene_id"]}
 
     attribution = build_reuse_attribution(last_run, last_action)
-    outcome: dict[str, Any] = {"status": status}
+    # TTT predictive outcome block (signal clarity + frontier).
+    from evolver.gep.ttt_inspired import compute_predictive_boost  # noqa: PLC0415
+
+    outcome_signals = list(signals) if signals is not None else current_signals
+    predictive = compute_predictive_boost(
+        signals=outcome_signals,
+        baseline_observed=None,
+        current_observed=observations if isinstance(observations, dict) else None,
+    )
+    outcome: dict[str, Any] = {"status": status, "predictive": predictive}
     event = record_outcome(
-        signals=list(signals) if signals is not None else current_signals,
+        signals=outcome_signals,
         selected_gene=gene,
         outcome=outcome,
         blast_radius=blast_radius,
@@ -642,6 +651,97 @@ def _count_trailing_inert(
     return trailing, has_real_success
 
 
+def compute_predictive_boost(
+    *,
+    signals: list[str] | None = None,
+    baseline_observed: dict[str, Any] | None = None,
+    current_observed: dict[str, Any] | None = None,
+    # CamelCase aliases for Node test parity
+    baselineObserved: dict[str, Any] | None = None,  # noqa: N803
+    currentObserved: dict[str, Any] | None = None,  # noqa: N803
+) -> dict[str, Any]:
+    """Public re-export of :func:`evolver.gep.ttt_inspired.compute_predictive_boost`."""
+    from evolver.gep.ttt_inspired import (  # noqa: PLC0415
+        compute_predictive_boost as _compute,
+    )
+
+    return _compute(
+        signals=signals,
+        baseline_observed=baseline_observed if baseline_observed is not None else baselineObserved,
+        current_observed=current_observed if current_observed is not None else currentObserved,
+    )
+
+
+def check_epoch_boundary(
+    *,
+    signals: list[str] | None = None,
+    current_env_fingerprint_key: str | None = None,  # noqa: ARG001
+    current_gene_lib_version: str | None = None,  # noqa: ARG001
+    # CamelCase aliases (Node)
+    currentEnvFingerprintKey: str | None = None,  # noqa: N803, ARG001
+    currentGeneLibVersion: str | None = None,  # noqa: N803, ARG001
+) -> dict[str, Any]:
+    """Decide whether consecutive-failure signals warrant a memory epoch reset."""
+    from evolver.gep.ttt_inspired import should_reset_epoch  # noqa: PLC0415
+
+    should, reason = should_reset_epoch(signals)
+    return {
+        "shouldReset": should,
+        "reason": reason if should else "",
+    }
+
+
+def reset_memory_preferences(
+    *,
+    reason: str,
+    current_env_fingerprint_key: str | None = None,
+    current_gene_lib_version: str | None = None,
+) -> dict[str, Any]:
+    """Clear preferred_by_signal and append an ``epoch_boundary`` graph event."""
+    epoch_id = _new_id("epoch")
+    state = _read_state()
+    # Wipe preference map so pre-epoch successes no longer dominate selection.
+    state["preferred_by_signal"] = {}
+    epoch_meta = {
+        "epoch_id": epoch_id,
+        "reason": reason,
+        "prev_env_fingerprint_key": current_env_fingerprint_key,
+        "prev_gene_lib_version": current_gene_lib_version,
+        "ts": time.strftime("%Y-%m-%dT%H:%M:%S.", time.gmtime())
+        + f"{int((time.time() % 1) * 1000):03d}Z",
+    }
+    state["current_epoch"] = epoch_meta
+    _write_state(state)
+
+    event = {
+        "type": "MemoryGraphEvent",
+        "kind": "epoch_boundary",
+        "id": _new_id("epb"),
+        "ts": epoch_meta["ts"],
+        "epoch": {
+            "id": epoch_id,
+            "reason": reason,
+            "env_fingerprint_key": current_env_fingerprint_key,
+            "gene_lib_version": current_gene_lib_version,
+        },
+    }
+    _append_event(event)
+    return {"epochId": epoch_id, "reason": reason}
+
+
+def read_current_epoch() -> dict[str, Any]:
+    """Return the current epoch metadata from graph state (or empty defaults)."""
+    state = _read_state()
+    epoch = state.get("current_epoch")
+    if isinstance(epoch, dict) and epoch.get("epoch_id"):
+        return dict(epoch)
+    return {
+        "epoch_id": None,
+        "reason": None,
+        "prev_env_fingerprint_key": None,
+    }
+
+
 def get_memory_advice(  # noqa: PLR0912, PLR0915
     *,
     signals: list[str] | None,
@@ -659,8 +759,20 @@ def get_memory_advice(  # noqa: PLR0912, PLR0915
         if isinstance(pref_entry, dict) and pref_entry.get("gene_id"):
             solidify_preferred = str(pref_entry["gene_id"])
 
+    # Epoch boundary: drop preferences recorded before the current epoch.
+    epoch = read_current_epoch()
+    epoch_ts = epoch.get("ts") if isinstance(epoch, dict) else None
+
     events = try_read_memory_graph_events()
     outcomes = [e for e in events if e.get("kind") == "outcome"]
+    if epoch_ts:
+        # Only count outcomes at/after the epoch for preference inference.
+        filtered: list[dict[str, Any]] = []
+        for e in outcomes:
+            ets = e.get("ts")
+            if isinstance(ets, str) and ets >= str(epoch_ts):
+                filtered.append(e)
+        outcomes = filtered
     friction_events = [e for e in events if e.get("kind") == "friction"]
     friction_cats: set[str] = set()
     for evt in friction_events:
@@ -763,9 +875,13 @@ __all__ = [
     "record_external_candidate",
     "record_friction_observation",
     "record_hypothesis",
+    "check_epoch_boundary",
+    "compute_predictive_boost",
+    "read_current_epoch",
     "record_outcome",
     "record_outcome_from_state",
     "record_signal_gene_preference",
+    "reset_memory_preferences",
     "record_signal_snapshot",
     "rotate_memory_graph_now",
     "rotate_on_startup_if_oversized",

@@ -193,4 +193,59 @@ __internals = {
 }
 
 
-__all__ = ["__internals", "build_gep_prompt", "compact_preview_for_prompt"]
+def build_inplace_gep_prompt(
+    *,
+    signals: list[str] | None = None,
+    selected_gene: dict[str, Any] | None = None,
+    now_iso: str | None = None,
+    parent_event_id: str | None = None,
+    cycle_id: str | None = None,
+) -> str:
+    """Build a constrained prompt for ``execution_mode=inplace`` genes.
+
+    Mirrors Node ``buildInplaceGepPrompt``: PARAMETER-ONLY edits with a hard
+    blast radius of :data:`evolver.gep.selector.INPLACE_BLAST_MAX_FILES` files.
+    """
+    from evolver.gep.selector import INPLACE_BLAST_MAX_FILES, INPLACE_BLAST_MAX_LINES
+
+    gene = selected_gene or {}
+    gene_id = gene.get("id", "unknown")
+    strategy = gene.get("strategy")
+    if isinstance(strategy, list) and strategy:
+        strategy_text = "; ".join(str(s) for s in strategy)
+    elif strategy:
+        strategy_text = str(strategy)
+    else:
+        strategy_text = "Identify parameter values to tune; avoid structural rewrites."
+
+    sigs = [str(s) for s in (signals or [])]
+    lines = [
+        "# IN-PLACE MODE (PARAMETER-ONLY)",
+        "",
+        "You are operating in **IN-PLACE MODE**.",
+        "Apply **PARAMETER-ONLY** changes — no architecture rewrites, no new modules.",
+        f"Blast radius hard cap: **max {INPLACE_BLAST_MAX_FILES} files**, "
+        f"**max {INPLACE_BLAST_MAX_LINES} lines** total.",
+        "",
+        f"Cycle: {cycle_id or 'n/a'}",
+        f"Now: {now_iso or ''}",
+        f"Parent event: {parent_event_id or 'n/a'}",
+        f"Selected gene: `{gene_id}`",
+        f"Signals: {', '.join(sigs) if sigs else '(none)'}",
+        f"Strategy: {strategy_text}",
+        "",
+        "Constraints:",
+        f"- Touch at most {INPLACE_BLAST_MAX_FILES} files",
+        f"- Change at most {INPLACE_BLAST_MAX_LINES} lines",
+        "- Prefer constants, timeouts, thresholds, and config keys",
+        "- Do not introduce new dependencies",
+    ]
+    return "\n".join(lines)
+
+
+__all__ = [
+    "__internals",
+    "build_gep_prompt",
+    "build_inplace_gep_prompt",
+    "compact_preview_for_prompt",
+]
