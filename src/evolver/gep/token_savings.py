@@ -1,9 +1,8 @@
 """Token savings tracker — estimate and report evolution-driven cost reductions.
 
-Equivalent to ``evolver/src/gep/tokenSavings.js`` + ``savingsCore.js``.
-
-Estimates the token/cost savings from using evolved genes vs. a baseline
-(no-evolution average). Produces monthly reports in Markdown.
+Equivalent to ``evolver/src/gep/tokenSavings.js``.  Spec formulas live in
+:mod:`evolver.gep.savings_core` (savings-core conformance); this module is a
+thin production wrapper plus local report tooling.
 """
 
 from __future__ import annotations
@@ -12,6 +11,23 @@ import json
 import time
 from pathlib import Path
 from typing import Any
+
+from evolver.gep.savings_core import reuse_estimate
+
+
+def estimate_reuse_tokens_saved(
+    asset: dict[str, Any] | None,
+    mode: str | None = None,
+) -> dict[str, Any]:
+    """Estimate tokens a reuse of *asset* avoided (savings-core E3).
+
+    Production path locked by the conformance suite: must reproduce every
+    ``reuse_estimate`` golden vector given an equivalent asset shape.
+    """
+    blast_radius = asset.get("blast_radius") if isinstance(asset, dict) else None
+    lines = blast_radius.get("lines") if isinstance(blast_radius, dict) else None
+    return reuse_estimate(lines, mode)
+
 
 #: Default model pricing (USD per 1M tokens). Override via env.
 _MODEL_PRICING: dict[str, dict[str, float]] = {
@@ -121,4 +137,9 @@ class SavingsTracker:
             )
 
 
-__all__ = ["SavingsTracker", "compute_savings", "get_model_pricing"]
+__all__ = [
+    "SavingsTracker",
+    "compute_savings",
+    "estimate_reuse_tokens_saved",
+    "get_model_pricing",
+]
