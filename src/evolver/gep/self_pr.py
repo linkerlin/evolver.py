@@ -1,6 +1,6 @@
 """Self-PR — automatically create GitHub Pull Requests for high-confidence mutations.
 
-Equivalent to Node's ``evolver/src/gep/selfPR.js``.
+Equivalent to Node's ``evolver/src/gep/selfPR.js`` (v1.91.0 injection-hardened).
 
 When a solidify scores above the threshold (default 0.85), passes all
 policy checks, and contains no secret leaks, this module can
@@ -25,7 +25,9 @@ to avoid pollution.
 Design notes
 ------------
 * Requires ``gh`` CLI or ``GITHUB_TOKEN`` env var.
-* All git operations use atomic patterns.
+* All git/gh operations use argv lists with ``shell=False`` (Semgrep #285 /
+  Node v1.91.0): PR title, body, branch, and gene_id never reach a shell.
+* Branch name components are sanitized to a safe charset.
 * Respects ``enable_self_pr`` feature flag.
 """
 
@@ -37,10 +39,12 @@ import os
 import re
 import subprocess
 import time
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, cast
 
+from evolver.config import SELF_PR_MIN_SCORE, SELF_PR_TIMEOUT_MS
 from evolver.gep.epigenetics import capture_env_fingerprint, env_fingerprint_key
 from evolver.gep.feature_flags import is_enabled
 from evolver.gep.open_pr_registry import load_registry, register_pr
@@ -51,10 +55,13 @@ from evolver.gep.sanitize import full_leak_check
 logger = logging.getLogger(__name__)
 
 # Defaults
-DEFAULT_MIN_SCORE = 0.85
+DEFAULT_MIN_SCORE = float(SELF_PR_MIN_SCORE) if SELF_PR_MIN_SCORE else 0.85
 DEFAULT_COOLDOWN_SECONDS = 86400  # 24 h
 MAX_DIFF_SIMILARITY = 0.9
 BRANCH_PREFIX = "evolver-auto"
+# Gene/branch fragments: reject metacharacters that would matter under shell.
+_SAFE_BRANCH_RE = re.compile(r"[^A-Za-z0-9._/-]+")
+_SAFE_BRANCH_COMPONENT_RE = re.compile(r"^[A-Za-z0-9._-]+$")
 
 # ---------------------------------------------------------------------------
 # Data model
@@ -106,8 +113,8 @@ def _check_cooldown(gene_id: str, registry: dict[str, Any]) -> bool:
 
 def _diff_similarity(a: str, b: str) -> float:
     """Simple Jaccard-ish similarity on diff lines."""
-    set_a = set(line.strip() for line in a.splitlines() if line.strip())
-    set_b = set(line.strip() for line in b.splitlines() if line.strip())
+    set_a = {line.strip() for line in a.splitlines() if line.strip()}
+    set_b = {line.strip() for line in b.splitlines() if line.strip()}
     if not set_a and not set_b:
         return 1.0
     union = set_a | set_b
@@ -125,27 +132,102 @@ def _check_diff_dedup(diff_text: str, registry: dict[str, Any]) -> bool:
 
 
 # ---------------------------------------------------------------------------
-# Git helpers
+# Git / gh helpers — argv only, shell=False (injection hard-stop)
 # ---------------------------------------------------------------------------
+
+# Test hook: replace the low-level runner without patching subprocess globally.
+_run_cmd_impl: Callable[..., subprocess.CompletedProcess[str]] | None = None
+
+
+def _subprocess_timeout_s() -> float:
+    ms = int(SELF_PR_TIMEOUT_MS) if SELF_PR_TIMEOUT_MS else 30_000
+    return max(ms / 1000.0, 1.0)
+
+
+def _assert_argv(cmd: Sequence[str]) -> list[str]:
+    """Refuse string or non-str argv forms that enable shell injection."""
+    if isinstance(cmd, (str, bytes)):
+        raise TypeError("self_pr forbids string commands; pass an argv list")
+    if not cmd:
+        raise ValueError("empty argv")
+    return [str(part) for part in cmd]
+
+
+def run_argv(
+    cmd: Sequence[str],
+    *,
+    cwd: Path | str | None = None,
+    check: bool = True,
+    timeout: float | None = None,
+) -> subprocess.CompletedProcess[str]:
+    """Run *cmd* as an argv list with ``shell=False`` (never shell-interpolated).
+
+    Mirrors Node v1.91.0 ``execFileSync(bin, args)`` — PR title / body / branch
+    are discrete argv elements, so ``$(...)`` / ``;`` inside them cannot spawn
+    a secondary shell command.
+    """
+    argv = _assert_argv(cmd)
+    root = Path(cwd) if cwd is not None else get_workspace_root()
+    timeout_s = _subprocess_timeout_s() if timeout is None else timeout
+    runner = _run_cmd_impl
+    if runner is not None:
+        result = runner(
+            argv,
+            cwd=str(root),
+            capture_output=True,
+            text=True,
+            timeout=timeout_s,
+            encoding="utf-8",
+            errors="replace",
+            shell=False,
+        )
+    else:
+        result = subprocess.run(
+            argv,
+            cwd=str(root),
+            capture_output=True,
+            text=True,
+            timeout=timeout_s,
+            encoding="utf-8",
+            errors="replace",
+            shell=False,
+            check=False,
+        )
+    if check and result.returncode != 0:
+        raise subprocess.CalledProcessError(
+            result.returncode, argv, output=result.stdout, stderr=result.stderr
+        )
+    return result
+
+
+def sanitize_branch_component(raw: str, *, fallback: str = "gene") -> str:
+    """Reduce *raw* to a git-safe single path component (no shell metacharacters).
+
+    Strips spaces, ``$()``, ``;``, newlines, and path separators so a hostile
+    gene_id cannot widen the branch string into multiple git path segments or
+    shell tokens (defense-in-depth on top of argv-only execution).
+    """
+    text = str(raw or "").strip()
+    # Collapse path separators first so "a/b" does not create nested refs.
+    text = text.replace("\\", "-").replace("/", "-")
+    text = _SAFE_BRANCH_RE.sub("-", text)
+    text = re.sub(r"-{2,}", "-", text).strip(".-")
+    if not text or not _SAFE_BRANCH_COMPONENT_RE.match(text):
+        return fallback
+    # Cap length so refs stay within common git limits.
+    return text[:80]
+
+
+def make_auto_branch_name(gene_id: str, *, now: int | None = None) -> str:
+    """Build ``evolver-auto/{ts}-{safe_gene}`` with sanitized gene fragment."""
+    ts = int(time.time()) if now is None else int(now)
+    safe = sanitize_branch_component(gene_id)
+    return f"{BRANCH_PREFIX}/{ts}-{safe}"
 
 
 def _run_git(*args: str, cwd: Path | None = None, check: bool = True) -> str:
-    root = cwd or get_workspace_root()
-    cmd = ["git", *args]
-    result = subprocess.run(
-        cmd,
-        cwd=str(root),
-        capture_output=True,
-        text=True,
-        timeout=30,
-        encoding="utf-8",
-        errors="replace",
-    )
-    if check and result.returncode != 0:
-        raise subprocess.CalledProcessError(
-            result.returncode, cmd, output=result.stdout, stderr=result.stderr
-        )
-    return result.stdout.strip()
+    result = run_argv(["git", *args], cwd=cwd, check=check)
+    return (result.stdout or "").strip()
 
 
 def _get_current_branch() -> str:
@@ -153,11 +235,13 @@ def _get_current_branch() -> str:
 
 
 def _create_branch(branch: str) -> None:
+    # Branch is already sanitized by make_auto_branch_name; still pass as argv.
     _run_git("checkout", "-b", branch)
 
 
 def _commit(message: str) -> None:
     _run_git("add", "-A")
+    # Message is a single argv element after -m — never shell-interpolated.
     _run_git("commit", "-m", message, "--no-verify")
 
 
@@ -189,9 +273,9 @@ def _repo_from_git() -> str | None:
 
 
 def _create_pr_via_gh(branch: str, title: str, body: str) -> dict[str, Any] | None:
-    """Try ``gh pr create``. Returns parsed JSON or None."""
+    """Try ``gh pr create`` with argv-only invocation. Returns parsed JSON or None."""
     try:
-        result = subprocess.run(
+        result = run_argv(
             [
                 "gh",
                 "pr",
@@ -205,16 +289,15 @@ def _create_pr_via_gh(branch: str, title: str, body: str) -> dict[str, Any] | No
                 "--json",
                 "url,number",
             ],
-            cwd=str(get_workspace_root()),
-            capture_output=True,
-            text=True,
-            timeout=30,
+            check=False,
         )
         if result.returncode == 0:
-            return cast(dict[str, Any], json.loads(result.stdout.strip()))
+            return cast(dict[str, Any], json.loads((result.stdout or "").strip()))
         logger.debug("[SelfPR] gh CLI failed: %s", result.stderr)
     except FileNotFoundError:
         logger.debug("[SelfPR] gh CLI not found")
+    except (OSError, json.JSONDecodeError, TypeError, ValueError) as exc:
+        logger.debug("[SelfPR] gh CLI error: %s", exc)
     return None
 
 
@@ -223,7 +306,7 @@ def _create_pr_via_api(
 ) -> dict[str, Any] | None:
     """Try GitHub API. Returns parsed JSON or None."""
     try:
-        import httpx
+        import httpx  # noqa: PLC0415 — optional dependency path
 
         resp = httpx.post(
             f"https://api.github.com/repos/{repo}/pulls",
@@ -283,7 +366,7 @@ def _build_pr_body(
 # ---------------------------------------------------------------------------
 
 
-def create_self_pr(
+def create_self_pr(  # noqa: PLR0911
     *,
     diff_text: str,
     gene_id: str,
@@ -324,16 +407,15 @@ def create_self_pr(
     if not _check_diff_dedup(diff_text, registry):
         return SelfPRResult(success=False, reason="diff too similar to existing PR")
 
-    # 7. Create branch
-    now = int(time.time())
-    branch = f"{BRANCH_PREFIX}/{now}-{gene_id}"
+    # 7. Create branch (gene_id sanitized — never raw into a shell string)
+    branch = make_auto_branch_name(gene_id)
     original_branch = _get_current_branch()
     try:
         _create_branch(branch)
     except subprocess.CalledProcessError as exc:
         return SelfPRResult(success=False, reason=f"branch creation failed: {exc}")
 
-    # 8. Commit
+    # 8. Commit — message is argv after -m (injection-safe)
     try:
         _commit(gene_summary or "evolver auto-commit")
     except subprocess.CalledProcessError as exc:
@@ -349,7 +431,7 @@ def create_self_pr(
         _run_git("branch", "-D", branch, check=False)
         return SelfPRResult(success=False, reason=f"push failed: {exc}")
 
-    # 10. Open PR
+    # 10. Open PR — title/body/branch are discrete argv elements for `gh`
     title = f"[evolver-auto] {gene_summary[:80]}"
     body = _build_pr_body(
         gene_summary=gene_summary,
