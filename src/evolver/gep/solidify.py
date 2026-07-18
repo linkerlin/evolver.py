@@ -14,6 +14,7 @@ from typing import Any
 
 from evolver.config import VALIDATION_TIMEOUT_MS
 from evolver.gep.asset_store import append_event_jsonl, read_json_if_exists
+from evolver.gep.cognition import post_solidify_hooks, record_solidify_failure
 from evolver.gep.execution_trace import build_execution_trace
 from evolver.gep.git_ops import (
     capture_diff_snapshot,
@@ -27,7 +28,7 @@ from evolver.gep.paths import (
     get_solidify_state_path,
     get_workspace_root,
 )
-from evolver.gep.cognition import post_solidify_hooks, record_solidify_failure
+from evolver.gep.validation_report import build_validation_report
 from evolver.ops.narrative import record_narrative_and_reflection
 
 
@@ -50,6 +51,7 @@ def _read_solidify_state() -> dict[str, Any] | None:
 def _run_validations(commands: list[str], cwd: Path) -> dict[str, Any]:
     results: list[dict[str, Any]] = []
     overall_ok = True
+    started_at = time.time() * 1000.0
     for cmd in commands:
         result = {"command": cmd, "ok": False, "stdout": "", "stderr": ""}
         try:
@@ -69,7 +71,13 @@ def _run_validations(commands: list[str], cwd: Path) -> dict[str, Any]:
         if not result["ok"]:
             overall_ok = False
         results.append(result)
-    return {"ok": overall_ok, "results": results}
+    finished_at = time.time() * 1000.0
+    return {
+        "ok": overall_ok,
+        "results": results,
+        "started_at": started_at,
+        "finished_at": finished_at,
+    }
 
 
 def _compute_blast_radius() -> dict[str, int]:
@@ -108,16 +116,30 @@ def solidify(
     validation_commands = mutation.get("validation") or []
 
     validation_result: dict[str, Any] | None = None
+    validation_report: dict[str, Any] | None = None
     if not skip_validation and validation_commands:
         validation_result = _run_validations(validation_commands, cwd)
+        try:
+            validation_report = build_validation_report(
+                gene_id=last_run.get("selected_gene_id"),
+                commands=[r.get("command", "") for r in validation_result["results"]],
+                results=validation_result["results"],
+                started_at=validation_result.get("started_at"),
+                finished_at=validation_result.get("finished_at"),
+            )
+        except Exception:
+            validation_report = None
         if not validation_result["ok"]:
             rollback_tracked()
             rollback_new_untracked_files(git_list_untracked_files(cwd))
             record_solidify_failure(last_run, error="validation_failed")
+            details: dict[str, Any] = dict(validation_result)
+            if validation_report is not None:
+                details["validation_report"] = validation_report
             return {
                 "ok": False,
                 "error": "validation_failed",
-                "details": validation_result,
+                "details": details,
             }
 
     blast_radius = _compute_blast_radius()
@@ -130,7 +152,7 @@ def solidify(
         outputs = [r["stdout"] + "\n" + r["stderr"] for r in validation_result["results"]]
         trace = build_execution_trace(commands, outputs)
 
-    event = {
+    event: dict[str, Any] = {
         "type": "EvolutionEvent",
         "id": f"evt_{int(time.time() * 1000)}_{secrets.token_hex(4)}",
         "run_id": last_run.get("run_id") or last_run.get("mutation", {}).get("id"),
@@ -144,6 +166,8 @@ def solidify(
         "outcome": {"status": "success", "score": 1.0},
         "execution_trace": trace,
     }
+    if validation_report is not None:
+        event["validation_report"] = validation_report
     append_event_jsonl(event)
 
     # Generate narrative and reflection

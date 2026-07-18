@@ -1,20 +1,47 @@
 """Local memory graph store and query engine.
 
 Equivalent to evolver/src/gep/memoryGraph.js (obfuscated).
+
+Includes memory_graph.jsonl rotation (#519): when the active file exceeds
+``EVOLVER_MEMORY_GRAPH_MAX_SIZE_MB`` (default 100 MB), it is renamed and
+gzip-compressed; at most ``EVOLVER_MEMORY_GRAPH_RETENTION_COUNT`` (default 7)
+archives are kept. Opt out with ``EVOLVER_MEMORY_GRAPH_AUTO_ROTATE=false``.
 """
 
 from __future__ import annotations
 
+import contextlib
+import gzip
 import hashlib
 import json
+import math
 import os
+import re
 import secrets
 import time
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, cast
 
 from evolver.config import GENE_INERT_BAN_STREAK
 from evolver.gep.paths import get_evolution_dir, get_memory_graph_path
+
+# --- Rotation (#519) --------------------------------------------------------
+
+ROTATE_CHECK_INTERVAL_MS: float = 30_000
+ROTATE_CHECK_WRITES: int = 100
+_DEFAULT_MAX_SIZE_MB: float = 100.0
+_DEFAULT_RETENTION: int = 7
+_DEFAULT_GZIP_MAX_MB: float = 32.0
+
+# Matches both legacy ``.<ts>`` and current ``.<ts>.gz`` archive forms.
+_ROTATED_SUFFIX_RE = re.compile(r"\.(\d{8,})(?:\.gz)?$")
+
+# Throttle state for maybe_rotate (mirrors Node module-level counters).
+_rotate_throttle: dict[str, float | int] = {
+    "last_check_at": 0.0,
+    "writes_since_check": 0,
+}
 
 # Outcome notes that indicate a zero-work ("inert") success — the gene ran but
 # produced no real artifact. These must NOT build Bayesian confidence, and a
@@ -55,6 +82,159 @@ def _state_path() -> Path:
     return get_evolution_dir() / "memory_graph_state.json"
 
 
+def rotation_enabled() -> bool:
+    """Return whether auto-rotation is enabled (env-driven, default true)."""
+    raw = str(os.environ.get("EVOLVER_MEMORY_GRAPH_AUTO_ROTATE", "true")).lower()
+    return raw not in ("false", "0", "no")
+
+
+def rotation_max_size_bytes() -> int:
+    """Max active-file size in bytes before rotation (default 100 MB)."""
+    raw = os.environ.get("EVOLVER_MEMORY_GRAPH_MAX_SIZE_MB")
+    try:
+        mb = float(raw) if raw is not None and raw != "" else float("nan")
+    except (TypeError, ValueError):
+        mb = float("nan")
+    safe = mb if math.isfinite(mb) and mb > 0 else _DEFAULT_MAX_SIZE_MB
+    return int(safe * 1024 * 1024)
+
+
+def rotation_retention_count() -> int:
+    """How many rotated archives to keep (default 7; 0 deletes all)."""
+    raw = os.environ.get("EVOLVER_MEMORY_GRAPH_RETENTION_COUNT")
+    try:
+        n = float(raw) if raw is not None and raw != "" else float("nan")
+    except (TypeError, ValueError):
+        n = float("nan")
+    if math.isfinite(n) and n >= 0:
+        return int(n)
+    return _DEFAULT_RETENTION
+
+
+def _gzip_max_bytes() -> int:
+    raw = os.environ.get("EVOLVER_ROTATE_GZIP_MAX_MB")
+    try:
+        mb = float(raw) if raw is not None and raw != "" else float("nan")
+    except (TypeError, ValueError):
+        mb = float("nan")
+    safe = mb if math.isfinite(mb) and mb > 0 else _DEFAULT_GZIP_MAX_MB
+    return int(safe * 1024 * 1024)
+
+
+def prune_rotated_archives(active_path: Path | str, retention: int | None = None) -> None:
+    """Delete oldest rotated archives beyond *retention* (newest kept)."""
+    if retention is None:
+        retention = rotation_retention_count()
+    try:
+        active = Path(active_path)
+        directory = active.parent
+        base_name = active.name
+        prefix = base_name + "."
+        entries: list[tuple[str, int]] = []
+        for name in os.listdir(directory):
+            if not name.startswith(prefix):
+                continue
+            # Match suffix on the part after basename.
+            rest = name[len(base_name) :]
+            m = _ROTATED_SUFFIX_RE.match(rest)
+            if not m:
+                continue
+            entries.append((name, int(m.group(1))))
+        entries.sort(key=lambda x: x[1], reverse=True)
+        for name, _ts in entries[retention:]:
+            with contextlib.suppress(OSError):
+                (directory / name).unlink(missing_ok=True)
+    except OSError:
+        pass
+
+
+def rotate_memory_graph_now(active_path: Path | str | None = None) -> str | None:
+    """Force-rotate the active graph file; return archive path or None."""
+    path = Path(active_path) if active_path is not None else _graph_path()
+    renamed_to: str | None = None
+    try:
+        if not path.exists():
+            return None
+        ts = datetime.now(UTC).strftime("%Y%m%d%H%M%S")
+        rotated = Path(f"{path}.{ts}")
+        # Atomic rename on same filesystem; new writes recreate active path.
+        path.replace(rotated)
+        renamed_to = str(rotated)
+
+        # Compress to .gz unless file exceeds OOM guard threshold.
+        try:
+            skip_gzip = False
+            with contextlib.suppress(OSError):
+                if rotated.stat().st_size > _gzip_max_bytes():
+                    skip_gzip = True
+            if not skip_gzip:
+                raw = rotated.read_bytes()
+                gz_path = Path(f"{rotated}.gz")
+                with gzip.open(gz_path, "wb") as gz_handle:
+                    gz_handle.write(raw)
+                with contextlib.suppress(OSError):
+                    rotated.unlink(missing_ok=True)
+                renamed_to = str(gz_path)
+        except OSError:
+            # Keep uncompressed rotated file as fallback.
+            pass
+
+        prune_rotated_archives(path, rotation_retention_count())
+    except OSError:
+        # Rotation failure must never break evolver's write path.
+        return renamed_to
+    return renamed_to
+
+
+def maybe_rotate_memory_graph(
+    active_path: Path | str | None = None,
+    *,
+    force: bool = False,
+) -> str | None:
+    """Rotate when size exceeds threshold (throttled unless *force*)."""
+    if not rotation_enabled():
+        return None
+
+    writes = int(_rotate_throttle["writes_since_check"]) + 1
+    _rotate_throttle["writes_since_check"] = writes
+    now_ms = time.time() * 1000.0
+    last_check = float(_rotate_throttle["last_check_at"])
+    if (
+        not force
+        and writes < ROTATE_CHECK_WRITES
+        and (now_ms - last_check) < ROTATE_CHECK_INTERVAL_MS
+    ):
+        return None
+
+    _rotate_throttle["writes_since_check"] = 0
+    _rotate_throttle["last_check_at"] = now_ms
+
+    path = Path(active_path) if active_path is not None else _graph_path()
+    try:
+        if not path.exists():
+            return None
+        if path.stat().st_size < rotation_max_size_bytes():
+            return None
+        return rotate_memory_graph_now(path)
+    except OSError:
+        return None
+
+
+def rotate_on_startup_if_oversized() -> str | None:
+    """Force rotation if the active file is already oversized (boot path)."""
+    try:
+        if not rotation_enabled():
+            return None
+        path = _graph_path()
+        if not path.exists():
+            return None
+        if path.stat().st_size >= rotation_max_size_bytes():
+            return rotate_memory_graph_now(path)
+    except OSError:
+        return None
+    return None
+
+
 def compute_signal_key(signals: list[str] | None) -> str:
     """Deterministic key for a set of signals, order-independent."""
     if not isinstance(signals, list):
@@ -91,6 +271,9 @@ def _append_event(event: dict[str, Any]) -> dict[str, Any]:
     path.parent.mkdir(parents=True, exist_ok=True)
     with open(path, "a", encoding="utf-8") as f:
         f.write(json.dumps(event, ensure_ascii=False) + "\n")
+    # Best-effort rotation after write (#519); never raise.
+    with contextlib.suppress(Exception):
+        maybe_rotate_memory_graph(path)
     return event
 
 
@@ -397,9 +580,7 @@ def get_memory_advice(  # noqa: PLR0912, PLR0915
             continue
         if evt.get("signal", {}).get("key") != key:
             continue
-        stats = gene_stats.setdefault(
-            gene_id, {"attempts": 0, "successes": 0, "failures": 0}
-        )
+        stats = gene_stats.setdefault(gene_id, {"attempts": 0, "successes": 0, "failures": 0})
         stats["attempts"] += 1
         outcome = evt.get("outcome") or {}
         status = outcome.get("status")
@@ -425,9 +606,7 @@ def get_memory_advice(  # noqa: PLR0912, PLR0915
     # gene after GENE_INERT_BAN_STREAK consecutive trailing inert outcomes with
     # no real success, so the selector yields null and the pipeline mutates.
     for gene_id in list(gene_stats):
-        trailing_inert, has_real_success = _count_trailing_inert(
-            outcomes, key, gene_id
-        )
+        trailing_inert, has_real_success = _count_trailing_inert(outcomes, key, gene_id)
         if has_real_success:
             # Real work was done — never punish old idle cycles.
             continue
@@ -467,12 +646,20 @@ def read_all(limit: int = 10_000) -> list[dict[str, Any]]:
     return try_read_memory_graph_events(limit=limit)
 
 
+# Boot-time rotation: if a pre-rotation evolver left an oversized file, rotate
+# once at import. Best-effort; never raises.
+with contextlib.suppress(Exception):
+    rotate_on_startup_if_oversized()
+
+
 __all__ = [
     "compute_signal_key",
     "get_memory_advice",
     "get_memory_graph_path",
-    "read_all",
+    "maybe_rotate_memory_graph",
     "patch_sync_state",
+    "prune_rotated_archives",
+    "read_all",
     "read_sync_state",
     "record_attempt",
     "record_external_candidate",
@@ -481,5 +668,10 @@ __all__ = [
     "record_outcome",
     "record_signal_gene_preference",
     "record_signal_snapshot",
+    "rotate_memory_graph_now",
+    "rotate_on_startup_if_oversized",
+    "rotation_enabled",
+    "rotation_max_size_bytes",
+    "rotation_retention_count",
     "try_read_memory_graph_events",
 ]
