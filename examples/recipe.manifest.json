@@ -1,0 +1,17 @@
+{
+  "title": "Verified Skill Pipeline",
+  "description": "Compose ordered, locally verified Skills into a GEP Recipe.",
+  "price_per_execution": 1,
+  "currency": "credits",
+  "steps": [
+    {
+      "skill_path": "./skills/triage",
+      "optional": false
+    },
+    {
+      "skill_path": "./skills/verify",
+      "optional": true,
+      "condition": "when validation is available"
+    }
+  ]
+}

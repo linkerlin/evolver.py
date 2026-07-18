@@ -915,9 +915,9 @@ def _build_envelope_headers(
 
 
 def _has_hub_authorization(deps: dict[str, Any]) -> bool:
-    if _get_hub_node_secret(deps):
-        return True
-    return _has_authorization_header(_build_hub_headers_safe(_get_a2a(deps)))
+    # All cliContracts endpoints are node-scoped. OAuth-only authorization
+    # must never be forwarded to fetch/validate/publish.
+    return bool(_get_hub_node_secret(deps))
 
 
 async def _safe_json_response(response: Any) -> Any:

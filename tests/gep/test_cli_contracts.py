@@ -12,6 +12,7 @@ from io import StringIO
 from pathlib import Path
 from typing import Any
 
+from evolver.cli import main
 from evolver.gep.cli_contracts import (
     build_publish_bundle,
     parse_publish_args,
@@ -277,7 +278,7 @@ async def test_reuse_allows_idempotent_same_local_id_and_asset_id(tmp_path: Path
 
 
 async def test_reuse_rejects_positional_id_before_fetch() -> None:
-    buf, deps = _capture()
+    _buf, deps = _capture()
     called = {"fetch": False}
 
     async def _fetch(_asset_id: str) -> None:
@@ -1518,7 +1519,7 @@ async def test_publish_requires_node_secret_before_injected_validate() -> None:
 
 
 async def test_publish_dry_run_rehashes_and_resigns_after_mutation() -> None:
-    buf, deps = _capture()
+    _buf, deps = _capture()
     secret = "h" * 64
     seen: dict[str, Any] = {}
 
@@ -1721,3 +1722,450 @@ async def test_missing_json_rejects_before_dependency_output(
     assert json.loads(captured.out)["reason"] == "unsupported"
     assert "[fetch]" not in captured.out
     assert "[fetch]" not in captured.err
+
+
+def test_publish_bundle_rejects_each_duplicate_asset_type() -> None:
+    cases = [
+        (
+            ["g1", "g2", "c"],
+            [
+                _gene(asset_id="g1", id="g1"),
+                _gene(asset_id="g2", id="g2"),
+                _capsule(asset_id="c", gene="g1"),
+            ],
+        ),
+        (
+            ["g", "c1", "c2"],
+            [
+                _gene(asset_id="g"),
+                _capsule(asset_id="c1", id="c1", gene="g"),
+                _capsule(asset_id="c2", id="c2", gene="g"),
+            ],
+        ),
+        (
+            ["g", "c", "e1", "e2"],
+            [
+                _gene(asset_id="g"),
+                _capsule(asset_id="c", gene="g"),
+                _event(asset_id="e1", id="e1"),
+                _event(asset_id="e2", id="e2"),
+            ],
+        ),
+    ]
+    for refs, records in cases:
+        result = build_publish_bundle(refs, {"asset_store": _FakeStore(records)})
+        assert result["ok"] is False
+        assert result["reason"] == "bundle_required"
+
+
+def test_publish_bundle_loads_store_collections_once() -> None:
+    counts = {"genes": 0, "capsules": 0, "events": 0}
+
+    class _CountingStore(_FakeStore):
+        def load_genes(self) -> list[dict[str, Any]]:
+            counts["genes"] += 1
+            return [_gene(asset_id="g")]
+
+        def load_capsules(self) -> list[dict[str, Any]]:
+            counts["capsules"] += 1
+            return [_capsule(asset_id="c", gene="g")]
+
+        def read_all_events(self) -> list[dict[str, Any]]:
+            counts["events"] += 1
+            return [_event(asset_id="e")]
+
+    result = build_publish_bundle(
+        ["g", "c", "e"],
+        {"asset_store": _CountingStore([])},
+    )
+
+    assert result["ok"] is True
+    assert counts == {"genes": 1, "capsules": 1, "events": 1}
+
+
+async def test_publish_dry_run_does_not_create_persistent_node_id(
+    monkeypatch: Any,
+    tmp_path: Path,
+) -> None:
+    home = tmp_path / "home"
+    monkeypatch.setenv("EVOLVER_HOME", str(home))
+    monkeypatch.delenv("A2A_NODE_ID", raising=False)
+    _buf, deps = _capture()
+    seen: dict[str, Any] = {}
+
+    class _CaptureNodeA2a:
+        @staticmethod
+        def build_publish_bundle(**kwargs: Any) -> dict[str, Any]:
+            seen["node_id"] = kwargs.get("node_id")
+            return _fake_a2a().build_publish_bundle(**kwargs)
+
+    deps.update(
+        {
+            "hub_url": "https://hub.test",
+            "node_secret": "s" * 64,
+            "a2a": _CaptureNodeA2a(),
+            "asset_store": _FakeStore(
+                [_gene(asset_id="g"), _capsule(asset_id="c", gene="g")]
+            ),
+            "validate": lambda _m: {
+                "ok": True,
+                "status": 200,
+                "body": {"payload": {"valid": True}},
+            },
+        }
+    )
+    code = await run_publish_command(
+        ["--asset=g", "--asset=c", "--dry-run", "--json"], deps
+    )
+
+    assert code == 0
+    assert seen["node_id"] == "node_000000000000"
+    assert not (home / "node_id").exists()
+
+
+async def test_publish_reads_raw_text_and_valid_json_responses() -> None:
+    raw_buf, raw_deps = _capture()
+    raw_deps.update(
+        {
+            "hub_url": "https://hub.test",
+            "node_secret": "s" * 64,
+            "a2a": _fake_a2a(),
+            "asset_store": _FakeStore(
+                [_gene(asset_id="g"), _capsule(asset_id="c", gene="g")]
+            ),
+            "hub_fetch": lambda _url, _opts: {
+                "ok": False,
+                "status": 400,
+                "text": lambda: "auth_required",
+            },
+        }
+    )
+    raw_code = await run_publish_command(
+        ["--asset=g", "--asset=c", "--dry-run", "--json"], raw_deps
+    )
+    assert raw_code == 1
+    assert json.loads(raw_buf.getvalue())["reason"] == "auth_required"
+
+    json_buf, json_deps = _capture()
+    calls = {"n": 0}
+
+    def _json_fetch(_url: str, _opts: dict[str, Any]) -> dict[str, Any]:
+        calls["n"] += 1
+        body = (
+            {"payload": {"valid": True}}
+            if calls["n"] == 1
+            else {"payload": {"status": "accepted"}}
+        )
+        return {"ok": True, "status": 200, "text": lambda: json.dumps(body)}
+
+    json_deps.update(
+        {
+            "hub_url": "https://hub.test",
+            "node_secret": "s" * 64,
+            "a2a": _fake_a2a(),
+            "asset_store": _FakeStore(
+                [_gene(asset_id="g"), _capsule(asset_id="c", gene="g")]
+            ),
+            "hub_fetch": _json_fetch,
+        }
+    )
+    json_code = await run_publish_command(
+        ["--asset=g", "--asset=c", "--json"], json_deps
+    )
+    assert json_code == 0
+    assert calls["n"] == 2
+    assert json.loads(json_buf.getvalue())["status"] == "accepted"
+
+
+async def test_publish_actual_network_failure_occurs_after_validate() -> None:
+    buf, deps = _capture()
+    calls = {"n": 0}
+
+    def _hub_fetch(_url: str, _opts: dict[str, Any]) -> dict[str, Any]:
+        calls["n"] += 1
+        if calls["n"] == 1:
+            return {
+                "ok": True,
+                "status": 200,
+                "body": {"payload": {"valid": True}},
+            }
+        raise ConnectionError("DNS failure for hub.test")
+
+    deps.update(
+        {
+            "hub_url": "https://hub.test",
+            "node_secret": "s" * 64,
+            "a2a": _fake_a2a(),
+            "asset_store": _FakeStore(
+                [_gene(asset_id="g"), _capsule(asset_id="c", gene="g")]
+            ),
+            "hub_fetch": _hub_fetch,
+        }
+    )
+    code = await run_publish_command(["--asset=g", "--asset=c", "--json"], deps)
+    payload = json.loads(buf.getvalue())
+
+    assert calls["n"] == 2
+    assert code == 1
+    assert payload["reason"] == "network_error"
+    assert payload["retryable"] is True
+    assert "DNS failure" not in buf.getvalue()
+
+
+async def test_publish_omits_unsafe_original_asset_ids() -> None:
+    marker = "token=abcdefghijklmnop"
+    buf, deps = _capture()
+    deps.update(
+        {
+            "hub_url": "https://hub.test",
+            "node_secret": "s" * 64,
+            "a2a": _fake_a2a(),
+            "asset_store": _FakeStore(
+                [
+                    _gene(asset_id=marker),
+                    _capsule(asset_id="c", gene=marker),
+                ]
+            ),
+            "validate": lambda _m: {
+                "ok": True,
+                "status": 200,
+                "body": {"payload": {"valid": True}},
+            },
+        }
+    )
+    code = await run_publish_command(
+        [f"--asset={marker}", "--asset=c", "--dry-run", "--json"], deps
+    )
+
+    assert code == 0
+    assert marker not in buf.getvalue()
+
+
+async def test_publish_json_redirects_dependency_stdout(
+    capsys: Any,
+) -> None:
+    class _NoisyStore(_FakeStore):
+        def load_genes(self) -> list[dict[str, Any]]:
+            print("[store] dependency stdout")
+            return [_gene(asset_id="g")]
+
+        def load_capsules(self) -> list[dict[str, Any]]:
+            return [_capsule(asset_id="c", gene="g")]
+
+    code = await run_publish_command(
+        ["--asset=g", "--asset=c", "--dry-run", "--json"],
+        {
+            "hub_url": "https://hub.test",
+            "node_secret": "s" * 64,
+            "a2a": _fake_a2a(),
+            "asset_store": _NoisyStore([]),
+            "validate": lambda _m: {
+                "ok": True,
+                "status": 200,
+                "body": {"payload": {"valid": True}},
+            },
+        },
+    )
+    captured = capsys.readouterr()
+
+    assert code == 0
+    assert len(captured.out.strip().splitlines()) == 1
+    assert json.loads(captured.out)["mode"] == "dry_run"
+    assert "[store]" not in captured.out
+    assert "[store]" in captured.err
+
+
+async def test_publish_missing_json_rejects_before_store_output(
+    capsys: Any,
+) -> None:
+    class _NoisyStore(_FakeStore):
+        def load_genes(self) -> list[dict[str, Any]]:
+            print("[store] should not run")
+            return []
+
+    code = await run_publish_command(
+        ["--asset=g", "--asset=c", "--dry-run"],
+        {"asset_store": _NoisyStore([])},
+    )
+    captured = capsys.readouterr()
+
+    assert code == 1
+    assert json.loads(captured.out)["reason"] == "unsupported"
+    assert "[store]" not in captured.out
+    assert "[store]" not in captured.err
+
+
+async def test_publish_redacts_literal_node_secret_from_stderr(
+    capsys: Any,
+) -> None:
+    secret = "z" * 64
+
+    class _NoisyStore(_FakeStore):
+        def load_genes(self) -> list[dict[str, Any]]:
+            print(f"node_secret={secret} token=abcdefghijklmnop", file=__import__("sys").stderr)
+            return [_gene(asset_id="g", strategy=[f"avoid {secret}"])]
+
+        def load_capsules(self) -> list[dict[str, Any]]:
+            return [_capsule(asset_id="c", gene="g", summary=f"contains {secret}")]
+
+    code = await run_publish_command(
+        ["--asset=g", "--asset=c", "--dry-run", "--json"],
+        {
+            "hub_url": "https://hub.test",
+            "node_secret": secret,
+            "a2a": _fake_a2a(),
+            "asset_store": _NoisyStore([]),
+            "validate": lambda _m: {
+                "ok": True,
+                "status": 200,
+                "body": {"payload": {"valid": True}},
+            },
+        },
+    )
+    captured = capsys.readouterr()
+
+    assert code == 0
+    assert secret not in captured.out
+    assert secret not in captured.err
+    assert "token=abcdefghijklmnop" not in captured.err
+
+
+async def test_publish_asset_summary_uses_final_payload() -> None:
+    buf, deps = _capture()
+
+    class _TraceA2a:
+        @staticmethod
+        def build_publish_bundle(**kwargs: Any) -> dict[str, Any]:
+            gene = dict(kwargs["gene"])
+            capsule = dict(kwargs["capsule"])
+            capsule["execution_trace"] = [
+                {"step": 1, "stage": "build", "cmd": "node --test", "exit": 0}
+            ]
+            gene["asset_id"] = compute_asset_id(gene)
+            capsule["asset_id"] = compute_asset_id(capsule)
+            return {
+                "message_type": "publish",
+                "payload": {"assets": [gene, capsule]},
+            }
+
+    deps.update(
+        {
+            "hub_url": "https://hub.test",
+            "node_secret": "s" * 64,
+            "a2a": _TraceA2a(),
+            "asset_store": _FakeStore(
+                [_gene(asset_id="g"), _capsule(asset_id="c", gene="g")]
+            ),
+            "validate": lambda _m: {
+                "ok": True,
+                "status": 200,
+                "body": {"payload": {"valid": True}},
+            },
+        }
+    )
+    code = await run_publish_command(
+        ["--asset=g", "--asset=c", "--dry-run", "--json"], deps
+    )
+    payload = json.loads(buf.getvalue())
+
+    assert code == 0
+    assert payload["assets"] == [
+        {"asset_id": asset["asset_id"], "type": asset["type"]}
+        for asset in payload["payload"]["assets"]
+    ]
+    assert payload["payload"]["assets"][1]["execution_trace"]
+
+
+async def test_publish_credits_omit_all_fractional_fields() -> None:
+    buf, deps = _capture()
+    deps.update(
+        {
+            "hub_url": "https://hub.test",
+            "node_secret": "s" * 64,
+            "a2a": _fake_a2a(),
+            "asset_store": _FakeStore(
+                [_gene(asset_id="g"), _capsule(asset_id="c", gene="g")]
+            ),
+            "validate": lambda _m: {
+                "ok": True,
+                "status": 200,
+                "body": {"payload": {"valid": True}},
+            },
+            "publish": lambda _m: {
+                "ok": True,
+                "status": 200,
+                "body": {
+                    "payload": {
+                        "status": "accepted",
+                        "credits": {
+                            "required": 1.25,
+                            "available": "2.5",
+                            "estimated": 3.1,
+                            "charged": "4.2",
+                            "balance_kind": "node_balance",
+                        },
+                    }
+                },
+            },
+        }
+    )
+    code = await run_publish_command(["--asset=g", "--asset=c", "--json"], deps)
+    credits = json.loads(buf.getvalue())["credits"]
+
+    assert code == 0
+    assert credits == {"balance_kind": "node_balance"}
+
+
+async def test_publish_already_published_rejected_alias_is_success() -> None:
+    buf, deps = _capture()
+    deps.update(
+        {
+            "hub_url": "https://hub.test",
+            "node_secret": "s" * 64,
+            "a2a": _fake_a2a(),
+            "asset_store": _FakeStore(
+                [_gene(asset_id="g"), _capsule(asset_id="c", gene="g")]
+            ),
+            "validate": lambda _m: {
+                "ok": True,
+                "status": 200,
+                "body": {"payload": {"valid": True}},
+            },
+            "publish": lambda _m: {
+                "ok": True,
+                "status": 200,
+                "body": {
+                    "payload": {
+                        "decision": "rejected",
+                        "reason": "already_published",
+                        "credits": {"required": 0, "charged": 0},
+                    }
+                },
+            },
+        }
+    )
+    code = await run_publish_command(["--asset=g", "--asset=c", "--json"], deps)
+    payload = json.loads(buf.getvalue())
+
+    assert code == 0
+    assert payload["status"] == "published"
+    assert payload["credits"] == {"required": 0, "charged": 0}
+    assert "already_published" not in buf.getvalue()
+
+
+def test_cli_reuse_routes_contract_arguments(capsys: Any) -> None:
+    code = main(["reuse", "--id", "sha256:x"])
+    payload = json.loads(capsys.readouterr().out)
+
+    assert code == 1
+    assert payload["contract"] == "reuse.v1"
+    assert payload["reason"] == "unsupported"
+
+
+def test_cli_publish_routes_contract_arguments(capsys: Any) -> None:
+    code = main(["publish", "--asset", "g", "--asset", "c"])
+    payload = json.loads(capsys.readouterr().out)
+
+    assert code == 1
+    assert payload["contract"] == "publish.v1"
+    assert payload["reason"] == "unsupported"

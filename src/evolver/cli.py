@@ -9,6 +9,7 @@ import os
 import sys
 from collections.abc import Sequence
 from pathlib import Path
+from typing import Any
 
 
 def _load_dotenv() -> None:
@@ -99,16 +100,44 @@ def _build_parser() -> argparse.ArgumentParser:
         nargs=argparse.REMAINDER,
         help="Contract args, e.g. --id <asset_id> --json",
     )
-    publish_p = sub.add_parser("publish", help="Publish a Gene+Capsule bundle (publish.v1 contract)")
+    publish_p = sub.add_parser(
+        "publish",
+        help="Publish a Gene+Capsule bundle (publish.v1 contract)",
+    )
     publish_p.add_argument(
         "contract_args",
         nargs=argparse.REMAINDER,
         help="Contract args, e.g. --asset <id> --capsule <id> --json [--dry-run]",
     )
+    skill_recipe = sub.add_parser(
+        "skill2recipe",
+        help="Compose verified Skills into a publishable GEP Recipe",
+    )
+    skill_recipe.add_argument("skills", nargs="*", help="Ordered SKILL.md files/directories")
+    skill_recipe.add_argument("--manifest", default=None, help="JSON recipe manifest")
+    skill_recipe.add_argument("--title", default=None, help="Recipe title override")
+    skill_recipe.add_argument("--description", default=None, help="Recipe description override")
+    skill_recipe.add_argument("--price", type=int, default=None, help="Credits per execution")
+    skill_recipe.add_argument("--repo-root", default=None, help="Validation working directory")
+    skill_recipe.add_argument(
+        "--no-publish",
+        action="store_true",
+        help="Build and verify locally without Hub calls",
+    )
+    skill_recipe.add_argument(
+        "--no-strict",
+        action="store_true",
+        help="Allow a fallback validation command",
+    )
     sync_p = sub.add_parser("sync", help="Sync assets with the Hub")
     sync_p.add_argument("--dry-run", action="store_true", help="Show what would be synced")
     sync_p.add_argument("--scope", default=None, help="Sync scope filter")
-    sub.add_parser("asset-log", help="Show asset call log")
+    asset_log_p = sub.add_parser("asset-log", help="Show asset call log")
+    asset_log_p.add_argument("--run", default=None, help="Filter by run ID")
+    asset_log_p.add_argument("--action", default=None, help="Filter by action type")
+    asset_log_p.add_argument("--last", type=int, default=None, help="Show last N entries")
+    asset_log_p.add_argument("--since", default=None, help="Entries after ISO date")
+    asset_log_p.add_argument("--json", action="store_true", help="Raw JSON output")
     replay_p = sub.add_parser("replay", help="Replay events from SQLite store")
     replay_p.add_argument("--since-id", type=int, default=0, help="Start after this row id")
     replay_p.add_argument("--limit", type=int, default=100, help="Max events to replay")
@@ -215,10 +244,29 @@ def _build_parser() -> argparse.ArgumentParser:
     return parser
 
 
+def _run_cli_contract(raw_args: list[str]) -> int | None:
+    if raw_args and raw_args[0] in {"reuse", "publish"}:
+        from evolver.gep.cli_contracts import (  # noqa: PLC0415
+            run_publish_command,
+            run_reuse_command,
+        )
+
+        contract_args = raw_args[1:]
+        if raw_args[0] == "reuse":
+            return asyncio.run(run_reuse_command(contract_args))
+        return asyncio.run(run_publish_command(contract_args))
+    return None
+
+
 def main(argv: Sequence[str] | None = None) -> int:
     _load_dotenv()
+    raw_args = list(argv) if argv is not None else sys.argv[1:]
+    contract_result = _run_cli_contract(raw_args)
+    if contract_result is not None:
+        return contract_result
+
     parser = _build_parser()
-    args = parser.parse_args(argv)
+    args = parser.parse_args(raw_args)
 
     if args.version:
         from evolver import __version__
@@ -334,6 +382,9 @@ def main(argv: Sequence[str] | None = None) -> int:
 
     if command == "recipe":
         return asyncio.run(_cmd_recipe(args))
+
+    if command == "skill2recipe":
+        return asyncio.run(_cmd_skill2recipe(args))
 
     # Placeholder for other commands.
     print(f"Command '{command}' is not yet implemented in this port.", file=sys.stderr)
@@ -755,25 +806,49 @@ def _cmd_replay(args: argparse.Namespace) -> int:
     return 0
 
 
-def _cmd_asset_log(_args: argparse.Namespace) -> int:
-    """Show the asset call log (events)."""
+def _cmd_asset_log(args: argparse.Namespace) -> int:
+    """Show the asset call log (asset_call_log.jsonl, not events.jsonl)."""
 
-    from evolver.gep.asset_store import read_all_events
+    from evolver.gep.asset_call_log import get_log_path, read_call_log, summarize_call_log
 
-    events = read_all_events()
-    if not events:
-        print("No events recorded yet.")
+    opts: dict[str, Any] = {}
+    if args.run:
+        opts["run_id"] = args.run
+    if args.action:
+        opts["action"] = args.action
+    if args.last:
+        opts["last"] = args.last
+    if args.since:
+        opts["since"] = args.since
+
+    if args.json:
+        print(json.dumps(read_call_log(opts), indent=2, ensure_ascii=False))
         return 0
 
-    for evt in events[-20:]:
-        ts = evt.get("timestamp", "?")
-        gid = evt.get("gene_id", "?")
-        status = (evt.get("outcome") or {}).get("status", "?")
-        br = evt.get("blast_radius", {})
-        print(
-            f"{ts}  gene={gid}  status={status}  "
-            f"files={br.get('files', '?')}  lines={br.get('lines', '?')}"
-        )
+    summary = summarize_call_log(opts)
+    print(f"\n[Asset Call Log] {get_log_path()}")
+    print(f"  Total entries: {summary['total_entries']}")
+    print(f"  Unique assets: {summary['unique_assets']}")
+    print(f"  Unique runs:   {summary['unique_runs']}")
+    print("  By action:")
+    for action, count in summary["by_action"].items():
+        print(f"    {action}: {count}")
+    if summary["entries"]:
+        print("\n  Recent entries:")
+        for entry in summary["entries"][-10:]:
+            ts = str(entry.get("timestamp") or "?")[:19]
+            asset_id = entry.get("asset_id")
+            asset_short = f"{str(asset_id)[:20]}..." if asset_id else "(none)"
+            signals = entry.get("signals")
+            sig_preview = ", ".join(signals[:3]) if isinstance(signals, list) else ""
+            print(
+                f"    [{ts}] {entry.get('action') or '?'}  asset={asset_short}  "
+                f"score={entry.get('score') or '-'}  mode={entry.get('mode') or '-'}  "
+                f"signals=[{sig_preview}]  run={entry.get('run_id') or '-'}"
+            )
+    else:
+        print("\n  No entries found.")
+    print()
     return 0
 
 
@@ -1198,6 +1273,38 @@ async def _cmd_recipe(args: argparse.Namespace) -> int:
 
     print(f"Unknown recipe action: {action}", file=sys.stderr)
     return 2
+
+
+async def _cmd_skill2recipe(args: argparse.Namespace) -> int:
+    from evolver.gep.skill2recipes import compose_recipe_from_skills
+
+    if args.manifest:
+        try:
+            manifest = json.loads(Path(args.manifest).read_text(encoding="utf-8"))
+        except OSError:
+            print("Recipe manifest not found.", file=sys.stderr)
+            return 1
+        except json.JSONDecodeError:
+            print("Recipe manifest is not valid JSON.", file=sys.stderr)
+            return 1
+    elif args.skills:
+        manifest = {"steps": args.skills}
+    else:
+        print("Provide --manifest or one or more Skill paths.", file=sys.stderr)
+        return 2
+    result = await compose_recipe_from_skills(
+        manifest,
+        {
+            "title": args.title,
+            "description": args.description,
+            "price_per_execution": args.price,
+            "repo_root": args.repo_root,
+            "publish": not args.no_publish,
+            "strict": not args.no_strict,
+        },
+    )
+    print(json.dumps(result, ensure_ascii=False))
+    return 0 if result.get("ok") else 1
 
 
 if __name__ == "__main__":
