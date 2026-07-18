@@ -7,11 +7,22 @@ from __future__ import annotations
 
 import asyncio
 import datetime
+import os
 import secrets
 import time
 from typing import Any
 
 from evolver.config import IDLE_FETCH_INTERVAL_MS, MAX_CYCLES_PER_PROCESS
+from evolver.cycle_control import (
+    CycleTimeoutError,
+    cycle_timeout_enabled,
+    cycle_timeout_ms,
+    handle_cycle_timeout,
+    progress_update_ms,
+    spawn_replacement_process,
+    wait_for_timed_out_task,
+    write_cycle_progress_atomic,
+)
 from evolver.evolve import guards
 from evolver.evolve.pipeline import (
     autopoiesis_phase,
@@ -25,7 +36,7 @@ from evolver.evolve.pipeline import (
 from evolver.evolve.post_cycle import run_post_cycle_hooks
 from evolver.gep.bridge import determine_bridge_enabled
 from evolver.gep.instance_lock import instance_lock_ctx
-from evolver.gep.paths import get_cycle_progress_path
+from evolver.gep.paths import get_cycle_progress_path, get_logs_dir
 from evolver.ops.cleanup import run_cleanup
 
 # Daemon loop coordination
@@ -165,13 +176,26 @@ async def run_loop(  # noqa: PLR0912, PLR0915
                     )
                     break
 
-            _write_cycle_progress(cycle_count, consecutive_errors)
+            t0_ms = int(time.time() * 1000)
+            progress_path = get_cycle_progress_path()
+            progress_fields: dict[str, Any] = {
+                "pid": os.getpid(),
+                "outer_cycle": cycle_count,
+                "inner_cycle": cycle_count,
+                "started_at": t0_ms,
+                "phase": "evolve.run",
+                "cycle_count": cycle_count,
+                "consecutive_errors": consecutive_errors,
+            }
+            write_cycle_progress_atomic(progress_path, progress_fields)
 
+            progress_ticker: asyncio.Task[None] | None = None
+            evolve_task: asyncio.Task[dict[str, Any]] | None = None
+            ctx: dict[str, Any] = {}
             try:
                 if review_mode:
                     print("[loop] Review mode active — pausing before cycle.")
                     print("       Press Enter to continue, or send SIGINT to stop.")
-                    # Non-blocking attempt to read a line; if shutdown fires first, break.
                     input_task = asyncio.create_task(asyncio.to_thread(input))
                     shutdown_task = asyncio.create_task(shutdown.wait())
                     _done, pending = await asyncio.wait(
@@ -183,7 +207,42 @@ async def run_loop(  # noqa: PLR0912, PLR0915
                     if shutdown.is_set() or _shutdown_requested:
                         break
 
-                ctx = await _run_single_cycle(is_loop=True)
+                evolve_task = asyncio.create_task(_run_single_cycle(is_loop=True))
+                # Progress ticker: refresh updated_at while cycle is in flight.
+                progress_ticker = asyncio.create_task(
+                    _progress_ticker(progress_path, progress_fields)
+                )
+
+                if cycle_timeout_enabled():
+                    timeout_s = cycle_timeout_ms() / 1000.0
+                    try:
+                        ctx = await asyncio.wait_for(asyncio.shield(evolve_task), timeout=timeout_s)
+                    except TimeoutError as te:
+                        err = CycleTimeoutError(cycle_timeout_ms(), "evolve.run", cycle_count)
+                        action = handle_cycle_timeout(
+                            error=err,
+                            cycle_progress_path=progress_path,
+                            progress_fields=progress_fields,
+                            args=["--loop"],
+                            log_path=get_logs_dir() / "evolver-daemon.log",
+                            spawn_replacement_fn=spawn_replacement_process,
+                        )
+                        if action["action"] == "respawn":
+                            # Supervisor restarts on exit 1 (Windows default skip path).
+                            raise SystemExit(1) from te
+                        # Non-fatal: wait for the timed-out task before next cycle.
+                        await wait_for_timed_out_task(evolve_task)
+                        consecutive_errors += 1
+                        if MAX_CYCLES_PER_PROCESS and cycle_count >= MAX_CYCLES_PER_PROCESS:
+                            print(
+                                f"[loop] Reached EVOLVER_MAX_CYCLES_PER_PROCESS="
+                                f"{MAX_CYCLES_PER_PROCESS} after timeout."
+                            )
+                            break
+                        continue
+                else:
+                    ctx = await evolve_task
+
                 consecutive_errors = 0
 
                 # Track pending bridge runs: if the cycle produced a spawn
@@ -192,6 +251,8 @@ async def run_loop(  # noqa: PLR0912, PLR0915
                     pending_bridge_ts = time.time()
                 else:
                     pending_bridge_ts = None
+            except SystemExit:
+                raise
             except asyncio.CancelledError:
                 raise
             except Exception as exc:
@@ -204,6 +265,11 @@ async def run_loop(  # noqa: PLR0912, PLR0915
                 except TimeoutError:
                     pass
                 continue
+            finally:
+                if progress_ticker is not None:
+                    progress_ticker.cancel()
+                    with __import__("contextlib").suppress(asyncio.CancelledError, Exception):
+                        await progress_ticker
 
             # Periodic cleanup every 10 cycles
             if cycle_count - last_cleanup_cycle >= 10:
@@ -220,10 +286,19 @@ async def run_loop(  # noqa: PLR0912, PLR0915
             # Sleep until next cycle or shutdown
             # Solo/CI testability: stop after a bounded number of cycles.
             if MAX_CYCLES_PER_PROCESS and cycle_count >= MAX_CYCLES_PER_PROCESS:
-                print(
-                    f"[loop] Reached EVOLVER_MAX_CYCLES_PER_PROCESS="
-                    f"{MAX_CYCLES_PER_PROCESS}. Exiting."
+                print(f"[loop] Reached EVOLVER_MAX_CYCLES_PER_PROCESS={MAX_CYCLES_PER_PROCESS}.")
+                result = spawn_replacement_process(
+                    reason="max_cycles_or_rss",
+                    args=["--loop"],
+                    log_path=get_logs_dir() / "evolver-daemon.log",
                 )
+                if result.get("spawned"):
+                    print("[loop] Replacement spawned; exiting for handoff (exit 1).")
+                    raise SystemExit(1)
+                if result.get("reason") == "windows_default_skip":
+                    print("[loop] Windows default: exit 1 so external supervisor can respawn.")
+                    raise SystemExit(1)
+                # spawn_error / test doubles: exit loop gracefully without killing pytest.
                 break
             try:
                 await asyncio.wait_for(shutdown.wait(), timeout=interval)
@@ -233,17 +308,28 @@ async def run_loop(  # noqa: PLR0912, PLR0915
         print("[loop] Graceful shutdown complete.")
 
 
-def _write_cycle_progress(cycle_count: int, consecutive_errors: int) -> None:
-    """Atomically write cycle progress to disk."""
-    import json
+async def _progress_ticker(progress_path: Any, fields: dict[str, Any]) -> None:
+    """Refresh cycle_progress.updated_at while a cycle is running."""
+    interval = max(progress_update_ms() / 1000.0, 1.0)
+    try:
+        while True:
+            await asyncio.sleep(interval)
+            write_cycle_progress_atomic(progress_path, {**fields, "phase": "evolve.run"})
+    except asyncio.CancelledError:
+        return
 
-    path = get_cycle_progress_path()
-    path.parent.mkdir(parents=True, exist_ok=True)
-    data = {
-        "cycle_count": cycle_count,
-        "consecutive_errors": consecutive_errors,
-        "timestamp": datetime.datetime.now(datetime.UTC).isoformat().replace("+00:00", "Z"),
-    }
-    tmp = path.with_suffix(".tmp")
-    tmp.write_text(json.dumps(data, indent=2) + "\n", encoding="utf-8")
-    tmp.replace(path)
+
+def _write_cycle_progress(cycle_count: int, consecutive_errors: int) -> bool:
+    """Compat wrapper: atomic progress write used by older call sites."""
+    return write_cycle_progress_atomic(
+        get_cycle_progress_path(),
+        {
+            "pid": os.getpid(),
+            "outer_cycle": cycle_count,
+            "inner_cycle": cycle_count,
+            "cycle_count": cycle_count,
+            "consecutive_errors": consecutive_errors,
+            "phase": "evolve.run",
+            "started_at": int(time.time() * 1000),
+        },
+    )

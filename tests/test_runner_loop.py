@@ -15,9 +15,12 @@ def isolated_evolver_env(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
     """Point all evolver state into tmp_path."""
     monkeypatch.setenv("EVOLUTION_DIR", str(tmp_path / "evolution"))
     monkeypatch.setenv("GEP_ASSETS_DIR", str(tmp_path / "gep"))
+    monkeypatch.setenv("EVOLVER_HOME", str(tmp_path / "home"))
     monkeypatch.setenv("EVOLVER_NO_PARENT_GIT", "1")
     monkeypatch.setenv("OPENCLAW_WORKSPACE", str(tmp_path))
     monkeypatch.setenv("EVOLVER_USER_LOCK", str(tmp_path / "user.lock"))
+    # Keep progress ticker from sleeping 60s in short tests.
+    monkeypatch.setenv("EVOLVER_PROGRESS_UPDATE_MS", "1000")
     yield tmp_path
 
 
