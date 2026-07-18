@@ -27,24 +27,27 @@ def test_review_no_state(isolated_evolver_env: Path, capsys: pytest.CaptureFixtu
 def test_asset_log_empty(isolated_evolver_env: Path, capsys: pytest.CaptureFixture[str]) -> None:
     code = main(["asset-log"])
     assert code == 0
-    assert "No events recorded" in capsys.readouterr().out
+    out = capsys.readouterr().out
+    assert "asset_call_log.jsonl" in out
+    assert "No entries found" in out
 
 
-def test_asset_log_shows_events(
-    isolated_evolver_env: Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+def test_asset_log_shows_call_entries(
+    isolated_evolver_env: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    from evolver.gep.asset_store import append_event_jsonl
+    # D2: asset-log must read asset_call_log.jsonl, not events.jsonl.
+    from evolver.gep.asset_call_log import log_asset_call
 
-    append_event_jsonl(
+    log_asset_call(
         {
-            "type": "EvolutionEvent",
-            "timestamp": "2026-01-01T00:00:00.000Z",
-            "gene_id": "g1",
-            "outcome": {"status": "success"},
-            "blast_radius": {"files": 2, "lines": 42},
+            "run_id": "r1",
+            "action": "asset_reuse",
+            "asset_id": "sha256:abc123",
+            "signals": ["log_error"],
         }
     )
     code = main(["asset-log"])
     captured = capsys.readouterr()
     assert code == 0
-    assert "gene=g1" in captured.out
+    assert "asset_reuse: 1" in captured.out
+    assert "run=r1" in captured.out

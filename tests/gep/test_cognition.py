@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import json
+from datetime import UTC, datetime
 from pathlib import Path
 
 import pytest
@@ -52,14 +54,19 @@ class TestBuildRecallSection:
     ) -> None:
         monkeypatch.setenv("EVOLVER_FF_ENABLE_RECALL_INJECT", "true")
         graph = tmp_path / "memory_graph.jsonl"
-        graph.write_text(
-            '{"type":"MemoryGraphEvent","kind":"outcome","id":"o1",'
-            '"ts":"2026-06-01T00:00:00.000Z",'
-            '"signal":{"signals":["refactor","cleanup"]},'
-            '"gene":{"id":"g1","category":"optimize"},'
-            '"outcome":{"status":"success"}}\n',
-            encoding="utf-8",
-        )
+        # Use a fresh timestamp so the recall never trips the 30-day
+        # staleness threshold in recall_verifier.
+        recent_ts = datetime.now(UTC).isoformat().replace("+00:00", "Z")
+        event = {
+            "type": "MemoryGraphEvent",
+            "kind": "outcome",
+            "id": "o1",
+            "ts": recent_ts,
+            "signal": {"signals": ["refactor", "cleanup"]},
+            "gene": {"id": "g1", "category": "optimize"},
+            "outcome": {"status": "success"},
+        }
+        graph.write_text(json.dumps(event) + "\n", encoding="utf-8")
         monkeypatch.setenv("MEMORY_GRAPH_PATH", str(graph))
 
         section = build_recall_section(["refactor", "cleanup"])
@@ -75,9 +82,8 @@ class TestAugmentSignals:
 
 
 class TestPostSolidifyHooks:
-    def test_records_memory_outcome(
-        self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path, temp_workspace: Path
-    ) -> None:
+    @pytest.mark.usefixtures("temp_workspace")
+    def test_records_memory_outcome(self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
         monkeypatch.setenv("EVOLVER_FF_ENABLE_MEMORY_GRAPH", "true")
         monkeypatch.setenv("MEMORY_GRAPH_PATH", str(tmp_path / "graph.jsonl"))
         monkeypatch.setenv("EVOLUTION_DIR", str(tmp_path))
