@@ -26,12 +26,17 @@
       ],
       "constraints": {
         "max_files": 20,
-        "forbidden_paths": [".git", "node_modules", ".venv"]
+        "forbidden_paths": [
+          ".git",
+          "node_modules",
+          ".venv"
+        ]
       },
       "validation": [
         "python scripts/validate_modules.py",
         "python -m pytest tests/ -x -q -m \"not slow\""
-      ]
+      ],
+      "asset_id": "sha256:c5f76b2b52794f0f739413c877ba2cb17fb3479298662f10371f8a9368b93571"
     },
     {
       "type": "Gene",
@@ -57,12 +62,17 @@
       ],
       "constraints": {
         "max_files": 20,
-        "forbidden_paths": [".git", "node_modules", ".venv"]
+        "forbidden_paths": [
+          ".git",
+          "node_modules",
+          ".venv"
+        ]
       },
       "validation": [
         "python scripts/validate_modules.py",
         "python -m pytest tests/ -x -q -m \"not slow\""
-      ]
+      ],
+      "asset_id": "sha256:4a3e8b537c0390ef7a66df77591bb0cf4608ac0ace4ef016c254fb1a388d373f"
     },
     {
       "type": "Gene",
@@ -92,12 +102,17 @@
       ],
       "constraints": {
         "max_files": 25,
-        "forbidden_paths": [".git", "node_modules", ".venv"]
+        "forbidden_paths": [
+          ".git",
+          "node_modules",
+          ".venv"
+        ]
       },
       "validation": [
         "python scripts/validate_modules.py",
         "python -m pytest tests/ -x -q -m \"not slow\""
-      ]
+      ],
+      "asset_id": "sha256:12159256ba3240ff290f3b6ab6b7d19fe2c6b51c547fa18f2ef0c53b77322a6d"
     },
     {
       "type": "Gene",
@@ -126,13 +141,21 @@
       ],
       "constraints": {
         "max_files": 15,
-        "forbidden_paths": [".git", "node_modules", ".venv"]
+        "forbidden_paths": [
+          ".git",
+          "node_modules",
+          ".venv"
+        ]
       },
       "validation": [
         "python scripts/validate_modules.py",
         "python -m pytest tests/ -x -q -m \"not slow\""
       ],
-      "routing_hint": { "tier": "mid", "reasoning_level": "medium" }
+      "routing_hint": {
+        "tier": "mid",
+        "reasoning_level": "medium"
+      },
+      "asset_id": "sha256:450dd8ff77883627cebec662a84c6c2894ec648522c210de08e3f457e2a2bf70"
     },
     {
       "type": "Gene",
@@ -149,7 +172,9 @@
         "oidc_token_expiry",
         "dotenv_cli"
       ],
-      "preconditions": ["Skill env-vars has just been executed locally"],
+      "preconditions": [
+        "Skill env-vars has just been executed locally"
+      ],
       "strategy": [
         "Identify the dominant trigger signals from the Skill description.",
         "Apply the smallest targeted change that satisfies the Skill workflow.",
@@ -157,22 +182,34 @@
       ],
       "constraints": {
         "max_files": 12,
-        "forbidden_paths": [".git", "node_modules", ".venv"]
+        "forbidden_paths": [
+          ".git",
+          "node_modules",
+          ".venv"
+        ]
       },
-      "validation": ["python --version"],
-      "routing_hint": { "tier": "cheap", "reasoning_level": "low" },
+      "validation": [
+        "python --version"
+      ],
+      "routing_hint": {
+        "tier": "cheap",
+        "reasoning_level": "low"
+      },
       "schema_version": "1.6.0",
       "_source": {
         "kind": "skill2gep",
         "skill_name": "env-vars",
         "skill_platform": "vercel"
-      }
+      },
+      "asset_id": "sha256:cef756bccc132d7871948aaee66f9694f06288a47111e9af742b898cdccc7a18"
     },
     {
       "type": "Gene",
       "id": "gene_tool_integrity",
       "category": "repair",
-      "signals_match": ["tool_bypass|工具绕过|ツール迂回|도구우회"],
+      "signals_match": [
+        "tool_bypass|工具绕过|ツール迂回|도구우회"
+      ],
       "preconditions": [
         "agent used shell/exec to perform an action that a registered tool can handle"
       ],
@@ -184,11 +221,23 @@
       ],
       "constraints": {
         "max_files": 4,
-        "forbidden_paths": [".git", "node_modules", ".venv"]
+        "forbidden_paths": [
+          ".git",
+          "node_modules",
+          ".venv"
+        ]
       },
-      "validation": ["python -m pytest tests/ -x -q -m \"not slow\""],
-      "anti_patterns": ["tool_bypass"],
-      "routing_hint": { "tier": "cheap", "reasoning_level": "low" }
+      "validation": [
+        "python -m pytest tests/ -x -q -m \"not slow\""
+      ],
+      "anti_patterns": [
+        "tool_bypass"
+      ],
+      "routing_hint": {
+        "tier": "cheap",
+        "reasoning_level": "low"
+      },
+      "asset_id": "sha256:86df4cefa9952793ec9d2f84fb96250f6340b631b6da12f49ba283449752e0aa"
     },
     {
       "type": "Gene",
@@ -218,10 +267,16 @@
         "To place it in a folder or wiki add `--parent-token <token>` (use `--parent-position my_library` for the personal space)",
         "Parse data.document.url from the JSON response and return it to the user; use `docs +update --api-version v2` with the document_id to amend instead of recreating"
       ],
-      "validation": ["python --version"],
+      "validation": [
+        "python --version"
+      ],
       "constraints": {
         "max_files": 2,
-        "forbidden_paths": [".git", "node_modules", "~/.lark-cli/config.json"]
+        "forbidden_paths": [
+          ".git",
+          "node_modules",
+          "~/.lark-cli/config.json"
+        ]
       },
       "preconditions": [
         "lark-cli installed and on PATH (npm i -g @larksuite/cli)",
@@ -237,7 +292,8 @@
         "using the deprecated Docs v1 API or the v1 --markdown flag",
         "passing long markdown inline (shell-escaping corrupts it) instead of --content @file",
         "overwriting ~/.lark-cli/config.json (holds the app secret and tokens)"
-      ]
+      ],
+      "asset_id": "sha256:f8a972e5dcc4ec9a2197b282e3caf9b5ed65126f250beb3ee53188f43ee2c73e"
     },
     {
       "type": "Gene",
@@ -261,19 +317,28 @@
         "Commit one logical change with `git commit -m` (heredoc for multi-line)",
         "Safety: never touch git config, never --force/hard-reset/--no-verify without explicit request, never force-push main; if a hook fails, fix and make a NEW commit (do not amend)"
       ],
-      "validation": ["python --version"],
+      "validation": [
+        "python --version"
+      ],
       "constraints": {
         "max_files": 50,
-        "forbidden_paths": [".git", "node_modules", ".venv"]
+        "forbidden_paths": [
+          ".git",
+          "node_modules",
+          ".venv"
+        ]
       },
-      "preconditions": ["a git repository with staged or unstaged changes"],
+      "preconditions": [
+        "a git repository with staged or unstaged changes"
+      ],
       "summary": "Create a Conventional Commits-style git commit: analyze the diff to pick type/scope, stage logical groups (never secrets), and write an imperative <72-char message.",
       "schema_version": "1.6.0",
       "avoid": [
         "committing secrets or unrelated changes in one commit",
         "amending or force-pushing to bypass a failing hook",
         "past-tense or vague messages like \"updated stuff\""
-      ]
+      ],
+      "asset_id": "sha256:cbbb4e39e083673b84cac42e8d6b683b6de35e0db730208ce319ef233c1b9bd9"
     },
     {
       "type": "Gene",
@@ -297,19 +362,28 @@
         "On FAILURE/ACTION_REQUIRED: surface findings, do not merge",
         "Auto-merge (squash + delete-branch) only when explicitly authorized AND conclusion is SUCCESS"
       ],
-      "validation": ["python --version"],
+      "validation": [
+        "python --version"
+      ],
       "constraints": {
         "max_files": 1,
-        "forbidden_paths": [".git", "node_modules", ".venv"]
+        "forbidden_paths": [
+          ".git",
+          "node_modules",
+          ".venv"
+        ]
       },
-      "preconditions": ["an open GitHub PR in a repo where Cursor Bugbot runs"],
+      "preconditions": [
+        "an open GitHub PR in a repo where Cursor Bugbot runs"
+      ],
       "summary": "Wait for Cursor Bugbot on a GitHub PR, then gate on the conclusion: SUCCESS may merge, NEUTRAL/FAILURE always pauses to surface inline findings.",
       "schema_version": "1.6.0",
       "avoid": [
         "treating NEUTRAL as pass (it has shipped real bugs before)",
         "filtering comments on \"cursor\" instead of \"cursor[bot]\"",
         "auto-merging without explicit authorization or with CI red"
-      ]
+      ],
+      "asset_id": "sha256:7e9a9b2d51b54adb349930caee22977c8796c93e17c561c3ff57c41b554bc4db"
     },
     {
       "type": "Gene",
@@ -333,19 +407,28 @@
         "Dispatch the units as parallel subagents in a single batch so each finishes under the gateway deadline; merge their results",
         "If one unit itself times out, apply this same procedure recursively to that slice"
       ],
-      "validation": ["python --version"],
+      "validation": [
+        "python --version"
+      ],
       "constraints": {
         "max_files": 1,
-        "forbidden_paths": [".git", "node_modules", ".venv"]
+        "forbidden_paths": [
+          ".git",
+          "node_modules",
+          ".venv"
+        ]
       },
-      "preconditions": ["a tool call / fetch / subagent returned a gateway-class timeout (524/522/502/504)"],
+      "preconditions": [
+        "a tool call / fetch / subagent returned a gateway-class timeout (524/522/502/504)"
+      ],
       "summary": "Recover from a gateway/upstream timeout: retry the same call once, and if it still times out, decompose the work into parallel subagents and merge — never loop the monolithic call.",
       "schema_version": "1.6.0",
       "avoid": [
         "retrying the same large call more than once",
         "serial retries instead of parallel decomposition",
         "surfacing the timeout as a hard failure before recovering"
-      ]
+      ],
+      "asset_id": "sha256:14110b6d87a9fbc73e60cf4abd3b1aae9f7134bb80ba2e47c5452547ded2db8a"
     },
     {
       "type": "Gene",
@@ -367,19 +450,28 @@
         "Security invariants: HMAC on every request, X-GitHub-Delivery dedup against replay, write-only sink (never exec/template/deserialize payload)",
         "Add repos with deploy script; rotate the secret every 90 days and immediately on any leak; never trust the inbox payload without re-fetching"
       ],
-      "validation": ["python --version"],
+      "validation": [
+        "python --version"
+      ],
       "constraints": {
         "max_files": 20,
-        "forbidden_paths": [".git", "node_modules", ".venv"]
+        "forbidden_paths": [
+          ".git",
+          "node_modules",
+          ".venv"
+        ]
       },
-      "preconditions": ["a developer machine with systemd --user and cloudflared available"],
+      "preconditions": [
+        "a developer machine with systemd --user and cloudflared available"
+      ],
       "summary": "Deploy a per-developer GitHub webhook listener (HMAC-validated, cloudflared tunnel, systemd-kept) that drops PR/Bugbot events into an inbox for the next session to surface.",
       "schema_version": "1.6.0",
       "avoid": [
         "opening an inbound port instead of an outbound cloudflared tunnel",
         "trusting the webhook payload without HMAC validation and PR re-fetch",
         "execing or deserializing anything from the payload"
-      ]
+      ],
+      "asset_id": "sha256:7591c6a1b162291a31d3e930bc1e28b98d6e781b9f60870cbc7d7c36d9db842a"
     }
   ]
 }

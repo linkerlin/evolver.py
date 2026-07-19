@@ -12,7 +12,7 @@ from .lifecycle_obs import lifecycle_status, lifecycle_summary
 from .narrative_obs import narrative_history, narrative_summary, reflection_entries
 from .paths import sanitize_path
 from .personality import personality_data
-from .pipeline_events import pipeline_timeline
+from .pipeline_events import pipeline_stats, pipeline_timeline
 from .redact import redact_text
 from .runs import runs_history
 from .safety import safety_events
@@ -37,6 +37,7 @@ __all__ = [
     "narrative_summary",
     "personality_data",
     "pipeline_insights",
+    "pipeline_stats",
     "pipeline_timeline",
     "recent_calls",
     "redact_text",

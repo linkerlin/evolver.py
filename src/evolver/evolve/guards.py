@@ -129,9 +129,32 @@ def _load_max() -> float:
     return get_default_load_max()
 
 
+def _auto_repair_git() -> None:
+    """Best-effort self-repair of common git issues before each cycle.
+
+    Handles stale .git/index.lock, pending rebase/merge, etc.
+    Never raises — failures are silently logged.
+    """
+    try:
+        from evolver.ops.self_repair import repair
+
+        report = repair()
+        if report.actions:
+            import logging
+
+            logger = logging.getLogger(__name__)
+            logger.info("guards: git self-repair applied %s", report.actions)
+    except Exception:
+        pass
+
+
 async def run_preflight_checks(is_loop: bool = False, is_dry_run: bool = False) -> PreflightResult:
     if is_dry_run:
         return PreflightResult(abort=False)
+
+    # Auto-repair common git issues before preflight (stale locks, pending rebase/merge).
+    _auto_repair_git()
+
     sample = get_system_load()
     threshold = _load_max()
     if sample.load1m > threshold:

@@ -33,6 +33,7 @@ from evolver.webui.observer import (
     narrative_summary,
     personality_data,
     pipeline_insights,
+    pipeline_stats,
     pipeline_timeline,
     recent_calls,
     reflection_entries,
@@ -338,6 +339,26 @@ async def api_commentary(
 async def api_commentary_all(verbose: bool = Query(False)) -> JSONResponse:
     try:
         return _ok(latest_all_commentaries(verbose=verbose))
+    except Exception as exc:
+        return _err(str(exc))
+
+
+@router.post("/api/trigger")
+async def api_trigger() -> JSONResponse:
+    """External trigger endpoint — fires a filesystem trigger for evolution."""
+    try:
+        from evolver.ops.trigger import record_http_trigger
+
+        result = record_http_trigger(source="http")
+        return _ok(result)
+    except Exception as exc:
+        return _err(str(exc))
+
+
+@router.get("/api/pipeline/stats")
+async def api_pipeline_stats() -> JSONResponse:
+    try:
+        return _ok(pipeline_stats())
     except Exception as exc:
         return _err(str(exc))
 

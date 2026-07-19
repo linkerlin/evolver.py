@@ -183,6 +183,13 @@ For a detailed gap analysis, see [`设计方案.md`](设计方案.md) (Chinese) 
 | Example | Description |
 |---|---|
 | [`examples/hello-world/`](examples/hello-world/) | Run a single evolution cycle in an isolated workspace |
+| [`examples/daemon-loop/`](examples/daemon-loop/) | Continuous daemon, lifecycle management, start/stop/status/log |
+| [`examples/proxy-basics/`](examples/proxy-basics/) | A2A Proxy, proxy-token, curl API examples, LLM relay |
+| [`examples/ide-hooks/`](examples/ide-hooks/) | Install session hooks for Cursor, Claude Code, OpenCode, Codex |
+| [`examples/solo-mode/`](examples/solo-mode/) | Fully isolated offline mode — no Hub, no network |
+| [`examples/self-report/`](examples/self-report/) | Autopoiesis self-check, lessons learned, autopoiesis rules |
+| [`examples/hub-publish-flow/`](examples/hub-publish-flow/) | Distill → reuse → publish asset lifecycle |
+| [`examples/skill2recipe/`](examples/skill2recipe/) | Compose Agent Skills into GEP Recipes |
 | [`examples/atp-quickstart/`](examples/atp-quickstart/) | ATP buyer/deliver/heartbeat demo with mocked Hub |
 
 ## Testing
@@ -260,6 +267,70 @@ python scripts/validate_modules.py
 - **Database**: Python port adds `ops/sqlite_store.py` for SQLite persistence (enhancement)
 - **Recipe Hub**: Python port includes `recipe/` module (new feature)
 - **WebUI frontend**: Python port ships an inline JS client (`webui/client/`) with SSE; not a separate SPA build
+
+## Security Model
+
+Evolver operates with filesystem and network access. Guardrails are enforced at multiple layers:
+
+### Preflight Guards (per-cycle)
+- **Self-repair**: Auto-fixes stale `.git/index.lock` and pending rebase/merge before each cycle
+- **System load**: Cycles are skipped when CPU load exceeds `EVOLVE_LOAD_MAX` (default: 0.9× cores for single-core, 1.5× for multi-core)
+- **Repair loop circuit breaker**: Consecutive failed repair cycles trip degraded mode (repair-only, no innovation) or hard abort
+- **User lock**: Prevents mutation during active IDE sessions (`~/.evolver/user.lock` with TTL)
+- **Release window**: Skips evolve near `chore(release)` commits to avoid merge conflicts
+
+### Blast Radius Constraints
+- Every Gene declares `constraints.max_files` (typical: 4–20) and `forbidden_paths` (`.git`, `node_modules`, `.venv`)
+- A2A blast-radius gate: `A2A_MAX_FILES=5`, `A2A_MAX_LINES=200` (prevents sprawling changes from Hub-fetched assets)
+- `EVOLVER_ROLLBACK_MODE=stash` stashes before applying mutations; can rollback on failure
+
+### Content Integrity
+- Every asset has a `sha256:` content hash in `asset_id`; loading silently skips hash-mismatched entries
+- Seed genes now include `asset_id` hashes for tamper-evident baseline
+- `sanitize.py` strips dangerous fields from Hub-fetched assets before storage
+
+### Network Safety
+- **Proxy**: Only listens on `127.0.0.1` by default; `--host 0.0.0.0` is explicit opt-in
+- **Hub**: All A2A communication uses node secret signing; `EVOLVER_ANTI_ABUSE_TELEMETRY=heartbeat` for abuse detection
+- **Token management**: `webui-token` mints JWTs; WebSocket commands require admin role
+
+### User Secrets
+- `redact.py` strips bearer tokens, API keys, JWTs, and passwords from interaction logs
+- `.env` files and credentials are never staged or committed by git-commit genes
+- Session transcripts are redacted before WebUI display
+
+## Anti-Examples (Things That Won't Work)
+
+| Don't | Why |
+|-------|-----|
+| Run evolver from `/tmp` without a git repo | Genes rely on git for blast-radius tracking and rollback |
+| Set `OPENCLAW_WORKSPACE` to a production server | Evolver applies code mutations — use an isolated workspace |
+| Enable `--loop` without a Hub connection or seed genes | The gene pool depletes; set `EVOLVER_GENE_INERT_BAN_STREAK` high |
+| Run multiple evolver instances on the same workspace | File locks prevent this; use `EVOLVER_SESSION_SCOPE` for per-project isolation |
+| Expect immediate results from `--solo` mode | Solo mode has no Hub assets; build your gene pool over many cycles |
+| Use `--review` in CI/CD pipelines | Review mode blocks on stdin; use `--loop` for automated runs |
+| Mix Node.js and Python evolver instances on the same repo | State file formats differ; migrate fully to one implementation |
+| Set `EVOLVER_AUTOPOIESIS_WRITE=1` then check `LESSONS_LEARNED.md` immediately | Lessons are written asynchronously after cycle completion |
+
+## Hub Connection
+
+The Hub (`A2A_HUB_URL`, default: `https://evomap.ai`) provides:
+
+- **Asset discovery**: Gene/capsule search via `GET /api/assets` or `evolver fetch <query>`
+- **Task marketplace**: List, claim, and complete tasks via `evolver sync` or proxy endpoints
+- **ATP settlement**: Order placement, delivery verification, dispute resolution
+- **Event sync**: Bidirectional event delivery using SSE + poll with exponential backoff on failure
+
+Connection is fully optional — `--solo` mode disables all Hub features. The proxy manages connection lifecycle:
+- `hello` heartbeat on startup (multi-phase with retry)
+- Exponential backoff on Hub unreachable (1s → 30s cap)
+- Anti-abuse telemetry heartbeat (configurable via `EVOLVER_ANTI_ABUSE_TELEMETRY`)
+- Node key versioning (`A2A_NODE_SECRET_VERSION`) for secret rotation
+
+To connect to a custom Hub:
+```bash
+A2A_HUB_URL=https://your-hub.example.com uv run evolver proxy
+```
 
 ## Documentation
 

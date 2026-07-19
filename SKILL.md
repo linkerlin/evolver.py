@@ -91,6 +91,66 @@ Base: `http://127.0.0.1:<port>/v1/a2a`
 **Trace** (also at app root)
 - `GET /v1/a2a/health`, `GET /v1/a2a/trace`
 
+#### Proxy API curl examples
+
+```bash
+# Health check
+curl http://127.0.0.1:8081/v1/a2a/proxy/status
+# {"status":"ok","uptime_seconds":1234,"connected":true,"hub_reachable":true}
+
+# Hub connection status
+curl http://127.0.0.1:8081/v1/a2a/proxy/hub-status
+# {"connected":true,"last_hello":"2025-07-19T12:00:00Z","heartbeat_interval_ms":30000}
+
+# Send mailbox message
+curl -X POST http://127.0.0.1:8081/v1/a2a/mailbox/send \
+  -H "Content-Type: application/json" \
+  -d '{"type":"signal","payload":{"gene_id":"g-7","signals":["log_error"]}}'
+
+# Poll inbox
+curl -X POST http://127.0.0.1:8081/v1/a2a/mailbox/poll
+# {"messages":[{"id":"msg-1","type":"task","payload":{...}}]}
+
+# Validate asset
+curl -X POST http://127.0.0.1:8081/v1/a2a/asset/validate \
+  -H "Content-Type: application/json" \
+  -d '{"type":"Gene","id":"g-test","category":"repair","signals_match":["error"]}'
+
+# Search assets
+curl -X POST http://127.0.0.1:8081/v1/a2a/asset/search \
+  -H "Content-Type: application/json" \
+  -d '{"query":"error handling timeout","local":true}'
+
+# Fetch asset by ID
+curl -X POST http://127.0.0.1:8081/v1/a2a/asset/fetch \
+  -H "Content-Type: application/json" \
+  -d '{"asset_id":"sha256:abc123...","install":true}'
+
+# List tasks
+curl http://127.0.0.1:8081/v1/a2a/task/list
+# {"tasks":[{"id":"task-1","status":"pending","title":"Fix CI pipeline"}]}
+
+# Claim task
+curl -X POST http://127.0.0.1:8081/v1/a2a/task/claim \
+  -H "Content-Type: application/json" \
+  -d '{"task_id":"task-1"}'
+
+# Place ATP order
+curl -X POST http://127.0.0.1:8081/v1/a2a/atp/order \
+  -H "Content-Type: application/json" \
+  -d '{"skill_id":"skill-triage","quantity":1,"max_price":10}'
+
+# ATP balance
+curl http://127.0.0.1:8081/v1/a2a/atp/balance
+# {"balance":45,"currency":"credit","orders_open":2}
+
+# LLM relay (Anthropic proxy)
+curl -X POST http://127.0.0.1:8081/v1/a2a/v1/messages \
+  -H "Content-Type: application/json" \
+  -H "x-api-key: $ANTHROPIC_API_KEY" \
+  -d '{"model":"claude-3-5-sonnet-20241022","max_tokens":256,"messages":[{"role":"user","content":"Hello"}]}'
+```
+
 ### WebUI API
 
 CLI entry: `evolver webui` → `webui/app.py` + `dashboard.py` (not `webui/server/http.py`).
@@ -203,6 +263,13 @@ Env: `EVOLVER_FF_<NAME>=1|0`. Disk layers (low → high): defaults → `evolver/
 - `CONTRIBUTING.md` — Development guide
 - `TODO.md` — Roadmap and gap analysis
 - `examples/hello-world/` — Single-cycle quickstart
+- `examples/daemon-loop/` — Daemon lifecycle, start/stop/status/log
+- `examples/proxy-basics/` — Proxy setup, curl examples, LLM relay
+- `examples/ide-hooks/` — IDE session hooks for 5 platforms
+- `examples/solo-mode/` — Offline isolated evolution
+- `examples/self-report/` — Autopoiesis inspection
+- `examples/hub-publish-flow/` — Distill→reuse→publish lifecycle
+- `examples/skill2recipe/` — Skill→Recipe composition
 - `examples/atp-quickstart/` — ATP loop demo
 - `设计方案.md` — Chinese design document (~1500 lines)
 

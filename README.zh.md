@@ -155,6 +155,13 @@ memory/                 # 运行时数据（graph JSONL、reviews JSONL）
 | 示例 | 说明 |
 |---|---|
 | [`examples/hello-world/`](examples/hello-world/) | 在隔离工作区运行单次进化周期 |
+| [`examples/daemon-loop/`](examples/daemon-loop/) | 持续守护进程、生命周期管理、启停/状态/日志 |
+| [`examples/proxy-basics/`](examples/proxy-basics/) | A2A 代理、代理令牌、curl API 示例、LLM 中继 |
+| [`examples/ide-hooks/`](examples/ide-hooks/) | 为 Cursor、Claude Code、OpenCode、Codex 安装会话钩子 |
+| [`examples/solo-mode/`](examples/solo-mode/) | 完全隔离离线模式——无 Hub、无网络 |
+| [`examples/self-report/`](examples/self-report/) | Autopoiesis 自检、经验教训、自生规则 |
+| [`examples/hub-publish-flow/`](examples/hub-publish-flow/) | 蒸馏 → 复用 → 发布资产全生命周期 |
+| [`examples/skill2recipe/`](examples/skill2recipe/) | 将 Agent 技能组合为 GEP 配方 |
 | [`examples/atp-quickstart/`](examples/atp-quickstart/) | ATP 下单/交付/心跳演示（可 mock Hub） |
 
 ## 测试

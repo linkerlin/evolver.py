@@ -1,0 +1,33 @@
+{
+  "timestamp": 1784465854.8861814,
+  "reason": "test abort",
+  "report": {
+    "timestamp": "2026-07-19T12:57:34.885126+00:00",
+    "system_state": {
+      "rules_version": "1.0.0",
+      "evolution_dir_exists": true,
+      "living_memory_exists": true,
+      "solidify_pending": true,
+      "genes_count": 12,
+      "capsules_count": 0,
+      "events_count": 79,
+      "last_run_id": "run_1784388613603_b1818206"
+    },
+    "friction_summary": {
+      "total": 1,
+      "by_category": {
+        "preflight_abort": 1
+      },
+      "auto_encoded": 0
+    },
+    "evolution": {
+      "rules_version": "1.0.0",
+      "autopoiesis_enabled": true,
+      "evolution_count": 1,
+      "new_rules_this_run": 0
+    },
+    "recommendations": [
+      "Solidify pending \u2014 run `evolver solidify`"
+    ]
+  }
+}
