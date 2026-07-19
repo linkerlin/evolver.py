@@ -43,7 +43,7 @@ class TestApiAssets:
     def test_assets_empty(self, monkeypatch, tmp_path):
         import evolver.gep.paths as paths_mod
 
-        monkeypatch.setattr(paths_mod, "get_memory_dir", lambda: tmp_path)
+        monkeypatch.setattr(paths_mod, "get_gep_assets_dir", lambda: tmp_path)
         resp = client.get("/api/assets")
         assert resp.status_code == 200
         assert resp.json()["total"] == 0
@@ -51,7 +51,7 @@ class TestApiAssets:
     def test_assets_query(self, monkeypatch, tmp_path):
         import evolver.gep.paths as paths_mod
 
-        monkeypatch.setattr(paths_mod, "get_memory_dir", lambda: tmp_path)
+        monkeypatch.setattr(paths_mod, "get_gep_assets_dir", lambda: tmp_path)
         (tmp_path / "genes.json").write_text(
             '{"genes":[{"id":"g1","summary":"hello world"}]}', encoding="utf-8"
         )
@@ -181,3 +181,51 @@ class TestApiLogs:
         resp = client.get("/api/logs", headers={"x-test-mode": "1"})
         assert resp.status_code == 200
         assert resp.headers["content-type"] == "text/event-stream; charset=utf-8"
+
+
+class TestApiAssetCallLog:
+    def test_call_log_summary(self, monkeypatch, tmp_path):
+        monkeypatch.setattr(
+            "evolver.gep.asset_call_log.get_log_path",
+            lambda: tmp_path / "asset_call_log.jsonl",
+        )
+        resp = client.get("/api/call-log")
+        assert resp.status_code == 200
+        assert resp.json()["total_entries"] == 0
+
+    def test_asset_reuse_empty(self, monkeypatch, tmp_path):
+        monkeypatch.setattr(
+            "evolver.gep.asset_call_log.get_log_path",
+            lambda: tmp_path / "asset_call_log.jsonl",
+        )
+        resp = client.get("/api/asset-reuse")
+        assert resp.status_code == 200
+        assert resp.json()["total_reuse"] == 0
+
+    def test_asset_costs_empty(self, monkeypatch, tmp_path):
+        monkeypatch.setattr(
+            "evolver.gep.asset_call_log.get_log_path",
+            lambda: tmp_path / "asset_call_log.jsonl",
+        )
+        resp = client.get("/api/asset-costs")
+        assert resp.status_code == 200
+        assert resp.json()["costs"] == {}
+
+    def test_recent_calls_empty(self, monkeypatch, tmp_path):
+        monkeypatch.setattr(
+            "evolver.gep.asset_call_log.get_log_path",
+            lambda: tmp_path / "asset_call_log.jsonl",
+        )
+        resp = client.get("/api/call-log/recent")
+        assert resp.status_code == 200
+        assert resp.json()["entries"] == []
+
+    def test_call_log_by_run(self, monkeypatch, tmp_path):
+        monkeypatch.setattr(
+            "evolver.gep.asset_call_log.get_log_path",
+            lambda: tmp_path / "asset_call_log.jsonl",
+        )
+        resp = client.get("/api/call-log/run-1")
+        assert resp.status_code == 200
+        assert resp.json()["run_id"] == "run-1"
+        assert resp.json()["entries"] == []

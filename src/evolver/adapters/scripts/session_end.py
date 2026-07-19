@@ -78,7 +78,7 @@ def _run_git(args: list[str], cwd: Path) -> tuple[bool, str]:
 def get_git_diff_stats() -> dict[str, object]:
     """Collect git diff statistics using the host-provided workspace root."""
     try:
-        from evolver.adapters.scripts.runtime_paths import (  # noqa: PLC0415
+        from evolver.adapters.scripts.runtime_paths import (
             resolve_project_dir,
         )
 
@@ -155,7 +155,7 @@ def _append_evolution_log(line: str) -> None:
 def record_to_local(graph_path: Path, outcome: dict[str, object]) -> bool:
     """Append an outcome entry to the local memory graph (workspace-tagged)."""
     try:
-        from evolver.adapters.scripts.runtime_paths import (  # noqa: PLC0415
+        from evolver.adapters.scripts.runtime_paths import (
             resolve_project_dir,
             resolve_workspace_id,
         )
@@ -197,7 +197,7 @@ def _resolve_graph_path() -> Path | None:
     if env_path:
         return Path(env_path)
     try:
-        from evolver.adapters.scripts.runtime_paths import (  # noqa: PLC0415
+        from evolver.adapters.scripts.runtime_paths import (
             find_evolver_root,
             find_memory_graph,
         )
@@ -248,15 +248,37 @@ def build_session_end_output() -> dict[str, str]:
 
 
 def main() -> None:
-    # Drain stdin (hook payloads) without blocking.
+    # Drain stdin and extract cwd from session transcript (if provided).
+    payload = ""
     with suppress(OSError):
-        sys.stdin.read()
+        payload = sys.stdin.read()
+
+    cwd: Path | None = None
+    if payload.strip():
+        try:
+            parsed = json.loads(payload)
+        except json.JSONDecodeError:
+            parsed = None
+
+        records: list[dict[str, object]] = []
+        if isinstance(parsed, list):
+            records = parsed
+        elif isinstance(parsed, dict):
+            records = [parsed]
+
+        try:
+            from evolver.evolve.utils import extract_transcript_cwd
+
+            extracted = extract_transcript_cwd(records)
+            if extracted:
+                cwd = extracted
+        except ImportError:
+            pass
 
     try:
         output = build_session_end_output()
     except Exception:
         output = {}
-    sys.stdout.write(json.dumps(output, ensure_ascii=False))
 
 
 if __name__ == "__main__":

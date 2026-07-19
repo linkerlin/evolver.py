@@ -30,6 +30,7 @@ import json
 import os
 import sys
 import time
+from contextlib import suppress
 from pathlib import Path
 
 NON_GIT_NOTICE = (
@@ -189,16 +190,16 @@ def _format_outcome(entry: dict[str, object]) -> str:
 # ---------------------------------------------------------------------------
 
 
-def build_session_context() -> dict[str, str]:
+def build_session_context(*, cwd: Path | None = None) -> dict[str, str]:
     """Build the session-start JSON output (empty dict if nothing to inject)."""
     if _should_skip_injection():
         return {}
 
     try:
-        from evolver.adapters.scripts.memory_filtering import (  # noqa: PLC0415
+        from evolver.adapters.scripts.memory_filtering import (
             filter_relevant_outcomes,
         )
-        from evolver.adapters.scripts.runtime_paths import (  # noqa: PLC0415
+        from evolver.adapters.scripts.runtime_paths import (
             find_evolver_root,
             find_memory_graph,
             is_git_workspace,
@@ -208,7 +209,7 @@ def build_session_context() -> dict[str, str]:
     except ImportError:
         return {}
 
-    current_dir = resolve_project_dir()
+    current_dir = cwd or resolve_project_dir()
     parts: list[str] = []
 
     # Non-git notice (throttled).
@@ -248,7 +249,39 @@ def build_session_context() -> dict[str, str]:
 
 
 def main() -> None:
-    output = build_session_context()
+    # Read stdin payload (IDE provides session metadata / transcript records).
+    try:
+        from evolver.evolve.utils import extract_transcript_cwd, resolve_session_scope
+
+        raw = ""
+        with suppress(OSError):
+            raw = sys.stdin.read()
+
+        cwd: Path | None = None
+        if raw.strip():
+            try:
+                parsed = json.loads(raw)
+            except json.JSONDecodeError:
+                parsed = None
+
+            records: list[dict[str, object]] = []
+            if isinstance(parsed, list):
+                records = parsed
+            elif isinstance(parsed, dict):
+                records = [parsed]
+
+            extracted = extract_transcript_cwd(records)
+            if extracted:
+                cwd = extracted
+
+        # Resolve session scope from transcript cwd for scoped evolution state.
+        scope = resolve_session_scope(cwd=cwd, agent_name=os.environ.get("AGENT_NAME"))
+        if scope and scope != "default":
+            os.environ["EVOLVER_SESSION_SCOPE"] = scope
+    except ImportError:
+        pass
+
+    output = build_session_context(cwd=cwd)
     sys.stdout.write(json.dumps(output, ensure_ascii=False))
 
 

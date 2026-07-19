@@ -271,6 +271,26 @@ def render_dashboard() -> str:  # noqa: PLR0915
           <h3>Memory Sync</h3>
           <div id="insights-memory-sync"><p class="muted">Loading…</p></div>
         </div>
+        <div class="card insight-panel">
+          <h3>Asset Economics</h3>
+          <div id="insights-asset-econ"><p class="muted">Loading…</p></div>
+        </div>
+        <div class="card insight-panel">
+          <h3>System Health</h3>
+          <div id="insights-health"><p class="muted">Loading…</p></div>
+        </div>
+        <div class="card insight-panel">
+          <h3>Daemon Lifecycle</h3>
+          <div id="insights-lifecycle"><p class="muted">Loading…</p></div>
+        </div>
+        <div class="card insight-panel">
+          <h3>Skills Monitor</h3>
+          <div id="insights-skills-health"><p class="muted">Loading…</p></div>
+        </div>
+        <div class="card insight-panel">
+          <h3>Persona Commentary</h3>
+          <div id="insights-commentary"><p class="muted">Loading…</p></div>
+        </div>
       </div>
     </div>
     """
@@ -485,7 +505,106 @@ def render_dashboard() -> str:  # noqa: PLR0915
           }
         }
       }
-      var _insightsRefreshTimer = null;
+      function renderAssetEcon(data) {
+        const el = document.getElementById('insights-asset-econ');
+        if (!el) return;
+        if (!data || !data.by_asset || !data.by_asset.length) {
+          el.innerHTML = '<p class="muted">暂无资产复用数据（等待一次进化周期）。</p>';
+          return;
+        }
+        var html = '<div class="insight-meta">' +
+          '<span class="badge badge-verdict-approve">复用 ' + esc(data.total_reuse) + '</span>' +
+          '<span class="badge badge-category">引用 ' + esc(data.total_reference) + '</span>' +
+          '</div>' +
+          '<p class="muted">节省 token: ' + esc(data.total_tokens_saved) + '</p>' +
+          '<table class="insight-table"><thead><tr><th>Asset</th><th>复用</th><th>节省</th></tr></thead><tbody>';
+        data.by_asset.slice(0, 5).forEach(function(a) {
+          var aid = (a.asset_id || '?').slice(0, 16);
+          html += '<tr><td title="' + esc(a.asset_id) + '">' + esc(aid) + '…</td>' +
+            '<td>' + esc(a.reuse + a.reference) + '</td>' +
+            '<td>' + esc(a.tokens_saved) + '</td></tr>';
+        });
+        html += '</tbody></table>';
+        el.innerHTML = html;
+      }
+      function renderHealth(data) {
+        var el = document.getElementById('insights-health');
+        if (!el) return;
+        if (!data || data.total === undefined || data.total === null) {
+          el.innerHTML = '<p class="muted">暂无健康检查数据。</p>';
+          return;
+        }
+        var overallCls = data.status === 'ok' ? 'ok' : data.status === 'warning' ? 'warn' : 'danger';
+        el.innerHTML =
+          '<div class="insight-meta"><span class="value ' + overallCls + '" style="font-size:1.25rem">' +
+          esc(data.status || '?') + '</span></div>' +
+          '<p class="muted">' + esc(data.ok) + ' ok · ' + esc(data.warning) + ' warn · ' + esc(data.critical) + ' crit</p>' +
+          '<p class="muted">总计 ' + esc(data.total) + ' 项检查</p>';
+      }
+      function renderLifecycle(data) {
+        var el = document.getElementById('insights-lifecycle');
+        if (!el) return;
+        if (!data || data.running === undefined) {
+          el.innerHTML = '<p class="muted">暂无守护进程数据。</p>';
+          return;
+        }
+        var stateCls = data.running ? 'badge-verdict-approve' : 'badge-verdict-reject';
+        var hCls = data.healthy ? 'ok' : 'warn';
+        var proxyCls = data.proxy_healthy ? 'ok' : 'warn';
+        var silence = data.silence_minutes != null ? data.silence_minutes + 'm' : '—';
+        el.innerHTML =
+          '<div class="insight-meta"><span class="badge ' + stateCls + '">' + (data.running ? 'running' : 'stopped') + '</span>' +
+          '<span class="muted">PIDs ' + esc(data.pid_count) + '</span></div>' +
+          '<p class="muted">健康: <span class="value ' + hCls + '" style="font-size:0.875rem">' +
+          (data.healthy ? 'ok' : 'degraded') + '</span> · 静默: ' + esc(silence) + '</p>' +
+          '<p class="muted">代理: <span class="value ' + proxyCls + '" style="font-size:0.875rem">' +
+          (data.proxy_healthy ? 'healthy' : 'down') + '</span></p>';
+      }
+      function renderSkillsHealth(data) {
+        var el = document.getElementById('insights-skills-health');
+        if (!el) return;
+        if (!data) {
+          el.innerHTML = '<p class="muted">暂无技能健康数据。</p>';
+          return;
+        }
+        if (data.error) {
+          el.innerHTML = '<p class="muted">' + esc(data.error) + '</p>';
+          return;
+        }
+        var okCount = data.healthy_count || data.ok || 0;
+        var total = data.total || 0;
+        var issues = (data.issues || []).slice(0, 4);
+        var overall = data.healthy !== false ? 'ok' : 'warn';
+        el.innerHTML =
+          '<div class="insight-meta"><span class="value ' + overall + '" style="font-size:1.25rem">' +
+          esc(okCount) + '/' + esc(total) + '</span><span class="muted"> healthy</span></div>' +
+          (issues.length ? '<ul style="margin:0.25rem 0;padding-left:1.2rem;">' +
+            issues.map(function(i) {
+              return '<li style="font-size:0.8rem">' + esc(i.skill || i.skill_id || i.id || '?') + ': ' + esc(i.issue || i.status || '?') + '</li>';
+            }).join('') + '</ul>' : '<p class="muted">无健康问题。</p>') +
+          '<p class="muted" style="font-size:0.75rem;margin-top:0.5rem;">' +
+          '<a href="/api/skills/health" style="color:var(--accent)">完整报告</a> · ' +
+          '<a href="/api/skills/monitor" style="color:var(--accent)">运行诊断</a></p>';
+      }
+      function renderCommentary(data) {
+        var el = document.getElementById('insights-commentary');
+        if (!el) return;
+        if (!data || data.error || !data.commentaries || !Object.keys(data.commentaries).length) {
+          el.innerHTML = '<p class="muted">暂无周期评述数据（等待一次 solidify）。</p>';
+          return;
+        }
+        var gene = esc(data.gene_id || '?');
+        var html = '<p class="muted" style="font-size:0.75rem">基因: ' + gene + ' · ' + esc(data.timestamp || '') + '</p>';
+        var icons = {pragmatist: '⚙', explorer: '🔭', critic: '🔍'};
+        ['pragmatist', 'explorer', 'critic'].forEach(function(persona) {
+          var text = data.commentaries[persona] || '';
+          var cls = persona === 'critic' ? 'badge-category' : 'badge-verdict-approve';
+          html += '<div style="margin:0.25rem 0;font-size:0.8rem">' +
+            '<span class="badge ' + cls + '">' + (icons[persona] || '') + ' ' + esc(persona) + '</span> ' +
+            esc(text) + '</div>';
+        });
+        el.innerHTML = html;
+      }
       function scheduleInsightsRefresh() {
         if (_insightsRefreshTimer) return;
         _insightsRefreshTimer = setTimeout(function() {
@@ -495,14 +614,36 @@ def render_dashboard() -> str:  # noqa: PLR0915
       }
       function refreshInsights() {
         fetch('/api/insights').then(function(r) { return r.json(); }).then(renderInsights).catch(function() {
-          const diagEl = document.getElementById('insights-diagnosis');
-          const hubEl = document.getElementById('insights-hub');
-          const apoEl = document.getElementById('insights-autopoiesis');
-          const memSyncEl = document.getElementById('insights-memory-sync');
+          var diagEl = document.getElementById('insights-diagnosis');
+          var hubEl = document.getElementById('insights-hub');
+          var apoEl = document.getElementById('insights-autopoiesis');
+          var memSyncEl = document.getElementById('insights-memory-sync');
+          var econEl = document.getElementById('insights-asset-econ');
           if (diagEl) diagEl.innerHTML = '<p class="muted">无法加载 insights</p>';
           if (hubEl) hubEl.innerHTML = '<p class="muted">无法加载 insights</p>';
           if (apoEl) apoEl.innerHTML = '<p class="muted">无法加载 insights</p>';
           if (memSyncEl) memSyncEl.innerHTML = '<p class="muted">无法加载 insights</p>';
+          if (econEl) econEl.innerHTML = '<p class="muted">无法加载 insights</p>';
+        });
+        fetch('/api/asset-reuse').then(function(r) { return r.json(); }).then(renderAssetEcon).catch(function() {
+          var el = document.getElementById('insights-asset-econ');
+          if (el) el.innerHTML = '<p class="muted">无法加载资产复用数据</p>';
+        });
+        fetch('/api/health/summary').then(function(r) { return r.json(); }).then(renderHealth).catch(function() {
+          var el = document.getElementById('insights-health');
+          if (el) el.innerHTML = '<p class="muted">无法加载健康数据</p>';
+        });
+        fetch('/api/lifecycle/summary').then(function(r) { return r.json(); }).then(renderLifecycle).catch(function() {
+          var el = document.getElementById('insights-lifecycle');
+          if (el) el.innerHTML = '<p class="muted">无法加载守护进程数据</p>';
+        });
+        fetch('/api/skills/health').then(function(r) { return r.json(); }).then(renderSkillsHealth).catch(function() {
+          var el = document.getElementById('insights-skills-health');
+          if (el) el.innerHTML = '<p class="muted">无法加载技能健康数据</p>';
+        });
+        fetch('/api/commentary/all').then(function(r) { return r.json(); }).then(renderCommentary).catch(function() {
+          var el = document.getElementById('insights-commentary');
+          if (el) el.innerHTML = '<p class="muted">无法加载评述数据</p>';
         });
       }
       let ws = null;

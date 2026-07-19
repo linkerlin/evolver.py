@@ -10,17 +10,20 @@ from evolver.webui.observer.assets import serialize_assets
 
 class TestSerializeAssets:
     def test_empty(self, tmp_path: Path):
-        result = serialize_assets(memory_dir=tmp_path)
+        result = serialize_assets(assets_dir=tmp_path)
         assert result["total"] == 0
         assert result["items"] == []
         assert result["page"] == 1
+        assert result["counts"]["genes"] == 0
+        assert result["counts"]["capsules"] == 0
 
     def test_with_genes(self, tmp_path: Path):
         genes = {"genes": [{"id": "g1", "summary": "Gene one"}]}
         (tmp_path / "genes.json").write_text(json.dumps(genes))
-        result = serialize_assets(memory_dir=tmp_path)
+        result = serialize_assets(assets_dir=tmp_path)
         assert result["total"] == 1
         assert result["items"][0]["id"] == "g1"
+        assert result["counts"]["genes"] == 1
 
     def test_type_filter(self, tmp_path: Path):
         genes = {"genes": [{"id": "g1"}]}
@@ -28,21 +31,33 @@ class TestSerializeAssets:
         (tmp_path / "genes.json").write_text(json.dumps(genes))
         (tmp_path / "capsules.json").write_text(json.dumps(capsules))
 
-        result = serialize_assets(memory_dir=tmp_path, type_filter="gene")
+        result = serialize_assets(assets_dir=tmp_path, type_filter="gene")
         assert result["total"] == 1
         assert result["items"][0]["type"] == "gene"
 
     def test_query_filter(self, tmp_path: Path):
         genes = {"genes": [{"id": "g1", "summary": "alpha"}, {"id": "g2", "summary": "beta"}]}
         (tmp_path / "genes.json").write_text(json.dumps(genes))
-        result = serialize_assets(memory_dir=tmp_path, query="beta")
+        result = serialize_assets(assets_dir=tmp_path, query="beta")
         assert result["total"] == 1
         assert result["items"][0]["id"] == "g2"
 
     def test_pagination(self, tmp_path: Path):
         genes = {"genes": [{"id": f"g{i}"} for i in range(10)]}
         (tmp_path / "genes.json").write_text(json.dumps(genes))
-        result = serialize_assets(memory_dir=tmp_path, page=1, limit=5)
+        result = serialize_assets(assets_dir=tmp_path, page=1, limit=5)
         assert len(result["items"]) == 5
-        result2 = serialize_assets(memory_dir=tmp_path, page=2, limit=5)
+        result2 = serialize_assets(assets_dir=tmp_path, page=2, limit=5)
         assert len(result2["items"]) == 5
+
+    def test_jsonl_overlay(self, tmp_path: Path):
+        genes = {"genes": [{"id": "g1", "summary": "base"}]}
+        (tmp_path / "genes.json").write_text(json.dumps(genes))
+        (tmp_path / "genes.jsonl").write_text(
+            '{"id":"g1","summary":"overridden"}\n{"id":"g2","summary":"new"}\n', encoding="utf-8"
+        )
+        result = serialize_assets(assets_dir=tmp_path, type_filter="gene")
+        assert result["total"] == 2
+        items_by_id = {it["id"]: it for it in result["items"]}
+        assert items_by_id["g1"]["summary"] == "overridden"
+        assert items_by_id["g2"]["summary"] == "new"

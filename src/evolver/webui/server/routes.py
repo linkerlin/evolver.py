@@ -16,16 +16,32 @@ from fastapi.responses import JSONResponse, StreamingResponse
 
 from evolver.gep.asset_store import load_capsules, load_genes, read_all_events
 from evolver.webui.observer import (
+    call_log_summary,
+    calls_by_run,
+    cost_index,
     format_interactions,
     get_open_prs,
     get_pr_status,
     get_repo_info,
+    health_check,
+    health_summary,
+    latest_all_commentaries,
+    latest_commentary,
+    lifecycle_status,
+    lifecycle_summary,
+    narrative_history,
+    narrative_summary,
     personality_data,
     pipeline_insights,
     pipeline_timeline,
+    recent_calls,
+    reflection_entries,
+    reuse_summary,
     runs_history,
     safety_events,
     serialize_assets,
+    skills_health,
+    skills_monitor_run,
     skills_status,
     system_status,
 )
@@ -146,7 +162,7 @@ async def api_lineage(gene_id: str | None = Query(None)) -> JSONResponse:
 
 
 # ---------------------------------------------------------------------------
-# Interactions, Personality, Memory
+# Interactions, Personality, Memory, Asset Call Log
 # ---------------------------------------------------------------------------
 
 
@@ -176,6 +192,52 @@ async def api_memory_graph(limit: int = Query(100, ge=1, le=1000)) -> JSONRespon
         return _err(str(exc))
 
 
+@router.get("/api/call-log")
+async def api_call_log_summary(
+    run_id: str | None = Query(None),
+    last: int | None = Query(None, ge=1, le=1000),
+) -> JSONResponse:
+    try:
+        return _ok(call_log_summary(run_id=run_id, last=last))
+    except Exception as exc:
+        return _err(str(exc))
+
+
+@router.get("/api/call-log/{run_id}")
+async def api_call_log_by_run(run_id: str) -> JSONResponse:
+    try:
+        return _ok({"run_id": run_id, "entries": calls_by_run(run_id)})
+    except Exception as exc:
+        return _err(str(exc))
+
+
+@router.get("/api/asset-reuse")
+async def api_asset_reuse(
+    run_id: str | None = Query(None),
+    last: int | None = Query(None, ge=1, le=1000),
+) -> JSONResponse:
+    try:
+        return _ok(reuse_summary(run_id=run_id, last=last))
+    except Exception as exc:
+        return _err(str(exc))
+
+
+@router.get("/api/asset-costs")
+async def api_asset_costs() -> JSONResponse:
+    try:
+        return _ok({"costs": cost_index()})
+    except Exception as exc:
+        return _err(str(exc))
+
+
+@router.get("/api/call-log/recent")
+async def api_recent_calls(last: int = Query(100, ge=1, le=1000)) -> JSONResponse:
+    try:
+        return _ok({"entries": recent_calls(last=last)})
+    except Exception as exc:
+        return _err(str(exc))
+
+
 # ---------------------------------------------------------------------------
 # Skills, Safety, Runs
 # ---------------------------------------------------------------------------
@@ -185,6 +247,97 @@ async def api_memory_graph(limit: int = Query(100, ge=1, le=1000)) -> JSONRespon
 async def api_skills() -> JSONResponse:
     try:
         return _ok(skills_status())
+    except Exception as exc:
+        return _err(str(exc))
+
+
+@router.get("/api/skills/health")
+async def api_skills_health() -> JSONResponse:
+    try:
+        return _ok(skills_health())
+    except Exception as exc:
+        return _err(str(exc))
+
+
+@router.get("/api/skills/monitor")
+async def api_skills_monitor() -> JSONResponse:
+    try:
+        return _ok(skills_monitor_run())
+    except Exception as exc:
+        return _err(str(exc))
+
+
+@router.get("/api/health")
+async def api_health() -> JSONResponse:
+    try:
+        return _ok(health_check())
+    except Exception as exc:
+        return _err(str(exc))
+
+
+@router.get("/api/health/summary")
+async def api_health_summary() -> JSONResponse:
+    try:
+        return _ok(health_summary())
+    except Exception as exc:
+        return _err(str(exc))
+
+
+@router.get("/api/lifecycle")
+async def api_lifecycle() -> JSONResponse:
+    try:
+        return _ok(lifecycle_status())
+    except Exception as exc:
+        return _err(str(exc))
+
+
+@router.get("/api/lifecycle/summary")
+async def api_lifecycle_summary() -> JSONResponse:
+    try:
+        return _ok(lifecycle_summary())
+    except Exception as exc:
+        return _err(str(exc))
+
+
+@router.get("/api/narratives")
+async def api_narratives(limit: int = Query(20, ge=1, le=100)) -> JSONResponse:
+    try:
+        return _ok({"text": narrative_history(limit=limit)})
+    except Exception as exc:
+        return _err(str(exc))
+
+
+@router.get("/api/narratives/summary")
+async def api_narratives_summary() -> JSONResponse:
+    try:
+        return _ok(narrative_summary())
+    except Exception as exc:
+        return _err(str(exc))
+
+
+@router.get("/api/reflections")
+async def api_reflections(limit: int = Query(50, ge=1, le=500)) -> JSONResponse:
+    try:
+        return _ok({"entries": reflection_entries(limit=limit)})
+    except Exception as exc:
+        return _err(str(exc))
+
+
+@router.get("/api/commentary")
+async def api_commentary(
+    persona: str = Query("pragmatist", pattern="^(pragmatist|explorer|critic)$"),
+    verbose: bool = Query(False),
+) -> JSONResponse:
+    try:
+        return _ok(latest_commentary(persona=persona, verbose=verbose))
+    except Exception as exc:
+        return _err(str(exc))
+
+
+@router.get("/api/commentary/all")
+async def api_commentary_all(verbose: bool = Query(False)) -> JSONResponse:
+    try:
+        return _ok(latest_all_commentaries(verbose=verbose))
     except Exception as exc:
         return _err(str(exc))
 

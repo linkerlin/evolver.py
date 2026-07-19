@@ -1,4 +1,4 @@
-"""Skills directory status for WebUI."""
+"""Skills directory status for WebUI — with health monitor integration."""
 
 from __future__ import annotations
 
@@ -28,3 +28,23 @@ def skills_status(skills_dir: Path | None = None) -> dict[str, Any]:
             )
 
     return {"total": len(skills), "skills": skills}
+
+
+def skills_health() -> dict[str, Any]:
+    """Run skills health checks (from ops/skills_monitor)."""
+    try:
+        from evolver.ops.skills_monitor import check_skills_health
+
+        return check_skills_health()
+    except Exception:
+        return {"healthy": False, "error": "skills health check failed"}
+
+
+def skills_monitor_run() -> dict[str, Any]:
+    """Run full skills monitor (dry-run by default)."""
+    try:
+        from evolver.ops.skills_monitor import run_skills_monitor
+
+        return run_skills_monitor(dry_run=True)
+    except Exception:
+        return {"healthy": False, "error": "skills monitor failed"}

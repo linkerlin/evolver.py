@@ -13,28 +13,13 @@ from typing import Any
 from fastapi import Request
 from fastapi.responses import JSONResponse, StreamingResponse
 
+from evolver.gep.assets import BEDROCK_MODEL_MAP, canonicalize_for_bedrock
 from evolver.proxy.router.cache_passthrough import get_cached, set_cache
 from evolver.proxy.router.model_router import select_upstream_for_model
 
 ANTHROPIC_API_URL = "https://api.anthropic.com/v1/messages"
 ANTHROPIC_DEFAULT_TIMEOUT = 60.0
 BEDROCK_DEFAULT_TIMEOUT = 90.0
-
-
-# Model ID canonicalization for Bedrock
-BEDROCK_MODEL_MAP: dict[str, str] = {
-    "claude-3-7-sonnet-20250219": "anthropic.claude-3-7-sonnet-20250219-v1:0",
-    "claude-3-5-sonnet-20241022": "anthropic.claude-3-5-sonnet-20241022-v1:0",
-    "claude-3-5-sonnet-20240620": "anthropic.claude-3-5-sonnet-20240620-v1:0",
-    "claude-3-opus-20240229": "anthropic.claude-3-opus-20240229-v1:0",
-    "claude-3-sonnet-20240229": "anthropic.claude-3-sonnet-20240229-v1:0",
-    "claude-3-haiku-20240307": "anthropic.claude-3-haiku-20240307-v1:0",
-}
-
-
-def canonicalize_for_bedrock(model_id: str) -> str:
-    """Convert Anthropic model ID to Bedrock model ID."""
-    return BEDROCK_MODEL_MAP.get(model_id, model_id)
 
 
 def _build_anthropic_headers() -> dict[str, str]:

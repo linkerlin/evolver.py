@@ -83,7 +83,7 @@ class TestSerializeAssets:
     def test_empty(self, tmp_path, monkeypatch):
         import evolver.gep.paths as paths_mod
 
-        monkeypatch.setattr(paths_mod, "get_memory_dir", lambda: tmp_path)
+        monkeypatch.setattr(paths_mod, "get_gep_assets_dir", lambda: tmp_path)
         result = serialize_assets()
         assert result["total"] == 0
         assert result["items"] == []
@@ -91,7 +91,7 @@ class TestSerializeAssets:
     def test_genes(self, tmp_path, monkeypatch):
         import evolver.gep.paths as paths_mod
 
-        monkeypatch.setattr(paths_mod, "get_memory_dir", lambda: tmp_path)
+        monkeypatch.setattr(paths_mod, "get_gep_assets_dir", lambda: tmp_path)
         (tmp_path / "genes.json").write_text(
             '{"genes":[{"id":"g1","summary":"x"}]}', encoding="utf-8"
         )
@@ -102,7 +102,7 @@ class TestSerializeAssets:
     def test_query(self, tmp_path, monkeypatch):
         import evolver.gep.paths as paths_mod
 
-        monkeypatch.setattr(paths_mod, "get_memory_dir", lambda: tmp_path)
+        monkeypatch.setattr(paths_mod, "get_gep_assets_dir", lambda: tmp_path)
         (tmp_path / "genes.json").write_text(
             '{"genes":[{"id":"alpha","summary":"hello"}]}', encoding="utf-8"
         )
@@ -112,7 +112,7 @@ class TestSerializeAssets:
     def test_pagination(self, tmp_path, monkeypatch):
         import evolver.gep.paths as paths_mod
 
-        monkeypatch.setattr(paths_mod, "get_memory_dir", lambda: tmp_path)
+        monkeypatch.setattr(paths_mod, "get_gep_assets_dir", lambda: tmp_path)
         genes = [{"id": f"g{i}"} for i in range(10)]
         (tmp_path / "genes.json").write_text(json.dumps({"genes": genes}), encoding="utf-8")
         result = serialize_assets(page=2, limit=3)

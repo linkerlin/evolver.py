@@ -1,17 +1,21 @@
 """Tests for evolver.adapters.scripts.session_start.
-
+ 
 Covers the contracts ported from evolver-session-start.js:
   - belongs_to_workspace: workspace_id / cwd matching rules
   - _read_recent_workspace_entries: newest-first, scoped, limit
   - _format_outcome: truncated, icon-prefixed
   - build_session_context: non-git notice, memory injection, dedup
+  - main: stdin parsing, cwd extraction, session scope resolution
 
 Equivalent to test/sessionStartScope.test.js.
 """
 
 from __future__ import annotations
 
+import io
 import json
+import os
+import sys
 import time
 from pathlib import Path
 
@@ -175,3 +179,131 @@ class TestBuildSessionContext:
         # Non-git notice is throttled; first call may or may not show.
         # Just verify it doesn't crash and returns a dict.
         assert isinstance(ctx, dict)
+
+
+# ---------------------------------------------------------------------------
+# main() integration — stdin parsing + cwd extraction + session scope
+# ---------------------------------------------------------------------------
+
+
+class TestMainStdinAndScope:
+    def test_main_with_codex_session_meta(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: Path,
+    ) -> None:
+        monkeypatch.delenv("EVOLVER_SESSION_START_DEDUP", raising=False)
+        monkeypatch.delenv("OPENCLAW_WORKSPACE", raising=False)
+        monkeypatch.delenv("EVOLVER_SESSION_SCOPE", raising=False)
+        monkeypatch.setattr(Path, "home", lambda: tmp_path)
+        monkeypatch.setattr(time, "time", lambda: 0.0)
+        monkeypatch.chdir(tmp_path)
+
+        payload = json.dumps(
+            {
+                "type": "session_meta",
+                "payload": {"cwd": str(tmp_path), "agent": "codex"},
+            }
+        )
+        monkeypatch.setattr(sys, "stdin", io.StringIO(payload))
+
+        out_buffer = io.StringIO()
+        monkeypatch.setattr(sys, "stdout", out_buffer)
+
+        session_start.main()
+
+        output = out_buffer.getvalue()
+        assert isinstance(json.loads(output), dict)
+
+    def test_main_sets_session_scope(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: Path,
+    ) -> None:
+        monkeypatch.delenv("EVOLVER_SESSION_START_DEDUP", raising=False)
+        monkeypatch.delenv("OPENCLAW_WORKSPACE", raising=False)
+        monkeypatch.delenv("EVOLVER_SESSION_SCOPE", raising=False)
+        monkeypatch.setenv("AGENT_NAME", "codex")
+        monkeypatch.setattr(Path, "home", lambda: tmp_path)
+        monkeypatch.setattr(time, "time", lambda: 0.0)
+        monkeypatch.chdir(tmp_path)
+
+        payload = json.dumps(
+            [
+                {"type": "session_meta", "payload": {"cwd": str(tmp_path)}},
+            ]
+        )
+        monkeypatch.setattr(sys, "stdin", io.StringIO(payload))
+
+        out_buffer = io.StringIO()
+        monkeypatch.setattr(sys, "stdout", out_buffer)
+
+        session_start.main()
+
+        scope = os.environ.get("EVOLVER_SESSION_SCOPE")
+        assert scope is not None
+        assert len(scope) == 16
+        assert scope != "default"
+
+        output = out_buffer.getvalue()
+        assert isinstance(json.loads(output), dict)
+
+    def test_main_empty_stdin(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: Path,
+    ) -> None:
+        monkeypatch.delenv("EVOLVER_SESSION_START_DEDUP", raising=False)
+        monkeypatch.delenv("OPENCLAW_WORKSPACE", raising=False)
+        monkeypatch.delenv("EVOLVER_SESSION_SCOPE", raising=False)
+        monkeypatch.setattr(Path, "home", lambda: tmp_path)
+        monkeypatch.setattr(time, "time", lambda: 0.0)
+        monkeypatch.chdir(tmp_path)
+
+        monkeypatch.setattr(sys, "stdin", io.StringIO(""))
+        out_buffer = io.StringIO()
+        monkeypatch.setattr(sys, "stdout", out_buffer)
+
+        session_start.main()
+        output = out_buffer.getvalue()
+        assert isinstance(json.loads(output), dict)
+
+    def test_main_malformed_stdin_graceful(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: Path,
+    ) -> None:
+        monkeypatch.delenv("EVOLVER_SESSION_START_DEDUP", raising=False)
+        monkeypatch.delenv("OPENCLAW_WORKSPACE", raising=False)
+        monkeypatch.setattr(Path, "home", lambda: tmp_path)
+        monkeypatch.setattr(time, "time", lambda: 0.0)
+        monkeypatch.chdir(tmp_path)
+
+        monkeypatch.setattr(sys, "stdin", io.StringIO("not valid json {{{"))
+        out_buffer = io.StringIO()
+        monkeypatch.setattr(sys, "stdout", out_buffer)
+
+        session_start.main()
+        output = out_buffer.getvalue()
+        assert isinstance(json.loads(output), dict)
+
+    def test_main_cwd_passed_to_build_context(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: Path,
+    ) -> None:
+        monkeypatch.delenv("EVOLVER_SESSION_START_DEDUP", raising=False)
+        monkeypatch.delenv("OPENCLAW_WORKSPACE", raising=False)
+        monkeypatch.setattr(Path, "home", lambda: tmp_path)
+        monkeypatch.setattr(time, "time", lambda: 0.0)
+        monkeypatch.chdir(tmp_path)
+
+        payload = json.dumps([{"cwd": str(tmp_path), "type": "interaction"}])
+        monkeypatch.setattr(sys, "stdin", io.StringIO(payload))
+
+        out_buffer = io.StringIO()
+        monkeypatch.setattr(sys, "stdout", out_buffer)
+
+        session_start.main()
+        output = out_buffer.getvalue()
+        assert isinstance(json.loads(output), dict)

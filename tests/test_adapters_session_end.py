@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import io
 import json
+import sys
 import subprocess
 from pathlib import Path
 
@@ -207,3 +209,68 @@ class TestIsCursorHost:
         monkeypatch.delenv("CURSOR_SESSION_ID", raising=False)
         monkeypatch.delenv("EVOLVER_HOOK_HOST", raising=False)
         assert se.is_cursor_host() is True
+
+
+# ---------------------------------------------------------------------------
+# main() integration — stdin parsing + cwd extraction
+# ---------------------------------------------------------------------------
+
+
+class TestMainStdin:
+    def test_main_with_stdin_no_crash(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: Path,
+    ) -> None:
+        monkeypatch.delenv("CURSOR_TRACE_ID", raising=False)
+        monkeypatch.delenv("EVOLVER_HOOK_VERBOSE", raising=False)
+        monkeypatch.delenv("CURSOR_PROJECT_DIR", raising=False)
+        monkeypatch.setenv("MEMORY_GRAPH_PATH", str(tmp_path / "memory_graph.jsonl"))
+
+        payload = json.dumps(
+            {
+                "type": "session_meta",
+                "payload": {"cwd": str(tmp_path), "agent": "codex"},
+            }
+        )
+        monkeypatch.setattr(sys, "stdin", io.StringIO(payload))
+
+        # Verify main() runs without raising.
+        try:
+            se.main()
+        except Exception:
+            pytest.fail("main() raised unexpectedly")
+
+    def test_main_empty_stdin_no_crash(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: Path,
+    ) -> None:
+        monkeypatch.delenv("EVOLVER_HOOK_VERBOSE", raising=False)
+        monkeypatch.delenv("CURSOR_TRACE_ID", raising=False)
+        monkeypatch.delenv("CURSOR_PROJECT_DIR", raising=False)
+        monkeypatch.setenv("MEMORY_GRAPH_PATH", str(tmp_path / "memory_graph.jsonl"))
+
+        monkeypatch.setattr(sys, "stdin", io.StringIO(""))
+
+        try:
+            se.main()
+        except Exception:
+            pytest.fail("main() raised unexpectedly on empty stdin")
+
+    def test_main_malformed_stdin_no_crash(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: Path,
+    ) -> None:
+        monkeypatch.delenv("EVOLVER_HOOK_VERBOSE", raising=False)
+        monkeypatch.delenv("CURSOR_TRACE_ID", raising=False)
+        monkeypatch.delenv("CURSOR_PROJECT_DIR", raising=False)
+        monkeypatch.setenv("MEMORY_GRAPH_PATH", str(tmp_path / "memory_graph.jsonl"))
+
+        monkeypatch.setattr(sys, "stdin", io.StringIO("not valid {{{"))
+
+        try:
+            se.main()
+        except Exception:
+            pytest.fail("main() raised unexpectedly on malformed stdin")

@@ -89,7 +89,7 @@ ignore = [
 
 [tool.ruff.lint.per-file-ignores]
 # Self-contained HTML / embedded hook scripts — line breaks harm readability
-"src/evolver/webui/dashboard.py" = ["E501"]
+"src/evolver/webui/dashboard.py" = ["E501", "RUF001"]
 "src/evolver/adapters/opencode.py" = ["E501"]
 "src/evolver/adapters/setup_hooks.py" = ["E501"]
 # Proxy route modules — lazy httpx import, nested async with, many error
@@ -104,6 +104,24 @@ ignore = [
 "src/evolver/proxy/router/models_route.py" = ["PLC0415"]
 # Lifecycle manager — pre-established async patterns (lazy imports, task creation, ternary)
 "src/evolver/proxy/lifecycle/manager.py" = ["B904", "SIM102", "RUF006", "PLC0415", "SIM108", "N817"]
+# Observer modules — lazy path imports by design (must defer until .env loaded)
+"src/evolver/webui/observer/assets.py" = ["PLC0415", "PLW2901"]
+"src/evolver/webui/observer/interactions.py" = ["PLC0415"]
+"src/evolver/webui/observer/runs.py" = ["PLC0415"]
+"src/evolver/webui/observer/health.py" = ["PLC0415"]
+"src/evolver/webui/observer/lifecycle_obs.py" = ["PLC0415"]
+"src/evolver/webui/observer/narrative_obs.py" = ["PLW2901"]
+"src/evolver/webui/observer/skills.py" = ["PLC0415"]
+"src/evolver/webui/observer/commentary_obs.py" = ["PLC0415"]
+"src/evolver/webui/server/routes.py" = ["PLC0415"]
+# Commentary module — Chinese fullwidth punctuation is intentional
+"src/evolver/ops/commentary.py" = ["RUF001", "PLC0415"]
+# evolve/utils.py — lazy hashlib import, loop strip() pattern
+"src/evolver/evolve/utils.py" = ["PLC0415", "PLW2901"]
+# Adapter scripts — lazy imports for env-var-sensitive paths + scope API compat
+"src/evolver/adapters/scripts/session_start.py" = ["PLC0415"]
+"src/evolver/adapters/scripts/session_end.py" = ["PLC0415", "F841"]
+"src/evolver/adapters/scripts/memory_filtering.py" = ["ARG001", "PLR0912"]
 
 [tool.ruff.format]
 quote-style = "double"

@@ -61,12 +61,16 @@ def filter_relevant_outcomes(
 
 def filter_relevant_memories(
     *,
-    workspace: Path | None = None,  # noqa: ARG001 (kept for API compat)
-    scope: str = "workspace",  # noqa: ARG001 (kept for API compat)
+    workspace: Path | None = None,
+    scope: str = "workspace",
     limit: int = 5,
     min_score: float = 0.0,
 ) -> list[dict[str, Any]]:
-    """Read the memory graph and return the most relevant memories."""
+    """Read the memory graph and return the most relevant memories.
+
+    When *workspace* is provided, only entries matching the workspace dir
+    (via ``cwd`` tag) are considered. Otherwise all entries are scored.
+    """
     try:
         from evolver.gep.paths import get_memory_dir  # noqa: PLC0415
     except ImportError:
@@ -76,6 +80,8 @@ def filter_relevant_memories(
     graph_file = memory_dir / "memory_graph.jsonl"
     if not graph_file.exists():
         return []
+
+    workspace_str = str(workspace) if workspace else None
 
     entries: list[dict[str, Any]] = []
     try:
@@ -89,6 +95,10 @@ def filter_relevant_memories(
                 except json.JSONDecodeError:
                     continue
                 if isinstance(record, dict):
+                    if workspace_str:
+                        entry_cwd = record.get("cwd", "")
+                        if entry_cwd and str(entry_cwd) != workspace_str:
+                            continue
                     entries.append(record)
     except OSError:
         return []
