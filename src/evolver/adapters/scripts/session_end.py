@@ -176,6 +176,8 @@ def record_to_local(graph_path: Path, outcome: dict[str, object]) -> bool:
             "score": outcome.get("score", 0),
             "note": outcome.get("summary", ""),
         },
+        # Always stamp resolve_project_dir() — never process.cwd() — so Cursor
+        # plugin-dir hooks still match session-start's project-dir reader (#555).
         "cwd": str(project_dir),
         "workspace_id": ws_id,
         "source": "hook:session-end",
@@ -189,15 +191,30 @@ def record_to_local(graph_path: Path, outcome: dict[str, object]) -> bool:
         return False
 
 
+def _resolve_graph_path() -> Path | None:
+    """Prefer MEMORY_GRAPH_PATH env, else runtime_paths discovery."""
+    env_path = os.environ.get("MEMORY_GRAPH_PATH", "").strip()
+    if env_path:
+        return Path(env_path)
+    try:
+        from evolver.adapters.scripts.runtime_paths import (  # noqa: PLC0415
+            find_evolver_root,
+            find_memory_graph,
+        )
+
+        evolver_root = find_evolver_root()
+        return find_memory_graph(evolver_root)
+    except ImportError:
+        return None
+
+
 def build_session_end_output() -> dict[str, str]:
     """Process stdin (if any), collect diffs, record outcome, return output."""
     diff_info = get_git_diff_stats()
 
     if not diff_info["hasChanges"]:
         reason = (
-            "no changes detected this session"
-            if diff_info["isRepo"]
-            else "not a git workspace"
+            "no changes detected this session" if diff_info["isRepo"] else "not a git workspace"
         )
         _append_evolution_log(f"[Evolution] Session end: nothing recorded ({reason}).")
         return {}
@@ -218,17 +235,7 @@ def build_session_end_output() -> dict[str, str]:
         "summary": f"Session end: {diff_info['summary']}. Signals: [{', '.join(signals)}]",
     }
 
-    try:
-        from evolver.adapters.scripts.runtime_paths import (  # noqa: PLC0415
-            find_evolver_root,
-            find_memory_graph,
-        )
-
-        evolver_root = find_evolver_root()
-        graph_path = find_memory_graph(evolver_root)
-    except ImportError:
-        graph_path = None
-
+    graph_path = _resolve_graph_path()
     local_ok = record_to_local(graph_path, outcome) if graph_path else False
 
     target = "local memory" if local_ok else "nowhere (no Hub or local path)"
