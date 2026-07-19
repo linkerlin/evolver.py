@@ -64,6 +64,33 @@ async def enrich_phase(ctx: dict[str, Any]) -> dict[str, Any]:
     except Exception:
         ctx["recent_failed_capsules"] = []
 
+    # Capability candidates (Sprint 15.5) — problem:*/action:* expansion + candidates
+    try:
+        from evolver.gep.candidates import (  # noqa: PLC0415
+            expand_signals,
+            extract_capability_candidates,
+            render_candidates_preview,
+        )
+
+        signal_names = [
+            str(s.get("type") if isinstance(s, dict) else s)
+            for s in (ctx.get("signals") or [])
+            if s
+        ]
+        ctx["expanded_signals"] = expand_signals(signal_names, "")
+        caps = extract_capability_candidates(
+            {
+                "signals": signal_names,
+                "recent_failed_capsules": ctx.get("recent_failed_capsules") or [],
+                "recent_session_transcript": ctx.get("recent_session_transcript") or "",
+            }
+        )
+        ctx["capability_candidates"] = caps
+        ctx["capability_candidates_preview"] = render_candidates_preview(caps) if caps else "(none)"
+    except Exception:
+        ctx.setdefault("capability_candidates", [])
+        ctx.setdefault("capability_candidates_preview", "(none)")
+
     # Plateau detection
     ctx["plateau_override"] = {"severity": None}
     if any(s.startswith("plateau_pivot_required") for s in signals):
