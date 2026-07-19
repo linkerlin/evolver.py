@@ -22,8 +22,10 @@ from fastapi.responses import JSONResponse, StreamingResponse
 from pydantic import ValidationError
 
 from evolver.gep.content_hash import verify_asset_id
+from evolver.gep.conversation_distiller import distill_conversation
 from evolver.gep.schemas.capsule import Capsule, validate_capsule
 from evolver.gep.schemas.gene import Gene, validate_gene
+from evolver.proxy.asset_publish import publish_assets
 from evolver.proxy.extensions.dm_handler import DMHandler
 from evolver.proxy.extensions.session_handler import SessionHandler
 from evolver.proxy.extensions.skill_updater import SkillUpdater
@@ -400,13 +402,59 @@ async def asset_submit(
     body: dict[str, Any],
     _token: str = Depends(require_auth),
 ) -> JSONResponse:
+    """Publish via signed Gene+Capsule bundle (Hub ``/a2a/publish`` path).
+
+    Accepts ``assets`` (array) or ``asset`` (single object). Bare ``asset_id``
+    alone is rejected (Node Bugbot #256). Falls back to mailbox enqueue only
+    when neither key is present for legacy callers.
+    """
+    if body.get("assets") is not None or body.get("asset") is not None:
+        try:
+            result = publish_assets(body)
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+        return JSONResponse(result)
+
+    # Legacy mailbox path (no full asset object).
     store = _get_store(request)
     result = store.send(
         type="asset_submit",
-        payload=body.get("payload", {}),
+        payload=body.get("payload", body),
         ref_id=body.get("ref_id"),
     )
     return JSONResponse(result)
+
+
+@router.post("/conversation/distill")
+async def conversation_distill(
+    body: dict[str, Any],
+    _token: str = Depends(require_auth),
+) -> JSONResponse:
+    """Distill a conversation into Gene+Capsule and optionally publish.
+
+    Ports Node ``POST /conversation/distill`` (routes.js + conversationDistiller).
+    """
+    input_data = body if isinstance(body, dict) else {}
+    distill = distill_conversation(input_data)
+    if not distill.get("ok"):
+        return JSONResponse(distill)
+
+    publish_result: dict[str, Any] | None = None
+    if input_data.get("publish") is not False:
+        assets = [a for a in (distill.get("gene"), distill.get("capsule")) if a]
+        try:
+            publish_result = publish_assets({"assets": assets})
+        except ValueError as exc:
+            publish_result = {"published": 0, "total": 0, "results": [], "error": str(exc)}
+
+    return JSONResponse(
+        {
+            **distill,
+            "queued": False,
+            "published": bool(publish_result and publish_result.get("published")),
+            "publish_result": publish_result,
+        }
+    )
 
 
 @router.get("/asset/submissions")
