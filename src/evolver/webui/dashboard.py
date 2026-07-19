@@ -5,6 +5,8 @@ Produces a self-contained dark-mode dashboard without external dependencies.
 
 from __future__ import annotations
 
+import time as _time
+
 from evolver.gep.asset_store import (
     load_capsules,
     load_genes,
@@ -14,6 +16,7 @@ from evolver.gep.asset_store import (
 from evolver.gep.discovery import list_peers
 from evolver.gep.paths import get_solidify_state_path
 from evolver.webui.client.sse import render_sse_client_js
+from evolver.webui.observer.github import get_open_prs, get_repo_info
 
 _CSS = """
 :root {
@@ -118,6 +121,10 @@ footer { padding: 1.5rem 2rem; border-top: 1px solid var(--border); color: var(-
 .badge-verdict-revise { background: rgba(210,153,34,0.15); color: var(--warn); }
 .badge-verdict-reject { background: rgba(248,81,73,0.15); color: var(--danger); }
 .insight-table { margin-top: 0.5rem; }
+.pr-state-merged { color: var(--success); }
+.pr-state-open { color: var(--accent); }
+.pr-state-closed { color: var(--danger); }
+.pr-state-draft { color: var(--muted); }
 """
 
 
@@ -136,7 +143,7 @@ def _event_status_class(status: str) -> str:
     }.get(status or "", "warn")
 
 
-def render_dashboard() -> str:
+def render_dashboard() -> str:  # noqa: PLR0915
     solidify = read_json_if_exists(get_solidify_state_path()) or {}
     last_run = solidify.get("last_run")
     last_solidify = solidify.get("last_solidify")
@@ -237,8 +244,6 @@ def render_dashboard() -> str:
     """
 
     peers_rows = ""
-    import time as _time
-
     now = _time.time()
     for p in peers:
         pid = p.get("node_id", "?")
@@ -280,6 +285,40 @@ def render_dashboard() -> str:
     </div>
     """
 
+    # GitHub PR panel (server-rendered; data from open_pr_registry + repo slug).
+    try:
+        repo_info = get_repo_info()
+        open_prs = get_open_prs()
+    except Exception:
+        repo_info = {"available": False, "slug": None, "prUrlBase": None}
+        open_prs = []
+    pr_rows = ""
+    pr_base = repo_info.get("prUrlBase") or ""
+    for pr in open_prs:
+        num = pr.get("number")
+        title = pr.get("title") or ""
+        head = pr.get("headRefName") or ""
+        files = pr.get("fileCount", 0)
+        href = f"{pr_base}/{num}" if pr_base and num else "#"
+        pr_rows += (
+            f"<tr><td><a href='{href}' target='_blank' rel='noopener'>#{num}</a></td>"
+            f"<td>{title}</td><td>{head}</td><td>{files}</td></tr>\n"
+        )
+    slug_label = repo_info.get("slug") or "not configured"
+    pr_section = f"""
+    <div class="section">
+      <h2>🔀 Pull Requests <span class="version">({slug_label})</span></h2>
+      <table>
+        <thead><tr><th>#</th><th>Title</th><th>Head</th><th>Files</th></tr></thead>
+        <tbody>{pr_rows or '<tr><td colspan="4" style="color:var(--muted)">No open PRs (or gh/registry unavailable).</td></tr>'}</tbody>
+      </table>
+      <p class="muted" style="font-size:0.8rem;margin-top:0.5rem;">
+        Hover status API: <code>GET /api/github/pr/&lt;n&gt;</code>
+        · disable with <code>EVOLVER_WEBUI_GITHUB=0</code>
+      </p>
+    </div>
+    """
+
     controls = """
     <div class="section">
       <h2>🎛️ Controls</h2>
@@ -303,6 +342,7 @@ def render_dashboard() -> str:
       {events_section}
       {insights_section}
       {peers_section}
+      {pr_section}
       {controls}
     </main>
     <div id="toast-container"></div>

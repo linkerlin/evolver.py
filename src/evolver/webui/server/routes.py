@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import re
 from collections.abc import AsyncIterator
 from typing import Any
 
@@ -16,6 +17,9 @@ from fastapi.responses import JSONResponse, StreamingResponse
 from evolver.gep.asset_store import load_capsules, load_genes, read_all_events
 from evolver.webui.observer import (
     format_interactions,
+    get_open_prs,
+    get_pr_status,
+    get_repo_info,
     personality_data,
     pipeline_insights,
     pipeline_timeline,
@@ -210,6 +214,47 @@ async def api_runs(limit: int = Query(50, ge=1, le=200)) -> JSONResponse:
 async def api_pipelines(limit: int = Query(100, ge=1, le=500)) -> JSONResponse:
     try:
         return _ok({"timeline": pipeline_timeline(limit=limit)})
+    except Exception as exc:
+        return _err(str(exc))
+
+
+# ---------------------------------------------------------------------------
+# GitHub PR status (Sprint 16.2)
+# ---------------------------------------------------------------------------
+
+
+@router.get("/api/github/repo")
+async def api_github_repo() -> JSONResponse:
+    try:
+        return _ok(get_repo_info())
+    except Exception as exc:
+        return _err(str(exc))
+
+
+@router.get("/api/github/prs")
+async def api_github_prs() -> JSONResponse:
+    try:
+        return _ok({"data": get_open_prs()})
+    except Exception as exc:
+        return _err(str(exc))
+
+
+@router.get("/api/github/pr/{number}")
+async def api_github_pr(number: str) -> JSONResponse:
+    """PR number is untrusted route input — only a positive integer may proceed."""
+    if not re.fullmatch(r"\d+", str(number)):
+        return JSONResponse(
+            {
+                "error": "PR number must be a positive integer",
+                "code": "INVALID_PR_NUMBER",
+                "number": None,
+                "available": False,
+                "reason": "invalid_number",
+            },
+            status_code=400,
+        )
+    try:
+        return _ok(get_pr_status(number))
     except Exception as exc:
         return _err(str(exc))
 

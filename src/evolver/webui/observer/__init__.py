@@ -1,6 +1,8 @@
 """WebUI observer subsystem — transforms local state into WebUI-ready data."""
 
 from .assets import serialize_assets
+from .github import get_open_prs, get_pr_status, get_repo_info
+from .insights import pipeline_insights
 from .interactions import format_interactions
 from .jsonl import stream_jsonl
 from .paths import sanitize_path
@@ -10,13 +12,15 @@ from .redact import redact_text
 from .runs import runs_history
 from .safety import safety_events
 from .skills import skills_status
-from .insights import pipeline_insights
 from .status import system_status
 
 __all__ = [
-    "pipeline_insights",
     "format_interactions",
+    "get_open_prs",
+    "get_pr_status",
+    "get_repo_info",
     "personality_data",
+    "pipeline_insights",
     "pipeline_timeline",
     "redact_text",
     "runs_history",
