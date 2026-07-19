@@ -1,0 +1,20 @@
+{
+  "version": "1.0.0",
+  "guard_checks": {
+    "hub_offline_guard": {
+      "id": "hub_offline_guard",
+      "name": "[AUTO] hub_offline",
+      "description": "Hub unreachable this cycle",
+      "auto_detect": true,
+      "origin_friction": "f001",
+      "autopoiesis": true,
+      "signal_key": "autopoiesis:hub_offline_guard"
+    }
+  },
+  "autopoiesis": {
+    "self_report_enabled": true,
+    "auto_encode": true,
+    "last_evolution": "2026-07-18T15:28:57.064642+00:00",
+    "evolution_count": 1
+  }
+}

@@ -222,16 +222,13 @@ def build_session_context() -> dict[str, str]:
 
     if graph_path and graph_path.exists():
         current_id = resolve_workspace_id(evolver_root, current_dir)
-        recent = _read_recent_workspace_entries(
-            graph_path, current_id, str(current_dir), 5
-        )
+        recent = _read_recent_workspace_entries(graph_path, current_id, str(current_dir), 5)
         filtered = filter_relevant_outcomes(recent)
         if filtered:
             success_count = sum(
                 1
                 for e in filtered
-                if isinstance(e.get("outcome"), dict)
-                and e["outcome"].get("status") == "success"
+                if isinstance(e.get("outcome"), dict) and e["outcome"].get("status") == "success"
             )
             fail_count = len(filtered) - success_count
             lines = [

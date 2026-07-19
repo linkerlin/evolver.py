@@ -76,9 +76,7 @@ SIGNAL_KEYWORDS: dict[str, list[str]] = {
 # to avoid false-positive keyword hits inside code (e.g. a variable named
 # ``failed_count`` should not trigger ``log_error``).
 _STRUCTURE_PREFIXES = ("//", "#", "*", "{", "[", "}", "]", "/*", '"""', "'''")
-_MULTILINGUAL_ERROR = re.compile(
-    r"(?:错误|失败|异常|エラー|失敗|오류|실패)", re.IGNORECASE
-)
+_MULTILINGUAL_ERROR = re.compile(r"(?:错误|失败|异常|エラー|失敗|오류|실패)", re.IGNORECASE)
 
 
 def stratify_content(text: str) -> str:

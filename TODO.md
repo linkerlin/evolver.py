@@ -55,13 +55,13 @@
 | **G10.3** `gep/cli_contracts.py` | **P1** | 统一 `reuse`/`publish` v1：provenance + 脱敏 gate + 重哈希重签 + 幂等 | 2021 行测试逐条对标 | `cliContracts.test.js`(2021) |
 | **G10.8** `force_update.py` 强化 | **P1** ✅ **已完成** | 212→≥500：failure codes、keep-list、mid-copy wedge、concurrency guard、idempotent | sentinels(BUSY/NOOP) + 模块级 mutex(finally) + 幂等 floor(操作符/v 归一化、反降级) + 冻结 coded failures + Zip Slip 安全解压 | 5 个 forceUpdate 测试 → `test_force_update.py`(+19 用例) |
 | **G10.9** `proxy/sync/outbound.py` | **P1** ✅ **已完成** | 91→≥250：批量重试、离线恢复、指数退避 | body-size 分批 + 413 隔离/退避 + retryable/terminal + trace 门控 + 脱敏；`store.defer`/`next_retry_at` | `proxyOutboundSync.test.js`(+429) → `tests/test_proxy_outbound_sync.py`(11 用例) |
-| **G10.4** `gep/skill2recipes.py` + `skill2gep_audit.py` | **P1** | Skill→GEP Recipe 组合（manifest: steps/optional/condition/price）；保留现有模板 `recipe/`，命名分离 | manifest 解析 + 每步 validation allow-list + publish/dry-run | `skill2recipes.test.js`(212)+`recipeHub` |
+| **G10.4** `gep/skill2recipes.py` + `skill2gep_audit.py` | **P1** ✅ **已完成** | Skill→GEP Recipe 组合（manifest: steps/optional/condition/price）；模板消费端 `recipe/` 保持不动，发布端 CLI 独立为 `skill2recipe` | manifest 归一化 + validation allow-list 真执行 + required/optional + 私有字面量审计 + asset/recipe publish/dry-run | `skill2recipes.test.js`(212)+`skill2gep` audit → `tests/gep/test_skill2recipes.py` |
 
 ### S10-B 深化任务（P2）
 
 | 任务 | 目标 | 参考 |
 |---|---|---|
-| **G10.6** `proxy/client_settings.py`（405） | 客户端设置层（区别 `server/settings`） | `proxy/clientSettings.js` |
+| **G10.6** `proxy/client_settings.py`（405） ✅ **已完成** | 客户端设置层（区别 `server/settings`）：token 复用/loopback 校验/upstream 凭据迁移/corrupt 备份/unsafe path 拒绝，31 用例 | `proxy/clientSettings.js` + `proxyTokenReuse.test.js` |
 | **G10.7** `proxy/mailbox/state.py`（207） | mailbox 元数据状态机（与 store 分离） | `proxy/mailbox/state.js` |
 | **G10.10** `ops/lifecycle.py` 358→≥550 | proxy health 接入 | `lifecycleProxyHealth.test.js`(279) |
 | **G10.11** manager 深化 | stale node secret / token reuse / Round3-9 收尾 | manager 已 778，查漏补缺 |
@@ -78,8 +78,8 @@
 
 - [ ] G10.1 trajectory export 五源 + 加密/脱敏/原子写/fails-closed 测试通过
 - [ ] G10.2 `--solo` 三平台断网 + 禁 Validator/ATP
-- [x] G10.3 reuse/publish 核心+扩展契约（`cli_contracts.py` + CLI + **39** 项测试：provenance/hash/auth/leak/credits/rehash-resign/OAuth-only）；剩余 ~27 项 Node 测试待移植
-- [ ] G10.4 skill2recipes 与现有 recipe/ 命名不冲突
+- [x] G10.3 reuse/publish 全契约（`cli_contracts.py` + CLI + **66** 项对标测试）：provenance/hash/node-scoped auth/leak hard-gate/credits/rehash-resign/JSON-only 输出
+- [x] G10.4 skill2recipes：`evolver skill2recipe` 独立命令，与模板消费端 `evolver recipe` 分离
 - [ ] G10.5 host 4xx 不误 ban 基因
 - [ ] G10.8/9 force-update/outbound 测试对标
 - [ ] 回归：`uv run pytest` / `ruff check` / `mypy src` 全绿，0 回归

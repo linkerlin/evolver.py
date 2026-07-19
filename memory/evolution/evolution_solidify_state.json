@@ -1,27 +1,31 @@
 {
   "last_run": {
-    "run_id": "run_1781240754547_c40b6329",
+    "run_id": "run_1784388613603_b1818206",
     "signals": [
       "stable_success_plateau",
       "learning_signal:platform_warning:info",
-      "autopoiesis:hub_offline_guard"
+      "autopoiesis:hub_offline_guard",
+      "living_memory_risk:hub_offline",
+      "memory_graph_friction:hub_offline"
     ],
-    "selected_gene_id": null,
+    "selected_gene_id": "gene_gep_innovate_from_opportunity",
     "selected_capsule_id": null,
     "mutation": {
       "type": "Mutation",
-      "id": "mut_1781240756094_8429dcd6",
+      "id": "mut_1784388614914_09fa06df",
       "category": "innovate",
       "trigger_signals": [
         "stable_success_plateau",
         "learning_signal:platform_warning:info",
-        "autopoiesis:hub_offline_guard"
+        "autopoiesis:hub_offline_guard",
+        "living_memory_risk:hub_offline",
+        "memory_graph_friction:hub_offline"
       ],
-      "target": null,
-      "expected_effect": "Address signals: stable_success_plateau, learning_signal:platform_warning:info, autopoiesis:hub_offline_guard",
+      "target": "gene_gep_innovate_from_opportunity",
+      "expected_effect": "Address signals: stable_success_plateau, learning_signal:platform_warning:info, autopoiesis:hub_offline_guard, living_memory_risk:hub_offline, memory_graph_friction:hub_offline",
       "risk_level": "low",
       "drift_enabled": false,
-      "gene_id": null
+      "gene_id": "gene_gep_innovate_from_opportunity"
     },
     "personality_state": {
       "rigor": 0.5,
@@ -40,16 +44,16 @@
     "hub_assets": null,
     "autopoiesis": {
       "self_report": {
-        "timestamp": "2026-06-12T05:05:56.066177+00:00",
+        "timestamp": "2026-07-18T15:30:14.900825+00:00",
         "system_state": {
-          "rules_version": "unknown",
+          "rules_version": "1.0.0",
           "evolution_dir_exists": true,
-          "living_memory_exists": false,
+          "living_memory_exists": true,
           "solidify_pending": true,
-          "genes_count": 1,
+          "genes_count": 12,
           "capsules_count": 0,
-          "events_count": 58,
-          "last_run_id": "run_1781240723749_a863d661"
+          "events_count": 78,
+          "last_run_id": "run_1784388567800_9381eae4"
         },
         "friction_summary": {
           "total": 1,
@@ -65,24 +69,38 @@
           "new_rules_this_run": 1
         },
         "recommendations": [
-          "Solidify pending \u2014 run `evolver solidify`",
-          "Living memory not initialized \u2014 friction will seed LESSONS_LEARNED.md"
+          "Solidify pending \u2014 run `evolver solidify`"
         ]
       },
       "living_memory": {
-        "loaded": false,
-        "total_friction_points": 0,
-        "evolution_count": 0,
-        "recent_friction_points": []
+        "loaded": true,
+        "total_friction_points": 1,
+        "evolution_count": 1,
+        "recent_friction_points": [
+          {
+            "id": "f001",
+            "category": "hub_offline",
+            "description": "Hub unreachable this cycle",
+            "resolution": "retry with hub_fetch resilience or run offline",
+            "rule_id": "hub_offline_guard",
+            "timestamp": "2026-07-18T15:28:57.056072+00:00",
+            "autopoiesis": "true",
+            "memory_type": "living",
+            "last_updated": "2026-07-18",
+            "evolution_count": "1"
+          }
+        ]
       },
       "viability": {
-        "score": 0.753,
+        "score": 0.74,
         "status": "stable",
         "boundary": 0.85,
-        "metabolism": 0.64,
-        "homeostasis": 1.0,
+        "metabolism": 0.8,
+        "homeostasis": 0.85,
         "coupling": 0.35,
         "factors": [
+          "living_memory_risks",
+          "low_innovation_roi",
           "hub_offline"
         ]
       },
@@ -94,10 +112,29 @@
         "drift_allowed": true,
         "skip_hub_recommended": false
       },
-      "tick_id": "apo_1781240756076_f6b3288c",
-      "report_path": null,
+      "tick_id": "apo_1784388614909_f49d4b24",
+      "report_path": "C:\\GitHub\\evolver.py\\memory\\evolution\\self_report.json",
       "friction_captured_this_run": 1
     },
-    "innovation_attempt_id": "inv_1781240756094_e4bea1a3"
+    "memory_advice": {
+      "currentSignalKey": "521462e035702e547ebb22b17fe2fdb8",
+      "preferredGeneId": null,
+      "bannedGeneIds": [],
+      "solidifyPreferredGeneId": null,
+      "frictionCategories": [
+        "hub_offline"
+      ],
+      "explanation": "signal_key=521462e035702e547ebb22b17fe2fdb8; matching_outcomes=0; friction_categories=hub_offline; living_memory_hints=living_memory_risk:hub_offline,autopoiesis:hub_offline_guard; memory_graph_hints=memory_graph_friction:hub_offline; unified_hints=3",
+      "livingMemoryHints": [
+        "living_memory_risk:hub_offline",
+        "autopoiesis:hub_offline_guard",
+        "memory_graph_friction:hub_offline"
+      ],
+      "memoryGraphHints": [
+        "memory_graph_friction:hub_offline"
+      ]
+    },
+    "memory_graph_friction_synced": null,
+    "innovation_attempt_id": "inv_1784388614914_ca2f3636"
   }
 }
