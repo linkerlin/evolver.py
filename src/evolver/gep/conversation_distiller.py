@@ -21,11 +21,7 @@ from evolver.gep.content_hash import SCHEMA_VERSION, compute_asset_id
 from evolver.gep.sanitize import redact_string, sanitize_payload
 from evolver.gep.schemas.gene import create_gene
 
-DEFAULT_SIGNALS: list[str] = [
-    "conversation_distillation",
-    "reusable_capability",
-    "agent_self_evolution",
-]
+DEFAULT_SIGNALS: list[str] = []
 
 SIGNAL_RULES: list[tuple[str, re.Pattern[str]]] = [
     (
@@ -210,7 +206,92 @@ def build_strategy(input_data: dict[str, Any]) -> list[str]:
     return strategy[:10]
 
 
+META_SIGNALS: frozenset[str] = frozenset({
+    "conversation_distillation",
+    "gene_publish",
+    "agent_self_evolution",
+    "reusable_capability",
+})
+
+META_VOCABULARY: re.Pattern[str] = re.compile(
+    r"\b(gene|capsule|distill|reusable|evomap|evolver|self[- ]?evolution)\b|蒸馏|提炼|可复用|基因",
+    re.I,
+)
+
+
+CONCRETE_EVIDENCE: re.Pattern[str] = re.compile(
+    r"\b(src/|test/|lib/|app/|\.py|\.js|\.ts|\.go|\.rs|\.java|\.rb|\.php)\S*|"
+    r"\b(fix|update|add|implement|refactor|debug|patch|modify)\s+\S+\.(py|js|ts|go|rs|java|rb|php)\b",
+    re.I,
+)
+
+
+def _is_meta_only(input_data: dict[str, Any], normalized: dict[str, Any]) -> bool:
+    """Detect conversations that are ONLY about the evolver mechanism itself.
+
+    Returns True if:
+    - All signals are meta signals (about evolver, not domain work), AND
+    - No concrete engineering evidence (file paths, code changes), AND
+    - Meta vocabulary appears in summary (not just strategy/artifacts)
+
+    This prevents distilling "genes about genes" — self-referential loops
+    that don't represent real domain capabilities.
+    """
+    summary = normalized.get("summary", "")
+    strategy_text = " ".join(normalized.get("strategy", []))
+    artifacts_text = " ".join(normalized.get("artifacts", []))
+
+    # Check if user provided strategy/artifacts (vs default items added by build_strategy)
+    user_provided_strategy = bool(input_data.get("strategy"))
+    user_provided_artifacts = bool(
+        input_data.get("artifacts") or input_data.get("outputs") or input_data.get("files")
+    )
+
+    # Quick check: if no meta vocabulary in summary AND no user-provided strategy/artifacts,
+    # then not meta-only (strategy may contain default items with meta vocabulary)
+    if not META_VOCABULARY.search(summary) and not user_provided_strategy and not user_provided_artifacts:
+        return False
+
+    full_text = f"{summary} {strategy_text} {artifacts_text}"
+
+    # Check for concrete engineering evidence (file paths, code changes)
+    if CONCRETE_EVIDENCE.search(full_text):
+        return False
+
+    # Check 1: All inferred signals are meta signals
+    signals = normalized.get("signals", [])
+    if signals and all(s in META_SIGNALS for s in signals):
+        return True
+
+    # Check 2: Meta vocabulary only in strategy/artifacts, not in summary
+    meta_in_summary = bool(META_VOCABULARY.search(summary))
+    meta_in_strategy = bool(META_VOCABULARY.search(strategy_text))
+    meta_in_artifacts = bool(META_VOCABULARY.search(artifacts_text))
+
+    if (meta_in_strategy or meta_in_artifacts) and not meta_in_summary:
+        # Meta words only in non-summary fields — likely meta-only discussion
+        return True
+
+    # Check 3: Caller-supplied signals are all meta
+    caller_signals = input_data.get("signals", [])
+    if caller_signals and all(s in META_SIGNALS for s in caller_signals) and (meta_in_summary or meta_in_strategy):
+        return True
+
+    # Check 4: High density of meta vocabulary in summary with no concrete evidence
+    return len(META_VOCABULARY.findall(summary)) >= 3 and not CONCRETE_EVIDENCE.search(summary)
+
+
 def evaluate_gate(input_data: dict[str, Any], normalized: dict[str, Any]) -> dict[str, Any]:
+    # Meta self-reference gate: reject conversations ONLY about evolver itself
+    if _is_meta_only(input_data, normalized):
+        return {
+            "ok": False,
+            "score": 0,
+            "threshold": 5,
+            "reasons": [],
+            "reason": "meta_self_reference",
+        }
+
     score = 0
     reasons: list[str] = []
     if len(normalized["summary"]) >= 40:

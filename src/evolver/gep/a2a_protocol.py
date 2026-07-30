@@ -392,3 +392,27 @@ async def consume_hub_events(
         return {"ok": True, "events": events, "hub_response": result}
     except Exception as exc:
         return {"ok": False, "error": str(exc), "events": []}
+
+
+def unwrap_asset_from_message(input_obj: Any) -> dict[str, Any] | None:
+    """Extract the inner asset from an A2A protocol message.
+
+    If *input_obj* is a publish envelope (``protocol == gep-a2a,
+    message_type == 'publish'``), returns ``payload.asset``.
+    If it's already a plain asset (Gene/Capsule/EvolutionEvent), returns it
+    as-is. Otherwise returns None.
+    """
+    if not isinstance(input_obj, dict):
+        return None
+    # Protocol message with publish payload
+    if input_obj.get("protocol") == PROTOCOL_NAME and input_obj.get("message_type") == "publish":
+        payload = input_obj.get("payload")
+        if isinstance(payload, dict):
+            asset = payload.get("asset")
+            if isinstance(asset, dict):
+                return asset
+        return None
+    # Plain asset
+    if input_obj.get("type") in ("Gene", "Capsule", "EvolutionEvent"):
+        return input_obj
+    return None
