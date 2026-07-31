@@ -11,4 +11,19 @@ Modules:
   - :mod:`metrics` — compute aggregate success/cost/latency metrics.
   - :mod:`comparison` — orchestrate a multi-configuration comparison.
   - :mod:`cli` — CLI entry point.
+  - :mod:`trigger_shift` — offline trigger/context overfitting guard.
 """
+
+from evolver.experiment.trigger_shift import (
+    TRIGGER_SHIFT_AXES,
+    TRIGGER_SHIFT_METHOD_VERSION,
+    evaluate_trigger_shift,
+    small_trigger_shift_suite,
+)
+
+__all__ = [
+    "TRIGGER_SHIFT_AXES",
+    "TRIGGER_SHIFT_METHOD_VERSION",
+    "evaluate_trigger_shift",
+    "small_trigger_shift_suite",
+]
