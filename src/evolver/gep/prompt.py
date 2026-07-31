@@ -9,6 +9,15 @@ import json
 from typing import Any
 
 from evolver.config import PROMPT_MAX_CHARS
+from evolver.gep.schemas.protocol import (
+    VALID_CATEGORIES,
+    VALID_OUTCOME_STATUSES,
+    VALID_RISK_LEVELS,
+    VALID_TRACE_STAGES,
+    render_enum,
+    render_enum_list,
+)
+
 
 _PREVIEW_STRIP_FIELDS = {
     "diff",
@@ -97,6 +106,11 @@ def build_gep_prompt(
             f"Strategy: {json.dumps(selected_gene.get('strategy', []), ensure_ascii=False)}\n"
         )
 
+    cat_enum = render_enum(VALID_CATEGORIES)
+    risk_enum = render_enum(VALID_RISK_LEVELS)
+    outcome_enum = render_enum(VALID_OUTCOME_STATUSES)
+    trace_enum = render_enum_list(VALID_TRACE_STAGES)
+
     lines = [
         "# GENOME EVOLUTION PROTOCOL (GEP) v1.8.0",
         "",
@@ -106,16 +120,23 @@ def build_gep_prompt(
         "## Schemas",
         "",
         (
-            "- Mutation: { type: 'Mutation', id, category, trigger_signals, "
-            "target, expected_effect, risk_level }"
+            f"- Mutation: {{ type: 'Mutation', id, category: \"{cat_enum}\", "
+            f"trigger_signals, target, expected_effect, risk_level: \"{risk_enum}\" }}"
         ),
         "- PersonalityState: { rigor, creativity, risk_tolerance } in [0,1]",
         (
             "- EvolutionEvent: { type: 'EvolutionEvent', id, run_id, timestamp, "
-            "gene_id, signals, outcome }"
+            f"gene_id, signals, outcome: {{ status: \"{outcome_enum}\", score }} }}"
         ),
-        "- Gene: { type: 'Gene', id, category, signals_match, strategy, validation, constraints }",
-        "- Capsule: { type: 'Capsule', id, trigger, gene, summary, confidence, outcome }",
+        (
+            f"- Gene: {{ type: 'Gene', id, category: \"{cat_enum}\", "
+            "signals_match, strategy, validation, constraints }"
+        ),
+        (
+            "- Capsule: { type: 'Capsule', id, trigger, gene, summary, confidence, "
+            f"outcome: {{ status: \"{outcome_enum}\", score }}, "
+            f"execution_trace: [{{ step, stage: {{{trace_enum}}}, cmd, exit }}] }}"
+        ),
         "",
         "## CONSTITUTIONAL ETHICS",
         "",

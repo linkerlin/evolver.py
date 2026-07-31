@@ -234,6 +234,27 @@ def _build_parser() -> argparse.ArgumentParser:
         default=None,
         help="Bind port (default: EVOLVER_PROXY_PORT or 8081)",
     )
+    proxy_p.add_argument(
+        "--home",
+        default=None,
+        help="Proxy home directory (sets EVOLVER_HOME + derived paths)",
+    )
+    proxy_p.add_argument(
+        "--store",
+        default=None,
+        help="Mailbox store directory (EVOLVER_PROXY_STORE)",
+    )
+    proxy_p.add_argument(
+        "--settings",
+        default=None,
+        help="Proxy settings file path (EVOLVER_PROXY_SETTINGS_FILE)",
+    )
+    proxy_p.add_argument(
+        "--env-file",
+        default=None,
+        dest="env_file",
+        help="Load KEY=VALUE env file before applying path options",
+    )
     proxy_tok = sub.add_parser(
         "proxy-token",
         help="Mint or reuse the local proxy bearer token (no server start)",
@@ -1133,9 +1154,22 @@ def _cmd_proxy(args: argparse.Namespace) -> int:
     """Launch the A2A proxy server."""
     import uvicorn
 
+    from evolver.cli_options import prepare_proxy_cli_environment
     from evolver.config import resolve_proxy_port
     from evolver.proxy.server import app
     from evolver.proxy.token import resolve_proxy_token
+
+    # Always call prepare (even with empty argv) so EVOLVER_ENV_FILE is honoured.
+    path_argv: list[str] = []
+    if getattr(args, "home", None):
+        path_argv.extend(["--home", str(args.home)])
+    if getattr(args, "store", None):
+        path_argv.extend(["--store", str(args.store)])
+    if getattr(args, "settings", None):
+        path_argv.extend(["--settings", str(args.settings)])
+    if getattr(args, "env_file", None):
+        path_argv.extend(["--env-file", str(args.env_file)])
+    prepare_proxy_cli_environment(path_argv)
 
     host = getattr(args, "host", "127.0.0.1")
     port = getattr(args, "port", None) or resolve_proxy_port()

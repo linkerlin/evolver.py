@@ -170,6 +170,36 @@ def _bundle_signature(assets: list[dict[str, Any]], secret: str) -> str:
     return hmac.new(secret.encode(), "|".join(ids).encode(), hashlib.sha256).hexdigest()
 
 
+
+def build_publish(
+    *,
+    asset: dict[str, Any] | None = None,
+    node_id: str | None = None,
+    validation: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    """Build a single-asset publish envelope (Capsule gets execution_trace guard)."""
+    if not isinstance(asset, dict) or not asset.get("type") or not asset.get("id"):
+        msg = "asset must have type and id"
+        raise ValueError(msg)
+    body = copy.deepcopy(asset)
+    if body.get("type") == "Capsule" and not _valid_execution_trace(body.get("execution_trace")):
+        body["execution_trace"] = _synthesize_execution_trace(body, validation)
+    body["asset_id"] = compute_asset_id(body)
+    payload: dict[str, Any] = {
+        "asset": body,
+        "asset_type": body["type"],
+        "local_id": body["id"],
+    }
+    secret = get_hub_node_secret()
+    if secret:
+        payload["signature"] = hmac.new(
+            secret.encode(),
+            str(body.get("asset_id") or "").encode(),
+            hashlib.sha256,
+        ).hexdigest()
+    return build_message(message_type="publish", payload=payload, sender_id=node_id)
+
+
 def build_publish_bundle(
     *,
     gene: dict[str, Any],
@@ -182,6 +212,12 @@ def build_publish_bundle(
     g = copy.deepcopy(gene)
     c = copy.deepcopy(capsule)
     e = copy.deepcopy(event) if event else None
+    if not g.get("type"):
+        g["type"] = "Gene"
+    if not c.get("type"):
+        c["type"] = "Capsule"
+    if e is not None and not e.get("type"):
+        e["type"] = "EvolutionEvent"
     if not _valid_execution_trace(c.get("execution_trace")):
         c["execution_trace"] = _synthesize_execution_trace(c, validation)
     assets: list[dict[str, Any]] = [g, c]
@@ -411,6 +447,11 @@ def unwrap_asset_from_message(input_obj: Any) -> dict[str, Any] | None:
             asset = payload.get("asset")
             if isinstance(asset, dict):
                 return asset
+            assets = payload.get("assets")
+            if isinstance(assets, list):
+                for item in assets:
+                    if isinstance(item, dict) and item.get("type") in ("Gene", "Capsule"):
+                        return item
         return None
     # Plain asset
     if input_obj.get("type") in ("Gene", "Capsule", "EvolutionEvent"):

@@ -20,7 +20,13 @@ from evolver.gep.schemas.gene import (
     create_gene,
     validate_gene,
 )
-from evolver.gep.schemas.protocol import A2AEnvelope
+from evolver.gep.schemas.protocol import (
+    A2AEnvelope,
+    VALID_RISK_LEVELS,
+    VALID_TRACE_STAGES,
+    render_enum,
+    render_enum_list,
+)
 from evolver.gep.schemas.task import (
     TASK_DEFAULTS,
     VALID_TASK_STATUSES,
@@ -37,10 +43,12 @@ __all__ = [
     "VALID_COST_TIERS",
     "VALID_OUTCOME_STATUSES",
     "VALID_REASONING_LEVELS",
+    "VALID_RISK_LEVELS",
     "VALID_ROUTING_TIERS",
     "VALID_SOURCE_TYPES",
     "VALID_TASK_STATUSES",
     "VALID_TOOL_POLICY_SEVERITIES",
+    "VALID_TRACE_STAGES",
     "VALID_VISIBILITIES",
     "A2AEnvelope",
     "Capsule",
@@ -49,6 +57,8 @@ __all__ = [
     "create_capsule",
     "create_gene",
     "create_task",
+    "render_enum",
+    "render_enum_list",
     "validate_capsule",
     "validate_gene",
     "validate_task",
