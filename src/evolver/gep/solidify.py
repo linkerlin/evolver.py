@@ -48,24 +48,157 @@ def _read_solidify_state() -> dict[str, Any] | None:
     return read_json_if_exists(path)
 
 
-def _run_validations(commands: list[str], cwd: Path) -> dict[str, Any]:
+
+
+def classify_failure_mode(
+    *,
+    constraint_violations: list[Any] | None = None,
+    protocol_violations: list[Any] | None = None,
+    validation: dict[str, Any] | None = None,
+    canary: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    """Classify solidify failure as soft/hard for learning and retry policy."""
+    for item in constraint_violations or []:
+        text = str(item).upper()
+        if "CRITICAL" in text or "DELETED" in text or "DESTRUCTIVE" in text:
+            return {
+                "mode": "hard",
+                "reasonClass": "constraint_destructive",
+                "retryable": False,
+            }
+    if constraint_violations:
+        return {"mode": "hard", "reasonClass": "constraint", "retryable": False}
+    if protocol_violations:
+        return {"mode": "hard", "reasonClass": "protocol", "retryable": False}
+    if validation is not None and not bool(validation.get("ok", True)):
+        return {"mode": "soft", "reasonClass": "validation", "retryable": True}
+    if canary is not None:
+        skipped = bool(canary.get("skipped", False))
+        ok = bool(canary.get("ok", True))
+        if not skipped and not ok:
+            return {"mode": "soft", "reasonClass": "canary", "retryable": True}
+    return {"mode": "none", "reasonClass": None, "retryable": False}
+
+
+def adapt_gene_from_learning(
+    *,
+    gene: dict[str, Any],
+    outcome_status: str,
+    learning_signals: list[Any] | None = None,
+    failure_mode: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    """Mutate *gene* in place with structured learning feedback."""
+    tags = [str(s) for s in (learning_signals or []) if s]
+    history = gene.setdefault("learning_history", [])
+    if not isinstance(history, list):
+        gene["learning_history"] = []
+        history = gene["learning_history"]
+    history.append(
+        {
+            "outcome": outcome_status,
+            "signals": tags,
+            "mode": (failure_mode or {}).get("mode"),
+            "reasonClass": (failure_mode or {}).get("reasonClass"),
+        }
+    )
+    if outcome_status == "success":
+        match = gene.setdefault("signals_match", [])
+        if not isinstance(match, list):
+            gene["signals_match"] = []
+            match = gene["signals_match"]
+        for tag in tags:
+            if tag.startswith("action:"):
+                continue
+            if tag not in match:
+                match.append(tag)
+    else:
+        anti = gene.setdefault("anti_patterns", [])
+        if not isinstance(anti, list):
+            gene["anti_patterns"] = []
+            anti = gene["anti_patterns"]
+        anti.append(
+            {
+                "mode": (failure_mode or {}).get("mode"),
+                "reasonClass": (failure_mode or {}).get("reasonClass"),
+                "signals": tags,
+            }
+        )
+    return gene
+
+
+def build_soft_failure_learning_signals(
+    *,
+    signals: list[Any] | None = None,
+    failure_reason: str | None = None,
+    violations: list[Any] | None = None,
+    validation_results: list[Any] | None = None,
+) -> list[str]:
+    """Extract structured learning tags from a soft validation failure."""
+    tags: list[str] = []
+    blob_parts: list[str] = [str(failure_reason or "")]
+    for sig in signals or []:
+        blob_parts.append(str(sig))
+    for item in violations or []:
+        blob_parts.append(str(item))
+    for row in validation_results or []:
+        if isinstance(row, dict):
+            blob_parts.append(str(row.get("cmd") or row.get("command") or ""))
+            blob_parts.append(str(row.get("stderr") or ""))
+            blob_parts.append(str(row.get("stdout") or ""))
+        else:
+            blob_parts.append(str(row))
+    blob = " ".join(blob_parts).lower()
+    if any(k in blob for k in ("latency", "perf", "performance", "slow", "bottleneck")):
+        tags.append("problem:performance")
+    if any(k in blob for k in ("timeout", "timed out")):
+        tags.append("problem:timeout")
+    if any(k in blob for k in ("protocol", "schema", "invalid json")):
+        tags.append("problem:protocol")
+    if validation_results is not None or "validation" in blob:
+        tags.append("risk:validation")
+    seen: set[str] = set()
+    out: list[str] = []
+    for t in tags:
+        if t not in seen:
+            seen.add(t)
+            out.append(t)
+    return out
+
+
+def _normalize_validation_command(cmd: Any) -> tuple[list[str], str]:
+    """Return (argv for subprocess, display string for logs/traces)."""
+    if isinstance(cmd, list):
+        argv = [str(part) for part in cmd]
+        return argv, " ".join(argv)
+    text = str(cmd)
+    return [text], text
+
+
+def _run_validations(commands: list[Any], cwd: Path) -> dict[str, Any]:
     results: list[dict[str, Any]] = []
     overall_ok = True
     started_at = time.time() * 1000.0
     for cmd in commands:
-        result = {"command": cmd, "ok": False, "stdout": "", "stderr": ""}
+        argv, display = _normalize_validation_command(cmd)
+        result: dict[str, Any] = {
+            "command": display,
+            "ok": False,
+            "stdout": "",
+            "stderr": "",
+        }
         try:
             proc = subprocess.run(
-                cmd if isinstance(cmd, list) else [cmd],
+                argv,
                 cwd=cwd,
                 capture_output=True,
                 text=True,
                 timeout=VALIDATION_TIMEOUT_MS / 1000.0,
                 shell=False,
+                check=False,
             )
             result["ok"] = proc.returncode == 0
-            result["stdout"] = proc.stdout[:2000]
-            result["stderr"] = proc.stderr[:2000]
+            result["stdout"] = (proc.stdout or "")[:2000]
+            result["stderr"] = (proc.stderr or "")[:2000]
         except Exception as exc:
             result["stderr"] = str(exc)[:500]
         if not result["ok"]:
@@ -194,4 +327,10 @@ def solidify(
     return {"ok": True, "event_id": event["id"], "blast_radius": blast_radius}
 
 
-__all__ = ["solidify", "write_state_for_solidify"]
+__all__ = [
+    "adapt_gene_from_learning",
+    "build_soft_failure_learning_signals",
+    "classify_failure_mode",
+    "solidify",
+    "write_state_for_solidify",
+]
