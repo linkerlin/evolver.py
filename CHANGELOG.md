@@ -5,6 +5,33 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+
+## [Unreleased]
+
+## [1.93.0] — 2026-07-31
+
+### Added
+- **A14** `experiment/trigger_shift.py` — offline trigger/context overfitting evaluator + package exports.
+- **A15** `scripts/harness_governance_check.py` — PR CI harness/evaluator governance gate.
+- **A16** `cli_options.py` — proxy path flags `--home/--store/--settings/--env-file` on `evolver proxy`.
+- **solidify learning helpers** — `classify_failure_mode`, `adapt_gene_from_learning`, `build_soft_failure_learning_signals`.
+- **a2a `build_publish`** — single-asset publish + Capsule execution_trace guard.
+- **schema/prompt enum consistency** — `render_enum*` + explore in GEP prompt schemas.
+- **Static guards** — dotenv load order (#460), adapters `py_compile` (#542), Hub egress coverage (C7).
+- **Direct solidify suite** — `tests/gep/test_solidify.py`.
+- **git_ops pure-function suite** — path normalize/protected/constraint contracts.
+- **WebUI observer depth** — get_asset_overview, list_candidates, list_asset_calls, get_lineage;
+  list_runs/get_run multi-source aggregation; API routes /api/assets/overview, /api/candidates,
+  /api/asset-calls, /api/runs?view=list, /api/runs/{id}.
+
+### Changed
+- Package version **1.89.14 → 1.93.0** (declared Node evolver **v1.93.0** parity baseline).
+- CI: Ubuntu 3.12/3.13 required; **Windows advisory** job (`continue-on-error`) for platform regressions.
+- README Implementation Status refreshed for Sprint 18–19 surfaces.
+
+### Notes
+- Depth gaps (a2a protocol surface, solidify contract breadth, observer polish) remain tracked in `演进方案.md`.
+
 ## [Unreleased] — Sprint 10: v1.89.14 → v1.90.0 catch-up
 
 ### Gap 1: Trajectory export — foundation + decryption + session sources (G10.1, partial)
@@ -264,3 +291,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Initial Python port release tracking Node.js v1.89.2.
 - GEP data layer, evolution pipeline, Proxy infrastructure, ATP marketplace (partial),
   IDE adapters (partial), WebUI (partial).
+
+[Unreleased]: https://github.com/EvoMap/evolver/compare/v1.93.0...HEAD
+[1.93.0]: https://github.com/EvoMap/evolver/releases/tag/v1.93.0

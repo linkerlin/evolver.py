@@ -20,15 +20,21 @@ from evolver.webui.observer import (
     calls_by_run,
     cost_index,
     format_interactions,
+    get_asset_overview,
+    get_lineage,
     get_open_prs,
     get_pr_status,
     get_repo_info,
+    get_run,
     health_check,
     health_summary,
     latest_all_commentaries,
     latest_commentary,
     lifecycle_status,
     lifecycle_summary,
+    list_asset_calls,
+    list_candidates,
+    list_runs,
     narrative_history,
     narrative_summary,
     personality_data,
@@ -97,6 +103,40 @@ async def api_assets(
         return _err(str(exc))
 
 
+@router.get("/api/assets/overview")
+async def api_assets_overview() -> JSONResponse:
+    try:
+        return _ok(get_asset_overview())
+    except Exception as exc:
+        return _err(str(exc))
+
+
+@router.get("/api/candidates")
+async def api_candidates(
+    page: int = Query(1, ge=1),
+    limit: int = Query(50, ge=1, le=200),
+    q: str | None = Query(None),
+) -> JSONResponse:
+    try:
+        return _ok(list_candidates(page=page, limit=limit, query=q))
+    except Exception as exc:
+        return _err(str(exc))
+
+
+@router.get("/api/asset-calls")
+async def api_asset_calls(
+    page: int = Query(1, ge=1),
+    limit: int = Query(50, ge=1, le=500),
+    q: str | None = Query(None),
+    run_id: str | None = Query(None),
+    action: str | None = Query(None),
+) -> JSONResponse:
+    try:
+        return _ok(list_asset_calls(page=page, limit=limit, query=q, run_id=run_id, action=action))
+    except Exception as exc:
+        return _err(str(exc))
+
+
 @router.get("/api/assets/{asset_id}")
 async def api_asset_detail(asset_id: str) -> JSONResponse:
     """Return a single asset by ID."""
@@ -113,51 +153,31 @@ async def api_asset_detail(asset_id: str) -> JSONResponse:
 
 
 # ---------------------------------------------------------------------------
-# Candidates, Calls, Lineage
+# Calls (legacy alias), Lineage
 # ---------------------------------------------------------------------------
-
-
-@router.get("/api/candidates")
-async def api_candidates() -> JSONResponse:
-    """Return candidate genes (not yet solidified)."""
-    try:
-        genes = load_genes()
-        candidates = [g for g in genes if not g.get("solidified", False)]
-        return _ok({"candidates": candidates})
-    except Exception as exc:
-        return _err(str(exc))
 
 
 @router.get("/api/calls")
 async def api_calls(limit: int = Query(100, ge=1, le=1000)) -> JSONResponse:
-    """Return asset invocation logs."""
+    """Return asset call log (alias of /api/asset-calls)."""
     try:
-        events = read_all_events()
-        calls = [e for e in events if e.get("type") == "invoke"][-limit:]
-        return _ok({"calls": calls})
+        return _ok(list_asset_calls(page=1, limit=limit))
     except Exception as exc:
         return _err(str(exc))
 
 
 @router.get("/api/lineage")
-async def api_lineage(gene_id: str | None = Query(None)) -> JSONResponse:
-    """Return gene → capsule → event lineage."""
+async def api_lineage(
+    gene_id: str | None = Query(None),
+    id: str | None = Query(None, description="Gene/capsule/asset id"),
+) -> JSONResponse:
+    """Return gene → capsule → event → call-log lineage."""
     try:
-        genes = {g["id"]: g for g in load_genes() if "id" in g}
-        capsules = load_capsules()
-        events = read_all_events()
-        lineage: list[dict[str, Any]] = []
-        target = gene_id
-        if target and target in genes:
-            lineage.append({"type": "gene", **genes[target]})
-            for cap in capsules:
-                if cap.get("gene_id") == target:
-                    lineage.append({"type": "capsule", **cap})
-                    cap_id = cap.get("id")
-                    for evt in events:
-                        if evt.get("capsule_id") == cap_id:
-                            lineage.append({"type": "event", **evt})
-        return _ok({"lineage": lineage, "gene_id": target})
+        target = id or gene_id
+        if not target:
+            return _ok({"lineage": [], "id": None})
+        data = get_lineage(target)
+        return _ok(data)
     except Exception as exc:
         return _err(str(exc))
 
@@ -372,9 +392,25 @@ async def api_safety(limit: int = Query(100, ge=1, le=500)) -> JSONResponse:
 
 
 @router.get("/api/runs")
-async def api_runs(limit: int = Query(50, ge=1, le=200)) -> JSONResponse:
+async def api_runs(
+    limit: int = Query(50, ge=1, le=200),
+    view: str = Query("history", description="'history' stats or 'list' multi-source runs"),
+) -> JSONResponse:
     try:
+        if view == "list":
+            return _ok(list_runs(limit=limit))
         return _ok(runs_history(limit=limit))
+    except Exception as exc:
+        return _err(str(exc))
+
+
+@router.get("/api/runs/{run_id}")
+async def api_run_detail(run_id: str) -> JSONResponse:
+    try:
+        detail = get_run(run_id)
+        if detail is None:
+            return JSONResponse({"error": "not_found", "code": "not_found"}, status_code=404)
+        return _ok(detail)
     except Exception as exc:
         return _err(str(exc))
 

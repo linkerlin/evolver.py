@@ -1,6 +1,6 @@
 [project]
 name = "evolver"
-version = "1.89.14"
+version = "1.93.0"
 description = "A GEP-powered self-evolution engine for AI agents (Python port of @evomap/evolver)"
 readme = "README.md"
 license = { text = "Apache-2.0" }
@@ -158,3 +158,4 @@ exclude_lines = [
     "if TYPE_CHECKING:",
     "raise NotImplementedError",
 ]
+

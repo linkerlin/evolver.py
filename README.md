@@ -160,23 +160,26 @@ memory/                 # Runtime data (graph JSONL, reviews JSONL)
 
 ## Implementation Status
 
-> **Overall** (2026-06-11): **1239 tests passing**, **mypy strict clean** (181 files). Core loop is usable end-to-end; ATP and Hub asset fetch routes remain the main gaps.
+> **Overall** (2026-07-31, Sprint 18): tracking Node **v1.93.0** behavioral parity.
+> Package version **1.93.0** (Node evolver v1.93.0 parity baseline). Remaining depth gaps: [演进方案.md](演进方案.md).
+> Sprint 18: A14–A16, solidify direct tests, schema/prompt guards, a2a publish/trace, static dotenv/adapters/hub-egress guards.
 
 | Subsystem | Status | Notes |
 |---|---|---|
-| **GEP Data Layer** | ~90% | `asset_store`, schemas, `solidify`, `sanitize`, `crypto` production-grade |
-| **GEP Cognition** | ~75% | `cognition.py` wires recall/reflection/distill; explore/curriculum behind flags |
-| **Evolution Pipeline** | ~90% | 7 phases + preflight + post_cycle; Autopoiesis + memory_bridge wired |
-| **Proxy Infrastructure** | ~85% | Routes under `/v1/a2a`; SSE LLM relay; trace store; port default 8081 |
-| **ATP Marketplace** | ~60% | Local settlement + proxy ATP routes; CLI `buy`/`orders`/`atp` argparse wired |
-| **IDE Adapters** | ~65% | 4 IDE adapter modules + 4 runtime scripts; `setup-hooks` covers 4 platforms |
-| **Ops** | ~75% | `lifecycle`, `health_check`, `skills_monitor`, `innovation`, `trigger` |
-| **WebUI** | ~65% | Observer API, SSE client, live dashboard; not a full SPA |
-| **Validator** | ~50% | Sandbox framework exists; production network isolation pending |
-| **Scripts** | 100% | 17/17 tool scripts in `scripts/` |
-| **Tests** | ~79% | 129 test files vs Node.js reference ~164 |
+| **GEP Data Layer** | ~90% | seed genes 11×sha256; solidify direct tests + learning helpers |
+| **GEP Cognition** | ~80% | recall/reflection/distill; explore/curriculum flag-gated |
+| **Evolution Pipeline** | ~90% | 7 phases + Autopoiesis + hard timeout |
+| **Proxy Infrastructure** | ~85% | multi-provider, token reuse, path CLI flags, port **8081** |
+| **ATP Marketplace** | ~65% | local settlement; Hub commercial E2E pending |
+| **IDE Adapters** | ~80% | runtime hooks + py_compile syntax guard |
+| **Ops / Solo** | ~85% | lifecycle, force-update, --solo |
+| **WebUI** | ~70% | SSR dashboard + GitHub observer |
+| **Validator** | ~50% | sandbox framework; prod network isolation pending |
+| **Docs / Release** | ~85% | CHANGELOG + version **1.93.0**; multi-OS CI advisory |
 
-For a detailed gap analysis, see [`设计方案.md`](设计方案.md) (Chinese) and [`TODO.md`](TODO.md).
+**Next:** conversationDistiller meta gate, event_delivery E2E deepen, observer polish.
+
+See [演进方案.md](演进方案.md) for the live gap roadmap.
 
 ## Examples
 

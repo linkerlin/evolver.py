@@ -1,7 +1,13 @@
 """WebUI observer subsystem — transforms local state into WebUI-ready data."""
 
 from .asset_call_log import call_log_summary, calls_by_run, cost_index, recent_calls, reuse_summary
-from .assets import serialize_assets
+from .assets import (
+    get_asset_overview,
+    get_lineage,
+    list_asset_calls,
+    list_candidates,
+    serialize_assets,
+)
 from .commentary_obs import latest_all_commentaries, latest_commentary
 from .github import get_open_prs, get_pr_status, get_repo_info
 from .health import health_check, health_summary
@@ -14,7 +20,7 @@ from .paths import sanitize_path
 from .personality import personality_data
 from .pipeline_events import pipeline_stats, pipeline_timeline
 from .redact import redact_text
-from .runs import runs_history
+from .runs import get_run, list_runs, runs_history
 from .safety import safety_events
 from .skills import skills_health, skills_monitor_run, skills_status
 from .status import system_status
@@ -24,15 +30,21 @@ __all__ = [
     "calls_by_run",
     "cost_index",
     "format_interactions",
+    "get_asset_overview",
+    "get_lineage",
     "get_open_prs",
     "get_pr_status",
     "get_repo_info",
+    "get_run",
     "health_check",
     "health_summary",
     "latest_all_commentaries",
     "latest_commentary",
     "lifecycle_status",
     "lifecycle_summary",
+    "list_asset_calls",
+    "list_candidates",
+    "list_runs",
     "narrative_history",
     "narrative_summary",
     "personality_data",

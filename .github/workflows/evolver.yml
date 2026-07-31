@@ -52,7 +52,45 @@ jobs:
       - name: Run evolver version check
         run: uv run evolver --version
 
+      - name: Assert package version is 1.93.0
+        run: |
+          uv run python -c "from evolver import __version__; assert __version__ == '1.93.0', __version__"
+          uv run evolver --version | grep -F "1.93.0"
+
       - name: Run evolver run (dry check)
         run: uv run evolver run
         env:
           EVOLVER_NO_PARENT_GIT: "1"
+
+  # Advisory only: Windows is a first-class dev platform for this port
+  # (getloadavg/file-lock/os.replace pitfalls). Failures do not block merge.
+  test-windows:
+    runs-on: windows-latest
+    continue-on-error: true
+    strategy:
+      matrix:
+        python-version: ["3.12"]
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python ${{ matrix.python-version }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          version: "latest"
+
+      - name: Install dependencies
+        run: uv sync --all-extras --dev
+
+      - name: Run tests (not slow)
+        run: uv run pytest tests/ -q --tb=line -m "not slow"
+        env:
+          EVOLVER_NO_PARENT_GIT: "1"
+
+      - name: Version check
+        run: uv run evolver --version
