@@ -17,9 +17,10 @@ from __future__ import annotations
 
 import importlib
 import sys
+from collections.abc import Iterator
 from contextlib import contextmanager
 from pathlib import Path
-from typing import Any, Iterator
+from typing import Any
 
 SurfaceModule = Any
 

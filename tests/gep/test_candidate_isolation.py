@@ -36,30 +36,26 @@ def _clean_probe_modules() -> None:
 
 class TestCandidateImportContext:
     def test_loads_candidate_version(self, tmp_path: Path) -> None:
-        mod_a = _write_module(tmp_path / "base", "probe", "base")
-        mod_b = _write_module(tmp_path / "cand", "probe", "cand")
+        _write_module(tmp_path / "base", "probe", "base")
+        _write_module(tmp_path / "cand", "probe", "cand")
         # prime the base version
         with candidate_import_context(tmp_path / "base", ["probe"]):
-            import probe
-
+            probe = importlib.import_module("probe")
             assert probe.VALUE == "base"
         # candidate version wins inside the context
         with candidate_import_context(tmp_path / "cand", ["probe"]):
-            import probe
-
+            probe = importlib.import_module("probe")
             assert probe.VALUE == "cand"
 
     def test_restores_module_after_exit(self, tmp_path: Path) -> None:
         _write_module(tmp_path / "base", "probe", "base")
         _write_module(tmp_path / "cand", "probe", "cand")
         with candidate_import_context(tmp_path / "cand", ["probe"]):
-            import probe
-
+            probe = importlib.import_module("probe")
             assert probe.VALUE == "cand"
         # outside the context: candidate module evicted, base restored
         with candidate_import_context(tmp_path / "base", ["probe"]):
-            import probe
-
+            probe = importlib.import_module("probe")
             assert probe.VALUE == "base"
 
     def test_restores_sys_path(self, tmp_path: Path) -> None:
