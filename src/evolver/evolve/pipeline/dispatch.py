@@ -9,10 +9,24 @@ import json
 from typing import Any
 
 from evolver.gep.bridge import render_sessions_spawn_call, write_prompt_artifact
+from evolver.gep.feature_flags import is_enabled
+from evolver.gep.hooks.taxonomy import (
+    hook_belongs_to_family,
+    hooks_for_family,
+    known_family,
+)
 from evolver.gep.memory_bridge import serialize_memory_advice
+from evolver.gep.paths import get_gep_assets_dir, get_workspace_root
 from evolver.gep.prompt import build_gep_prompt
 from evolver.gep.reuse_attribution import utc_now_iso
 from evolver.gep.solidify import write_state_for_solidify
+from evolver.gep.surface import (
+    capture_surface,
+    load_snapshot,
+    render_surface_block,
+    save_snapshot,
+    surface_delta,
+)
 
 
 def _write_solidify_state(ctx: dict[str, Any]) -> None:
@@ -86,16 +100,6 @@ def _anchor_proposer_surface(ctx: dict[str, Any]) -> None:
     block (baseline id + eval drift) feeds the GEP prompt via
     ``ctx["proposer_surface_block"]``.
     """
-    from evolver.gep.feature_flags import is_enabled
-    from evolver.gep.paths import get_gep_assets_dir, get_workspace_root
-    from evolver.gep.surface import (
-        capture_surface,
-        load_snapshot,
-        render_surface_block,
-        save_snapshot,
-        surface_delta,
-    )
-
     if not is_enabled("enable_surface_decouple"):
         return
     surface_files = ctx.get("surface_files")
@@ -124,13 +128,6 @@ def _anchor_constrained_hook(ctx: dict[str, Any]) -> None:
     ``mechanism_family`` + ``target_hook``, a constraint block is injected
     telling the proposer it may ONLY edit that hook within that family.
     """
-    from evolver.gep.feature_flags import is_enabled
-    from evolver.gep.hooks.taxonomy import (
-        hook_belongs_to_family,
-        hooks_for_family,
-        known_family,
-    )
-
     if not is_enabled("enable_constrained_genes"):
         return
     gene = ctx.get("selected_gene")
