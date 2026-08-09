@@ -48,7 +48,7 @@ class TestDispatchSurfaceAnchor:
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         monkeypatch.setenv("EVOLVER_FF_ENABLE_SURFACE_DECOUPLE", "0")
-        ws, _gep = _surface_ws
+        __ws, _gep = _surface_ws
         result = asyncio.run(dispatch_phase(_minimal_ctx()))
         assert "proposer_surface_block" not in result
 
@@ -58,7 +58,7 @@ class TestDispatchSurfaceAnchor:
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         monkeypatch.setenv("EVOLVER_FF_ENABLE_SURFACE_DECOUPLE", "1")
-        ws, gep = _surface_ws
+        _ws, gep = _surface_ws
         result = asyncio.run(dispatch_phase(_minimal_ctx()))
         block = result["proposer_surface_block"]
         assert "PROPOSER SURFACE" in block
@@ -74,7 +74,7 @@ class TestDispatchSurfaceAnchor:
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         monkeypatch.setenv("EVOLVER_FF_ENABLE_SURFACE_DECOUPLE", "1")
-        ws, gep = _surface_ws
+        _ws, gep = _surface_ws
         asyncio.run(dispatch_phase(_minimal_ctx()))
         baseline_id = load_snapshot(gep / "surfaces" / "baseline.json").snapshot_id
         # evolve the surface, run again → baseline UNCHANGED, drift reported
@@ -90,7 +90,7 @@ class TestDispatchSurfaceAnchor:
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         monkeypatch.setenv("EVOLVER_FF_ENABLE_SURFACE_DECOUPLE", "1")
-        ws, _gep = _surface_ws
+        __ws, _gep = _surface_ws
         ctx = _minimal_ctx()
         del ctx["surface_files"]
         result = asyncio.run(dispatch_phase(ctx))
