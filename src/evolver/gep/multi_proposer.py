@@ -67,6 +67,7 @@ class MultiProposerRequest(BaseModel):
     causal_clusters_brief: str = ""
     route_count: int = 4
     strict_noop: bool = True
+    extra_context: str = ""
     already_generated: list[Proposal] = Field(default_factory=list)
 
 
@@ -100,9 +101,15 @@ def build_multi_proposer_prompt(request: MultiProposerRequest) -> str:
         f"- causal_clusters_brief: "
         f"{request.causal_clusters_brief or '(none)'}",
         f"- strict_noop: {request.strict_noop}",
-        "",
-        "ALREADY GENERATED PROPOSALS (do NOT repeat their mechanism):",
     ]
+    if request.extra_context:
+        lines.extend(["", "EXTRA CONTEXT:", request.extra_context])
+    lines.extend(
+        [
+            "",
+            "ALREADY GENERATED PROPOSALS (do NOT repeat their mechanism):",
+        ]
+    )
     if request.already_generated:
         for p in request.already_generated:
             lines.append(
