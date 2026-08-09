@@ -2,35 +2,36 @@
 
 ## 位置与分支
 
-- **Worktree**: `C:/Temp/opencode/evolver-sh`
-- **分支**: `self-harness`（基于 `194eb99` release: v1.93.0 Node parity baseline）
-- **主仓库**: `C:/GitHub/evolver.py`（分支 `master`，勿在其上做未提交工作）
+- **Worktree**: 已废弃（被外部清理器摧毁）。**当前工作在主仓库 `C:/GitHub/evolver.py`，分支 `self-harness`**（HEAD 已 checkout）
+- **主仓库**: `C:/GitHub/evolver.py`（分支 `self-harness` = 所有工作所在）
 
-> **检查点更新 2（B2 完成后，2026-08-09 晚）**：新增 B2 跨用例因果聚类（见 §已完成 B2 小节）。回归 838 通过。下一步 C2。检查点 1 的教训/协议不变。
+> **检查点更新 3（C2 完成后）**：B1+A1+B2+C2 全部完成并提交。回归 865 通过。下一步 C3。
 
-## ⚠️ 环境警告（关键）
+## ⚠️ 环境警告（关键，已更新策略）
 
-外部定时任务约每 15 分钟在主仓库执行 `git reset --hard HEAD` + `git clean -fd`（reflog 证据：成对 reset，17:37/17:39/17:52/18:12…）。后果：
+外部定时任务约每 15 分钟执行 `git reset --hard HEAD` + `git clean -fd`，且**会摧毁 worktree 目录**（.git 链接、.venv、tracked 文件都会被删）。
 
-- **未提交/未跟踪文件会在数分钟内被清除**（B1 与 A1 各被清掉一次）
-- **已提交的工作 100% 安全**（`reset --hard HEAD` 不动已提交内容）
-- 该清理也会进入 worktree（A1 文件曾因此在 worktree 内被清一次）
+**当前有效策略：主仓库 checkout `self-harness` 分支**：
+- `reset --hard HEAD` → 恢复到 self-harness 最新提交 = **我的工作本身**（已提交，天然受保护）
+- `.venv` 在主仓库 gitignored → `clean -fd` 不删 → 无需重装
+- worktree 方式已废弃（目录会被毁）
 
-**铁律：任何文件写入后立即 `git add` + `git commit`，再做测试。** 修复用后续提交，不要 amend/积累未提交改动。
+**铁律：任何文件写入后立即 `git add` + `git commit`，再做测试。** 修复用后续提交。
 
-## 已完成 (B1+A1+B2 全部提交，回归 838 通过)
+## 已完成 (B1+A1+B2+C2 全部提交，回归 865 通过)
 
 | Sprint | 内容 | 里程碑提交 | 测试数 |
 |---|---|---|---|
 | **B1** | 因果诊断：`gep/diagnosis/{schemas,trace,causal,brief}.py` + `diagnosis_phase`（runner 插入 signals 后）+ flag `enable_diagnosis` | `448796c` | 76 |
 | **A1** | 验收门：`gep/acceptance/{schemas,gate,t0_frozen,orchestrator,solidify_hook}.py` + solidify 接入 + `diagnosis_ref` in last_run + flag `enable_acceptance_gate` | `c669164` | 55 |
 | **B2** | 跨用例聚类：`gep/diagnosis/clusters.py`（CausalSignature/Cluster/build/render）+ phase 集成（flag `enable_diagnosis_cluster`）+ artifact 含 clusters + prompt 注入 + `candidates.py` 因果簇候选 | `95cd2f8` 及 B2 wip 系列 | 19 |
-| 回归 | `tests/evolve tests/gep` 全绿 | — | 838 (688 基线 + 150 新增) |
+| **C2** | 多提议者：`gep/multi_proposer.py`（Proposal/MultiProposerRequest + 逐槽生成 + 签名去重 + 重试≤2 + decline）+ `candidate_eval.pick_passing` + `dispatch_multi_propose_phase`（ROUTES>1 时输出多槽契约）+ config `MULTI_PROPOSE_ROUTES` | `0b639af` 及 C2 wip 系列 | 27 |
+| 回归 | `tests/evolve tests/gep` 全绿 | — | 865 (688 基线 + 177 新增) |
 
-### B2 新增文件/修改
-- 新增：`src/evolver/gep/diagnosis/clusters.py`、`tests/gep/diagnosis/test_clusters.py`、`tests/gep/test_causal_candidates.py`
-- 修改：`diagnosis.py`（cluster 集成+artifact）、`dispatch.py`（context_parts 加 `causal_cluster_brief`）、`enrich.py`（传 `causal_clusters`）、`candidates.py`（`_causal_cluster_candidates`，root_cause 簇→CapabilityCandidate）、`feature_flags.py`（`enable_diagnosis_cluster`）、`test_diagnosis_phase.py`（cluster 测试）
-- 刻意省略（YAGNI，已在方案标注）：memory_graph causal 条目（artifact 持久化已够）、DIAGNOSIS_CLUSTER_WINDOW 阈值
+### C2 新增文件/修改
+- 新增：`src/evolver/gep/multi_proposer.py`、`tests/gep/test_multi_proposer.py`、`tests/gep/test_candidate_eval_passing.py`、`tests/evolve/pipeline/test_dispatch_multi_propose.py`
+- 修改：`candidate_eval.py`（pick_passing）、`dispatch.py`（dispatch_multi_propose_phase）、`runner.py`（接入）、`pipeline/__init__.py`、`config.py`（MULTI_PROPOSE_ROUTES）
+- 刻意省略（诚实范围）：候选材料化/逐候选验收门（属 A2/C3 集成）；routes>1 时仍打印 GEP prompt（双输出，外部 agent 用多槽契约）
 
 ### 新增文件清单
 
