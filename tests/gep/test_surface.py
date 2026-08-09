@@ -18,19 +18,19 @@ class TestFingerprintFiles:
     def test_hashes_content(self, tmp_path: Path) -> None:
         p = tmp_path / "a.py"
         p.write_text("x = 1\n", encoding="utf-8")
-        fp = fingerprint_files([p])
+        fp = fingerprint_files([p], root=tmp_path)
         assert fp["a.py"] and fp["a.py"] != "<missing>"
 
     def test_content_change_changes_hash(self, tmp_path: Path) -> None:
         p = tmp_path / "a.py"
         p.write_text("x = 1\n", encoding="utf-8")
-        fp1 = fingerprint_files([p])
+        fp1 = fingerprint_files([p], root=tmp_path)
         p.write_text("x = 2\n", encoding="utf-8")
-        fp2 = fingerprint_files([p])
+        fp2 = fingerprint_files([p], root=tmp_path)
         assert fp1["a.py"] != fp2["a.py"]
 
     def test_missing_file_marked(self, tmp_path: Path) -> None:
-        fp = fingerprint_files([tmp_path / "nope.py"])
+        fp = fingerprint_files([tmp_path / "nope.py"], root=tmp_path)
         assert fp["nope.py"] == "<missing>"
 
 
