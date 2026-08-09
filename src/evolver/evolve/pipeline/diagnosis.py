@@ -37,6 +37,10 @@ from evolver.gep.diagnosis.brief import (
     root_cause_signal_keys,
 )
 from evolver.gep.diagnosis.causal import CausalAnalysisError, analyze
+from evolver.gep.diagnosis.clusters import (
+    build_causal_clusters,
+    render_cluster_brief,
+)
 from evolver.gep.diagnosis.schemas import CausalAnalysis
 from evolver.gep.feature_flags import is_enabled
 from evolver.gep.paths import get_gep_assets_dir
@@ -59,19 +63,23 @@ def _persist_analyses(
     cycle_id: str,
     analyses: list[CausalAnalysis],
     brief: str,
+    *,
+    clusters: list[dict[str, Any]] | None = None,
 ) -> str:
     """Write analyses + brief to disk for cross-process reads (C-1)."""
     diag_dir = get_gep_assets_dir() / "diagnosis"
     diag_dir.mkdir(parents=True, exist_ok=True)
     safe_cycle = cycle_id or f"t{int(time.time())}"
     path = diag_dir / f"{safe_cycle}.json"
-    payload = {
+    payload: dict[str, Any] = {
         "format": _ARTIFACT_FORMAT,
         "cycle_id": cycle_id,
         "generated_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
         "causal_brief": brief,
         "analyses": [a.model_dump() for a in analyses],
     }
+    if clusters is not None:
+        payload["clusters"] = clusters
     atomic_write_json(path, payload)
     return str(path)
 
@@ -112,6 +120,14 @@ async def diagnosis_phase(ctx: dict[str, Any]) -> dict[str, Any]:
     ctx["causal_brief"] = brief
     ctx["causal_analyses"] = [a.model_dump() for a in analyses]
 
+    # B2: cross-case causal clustering (opt-in via enable_diagnosis_cluster).
+    cluster_dumps: list[dict[str, Any]] | None = None
+    if is_enabled("enable_diagnosis_cluster"):
+        clusters = build_causal_clusters(analyses)
+        cluster_dumps = [c.model_dump() for c in clusters]
+        ctx["causal_clusters"] = cluster_dumps
+        ctx["causal_cluster_brief"] = render_cluster_brief(clusters)
+
     # C-4: inject root_cause signal keys into ctx["signals"] (select reads signals).
     new_keys = root_cause_signal_keys(analyses)
     if new_keys:
@@ -128,6 +144,7 @@ async def diagnosis_phase(ctx: dict[str, Any]) -> dict[str, Any]:
             str(ctx.get("cycle_id", "")),
             analyses,
             brief,
+            clusters=cluster_dumps,
         )
         ctx["causal_analyses_ref"] = ref
 
