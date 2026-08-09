@@ -22,6 +22,18 @@ def _write_module(dir_path: Path, name: str, value: str) -> Path:
     return p
 
 
+@pytest.fixture(autouse=True)
+def _clean_probe_modules() -> None:
+    """Evict the shared 'probe' test module after each test.
+
+    Without this, a bare ``import probe`` in one test pollutes sys.modules
+    for the next, and context-exit restore of a module that does not exist
+    under the next test's base dir breaks it.
+    """
+    yield
+    sys.modules.pop("probe", None)
+
+
 class TestCandidateImportContext:
     def test_loads_candidate_version(self, tmp_path: Path) -> None:
         mod_a = _write_module(tmp_path / "base", "probe", "base")
