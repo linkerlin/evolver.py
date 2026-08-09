@@ -57,6 +57,14 @@ class Gene(BaseModel):
     asset_id: str | None = None
     avoid: list[str] = Field(default_factory=list)
     source: dict[str, Any] | None = Field(default=None, alias="_source")
+    # Self-Harness C1 (opt-in, backward compatible): constrained editing mode.
+    # When both are set and EVOLVER_FF_ENABLE_CONSTRAINED_GENES is on, the
+    # proposer may only edit ``target_hook`` within ``mechanism_family``
+    # (see evolver.gep.hooks.taxonomy). NOTE: never round-trip a gene through
+    # model_dump() before hashing (constraint C-3, PR #25 — hashes are
+    # computed on raw on-disk dicts).
+    mechanism_family: str | None = None
+    target_hook: str | None = None
 
     @field_validator("category")
     @classmethod
