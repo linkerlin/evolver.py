@@ -117,6 +117,45 @@ def _anchor_proposer_surface(ctx: dict[str, Any]) -> None:
     ctx["proposer_surface_block"] = render_surface_block(baseline, delta)
 
 
+def _anchor_constrained_hook(ctx: dict[str, Any]) -> None:
+    """Self-Harness C1: constrain the proposer to a closed hook vocabulary.
+
+    Opt-in via ``enable_constrained_genes``. When the selected gene declares
+    ``mechanism_family`` + ``target_hook``, a constraint block is injected
+    telling the proposer it may ONLY edit that hook within that family.
+    """
+    from evolver.gep.feature_flags import is_enabled
+    from evolver.gep.hooks.taxonomy import (
+        hook_belongs_to_family,
+        hooks_for_family,
+        known_family,
+    )
+
+    if not is_enabled("enable_constrained_genes"):
+        return
+    gene = ctx.get("selected_gene")
+    if not isinstance(gene, dict):
+        return
+    family = gene.get("mechanism_family")
+    hook = gene.get("target_hook")
+    if not isinstance(family, str) or not family:
+        return
+    if not isinstance(hook, str) or not hook:
+        return
+    if not known_family(family):
+        return
+    if not hook_belongs_to_family(family, hook):
+        return
+    allowed = ", ".join(hooks_for_family(family))
+    ctx["constrained_hook_block"] = (
+        "# CONSTRAINED EDIT MODE (closed vocabulary — safety enforced)\n"
+        f"- mechanism_family: {family}\n"
+        f"- target_hook: {hook} (the ONLY editable hook)\n"
+        f"- family hooks: {allowed}\n"
+        "- Do NOT propose changes to any other hook or file."
+    )
+
+
 def _format_preview(items: list[dict[str, Any]]) -> str:
     return "```json\n" + json.dumps(items, indent=2, ensure_ascii=False) + "\n```"
 
@@ -124,6 +163,7 @@ def _format_preview(items: list[dict[str, Any]]) -> str:
 async def dispatch_phase(ctx: dict[str, Any]) -> dict[str, Any]:
     _write_solidify_state(ctx)
     _anchor_proposer_surface(ctx)
+    _anchor_constrained_hook(ctx)
 
     if ctx.get("skip_hub_calls"):
         print("Idle cycle complete.")
@@ -144,6 +184,7 @@ async def dispatch_phase(ctx: dict[str, Any]) -> dict[str, Any]:
         ctx.get("autopoiesis_context", ""),
         ctx.get("causal_cluster_brief", ""),  # Self-Harness B2
         ctx.get("proposer_surface_block", ""),  # Self-Harness A2
+        ctx.get("constrained_hook_block", ""),  # Self-Harness C1
     ]
     prompt = build_gep_prompt(
         now_iso=ctx.get("scan_time_iso", ""),
