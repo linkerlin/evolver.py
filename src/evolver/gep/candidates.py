@@ -226,12 +226,60 @@ def _signal_candidates(signals: list[str]) -> list[dict[str, Any]]:
     return out
 
 
+def _causal_cluster_candidates(
+    clusters: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    """Mint a CapabilityCandidate per causal cluster (Self-Harness B2).
+
+    *clusters* are ``CausalCluster`` dicts (as produced by
+    :func:`evolver.gep.diagnosis.clusters.build_causal_clusters`). Only
+    ``root_cause`` clusters are actionable; others are skipped.
+    """
+    out: list[dict[str, Any]] = []
+    for cluster in clusters:
+        if not isinstance(cluster, dict):
+            continue
+        sig = cluster.get("signature")
+        if not isinstance(sig, dict):
+            continue
+        if sig.get("criticality") != "root_cause":
+            continue
+        terminal_cause = str(sig.get("terminal_cause") or "")
+        mechanism = str(sig.get("agent_mechanism") or "")
+        case_ids = cluster.get("case_ids") or []
+        size = cluster.get("size") or len(case_ids)
+        if not terminal_cause:
+            continue
+        evidence = (
+            f"Causal cluster: {size} case(s) share root cause "
+            f"{terminal_cause!r} (agent mechanism {mechanism!r}). "
+            f"Cases: {', '.join(str(c) for c in case_ids)}"
+        )
+        cand = {
+            "type": "CapabilityCandidate",
+            "id": f"cand_causal_{stable_hash(terminal_cause)}",
+            "title": f"Fix causal cluster: {terminal_cause}",
+            "source": "causal_clusters",
+            "created_at": _iso_now(),
+            "signals": [f"causal:root_cause:{terminal_cause}"],
+            "tags": ["problem:reliability", "action:repair"],
+            "shape": _shape(
+                title=f"Fix causal cluster: {terminal_cause}",
+                signals=[f"causal:root_cause:{terminal_cause}"],
+                evidence=evidence,
+            ),
+        }
+        out.append(cand)
+    return out
+
+
 def extract_capability_candidates(ctx: dict[str, Any] | None = None) -> list[dict[str, Any]]:
     """Build CapabilityCandidate list from signals + recent failed capsules.
 
     *ctx* keys (Node camelCase + snake_case accepted):
     ``signals``, ``recentFailedCapsules`` / ``recent_failed_capsules``,
-    ``recentSessionTranscript`` / ``recent_session_transcript`` (reserved).
+    ``recentSessionTranscript`` / ``recent_session_transcript`` (reserved),
+    ``causalClusters`` / ``causal_clusters`` (Self-Harness B2; optional).
     """
     ctx = ctx or {}
     raw_signals = ctx.get("signals") or []
@@ -241,7 +289,15 @@ def extract_capability_candidates(ctx: dict[str, Any] | None = None) -> list[dic
     if not isinstance(failed, list):
         failed = []
 
-    candidates = _signal_candidates(signals) + _failed_capsule_candidates(failed)
+    clusters = ctx.get("causalClusters") or ctx.get("causal_clusters") or []
+    if not isinstance(clusters, list):
+        clusters = []
+
+    candidates = (
+        _signal_candidates(signals)
+        + _failed_capsule_candidates(failed)
+        + _causal_cluster_candidates(clusters)
+    )
 
     # Deduplicate by id (stable).
     seen: set[str] = set()

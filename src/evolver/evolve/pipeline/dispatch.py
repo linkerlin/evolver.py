@@ -101,6 +101,7 @@ async def dispatch_phase(ctx: dict[str, Any]) -> dict[str, Any]:
         ctx.get("health_report", ""),
         ctx.get("recall_section", ""),
         ctx.get("autopoiesis_context", ""),
+        ctx.get("causal_cluster_brief", ""),  # Self-Harness B2
     ]
     prompt = build_gep_prompt(
         now_iso=ctx.get("scan_time_iso", ""),

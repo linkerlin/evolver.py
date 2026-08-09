@@ -83,6 +83,7 @@ async def enrich_phase(ctx: dict[str, Any]) -> dict[str, Any]:
                 "signals": signal_names,
                 "recent_failed_capsules": ctx.get("recent_failed_capsules") or [],
                 "recent_session_transcript": ctx.get("recent_session_transcript") or "",
+                "causal_clusters": ctx.get("causal_clusters") or [],
             }
         )
         ctx["capability_candidates"] = caps
