@@ -141,3 +141,52 @@ async def dispatch_phase(ctx: dict[str, Any]) -> dict[str, Any]:
         print("\nSOLIDIFY REQUIRED")
 
     return ctx
+
+
+async def dispatch_multi_propose_phase(ctx: dict[str, Any]) -> dict[str, Any]:
+    """Self-Harness C2: emit a mechanism-diverse multi-proposal prompt.
+
+    Activated when ``EVOLVER_MULTI_PROPOSE_ROUTES > 1``. Prints the strict
+    multi-slot contract (N distinct mechanisms, decline allowed) instead of
+    the single GEP prompt; the external proposer responds with N proposals.
+    """
+    from evolver.config import MULTI_PROPOSE_ROUTES
+    from evolver.gep.multi_proposer import (
+        MultiProposerRequest,
+        build_multi_proposer_prompt,
+    )
+
+    routes = MULTI_PROPOSE_ROUTES
+    if routes <= 1:
+        return ctx
+
+    context_parts = [
+        ctx.get("mutation_directive", ""),
+        ctx.get("health_report", ""),
+        ctx.get("recall_section", ""),
+        ctx.get("autopoiesis_context", ""),
+        ctx.get("causal_cluster_brief", ""),  # Self-Harness B2
+    ]
+    request = MultiProposerRequest(
+        diagnosis_brief=ctx.get("causal_brief", ""),
+        causal_clusters_brief=ctx.get("causal_cluster_brief", ""),
+        route_count=routes,
+        strict_noop=True,
+        extra_context="\n".join(part for part in context_parts if part),
+    )
+    prompt = build_multi_proposer_prompt(request)
+    if ctx.get("bridge_enabled"):
+        spawn = render_sessions_spawn_call(
+            {
+                "task": prompt[:4000],
+                "agentId": ctx.get("AGENT_NAME", "main"),
+                "label": f"gep_{ctx.get('cycle_id', '0000')}",
+                "cleanup": "delete",
+            }
+        )
+        print(spawn)
+    else:
+        print("BUILT_MULTI_PROPOSE_PROMPT")
+        print(prompt)
+        print("\nMULTI PROPOSE REQUIRED")
+    return ctx

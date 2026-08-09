@@ -28,6 +28,7 @@ from evolver.evolve.pipeline import (
     autopoiesis_phase,
     collect_phase,
     diagnosis_phase,
+    dispatch_multi_propose_phase,
     dispatch_phase,
     enrich_phase,
     hub_phase,
@@ -110,6 +111,7 @@ async def _run_single_cycle(*, is_loop: bool = False) -> dict[str, Any]:
     ctx = await autopoiesis_phase(ctx)
     ctx = await select_phase(ctx)
     ctx = await dispatch_phase(ctx)
+    ctx = await dispatch_multi_propose_phase(ctx)  # Self-Harness C2; no-op unless ROUTES>1
     ctx = await run_post_cycle_hooks(ctx)
     try:
         from evolver.gep.autopoiesis import clear_preflight_abort_report
