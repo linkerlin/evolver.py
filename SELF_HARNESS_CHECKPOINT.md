@@ -6,6 +6,8 @@
 - **分支**: `self-harness`（基于 `194eb99` release: v1.93.0 Node parity baseline）
 - **主仓库**: `C:/GitHub/evolver.py`（分支 `master`，勿在其上做未提交工作）
 
+> **检查点更新 2（B2 完成后，2026-08-09 晚）**：新增 B2 跨用例因果聚类（见 §已完成 B2 小节）。回归 838 通过。下一步 C2。检查点 1 的教训/协议不变。
+
 ## ⚠️ 环境警告（关键）
 
 外部定时任务约每 15 分钟在主仓库执行 `git reset --hard HEAD` + `git clean -fd`（reflog 证据：成对 reset，17:37/17:39/17:52/18:12…）。后果：
@@ -16,13 +18,19 @@
 
 **铁律：任何文件写入后立即 `git add` + `git commit`，再做测试。** 修复用后续提交，不要 amend/积累未提交改动。
 
-## 已完成 (16 个提交，819 测试通过)
+## 已完成 (B1+A1+B2 全部提交，回归 838 通过)
 
 | Sprint | 内容 | 里程碑提交 | 测试数 |
 |---|---|---|---|
 | **B1** | 因果诊断：`gep/diagnosis/{schemas,trace,causal,brief}.py` + `diagnosis_phase`（runner 插入 signals 后）+ flag `enable_diagnosis` | `448796c` | 76 |
 | **A1** | 验收门：`gep/acceptance/{schemas,gate,t0_frozen,orchestrator,solidify_hook}.py` + solidify 接入 + `diagnosis_ref` in last_run + flag `enable_acceptance_gate` | `c669164` | 55 |
-| 回归 | `tests/evolve tests/gep` 全绿 | — | 819 (688 基线 + 131 新增) |
+| **B2** | 跨用例聚类：`gep/diagnosis/clusters.py`（CausalSignature/Cluster/build/render）+ phase 集成（flag `enable_diagnosis_cluster`）+ artifact 含 clusters + prompt 注入 + `candidates.py` 因果簇候选 | `95cd2f8` 及 B2 wip 系列 | 19 |
+| 回归 | `tests/evolve tests/gep` 全绿 | — | 838 (688 基线 + 150 新增) |
+
+### B2 新增文件/修改
+- 新增：`src/evolver/gep/diagnosis/clusters.py`、`tests/gep/diagnosis/test_clusters.py`、`tests/gep/test_causal_candidates.py`
+- 修改：`diagnosis.py`（cluster 集成+artifact）、`dispatch.py`（context_parts 加 `causal_cluster_brief`）、`enrich.py`（传 `causal_clusters`）、`candidates.py`（`_causal_cluster_candidates`，root_cause 簇→CapabilityCandidate）、`feature_flags.py`（`enable_diagnosis_cluster`）、`test_diagnosis_phase.py`（cluster 测试）
+- 刻意省略（YAGNI，已在方案标注）：memory_graph causal 条目（artifact 持久化已够）、DIAGNOSIS_CLUSTER_WINDOW 阈值
 
 ### 新增文件清单
 
