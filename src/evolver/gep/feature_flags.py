@@ -52,6 +52,7 @@ DEFAULT_FLAGS: dict[str, bool] = {
     "enable_acceptance_gate": False,
     "enable_surface_decouple": False,
     "enable_constrained_genes": False,
+    "enable_llm_template": False,
     # Proxy-only routes (also readable via ``EVOLVER_FF_*``)
     "enable_skill_auto_update": False,
     "enable_trace_upload": False,

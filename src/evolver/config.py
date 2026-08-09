@@ -223,6 +223,11 @@ ACCEPTANCE_DELTA_EPSILON: Final = env_float("EVOLVER_ACCEPTANCE_DELTA_EPSILON", 
 # --- Self-Harness multi-proposer (Sprint C2; 1 = existing single-proposal) ---
 MULTI_PROPOSE_ROUTES: Final = env_int("EVOLVER_MULTI_PROPOSE_ROUTES", 1)
 
+# --- Self-Harness external LLM templates (Sprint D) ---
+LLM_CALL_DIR: Final = env_str(
+    "EVOLVER_LLM_CALL_DIR", "<GEP_ASSETS_DIR>/llm_calls"
+)
+
 MIN_PUBLISH_SCORE: Final = env_float("EVOLVER_MIN_PUBLISH_SCORE", 0.78)
 BROADCAST_SCORE_THRESHOLD: Final = 0.7
 BROADCAST_SUCCESS_STREAK: Final = 2
@@ -380,6 +385,7 @@ __all__ = [
     "IDLE_FETCH_INTERVAL_MS",
     "LEAK_CHECK_MODE",
     "LOCK_MAX_AGE_MS",
+    "LLM_CALL_DIR",
     "MAX_CYCLES_PER_PROCESS",
     "MAX_REGEX_PATTERN_LEN",
     "MAX_SILENCE_MS",
