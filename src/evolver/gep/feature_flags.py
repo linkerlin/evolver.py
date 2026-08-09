@@ -50,6 +50,7 @@ DEFAULT_FLAGS: dict[str, bool] = {
     "enable_diagnosis": False,
     "enable_diagnosis_cluster": False,
     "enable_acceptance_gate": False,
+    "enable_surface_decouple": False,
     # Proxy-only routes (also readable via ``EVOLVER_FF_*``)
     "enable_skill_auto_update": False,
     "enable_trace_upload": False,
