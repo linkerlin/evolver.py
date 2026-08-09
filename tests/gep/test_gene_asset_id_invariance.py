@@ -10,6 +10,8 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+import pytest
+
 from evolver.gep.asset_store import load_genes, upsert_gene
 from evolver.gep.content_hash import compute_asset_id, verify_asset_id
 from evolver.gep.schemas.gene import Gene
@@ -65,10 +67,8 @@ class TestLoadGenesWithConstrainedField:
     def test_seed_genes_still_load_with_new_fields_schema(
         self,
         tmp_path: Path,
-        monkeypatch: object,  # noqa: ANN401
+        monkeypatch: pytest.MonkeyPatch,
     ) -> None:
-        import pytest
-
         monkeypatch.setattr(
             "evolver.gep.asset_store.get_gep_assets_dir",
             lambda: tmp_path / "gep",
