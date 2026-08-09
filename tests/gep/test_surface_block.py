@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
-from pathlib import Path\n\nfrom evolver.gep.candidate_eval import Candidate
+from pathlib import Path
+
+from evolver.gep.candidate_eval import Candidate
 from evolver.gep.surface import (
     SurfaceSnapshot,
     capture_surface,
