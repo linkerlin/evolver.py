@@ -52,6 +52,9 @@ def _write_solidify_state(ctx: dict[str, Any]) -> None:
         if ctx.get("selected_gene")
         else None,
         "selected_capsule_id": ctx.get("selected_capsule_id"),
+        # Self-Harness C-1: cross-process ref for the solidify acceptance gate
+        # (B1 causal artifact persisted by diagnosis_phase).
+        "diagnosis_ref": ctx.get("causal_analyses_ref"),
         "mutation": ctx.get("mutation"),
         "personality_state": ctx.get("personality_state"),
         "parent_event_id": ctx.get("parent_event_id"),

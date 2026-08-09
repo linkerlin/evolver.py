@@ -275,6 +275,28 @@ def solidify(
                 "details": details,
             }
 
+    # Self-Harness A1: empirical acceptance gate (opt-in via
+    # EVOLVER_FF_ENABLE_ACCEPTANCE_GATE). Runs after quick validation, before
+    # the event is recorded. Reject → rollback + record failure (same path as
+    # validation failure). Returns None when the gate is disabled → no-op.
+    gate_result: dict[str, Any] | None = None
+    try:
+        from evolver.gep.acceptance.solidify_hook import gate_for_solidify
+
+        gate_result = gate_for_solidify(last_run, cwd)
+    except Exception as gate_exc:  # noqa: BLE001 — gate must never break solidify
+        print(f"[solidify] acceptance gate error: {gate_exc}")
+        gate_result = None
+    if gate_result is not None and not gate_result.accepted:
+        rollback_tracked()
+        rollback_new_untracked_files(git_list_untracked_files(cwd))
+        record_solidify_failure(last_run, error="acceptance_gate_rejected")
+        return {
+            "ok": False,
+            "error": "acceptance_gate_rejected",
+            "details": {"acceptance": gate_result.model_dump()},
+        }
+
     blast_radius = _compute_blast_radius()
     diff_snapshot = capture_diff_snapshot(cwd)
 
@@ -301,6 +323,8 @@ def solidify(
     }
     if validation_report is not None:
         event["validation_report"] = validation_report
+    if gate_result is not None:
+        event["acceptance_result"] = gate_result.model_dump()
     append_event_jsonl(event)
 
     # Generate narrative and reflection
