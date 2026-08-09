@@ -256,10 +256,14 @@ class TestClusterFlagOn:
                 event,
                 llm_call=lambda _p: (
                     '{"terminal_failure_kind": "agent_timeout", '
-                    '"stages": [{"stage_index": 0, "terminal_cause": '
-                    '"agent_timeout", "criticality": "root_cause", '
-                    '"agent_mechanism": "no_progress", "terminal_link": null}], '
-                    '"root_cause_stage": 0}'
+                    '"stages": ['
+                    '{"stage_index": 0, "terminal_cause": "test_timeout", '
+                    '"criticality": "recovered_friction", '
+                    '"agent_mechanism": "blind_retry", "terminal_link": null}, '
+                    '{"stage_index": 1, "terminal_cause": "agent_timeout", '
+                    '"criticality": "root_cause", '
+                    '"agent_mechanism": "no_progress", "terminal_link": null}'
+                    '], "root_cause_stage": 1}'
                 ),
             )
 
