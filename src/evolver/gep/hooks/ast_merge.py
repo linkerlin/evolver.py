@@ -79,6 +79,12 @@ def _without_functions(
     return "\n".join("" if i in covered else line for i, line in enumerate(lines))
 
 
+def _code_lines(text: str) -> list[str]:
+    """Non-blank source lines (used to compare non-function top-level code,
+    tolerating blank-line shifts caused by function insertion/replacement)."""
+    return [line for line in text.splitlines() if line.strip()]
+
+
 def changed_top_level_functions(base: str, candidate: str) -> list[str]:
     """Top-level functions whose source differs between *base* and *candidate*.
 
@@ -94,8 +100,8 @@ def changed_top_level_functions(base: str, candidate: str) -> list[str]:
             f"deleted top-level function(s): {sorted(deleted)}"
         )
 
-    if _without_functions(base, base_spans) != _without_functions(
-        candidate, cand_spans
+    if _code_lines(_without_functions(base, base_spans)) != _code_lines(
+        _without_functions(candidate, cand_spans)
     ):
         raise MergeConflict("non-function top-level code changed")
 
@@ -164,22 +170,22 @@ def merge_candidate_changes(base: str, candidates: list[str]) -> str:
         cand_funcs = function_sources(candidate, cand_spans)
         cand_order = top_level_order(candidate)
 
-        working_spans = top_level_function_spans(working)
-        working_funcs = function_sources(working, working_spans)
-
         for name in changed:
-            # Another candidate already changed this function → conflict.
-            if (
-                name in working_funcs
-                and working_funcs[name] != base_funcs[name]
-            ):
+            cand_src = cand_funcs[name]
+            working_spans = top_level_function_spans(working)
+            working_funcs = function_sources(working, working_spans)
+
+            if name in working_funcs and working_funcs[name] != base_funcs[name]:
+                # Another candidate already changed this function.
+                if working_funcs[name] == cand_src:
+                    continue  # identical edit already applied → no-op
                 raise MergeConflict(
                     f"conflicting edits to function {name!r}"
                 )
             working = apply_function_definition(
                 working,
                 name,
-                cand_funcs[name],
+                cand_src,
                 cand_order=cand_order,
             )
     return working
