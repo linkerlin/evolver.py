@@ -150,13 +150,13 @@ async def dispatch_multi_propose_phase(ctx: dict[str, Any]) -> dict[str, Any]:
     multi-slot contract (N distinct mechanisms, decline allowed) instead of
     the single GEP prompt; the external proposer responds with N proposals.
     """
-    from evolver.config import MULTI_PROPOSE_ROUTES
+    from evolver import config as config_mod
     from evolver.gep.multi_proposer import (
         MultiProposerRequest,
         build_multi_proposer_prompt,
     )
 
-    routes = MULTI_PROPOSE_ROUTES
+    routes = config_mod.MULTI_PROPOSE_ROUTES
     if routes <= 1:
         return ctx
 
