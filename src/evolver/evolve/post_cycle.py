@@ -68,6 +68,24 @@ async def run_post_cycle_hooks(ctx: dict[str, Any]) -> dict[str, Any]:
     except Exception as exc:
         logger.debug("[post_cycle] issue reporter skipped: %s", exc)
 
+    # Self-Harness C3: merge multiple accepted candidates (contract-driven;
+    # no-op unless ctx["accepted_candidates"] is present with >1 entries).
+    accepted = ctx.get("accepted_candidates")
+    if isinstance(accepted, list) and len(accepted) > 1:
+        try:
+            from evolver.gep.hooks.merge_integration import merge_accepted_candidates
+
+            merged = merge_accepted_candidates(accepted)
+            ctx["merged_candidates"] = merged
+            conflicts = [m for m in merged if m.get("conflict")]
+            if conflicts:
+                logger.warning(
+                    "[post_cycle] %s merge conflict(s) among accepted candidates",
+                    len(conflicts),
+                )
+        except Exception as exc:
+            logger.debug("[post_cycle] candidate merge skipped: %s", exc)
+
     return ctx
 
 
