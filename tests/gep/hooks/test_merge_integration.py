@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-import pytest
-
 from evolver.gep.hooks.merge_integration import merge_accepted_candidates
 
 _BASE = """\

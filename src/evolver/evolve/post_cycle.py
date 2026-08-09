@@ -8,6 +8,8 @@ from __future__ import annotations
 import logging
 from typing import Any
 
+from evolver.gep.hooks.merge_integration import merge_accepted_candidates
+
 logger = logging.getLogger(__name__)
 
 
@@ -70,23 +72,26 @@ async def run_post_cycle_hooks(ctx: dict[str, Any]) -> dict[str, Any]:
 
     # Self-Harness C3: merge multiple accepted candidates (contract-driven;
     # no-op unless ctx["accepted_candidates"] is present with >1 entries).
-    accepted = ctx.get("accepted_candidates")
-    if isinstance(accepted, list) and len(accepted) > 1:
-        try:
-            from evolver.gep.hooks.merge_integration import merge_accepted_candidates
-
-            merged = merge_accepted_candidates(accepted)
-            ctx["merged_candidates"] = merged
-            conflicts = [m for m in merged if m.get("conflict")]
-            if conflicts:
-                logger.warning(
-                    "[post_cycle] %s merge conflict(s) among accepted candidates",
-                    len(conflicts),
-                )
-        except Exception as exc:
-            logger.debug("[post_cycle] candidate merge skipped: %s", exc)
-
+    _merge_accepted_candidates(ctx)
     return ctx
+
+
+def _merge_accepted_candidates(ctx: dict[str, Any]) -> None:
+    """Merge ``ctx["accepted_candidates"]`` (>1) into ``ctx["merged_candidates"]``."""
+    accepted = ctx.get("accepted_candidates")
+    if not isinstance(accepted, list) or len(accepted) <= 1:
+        return
+    try:
+        merged = merge_accepted_candidates(accepted)
+        ctx["merged_candidates"] = merged
+        conflicts = [m for m in merged if m.get("conflict")]
+        if conflicts:
+            logger.warning(
+                "[post_cycle] %s merge conflict(s) among accepted candidates",
+                len(conflicts),
+            )
+    except Exception as exc:
+        logger.debug("[post_cycle] candidate merge skipped: %s", exc)
 
 
 __all__ = ["run_post_cycle_hooks"]
