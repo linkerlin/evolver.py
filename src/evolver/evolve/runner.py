@@ -27,6 +27,7 @@ from evolver.evolve import guards
 from evolver.evolve.pipeline import (
     autopoiesis_phase,
     collect_phase,
+    diagnosis_phase,
     dispatch_phase,
     enrich_phase,
     hub_phase,
@@ -103,6 +104,7 @@ async def _run_single_cycle(*, is_loop: bool = False) -> dict[str, Any]:
 
     ctx = await collect_phase(ctx)
     ctx = await signals_phase(ctx)
+    ctx = await diagnosis_phase(ctx)  # Self-Harness B1; no-op when flag off
     ctx = await hub_phase(ctx)
     ctx = await enrich_phase(ctx)
     ctx = await autopoiesis_phase(ctx)
