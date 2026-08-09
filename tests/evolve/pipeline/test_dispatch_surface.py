@@ -78,7 +78,7 @@ class TestDispatchSurfaceAnchor:
         asyncio.run(dispatch_phase(_minimal_ctx()))
         baseline_id = load_snapshot(gep / "surfaces" / "baseline.json").snapshot_id
         # evolve the surface, run again → baseline UNCHANGED, drift reported
-        (ws / "src" / "surface.py").write_text("x = 2\n", encoding="utf-8")
+        (_ws / "src" / "surface.py").write_text("x = 2\n", encoding="utf-8")
         result2 = asyncio.run(dispatch_phase(_minimal_ctx()))
         baseline2 = load_snapshot(gep / "surfaces" / "baseline.json")
         assert baseline2.snapshot_id == baseline_id  # stable parent
