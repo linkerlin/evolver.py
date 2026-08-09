@@ -19,13 +19,13 @@ def _cand_bar(v: int) -> str:
 
 class TestPostCycleMergeHook:
     def test_no_accepted_candidates_unchanged(self) -> None:
-        ctx = {"signals": []}
+        ctx = {"signals": ["log_error"]}
         result = asyncio.run(run_post_cycle_hooks(dict(ctx)))
         assert "merged_candidates" not in result
 
     def test_single_accepted_candidate_no_merge(self) -> None:
         ctx = {
-            "signals": [],
+            "signals": ["log_error"],
             "accepted_candidates": [
                 {"path": "m.py", "base": _BASE, "candidate": _cand_foo(10)}
             ],
@@ -35,7 +35,7 @@ class TestPostCycleMergeHook:
 
     def test_two_accepted_candidates_merged(self) -> None:
         ctx = {
-            "signals": [],
+            "signals": ["log_error"],
             "accepted_candidates": [
                 {"path": "m.py", "base": _BASE, "candidate": _cand_foo(10)},
                 {"path": "m.py", "base": _BASE, "candidate": _cand_bar(20)},
@@ -50,7 +50,7 @@ class TestPostCycleMergeHook:
 
     def test_conflict_reported_in_ctx(self) -> None:
         ctx = {
-            "signals": [],
+            "signals": ["log_error"],
             "accepted_candidates": [
                 {"path": "m.py", "base": _BASE, "candidate": _cand_foo(10)},
                 {"path": "m.py", "base": _BASE, "candidate": _cand_foo(20)},
@@ -63,7 +63,7 @@ class TestPostCycleMergeHook:
 
     def test_identical_edits_not_conflict(self) -> None:
         ctx = {
-            "signals": [],
+            "signals": ["log_error"],
             "accepted_candidates": [
                 {"path": "m.py", "base": _BASE, "candidate": _cand_foo(10)},
                 {"path": "m.py", "base": _BASE, "candidate": _cand_foo(10)},
