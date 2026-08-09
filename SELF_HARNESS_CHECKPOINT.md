@@ -5,7 +5,7 @@
 - **Worktree**: 已废弃（被外部清理器摧毁）。**当前工作在主仓库 `C:/GitHub/evolver.py`，分支 `self-harness`**（HEAD 已 checkout）
 - **主仓库**: `C:/GitHub/evolver.py`（分支 `self-harness` = 所有工作所在）
 
-> **检查点更新 3（C2 完成后）**：B1+A1+B2+C2 全部完成并提交。回归 892 通过。下一步 A2。
+> **检查点更新 3（C2 完成后）**：B1+A1+B2+C2 全部完成并提交。回归 923 通过。下一步 C1（闭集钩子，最重工程）。
 
 ## ⚠️ 环境警告（关键，已更新策略）
 
@@ -18,7 +18,7 @@
 
 **铁律：任何文件写入后立即 `git add` + `git commit`，再做测试。** 修复用后续提交。
 
-## 已完成 (B1+A1+B2+C2+C3 全部提交，回归 892 通过)
+## 已完成 (B1+A1+B2+C2+C3+A2 全部提交，回归 923 通过)
 
 | Sprint | 内容 | 里程碑提交 | 测试数 |
 |---|---|---|---|
@@ -26,7 +26,7 @@
 | **A1** | 验收门：`gep/acceptance/{schemas,gate,t0_frozen,orchestrator,solidify_hook}.py` + solidify 接入 + `diagnosis_ref` in last_run + flag `enable_acceptance_gate` | `c669164` | 55 |
 | **B2** | 跨用例聚类：`gep/diagnosis/clusters.py`（CausalSignature/Cluster/build/render）+ phase 集成（flag `enable_diagnosis_cluster`）+ artifact 含 clusters + prompt 注入 + `candidates.py` 因果簇候选 | `95cd2f8` 及 B2 wip 系列 | 19 |
 | **C2** | 多提议者：`gep/multi_proposer.py`（Proposal/MultiProposerRequest + 逐槽生成 + 签名去重 + 重试≤2 + decline）+ `candidate_eval.pick_passing` + `dispatch_multi_propose_phase`（ROUTES>1 时输出多槽契约）+ config `MULTI_PROPOSE_ROUTES` | `0b639af` 及 C2 wip 系列 | 27 |
-| 回归 | `tests/evolve tests/gep` 全绿 | — | 892 (688 基线 + 204 新增) |
+| 回归 | `tests/evolve tests/gep` 全绿 | — | 923 (688 基线 + 235 新增) |
 
 ### C2 新增文件/修改
 - 新增：`src/evolver/gep/multi_proposer.py`、`tests/gep/test_multi_proposer.py`、`tests/gep/test_candidate_eval_passing.py`、`tests/evolve/pipeline/test_dispatch_multi_propose.py`
