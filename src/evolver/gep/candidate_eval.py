@@ -225,3 +225,23 @@ def pick_best(
     if top.score and top.score.composite < min_score:
         return None
     return top
+
+
+def pick_passing(
+    candidates: list[Candidate],
+    *,
+    signal_vector: dict[str, float] | None = None,
+    recent_diffs: list[str] | None = None,
+    weights: dict[str, float] | None = None,
+    threshold: float = 0.0,
+) -> list[Candidate]:
+    """Return ALL candidates scoring >= *threshold* (ranked best-first).
+
+    Supports the multi-accept flow (Self-Harness C2/C3): instead of picking
+    one best, every candidate above the bar is returned so the caller can
+    gate each empirically (Sprint A1) and merge the survivors (Sprint C3).
+    """
+    ranked = rank_candidates(
+        candidates, signal_vector=signal_vector, recent_diffs=recent_diffs, weights=weights
+    )
+    return [c for c in ranked if c.score is not None and c.score.composite >= threshold]
