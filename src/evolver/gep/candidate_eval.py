@@ -54,6 +54,9 @@ class Candidate:
     description: str = ""
     metadata: dict[str, Any] = field(default_factory=dict)
     score: CandidateScore | None = None
+    # Self-Harness A2: reference to the baseline SurfaceSnapshot this diff
+    # was produced against (stable proposer view; see evolver.gep.surface).
+    surface_ref: str | None = None
 
     @property
     def candidate_id(self) -> str:
