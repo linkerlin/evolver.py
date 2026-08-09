@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from evolver.gep.candidate_eval import Candidate
+from pathlib import Path\n\nfrom evolver.gep.candidate_eval import Candidate
 from evolver.gep.surface import (
     SurfaceSnapshot,
     capture_surface,
@@ -50,7 +50,7 @@ class TestCandidateSurfaceRef:
 
 
 class TestSurfaceDeltaRoundTrip:
-    def test_capture_and_delta(self, tmp_path) -> None:  # noqa: ANN001
+    def test_capture_and_delta(self, tmp_path: Path) -> None:
         p = tmp_path / "a.py"
         p.write_text("x\n", encoding="utf-8")
         base = capture_surface([p], root=tmp_path)
