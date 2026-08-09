@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import asyncio
-import json
 from pathlib import Path
 
 import pytest
@@ -29,7 +28,7 @@ def _surface_ws(
     return ws, gep
 
 
-def _minimal_ctx(ws: Path) -> dict:
+def _minimal_ctx() -> dict:
     return {
         "cycle_id": "c1",
         "run_id": "r1",
@@ -50,7 +49,7 @@ class TestDispatchSurfaceAnchor:
     ) -> None:
         monkeypatch.setenv("EVOLVER_FF_ENABLE_SURFACE_DECOUPLE", "0")
         ws, _gep = _surface_ws
-        result = asyncio.run(dispatch_phase(_minimal_ctx(ws)))
+        result = asyncio.run(dispatch_phase(_minimal_ctx()))
         assert "proposer_surface_block" not in result
 
     def test_flag_on_anchors_and_persists_baseline(
@@ -60,7 +59,7 @@ class TestDispatchSurfaceAnchor:
     ) -> None:
         monkeypatch.setenv("EVOLVER_FF_ENABLE_SURFACE_DECOUPLE", "1")
         ws, gep = _surface_ws
-        result = asyncio.run(dispatch_phase(_minimal_ctx(ws)))
+        result = asyncio.run(dispatch_phase(_minimal_ctx()))
         block = result["proposer_surface_block"]
         assert "PROPOSER SURFACE" in block
         assert "src/surface.py" in block
@@ -76,11 +75,11 @@ class TestDispatchSurfaceAnchor:
     ) -> None:
         monkeypatch.setenv("EVOLVER_FF_ENABLE_SURFACE_DECOUPLE", "1")
         ws, gep = _surface_ws
-        asyncio.run(dispatch_phase(_minimal_ctx(ws)))
+        asyncio.run(dispatch_phase(_minimal_ctx()))
         baseline_id = load_snapshot(gep / "surfaces" / "baseline.json").snapshot_id
         # evolve the surface, run again → baseline UNCHANGED, drift reported
         (ws / "src" / "surface.py").write_text("x = 2\n", encoding="utf-8")
-        result2 = asyncio.run(dispatch_phase(_minimal_ctx(ws)))
+        result2 = asyncio.run(dispatch_phase(_minimal_ctx()))
         baseline2 = load_snapshot(gep / "surfaces" / "baseline.json")
         assert baseline2.snapshot_id == baseline_id  # stable parent
         assert "changed=src/surface.py" in result2["proposer_surface_block"]
@@ -92,7 +91,7 @@ class TestDispatchSurfaceAnchor:
     ) -> None:
         monkeypatch.setenv("EVOLVER_FF_ENABLE_SURFACE_DECOUPLE", "1")
         ws, _gep = _surface_ws
-        ctx = _minimal_ctx(ws)
+        ctx = _minimal_ctx()
         del ctx["surface_files"]
         result = asyncio.run(dispatch_phase(ctx))
         assert "proposer_surface_block" not in result
