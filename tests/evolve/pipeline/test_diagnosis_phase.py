@@ -203,3 +203,82 @@ class TestIntervalGating:
         }
         result = asyncio.run(diagnosis_phase(dict(ctx)))
         assert "causal_brief" in result
+
+
+class TestClusterFlagOff:
+    def test_cluster_flag_off_no_cluster_keys(
+        self,
+        _diagnosis_on: None,
+        _tmp_assets: Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        # diagnosis ON but cluster flag OFF (default) → no clustering
+        monkeypatch.setenv("EVOLVER_FF_ENABLE_DIAGNOSIS_CLUSTER", "0")
+        ctx = {
+            "cycle_id": "c1",
+            "recent_events": [_failed_event("e1")],
+            "signals": [],
+        }
+        result = asyncio.run(diagnosis_phase(dict(ctx)))
+        assert "causal_clusters" not in result
+        assert "causal_cluster_brief" not in result
+
+
+class TestClusterFlagOn:
+    def test_degraded_analyses_produce_no_clusters(
+        self,
+        _diagnosis_on: None,
+        _tmp_assets: Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        monkeypatch.setenv("EVOLVER_FF_ENABLE_DIAGNOSIS_CLUSTER", "1")
+        ctx = {
+            "cycle_id": "c1",
+            "recent_events": [_failed_event("e1")],  # degraded → no root cause
+            "signals": [],
+        }
+        result = asyncio.run(diagnosis_phase(dict(ctx)))
+        assert result["causal_clusters"] == []
+        assert result["causal_cluster_brief"] == ""
+
+    def test_artifact_contains_clusters(
+        self,
+        _diagnosis_on: None,
+        _tmp_assets: Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        monkeypatch.setenv("EVOLVER_FF_ENABLE_DIAGNOSIS_CLUSTER", "1")
+        # Force attributed analyses by patching the analyzer with a fake LLM.
+        from evolver.gep.diagnosis import causal as causal_mod
+
+        def fake_analyze(event: dict, **kwargs: object):
+            return causal_mod.analyze(
+                event,
+                llm_call=lambda _p: (
+                    '{"terminal_failure_kind": "agent_timeout", '
+                    '"stages": [{"stage_index": 0, "terminal_cause": '
+                    '"agent_timeout", "criticality": "root_cause", '
+                    '"agent_mechanism": "no_progress", "terminal_link": null}], '
+                    '"root_cause_stage": 0}'
+                ),
+            )
+
+        monkeypatch.setattr(
+            "evolver.evolve.pipeline.diagnosis.run_diagnosis",
+            lambda events, **kw: [
+                fake_analyze(e) for e in events if e.get("outcome", {}).get("status") != "success"
+            ],
+        )
+        ctx = {
+            "cycle_id": "c_clust",
+            "recent_events": [_failed_event("e1"), _failed_event("e2")],
+            "signals": [],
+        }
+        result = asyncio.run(diagnosis_phase(dict(ctx)))
+        assert len(result["causal_clusters"]) == 1
+        assert result["causal_clusters"][0]["signature"]["terminal_cause"] == "agent_timeout"
+        assert result["causal_clusters"][0]["size"] == 2
+        assert "Causal Failure Clusters" in result["causal_cluster_brief"]
+        # persisted artifact carries clusters
+        payload = json.loads(Path(result["causal_analyses_ref"]).read_text(encoding="utf-8"))
+        assert len(payload["clusters"]) == 1
