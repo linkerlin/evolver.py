@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 
 import pytest
+from pydantic import ValidationError
 
 from evolver.gep.multi_proposer import (
     MultiProposerRequest,
@@ -42,11 +43,11 @@ class TestProposalSchema:
         assert p.decision == "propose"
 
     def test_extra_forbidden(self) -> None:
-        with pytest.raises(Exception):
+        with pytest.raises(ValidationError):
             Proposal(slot_index=0, mechanism_family="x", bogus=True)  # type: ignore[call-arg]
 
     def test_blank_family_rejected(self) -> None:
-        with pytest.raises(Exception):
+        with pytest.raises(ValidationError):
             Proposal(slot_index=0, mechanism_family="   ")
 
 
