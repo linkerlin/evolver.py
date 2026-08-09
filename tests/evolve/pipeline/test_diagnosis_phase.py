@@ -249,9 +249,9 @@ class TestClusterFlagOn:
     ) -> None:
         monkeypatch.setenv("EVOLVER_FF_ENABLE_DIAGNOSIS_CLUSTER", "1")
         # Force attributed analyses by patching the analyzer with a fake LLM.
-        from evolver.gep.diagnosis import causal as causal_mod
+        from evolver.gep.diagnosis import causal as causal_mod  # noqa: PLC0415
 
-        def fake_analyze(event: dict, **kwargs: object):
+        def fake_analyze(event: dict) -> object:
             return causal_mod.analyze(
                 event,
                 llm_call=lambda _p: (
@@ -269,7 +269,7 @@ class TestClusterFlagOn:
 
         monkeypatch.setattr(
             "evolver.evolve.pipeline.diagnosis.run_diagnosis",
-            lambda events, **kw: [
+            lambda events, **kw: [  # noqa: ARG005
                 fake_analyze(e) for e in events if e.get("outcome", {}).get("status") != "success"
             ],
         )
