@@ -16,6 +16,7 @@ from evolver.gep.candidate_isolation import (
 
 
 def _write_module(dir_path: Path, name: str, value: str) -> Path:
+    dir_path.mkdir(parents=True, exist_ok=True)
     p = dir_path / f"{name}.py"
     p.write_text(f"VALUE = {value!r}\n", encoding="utf-8")
     return p
