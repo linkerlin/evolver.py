@@ -77,12 +77,53 @@ def _write_solidify_state(ctx: dict[str, Any]) -> None:
     write_state_for_solidify(last_run)
 
 
+def _anchor_proposer_surface(ctx: dict[str, Any]) -> None:
+    """Self-Harness A2: anchor the proposer to a stable baseline surface.
+
+    Opt-in via ``enable_surface_decouple`` + ``ctx["surface_files"]`` (list of
+    relative paths). The baseline snapshot is loaded from disk when present
+    (stable across cycles); otherwise captured now and persisted. The rendered
+    block (baseline id + eval drift) feeds the GEP prompt via
+    ``ctx["proposer_surface_block"]``.
+    """
+    from evolver.gep.feature_flags import is_enabled
+    from evolver.gep.paths import get_gep_assets_dir, get_workspace_root
+    from evolver.gep.surface import (
+        capture_surface,
+        load_snapshot,
+        render_surface_block,
+        save_snapshot,
+        surface_delta,
+    )
+
+    if not is_enabled("enable_surface_decouple"):
+        return
+    surface_files = ctx.get("surface_files")
+    if not isinstance(surface_files, list) or not surface_files:
+        return
+
+    root = get_workspace_root()
+    paths = [root / rel for rel in surface_files]
+    baseline_path = get_gep_assets_dir() / "surfaces" / "baseline.json"
+
+    baseline = load_snapshot(baseline_path)
+    if baseline is None:
+        baseline = capture_surface(paths, root=root)
+        save_snapshot(baseline, baseline_path)
+
+    eval_snap = capture_surface(paths, root=root)
+    delta = surface_delta(baseline, eval_snap)
+    ctx["proposer_surface_snapshot"] = baseline.model_dump()
+    ctx["proposer_surface_block"] = render_surface_block(baseline, delta)
+
+
 def _format_preview(items: list[dict[str, Any]]) -> str:
     return "```json\n" + json.dumps(items, indent=2, ensure_ascii=False) + "\n```"
 
 
 async def dispatch_phase(ctx: dict[str, Any]) -> dict[str, Any]:
     _write_solidify_state(ctx)
+    _anchor_proposer_surface(ctx)
 
     if ctx.get("skip_hub_calls"):
         print("Idle cycle complete.")
@@ -102,6 +143,7 @@ async def dispatch_phase(ctx: dict[str, Any]) -> dict[str, Any]:
         ctx.get("recall_section", ""),
         ctx.get("autopoiesis_context", ""),
         ctx.get("causal_cluster_brief", ""),  # Self-Harness B2
+        ctx.get("proposer_surface_block", ""),  # Self-Harness A2
     ]
     prompt = build_gep_prompt(
         now_iso=ctx.get("scan_time_iso", ""),
