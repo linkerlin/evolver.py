@@ -8,6 +8,7 @@ from __future__ import annotations
 import json
 from typing import Any
 
+from evolver import config as config_mod
 from evolver.gep.bridge import render_sessions_spawn_call, write_prompt_artifact
 from evolver.gep.feature_flags import is_enabled
 from evolver.gep.hooks.taxonomy import (
@@ -16,6 +17,10 @@ from evolver.gep.hooks.taxonomy import (
     known_family,
 )
 from evolver.gep.memory_bridge import serialize_memory_advice
+from evolver.gep.multi_proposer import (
+    MultiProposerRequest,
+    build_multi_proposer_prompt,
+)
 from evolver.gep.paths import get_gep_assets_dir, get_workspace_root
 from evolver.gep.prompt import build_gep_prompt
 from evolver.gep.reuse_attribution import utc_now_iso
@@ -230,12 +235,6 @@ async def dispatch_multi_propose_phase(ctx: dict[str, Any]) -> dict[str, Any]:
     multi-slot contract (N distinct mechanisms, decline allowed) instead of
     the single GEP prompt; the external proposer responds with N proposals.
     """
-    from evolver import config as config_mod
-    from evolver.gep.multi_proposer import (
-        MultiProposerRequest,
-        build_multi_proposer_prompt,
-    )
-
     routes = config_mod.MULTI_PROPOSE_ROUTES
     if routes <= 1:
         return ctx

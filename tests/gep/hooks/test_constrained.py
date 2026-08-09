@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import ast
+
 import pytest
 
 from evolver.gep.hooks.apply import apply_candidate_values
@@ -98,16 +100,15 @@ class TestValidateMechanismContract:
 
 class TestApplyPromptInstruction:
     def test_replaces_function_body(self) -> None:
+        new_body = 'def build_gep_prompt(now_iso):\n    return "new prompt"\n'
         result = apply_candidate_values(
             mechanism_family="prompt_instruction",
-            candidate_values={"build_gep_prompt": 'def build_gep_prompt(now_iso):\n    return "new prompt"\n'},
+            candidate_values={"build_gep_prompt": new_body},
             surface=_SOURCE,
         )
         assert '"new prompt"' in result
         assert "return \"old prompt\"" not in result
         assert "def other():" in result  # untouched
-        import ast
-
         ast.parse(result)  # valid python
 
     def test_missing_function_raises(self) -> None:

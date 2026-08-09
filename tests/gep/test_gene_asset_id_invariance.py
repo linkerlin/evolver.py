@@ -7,7 +7,6 @@ existing genes' content hashes — hashes are computed on raw on-disk dicts
 
 from __future__ import annotations
 
-import json
 from pathlib import Path
 
 import pytest
