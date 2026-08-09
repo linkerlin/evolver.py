@@ -85,10 +85,10 @@ class TestBuildLlmCall:
         assert build_llm_call("   ", kind="t", placeholders={}) is None
 
     def test_flag_on_runs_template(
-        self, monkeypatch: pytest.MonkeyPatch
+        self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
     ) -> None:
         monkeypatch.setenv("EVOLVER_FF_ENABLE_LLM_TEMPLATE", "1")
-        monkeypatch.setenv("EVOLVER_LLM_CALL_DIR", str(Path(".") / "calls"))
+        monkeypatch.setenv("EVOLVER_LLM_CALL_DIR", str(tmp_path / "calls"))
         out = build_llm_call(
             "echo hi",
             kind="t",

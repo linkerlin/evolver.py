@@ -27,8 +27,15 @@ PLACEHOLDERS = ("{prompt}", "{diagnosis}", "{response}")
 
 
 def _resolve_call_dir() -> Path:
-    env = __import__("os").environ.get("EVOLVER_LLM_CALL_DIR", "")
-    return Path(env) if env else Path(LLM_CALL_DIR)
+    """Resolve the LLM call dir; ``<GEP_ASSETS_DIR>`` expands to the real one."""
+    import os
+
+    env = os.environ.get("EVOLVER_LLM_CALL_DIR", "")
+    if env:
+        return Path(env).expanduser()
+    from evolver.gep.paths import get_gep_assets_dir
+
+    return get_gep_assets_dir() / "llm_calls"
 
 
 def render_template(template: str, placeholders: dict[str, str]) -> str:
