@@ -169,14 +169,18 @@ def merge_candidate_changes(base: str, candidates: list[str]) -> str:
         cand_spans = top_level_function_spans(candidate)
         cand_funcs = function_sources(candidate, cand_spans)
         cand_order = top_level_order(candidate)
+        new_names = [
+            name for name in cand_order
+            if name not in base_funcs
+        ]
 
-        for name in changed:
+        for name in [*changed, *new_names]:
             cand_src = cand_funcs[name]
             working_spans = top_level_function_spans(working)
             working_funcs = function_sources(working, working_spans)
 
-            if name in working_funcs and working_funcs[name] != base_funcs[name]:
-                # Another candidate already changed this function.
+            if name in working_funcs and working_funcs[name] != base_funcs.get(name, ""):
+                # Another candidate already added/changed this function.
                 if working_funcs[name] == cand_src:
                     continue  # identical edit already applied → no-op
                 raise MergeConflict(
