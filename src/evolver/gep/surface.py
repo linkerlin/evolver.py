@@ -121,6 +121,38 @@ def surface_delta(
     return {"added": added, "removed": removed, "changed": changed}
 
 
+def render_surface_block(
+    baseline: SurfaceSnapshot,
+    delta: dict[str, Any] | None = None,
+) -> str:
+    """Render the proposer-surface anchor block for the GEP prompt.
+
+    Tells the proposer which baseline snapshot it diffs against (stable
+    parent), and — when a *delta* is supplied — which files have since moved
+    on the eval surface. ``""`` when the baseline has no files.
+    """
+    if not baseline.files:
+        return ""
+    lines: list[str] = [
+        "# PROPOSER SURFACE (stable baseline — diff against THIS, not the "
+        "current eval state)",
+        f"- baseline snapshot_id: {baseline.snapshot_id}",
+        f"- surface files ({len(baseline.files)}): "
+        + ", ".join(sorted(baseline.files)),
+    ]
+    if delta:
+        parts = []
+        if delta.get("changed"):
+            parts.append(f"changed={','.join(delta['changed'])}")
+        if delta.get("added"):
+            parts.append(f"added={','.join(delta['added'])}")
+        if delta.get("removed"):
+            parts.append(f"removed={','.join(delta['removed'])}")
+        if parts:
+            lines.append(f"- eval-surface drift since baseline: {'; '.join(parts)}")
+    return "\n".join(lines)
+
+
 __all__ = [
     "SurfaceSnapshot",
     "capture_surface",
