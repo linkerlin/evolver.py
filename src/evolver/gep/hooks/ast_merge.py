@@ -10,7 +10,7 @@ of **top-level functions** only:
 * deletions of top-level functions are rejected,
 * changes to non-function top-level code (imports, assignments) are rejected,
 * two candidates editing the same top-level function raise
-  :class:`MergeConflict` (never silently overwritten),
+  :class:`MergeConflictError` (never silently overwritten),
 * new functions are inserted following the candidate's top-level order
   (after their predecessor, or at the top when no predecessor exists in the
   target).
@@ -23,10 +23,9 @@ sequential application elsewhere (Sprint C3 plan note).
 from __future__ import annotations
 
 import ast
-from typing import Any
 
 
-class MergeConflict(Exception):
+class MergeConflictError(Exception):
     """Raised when candidates overlap or the edit violates merge constraints."""
 
 
@@ -88,7 +87,7 @@ def _code_lines(text: str) -> list[str]:
 def changed_top_level_functions(base: str, candidate: str) -> list[str]:
     """Top-level functions whose source differs between *base* and *candidate*.
 
-    Raises :class:`MergeConflict` when *candidate* deletes a top-level function
+    Raises :class:`MergeConflictError` when *candidate* deletes a top-level function
     or modifies non-function top-level code (imports/assignments).
     """
     base_spans = top_level_function_spans(base)
@@ -96,14 +95,14 @@ def changed_top_level_functions(base: str, candidate: str) -> list[str]:
 
     deleted = set(base_spans) - set(cand_spans)
     if deleted:
-        raise MergeConflict(
+        raise MergeConflictError(
             f"deleted top-level function(s): {sorted(deleted)}"
         )
 
     if _code_lines(_without_functions(base, base_spans)) != _code_lines(
         _without_functions(candidate, cand_spans)
     ):
-        raise MergeConflict("non-function top-level code changed")
+        raise MergeConflictError("non-function top-level code changed")
 
     base_funcs = function_sources(base, base_spans)
     cand_funcs = function_sources(candidate, cand_spans)
@@ -156,7 +155,7 @@ def apply_function_definition(
 def merge_candidate_changes(base: str, candidates: list[str]) -> str:
     """Merge top-level function changes from *candidates* onto *base*.
 
-    Raises :class:`MergeConflict` on deletions, non-function top-level edits,
+    Raises :class:`MergeConflictError` on deletions, non-function top-level edits,
     or two candidates editing the same function. New functions are inserted
     following each candidate's top-level order.
     """
@@ -183,7 +182,7 @@ def merge_candidate_changes(base: str, candidates: list[str]) -> str:
                 # Another candidate already added/changed this function.
                 if working_funcs[name] == cand_src:
                     continue  # identical edit already applied → no-op
-                raise MergeConflict(
+                raise MergeConflictError(
                     f"conflicting edits to function {name!r}"
                 )
             working = apply_function_definition(
@@ -196,7 +195,7 @@ def merge_candidate_changes(base: str, candidates: list[str]) -> str:
 
 
 __all__ = [
-    "MergeConflict",
+    "MergeConflictError",
     "apply_function_definition",
     "changed_top_level_functions",
     "function_sources",

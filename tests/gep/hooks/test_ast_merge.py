@@ -2,14 +2,18 @@
 
 from __future__ import annotations
 
+import ast
+
 import pytest
 
 from evolver.gep.hooks.ast_merge import (
-    MergeConflict,
+    MergeConflictError,
     apply_function_definition,
     changed_top_level_functions,
+    function_sources,
     merge_candidate_changes,
     top_level_function_spans,
+    top_level_order,
 )
 
 _BASE = """\
@@ -75,12 +79,12 @@ class TestChangedTopLevelFunctions:
         deleted = _BASE.replace(
             "def bar():\n    return 2\n\n\n", ""
         )
-        with pytest.raises(MergeConflict, match="deleted top-level function"):
+        with pytest.raises(MergeConflictError, match="deleted top-level function"):
             changed_top_level_functions(_BASE, deleted)
 
     def test_non_function_change_rejected(self) -> None:
         changed_global = _BASE.replace("GLOBAL = 42", "GLOBAL = 43")
-        with pytest.raises(MergeConflict, match="non-function top-level"):
+        with pytest.raises(MergeConflictError, match="non-function top-level"):
             changed_top_level_functions(_BASE, changed_global)
 
     def test_new_function_allowed(self) -> None:
@@ -111,15 +115,7 @@ class TestApplyFunctionDefinition:
 
 
 def _slice_func(source: str, name: str) -> str:
-    from evolver.gep.hooks.ast_merge import function_sources, top_level_function_spans
-
     return function_sources(source, top_level_function_spans(source))[name]
-
-
-def top_level_order(source: str) -> list[str]:
-    from evolver.gep.hooks.ast_merge import top_level_order as _order
-
-    return _order(source)
 
 
 class TestMergeCandidateChanges:
@@ -131,15 +127,13 @@ class TestMergeCandidateChanges:
 
     def test_merge_keeps_source_valid(self) -> None:
         merged = merge_candidate_changes(_BASE, [_cand_foo(), _cand_bar()])
-        import ast
-
         ast.parse(merged)  # must remain valid Python
 
     def test_conflict_on_same_function(self) -> None:
         # two candidates both edit foo differently
         cand_a = _cand_foo().replace("    return 10", "    return 100")
         cand_b = _cand_foo().replace("    return 10", "    return 1000")
-        with pytest.raises(MergeConflict, match="conflicting edits to function 'foo'"):
+        with pytest.raises(MergeConflictError, match="conflicting edits to function 'foo'"):
             merge_candidate_changes(_BASE, [cand_a, cand_b])
 
     def test_same_edit_not_conflict(self) -> None:
