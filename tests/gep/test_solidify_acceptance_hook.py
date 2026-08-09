@@ -17,7 +17,11 @@ from typing import Any
 
 import pytest
 
+from evolver.gep import git_ops
+from evolver.gep import solidify as solidify_mod
+from evolver.gep.acceptance import solidify_hook as hook_mod
 from evolver.gep.acceptance.schemas import AcceptanceResult
+from evolver.gep.asset_store import read_all_events
 from evolver.gep.feature_flags import is_enabled
 from evolver.gep.solidify import solidify, write_state_for_solidify
 
@@ -66,9 +70,6 @@ def git_ws(temp_workspace: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     # (solidify calls it without one). Patch solidify's imported name so the
     # rollback targets THIS workspace. (chdir is avoided: on Windows the temp
     # workspace can't be removed while it is the process cwd.)
-    from evolver.gep import git_ops
-    from evolver.gep import solidify as solidify_mod
-
     monkeypatch.setattr(
         solidify_mod,
         "rollback_tracked",
@@ -105,8 +106,6 @@ def _patch_gate(
             return None
         return result
 
-    import evolver.gep.acceptance.solidify_hook as hook_mod
-
     monkeypatch.setattr(hook_mod, "gate_for_solidify", fake_gate)
 
 
@@ -119,8 +118,6 @@ def _rejected() -> AcceptanceResult:
 
 
 def _read_events() -> list[dict[str, Any]]:
-    from evolver.gep.asset_store import read_all_events
-
     return read_all_events()
 
 
@@ -130,6 +127,7 @@ class TestFlagOff:
         git_ws: Path,
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
+        _ = git_ws  # fixture side-effects (env + git repo) only
         monkeypatch.setenv("EVOLVER_FF_ENABLE_ACCEPTANCE_GATE", "0")
         called: list[bool] = []
         _patch_gate(monkeypatch, _accepted(), called=called)
@@ -147,6 +145,7 @@ class TestGateReject:
     def test_reject_returns_error(
         self, git_ws: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
+        _ = git_ws
         monkeypatch.setenv("EVOLVER_FF_ENABLE_ACCEPTANCE_GATE", "1")
         _patch_gate(monkeypatch, _rejected())
         write_state_for_solidify(_last_run())
@@ -172,6 +171,7 @@ class TestGateAccept:
     def test_accept_attaches_result_to_event(
         self, git_ws: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
+        _ = git_ws
         monkeypatch.setenv("EVOLVER_FF_ENABLE_ACCEPTANCE_GATE", "1")
         _patch_gate(monkeypatch, _accepted())
         write_state_for_solidify(_last_run())

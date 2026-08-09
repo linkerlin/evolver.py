@@ -80,7 +80,7 @@ class TestConstants:
         assert HELD_OUT_TIERS == ("T0_frozen", "T1_semantic", "T2_synthetic")
 
     def test_regress_verdicts(self) -> None:
-        assert REGRESS_VERDICTS == frozenset({"dropped", "regresses"})
+        assert frozenset({"dropped", "regresses"}) == REGRESS_VERDICTS
         # 'unchanged' / 'holds' / 'improved' / 'unknown' are NOT regressions
         assert "unchanged" not in REGRESS_VERDICTS
         assert "holds" not in REGRESS_VERDICTS

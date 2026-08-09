@@ -13,6 +13,7 @@ from pathlib import Path
 from typing import Any
 
 from evolver.config import VALIDATION_TIMEOUT_MS
+from evolver.gep.acceptance.solidify_hook import gate_or_none
 from evolver.gep.asset_store import append_event_jsonl, read_json_if_exists
 from evolver.gep.cognition import post_solidify_hooks, record_solidify_failure
 from evolver.gep.execution_trace import build_execution_trace
@@ -213,6 +214,24 @@ def _run_validations(commands: list[Any], cwd: Path) -> dict[str, Any]:
     }
 
 
+def _apply_acceptance_gate(
+    gate_result: Any,
+    last_run: dict[str, Any],
+    cwd: Path,
+) -> dict[str, Any] | None:
+    """Handle a rejection from the acceptance gate; None → gate passed/absent."""
+    if gate_result is None or gate_result.accepted:
+        return None
+    rollback_tracked()
+    rollback_new_untracked_files(git_list_untracked_files(cwd))
+    record_solidify_failure(last_run, error="acceptance_gate_rejected")
+    return {
+        "ok": False,
+        "error": "acceptance_gate_rejected",
+        "details": {"acceptance": gate_result.model_dump()},
+    }
+
+
 def _compute_blast_radius() -> dict[str, int]:
     cwd = get_workspace_root()
     changed = git_list_changed_files(cwd)
@@ -278,24 +297,10 @@ def solidify(
     # Self-Harness A1: empirical acceptance gate (opt-in via
     # EVOLVER_FF_ENABLE_ACCEPTANCE_GATE). Runs after quick validation, before
     # the event is recorded. Reject → rollback + record failure (same path as
-    # validation failure). Returns None when the gate is disabled → no-op.
-    gate_result: dict[str, Any] | None = None
-    try:
-        from evolver.gep.acceptance.solidify_hook import gate_for_solidify
-
-        gate_result = gate_for_solidify(last_run, cwd)
-    except Exception as gate_exc:  # noqa: BLE001 — gate must never break solidify
-        print(f"[solidify] acceptance gate error: {gate_exc}")
-        gate_result = None
-    if gate_result is not None and not gate_result.accepted:
-        rollback_tracked()
-        rollback_new_untracked_files(git_list_untracked_files(cwd))
-        record_solidify_failure(last_run, error="acceptance_gate_rejected")
-        return {
-            "ok": False,
-            "error": "acceptance_gate_rejected",
-            "details": {"acceptance": gate_result.model_dump()},
-        }
+    # validation failure). Returns None when the gate is disabled or errored.
+    gate_result = gate_or_none(last_run, cwd)
+    if (rejected := _apply_acceptance_gate(gate_result, last_run, cwd)) is not None:
+        return rejected
 
     blast_radius = _compute_blast_radius()
     diff_snapshot = capture_diff_snapshot(cwd)

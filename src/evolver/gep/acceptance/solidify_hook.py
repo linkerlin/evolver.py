@@ -95,4 +95,17 @@ def gate_for_solidify(
     return result
 
 
-__all__ = ["gate_for_solidify"]
+def gate_or_none(last_run: dict[str, Any], cwd: Any) -> AcceptanceResult | None:
+    """Safe wrapper for solidify: run the gate, never raise.
+
+    Any gate-side failure degrades to ``None`` (gate disabled semantics) so
+    the core solidify path can never be broken by the opt-in enhancement.
+    """
+    try:
+        return gate_for_solidify(last_run, cwd)
+    except Exception as exc:
+        print(f"[solidify] acceptance gate error: {exc}")
+        return None
+
+
+__all__ = ["gate_for_solidify", "gate_or_none"]

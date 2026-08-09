@@ -79,14 +79,14 @@ class AcceptanceResult(BaseModel):
 
 
 __all__ = [
-    "AcceptanceResult",
     "HELD_OUT_TIERS",
+    "REGRESS_VERDICTS",
+    "AcceptanceResult",
     "HoldsVerdict",
     "LayerKind",
     "LayerMetric",
     "LayerVerdict",
     "RateVerdict",
-    "REGRESS_VERDICTS",
     "RepeatObs",
     "T2Verdict",
 ]
