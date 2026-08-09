@@ -143,11 +143,10 @@ class TestGenerate:
         request = MultiProposerRequest(route_count=2)
         responses = iter(
             [
-                _resp(_propose(0, "same"), _propose(1, "same")),
-                # retry 1: still same
-                _resp(_propose(0, "same"), _propose(1, "same")),
-                # retry 2: still same
-                _resp(_propose(0, "same"), _propose(1, "same")),
+                _resp(_propose(0, "same"), _propose(1, "same")),  # slot 0
+                _resp(_propose(0, "same"), _propose(1, "same")),  # slot 1 initial
+                _resp(_propose(0, "same"), _propose(1, "same")),  # retry 1
+                _resp(_propose(0, "same"), _propose(1, "same")),  # retry 2
             ]
         )
         proposals = generate_multi_proposals(request, lambda _p: next(responses))
