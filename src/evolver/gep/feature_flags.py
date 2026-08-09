@@ -48,6 +48,7 @@ DEFAULT_FLAGS: dict[str, bool] = {
     "enable_memory_graph": True,
     # Self-Harness enhancement layer (Sprint B1+; opt-in, off by default).
     "enable_diagnosis": False,
+    "enable_diagnosis_cluster": False,
     "enable_acceptance_gate": False,
     # Proxy-only routes (also readable via ``EVOLVER_FF_*``)
     "enable_skill_auto_update": False,
