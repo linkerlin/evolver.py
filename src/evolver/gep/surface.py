@@ -37,15 +37,19 @@ def _file_sha256(path: Path) -> str:
     return digest.hexdigest()
 
 
-def fingerprint_files(paths: list[Path]) -> dict[str, str]:
+def fingerprint_files(paths: list[Path], *, root: Path | None = None) -> dict[str, str]:
     """Map relative path → sha256 content hash for *paths*.
 
-    Missing/unreadable files are recorded as ``"<missing>"`` so snapshots stay
-    comparable even when a file temporarily disappears.
+    Keys are relative to *root* when given (portable snapshots); otherwise the
+    path as given. Missing/unreadable files are recorded as ``"<missing>"`` so
+    snapshots stay comparable even when a file temporarily disappears.
     """
     fingerprints: dict[str, str] = {}
     for path in paths:
-        rel = path.as_posix()
+        try:
+            rel = path.relative_to(root).as_posix() if root else path.as_posix()
+        except ValueError:
+            rel = path.as_posix()
         try:
             fingerprints[rel] = _file_sha256(path)
         except OSError:
@@ -71,9 +75,9 @@ class SurfaceSnapshot(BaseModel):
         return _snapshot_id(self.files)
 
 
-def capture_surface(paths: list[Path]) -> SurfaceSnapshot:
-    """Capture a snapshot of *paths* (relative names from the paths as given)."""
-    files = fingerprint_files(paths)
+def capture_surface(paths: list[Path], *, root: Path | None = None) -> SurfaceSnapshot:
+    """Capture a snapshot of *paths* (keys relative to *root* when given)."""
+    files = fingerprint_files(paths, root=root)
     snapshot = SurfaceSnapshot(files=files)
     snapshot.snapshot_id = snapshot.compute_id()
     return snapshot
