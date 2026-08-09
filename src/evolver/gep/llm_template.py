@@ -15,26 +15,22 @@ loop is auditable and replayable.
 from __future__ import annotations
 
 import json
+import os
 import subprocess
 import time
 from pathlib import Path
-from typing import Any
 
-from evolver.config import LLM_CALL_DIR
 from evolver.gep.feature_flags import is_enabled
+from evolver.gep.paths import get_gep_assets_dir
 
 PLACEHOLDERS = ("{prompt}", "{diagnosis}", "{response}")
 
 
 def _resolve_call_dir() -> Path:
     """Resolve the LLM call dir; ``<GEP_ASSETS_DIR>`` expands to the real one."""
-    import os
-
     env = os.environ.get("EVOLVER_LLM_CALL_DIR", "")
     if env:
         return Path(env).expanduser()
-    from evolver.gep.paths import get_gep_assets_dir
-
     return get_gep_assets_dir() / "llm_calls"
 
 
