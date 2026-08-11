@@ -52,10 +52,10 @@ jobs:
       - name: Run evolver version check
         run: uv run evolver --version
 
-      - name: Assert package version is 1.93.0
+      - name: Assert package version is 1.94.0
         run: |
-          uv run python -c "from evolver import __version__; assert __version__ == '1.93.0', __version__"
-          uv run evolver --version | grep -F "1.93.0"
+          uv run python -c "from evolver import __version__; assert __version__ == '1.94.0', __version__"
+          uv run evolver --version | grep -F "1.94.0"
 
       - name: Run evolver run (dry check)
         run: uv run evolver run
