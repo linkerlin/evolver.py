@@ -6,11 +6,13 @@ import asyncio
 from pathlib import Path
 from typing import Any
 
+import httpx
 import pytest
 import respx
 from httpx import Response
 
 from evolver.proxy.event_delivery import (
+    SSE_RECONNECT_BASE_MS,
     EventDeliveryManager,
     HubEventBridge,
     IdentityProvider,
@@ -226,3 +228,82 @@ def test_recover_after_wake_reenables_poll() -> None:
     internals = mgr.get_internals()
     assert internals["sseHealthy"] is False
     assert internals["selfDrivingPollEnabled"] is True
+
+
+# ---------------------------------------------------------------------------
+# Daemon-level SSE E2E (respx-mocked Hub stream)
+# ---------------------------------------------------------------------------
+
+
+@respx.mock
+async def test_daemon_sse_stream_delivers_events(monkeypatch: pytest.MonkeyPatch) -> None:
+    respx.get(url__regex=r"https://mock\.hub/a2a/events/stream.*").mock(
+        return_value=httpx.Response(
+            200,
+            headers={"Content-Type": "text/event-stream"},
+            content=(
+                b'data: {"id":"e1","type":"directive","payload":{"body":"do X"}}\n\n'
+                b'data: {"id":"e2","type":"trace_collection_config",'
+                b'"payload":{"enabled":false}}\n\n'
+            ),
+        )
+    )
+    accepted: list[list[dict]] = []
+    mgr = EventDeliveryManager()
+
+    def _accept(events: list[dict]) -> None:
+        accepted.append(events)
+
+    mgr.start(
+        hub_url="https://mock.hub",
+        node_id="node_daemontest0001",
+        enable_sse=True,
+        on_events_accepted=_accept,
+    )
+    try:
+        await asyncio.sleep(0.5)
+        ids = [e["id"] for batch in accepted for e in batch]
+        assert "e1" in ids, f"SSE event e1 not delivered: {ids}"
+        assert "e2" in ids
+    finally:
+        mgr.stop()
+
+
+@respx.mock
+async def test_daemon_planned_close_resets_backoff(monkeypatch: pytest.MonkeyPatch) -> None:
+    respx.get(url__regex=r"https://mock\.hub/a2a/events/stream.*").mock(
+        return_value=httpx.Response(
+            200,
+            headers={"Content-Type": "text/event-stream"},
+            content=b'event: close\ndata: {"reason":"max_duration"}\n\n',
+        )
+    )
+    mgr = EventDeliveryManager()
+    mgr.start(hub_url="https://mock.hub", node_id="node_daemontest0001", enable_sse=True)
+    try:
+        await asyncio.sleep(0.5)
+        assert mgr.get_sse_internals_for_testing()["sseReconnectMs"] == SSE_RECONNECT_BASE_MS, (
+            "a scheduled max_duration rotation must not inherit the failure backoff"
+        )
+    finally:
+        mgr.stop()
+
+
+@respx.mock
+async def test_daemon_unplanned_stream_end_grows_backoff(monkeypatch: pytest.MonkeyPatch) -> None:
+    respx.get(url__regex=r"https://mock\.hub/a2a/events/stream.*").mock(
+        return_value=httpx.Response(
+            200,
+            headers={"Content-Type": "text/event-stream"},
+            content=b'data: {"id":"e1"}\n\n',
+        )
+    )
+    mgr = EventDeliveryManager()
+    mgr.start(hub_url="https://mock.hub", node_id="node_daemontest0001", enable_sse=True)
+    try:
+        await asyncio.sleep(0.5)
+        assert mgr.get_sse_internals_for_testing()["sseReconnectMs"] == SSE_RECONNECT_BASE_MS * 2, (
+            "an unplanned end must grow the backoff"
+        )
+    finally:
+        mgr.stop()
