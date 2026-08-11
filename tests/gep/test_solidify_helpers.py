@@ -225,7 +225,7 @@ class TestValidationCommandGate:
             'node -e "process.exit(1)"',
             'node --eval "console.log(1)"',
             'node -p "1+1"',
-            'node --print "require(\'fs\')"',
+            "node --print \"require('fs')\"",
         ):
             assert is_validation_command_allowed(cmd) is False, cmd
 

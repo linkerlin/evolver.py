@@ -123,8 +123,7 @@ def _validation_pass_rate(validation: dict[str, Any]) -> float:
 
 def _hollow_commit(constraint_report: dict[str, Any], blast: dict[str, Any]) -> bool:
     if isinstance(constraint_report, dict) and any(
-        str(v).startswith("hollow_commit")
-        for v in (constraint_report.get("violations") or [])
+        str(v).startswith("hollow_commit") for v in (constraint_report.get("violations") or [])
     ):
         return True
     all_changed = blast.get("all_changed_files")
