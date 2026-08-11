@@ -288,8 +288,15 @@ def _is_meta_only(input_data: dict[str, Any], normalized: dict[str, Any]) -> boo
     ):
         return True
 
-    # Check 4: High density of meta vocabulary in summary with no concrete evidence
-    return len(META_VOCABULARY.findall(summary)) >= 3 and not CONCRETE_EVIDENCE.search(summary)
+    # Check 4: meta discussion in summary AND meta vocabulary leaking into
+    # strategy/artifacts with no concrete domain evidence — the conversation
+    # is about the evolver mechanism itself, not about applying a real
+    # workflow (v1.93.0 meta_self_reference contract).
+    return (
+        meta_in_summary
+        and (meta_in_strategy or meta_in_artifacts)
+        and not CONCRETE_EVIDENCE.search(full_text)
+    )
 
 
 def evaluate_gate(input_data: dict[str, Any], normalized: dict[str, Any]) -> dict[str, Any]:
@@ -317,13 +324,9 @@ def evaluate_gate(input_data: dict[str, Any], normalized: dict[str, Any]) -> dic
     if normalized["execution"]["validation"] or normalized["execution"]["trace"]:
         score += 1
         reasons.append("validation")
-    if re.search(
-        r"\b(gene|capsule|distill|reusable|evomap|evolver)\b|蒸馏|提炼|可复用|基因",
-        normalized["text"],
-        re.I,
-    ):
-        score += 2
-        reasons.append("explicit_distill_signal")
+    # NOTE (v1.93.0 parity): the old +2 explicit_distill_signal bonus is
+    # deliberately removed — naming the evolver must not score a conversation
+    # higher. Reusability is proven by structure, not by meta vocabulary.
     threshold = float(input_data.get("min_score") or input_data.get("minScore") or 5)
     if score < threshold:
         return {
@@ -359,7 +362,6 @@ def normalize_conversation_input(input_data: dict[str, Any]) -> dict[str, Any]:
         or text,
         300,
     )
-    signals = infer_signals(text, input_data.get("signals"))
     strategy = build_strategy(input_data)
     artifacts = normalize_list(
         input_data.get("artifacts") or input_data.get("outputs") or input_data.get("files"),
@@ -367,12 +369,23 @@ def normalize_conversation_input(input_data: dict[str, Any]) -> dict[str, Any]:
         240,
     )
     execution = normalize_execution(input_data)
+    # Signal corpus includes the strategy so meta vocabulary in strategy steps
+    # (and incidental domain words like frontend/visual) are scored (Node
+    # parity). source_signals come from the raw text + strategy only.
+    signal_corpus = f"{text} {' '.join(strategy)}".strip()
+    signals = infer_signals(signal_corpus, input_data.get("signals"))
+    # Evidence surfaces (v1.93.0 parity): evidence_text is the source text only
+    # (never strategy/artifacts) so concrete file paths are judged via
+    # evidence_parts — long transcripts cannot hide real files.
     return {
         "text": text,
         "summary": summary,
         "signals": signals,
+        "source_signals": infer_signals(signal_corpus, []),
         "strategy": strategy,
         "artifacts": artifacts,
+        "evidence_text": trim_text(text, 4000),
+        "evidence_parts": list(strategy) + list(artifacts),
         "execution": execution,
         "platform": trim_text(
             input_data.get("platform") or input_data.get("host") or "generic", 64
