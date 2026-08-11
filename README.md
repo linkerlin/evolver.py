@@ -127,7 +127,7 @@ src/evolver/
     ├── client/           # Inline JS/CSS (SSE, bootstrap, i18n)
     └── observer/         # Data aggregation modules
 
-tests/                  # 130+ test files, 1250+ tests (pytest)
+tests/                  # 245+ test files, 2900+ tests (pytest)
 scripts/                # 17 CLI helper scripts (see Scripts section)
 assets/gep/             # Seed gene library
 memory/                 # Runtime data (graph JSONL, reviews JSONL)
@@ -160,9 +160,9 @@ memory/                 # Runtime data (graph JSONL, reviews JSONL)
 
 ## Implementation Status
 
-> **Overall** (2026-07-31, Sprint 18): tracking Node **v1.93.0** behavioral parity.
-> Package version **1.93.0** (Node evolver v1.93.0 parity baseline). Remaining depth gaps: [演进方案.md](演进方案.md).
-> Sprint 18: A14–A16, solidify direct tests, schema/prompt guards, a2a publish/trace, static dotenv/adapters/hub-egress guards.
+> **Overall** (2026-08-11, Sprint 20): tracking Node **v1.94.0** behavioral parity.
+> Package version **1.94.0** (Node evolver v1.94.0 parity baseline). Remaining depth gaps: [演进方案.md](演进方案.md).
+> Sprint 20: v1.94.0 parity — sandbox hardening, publish validation gate, Claude context gene family + seed upgrade, feedbackEnvelope, 12 context-bloat signals, ssePlannedClose, solidify helpers; lint/format/mypy gates green.
 
 | Subsystem | Status | Notes |
 |---|---|---|
@@ -175,9 +175,9 @@ memory/                 # Runtime data (graph JSONL, reviews JSONL)
 | **Ops / Solo** | ~85% | lifecycle, force-update, --solo |
 | **WebUI** | ~70% | SSR dashboard + GitHub observer |
 | **Validator** | ~50% | sandbox framework; prod network isolation pending |
-| **Docs / Release** | ~85% | CHANGELOG + version **1.93.0**; multi-OS CI advisory |
+| **Docs / Release** | ~90% | CHANGELOG + version **1.94.0**; multi-OS CI advisory |
 
-**Next:** conversationDistiller meta gate, event_delivery E2E deepen, observer polish.
+**Next (Sprint 21):** a2a heartbeat state machine, event_delivery daemon E2E, conversationDistiller meta gate, v2.0.x evaluation.
 
 See [演进方案.md](演进方案.md) for the live gap roadmap.
 

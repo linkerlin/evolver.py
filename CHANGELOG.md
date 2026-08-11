@@ -8,6 +8,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.94.0] — 2026-08-11
+
+### Added
+- **Sprint 20 — v1.94.0 parity**（锚定 Node evolver v1.94.0）：
+  - **sandbox 安全加固**：`sandbox_executor` 禁 `--inspect*/--watch*/--conditions/-C` node flags（GHSA-jxh8-jh77-xh6g 后续）；`--version/-v/--help/-h` 豁免脚本文件要求（#607–609）。
+  - **publish 验证闸**：loose-asset 发布默认沙箱可跑命令 `node --version`；沙箱必拒的命令发布时 400（`PublishValidationError`）；Capsule 同载 validation；`policy_check.is_validation_command_allowed` 与 sandbox 门共用实现零漂移。
+  - **Claude 上下文基因家族** `gep/context_routing_gene.py`：6 基因内容寻址（prompt-budget ledger / schema routing / tool-schema lazy-load / skill-manual routing / transcript handoff / memory-index budget）；`asset_store` seed 升级追加机制（标记≥2 / 仅补缺 / filelock / 不覆写用户 store）；`genes.seed.json` 对齐 808 行语义。
+  - **feedbackEnvelope** `gep/feedback_envelope.py`：label/indecision/conflict/attention-aware uncertainty/聚合契约（纯测试契约行为重写）。
+  - **12 个上下文膨胀信号**：claude_code_context_bloat / context_explosion / tool_schema_bloat / skill_list_bloat / skill_manual_bloat / transcript_context_bloat / conversation_handoff_bloat / memory_index_budget / prompt_budget_measurement / lazy_load_schema / schema_routing_gene_request / token_budget_overflow（双语正则）。
+  - **ssePlannedClose**：SSE duration ≤300s（Hub 上限）、planned-close 一次性闩锁、fetch 回退帧解析（event/data 分派）、计划关闭重置重连退避至 5s。
+  - **solidify 过程助手** `gep/solidify_helpers.py`：blast 严重度阶梯 / 目录分组 / 漂移检测 / 失败原因合成 / 过程评分（含 hollow-commit 守卫）/ 基因类别选择 / forbidden-path 守卫。
+- **a2a_protocol 契约套件**：6 → 55 用例（消息构建、fetch/publish 包络、execution_trace 合成、签名、unwrap、post_hub_envelope 错误路径、node_id 文件）。
+- **工程闸门全绿**：ruff 885→0、`ruff format` 544/544、mypy strict 44→0；全量 **2900+ 用例通过**。
+- **基线失败测试修复**：solo（Windows exit-1 平台分支）、lifecycle×2（store 旧前缀权威性 + EVOLVER_HOME 隔离）、webui×3（陈旧测试形状对齐分页契约）、router（node_id 缓存重置）。
+
+### Changed
+- Package version **1.89.14 → 1.93.0 → 1.94.0**（声明 Node evolver **v1.94.0** parity）。
+- ruff 配置：移植模式规则（PLC0415/ARG00x/PLR09xx/PLW0603/SIM102/117/RUF001）全局豁免并附理由；tests/** 惯用法豁免。
+- README Implementation Status 刷新至 Sprint 20。
+
+### Notes
+- a2a 深度剩余：心跳状态机 / 事件投递 daemon 级 E2E 仍可加深（演进方案.md Sprint 21）。
+- v2.0.x（Node 独立发布线）评估列 Sprint 21.5。
+
 ## [1.93.0] — 2026-07-31
 
 ### Added
