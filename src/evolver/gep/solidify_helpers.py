@@ -100,8 +100,10 @@ def build_failure_reason(
     )
     for v in violations:
         parts.append(f"constraint: {v}")
-    results = validation.get("results") if isinstance(validation, dict) else None
-    if isinstance(results, list) and any(not r.get("ok") for r in results if isinstance(r, dict)):
+    results_raw = validation.get("results") if isinstance(validation, dict) else None
+    if isinstance(results_raw, list) and any(
+        not r.get("ok") for r in results_raw if isinstance(r, dict)
+    ):
         parts.append("validation_failed")
     for pv in protocol_violations or []:
         parts.append(f"protocol: {pv}")
