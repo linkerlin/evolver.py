@@ -7,8 +7,6 @@ Behavioral port of Node ``test/solidify-helpers.test.js`` onto
 
 from __future__ import annotations
 
-import pytest
-
 from evolver.config import BLAST_RADIUS_HARD_CAP_FILES, BLAST_RADIUS_HARD_CAP_LINES
 from evolver.gep.git_ops import (
     is_constraint_counted_path,

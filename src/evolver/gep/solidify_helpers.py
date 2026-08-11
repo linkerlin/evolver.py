@@ -30,10 +30,7 @@ _GEP_METADATA_PREFIXES = ("assets/gep/", ".evolver/")
 def is_forbidden_path(rel_path: str, forbidden: list[str] | None) -> bool:
     """True when *rel_path* equals or starts with an entry in *forbidden*."""
     p = normalize_rel_path(rel_path)
-    for entry in forbidden or []:
-        if p == entry or p.startswith(f"{entry}/"):
-            return True
-    return False
+    return any(p == entry or p.startswith(f"{entry}/") for entry in forbidden or [])
 
 
 def classify_blast_severity(
