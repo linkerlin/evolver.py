@@ -262,10 +262,17 @@ class LifecycleManager:
             s.node_secret_source = "env_seed"
 
         # Identity precedence: store > env > legacy file (no mint on load).
-        resolved = resolve_node_id(store_id=store_id, allow_mint=False)
-        if resolved is None and store_id:
-            # Keep non-canonical store values (pre-migration legacy prefixes).
-            resolved = str(store_id).strip() or None
+        # A non-canonical store value is a pre-migration legacy id (L7) and is
+        # authoritative: it must not be shadowed by the env override or the
+        # shared legacy node_id file (which is only a mirror for other tools).
+        store_text = str(store_id).strip() if store_id else ""
+        if store_text and not is_valid_node_id(store_text):
+            resolved = store_text
+        else:
+            resolved = resolve_node_id(store_id=store_id, allow_mint=False)
+            if resolved is None and store_id:
+                # Keep non-canonical store values (pre-migration legacy prefixes).
+                resolved = store_text or None
         s.node_id = resolved
         s.last_heartbeat_at = self._store.get_state("last_heartbeat_at")
         # L4: load secret age

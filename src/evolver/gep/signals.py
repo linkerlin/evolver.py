@@ -428,6 +428,87 @@ def _extract_regex(corpus: str, lower: str, error_hit: bool) -> list[str]:
     if "path.resolve(__dirname, '../../../" in lower:
         signals.append("path_outside_workspace")
 
+    # Context-bloat signal family (v1.94.0 parity): Claude Code context
+    # explosion, tool/skill schema bloat, transcript handoff, memory index,
+    # and prompt-budget measurement (bilingual).
+    if re.search(r"claude\s*code", lower) and re.search(
+        r"(context|上下文|token|prompt|schema|mcp|skill|tool)", lower
+    ):
+        signals.append("claude_code_context_bloat")
+    if re.search(
+        r"(context|上下文|prompt).{0,80}"
+        r"(bloat|explod|overflow|too large|too long|爆|撑爆|超限|爆了)"
+        r"|爆.{0,40}(context|上下文|token)",
+        corpus,
+        re.IGNORECASE,
+    ):
+        signals.append("context_explosion")
+    if re.search(
+        r"(tool|mcp).{0,60}schema.{0,60}(bloat|large|long|too much|太大|太长|过大)"
+        r"|工具\s*schema.{0,40}(太大|太长|过大)"
+        r"|mcp.{0,40}schema.{0,40}(太大|太长|过大)",
+        corpus,
+        re.IGNORECASE,
+    ):
+        signals.append("tool_schema_bloat")
+    if re.search(
+        r"(skill|available agent types|mcp server instructions).{0,80}"
+        r"(list|description|instructions|too long|bloat|太长|很长|列表)",
+        corpus,
+        re.IGNORECASE,
+    ) or re.search(r"skill\s*列表.{0,30}(太长|很长|过大)", corpus):
+        signals.append("skill_list_bloat")
+    if re.search(
+        r"(skill|agent type|mcp server instructions|manual|技能|说明).{0,80}"
+        r"(manual|instructions|description|route card|路由卡|手册|说明).{0,80}"
+        r"(bloat|too long|太长|过大|压缩)",
+        corpus,
+        re.IGNORECASE,
+    ):
+        signals.append("skill_manual_bloat")
+    if re.search(
+        r"(full transcript|pasted transcript|conversation handoff"
+        r"|会话上下文|完整转录|聊天记录).{0,80}"
+        r"(too large|bloat|handoff|爆|撑爆|压缩|交接)",
+        corpus,
+        re.IGNORECASE,
+    ):
+        signals.append("transcript_context_bloat")
+        signals.append("conversation_handoff_bloat")
+    if re.search(
+        r"(memory\.md|memory index|memory recall|memory 索引|记忆索引).{0,80}"
+        r"(budget|bloat|too large|still okay|okay|还好|太大|注入|recall)",
+        corpus,
+        re.IGNORECASE,
+    ):
+        signals.append("memory_index_budget")
+    if re.search(
+        r"(prompt budget|context budget|token budget|预算台账|上下文预算|token预算|measure).{0,80}"
+        r"(ledger|measure|breakdown|台账|测量|拆分)",
+        corpus,
+        re.IGNORECASE,
+    ):
+        signals.append("prompt_budget_measurement")
+    if re.search(
+        r"(lazy[- ]?load|just[- ]?in[- ]?time|按需加载|懒加载).{0,80}"
+        r"(schema|tool|mcp|skill|工具|能力)",
+        corpus,
+        re.IGNORECASE,
+    ):
+        signals.append("lazy_load_schema")
+    if re.search(
+        r"(蒸馏|distill).{0,40}(基因|gene).{0,80}(schema|tool|mcp|skill|上下文|context|工具)",
+        corpus,
+        re.IGNORECASE,
+    ):
+        signals.append("schema_routing_gene_request")
+    if re.search(
+        r"(token|context|上下文).{0,60}(budget|limit|overflow|超限|爆了|撑爆)",
+        corpus,
+        re.IGNORECASE,
+    ):
+        signals.append("token_budget_overflow")
+
     if "prompt" in lower and "evolutionevent" not in lower:
         signals.append("protocol_drift")
 

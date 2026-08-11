@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import time
+from pathlib import Path
 from typing import Any
 
 import pytest
@@ -33,7 +34,10 @@ class FakeStore:
 
 
 @pytest.fixture()
-def manager() -> LifecycleManager:
+def manager(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> LifecycleManager:
+    # Isolate the shared legacy node_id file (~/.evomap/node_id may exist on
+    # the host from real usage and would otherwise leak into every manager).
+    monkeypatch.setenv("EVOLVER_HOME", str(tmp_path / "evolver-home"))
     return LifecycleManager(store=FakeStore())
 
 

@@ -28,6 +28,15 @@ WALL_CLOCK_DRIFT_S = 90.0
 DEFAULT_POLL_MS = 15_000
 HUB_EVENT_RETRY_BASE_MS = 100
 
+# SSE stream rotation (v1.94.0 parity, issues #606/#594): the Hub clamps
+# ``duration_ms`` to 300_000 and ends the stream deliberately with an
+# ``event: close`` frame before dropping the socket. Ask for no more than the
+# ceiling so our reconnect schedule matches the Hub's real close time, and
+# treat a planned close as a normal rotation — never as a failure.
+SSE_STREAM_DURATION_MS = 300_000
+SSE_RECONNECT_BASE_MS = 5_000
+SSE_RECONNECT_MAX_MS = 120_000
+
 
 @dataclass
 class IdentityProvider:
@@ -47,6 +56,9 @@ class _DeliveryState:
     hub_url: str = ""
     enable_sse: bool = True
     last_wall_clock: float = field(default_factory=time.time)
+    # SSE rotation state (v1.94.0): reconnect interval + planned-close latch.
+    sse_reconnect_ms: int = SSE_RECONNECT_BASE_MS
+    sse_planned_close: bool = False
 
 
 class HubEventBridge:
@@ -349,6 +361,84 @@ class EventDeliveryManager:
             except RuntimeError:
                 pass
 
+    def handle_hub_event_stream_close(self, _data: Any = None) -> None:
+        """Latch a planned SSE close (``event: close`` frame, #606/#594).
+
+        Any close frame — JSON ``{"reason": ...}``, plain text, or empty —
+        counts as planned: the Hub ended the stream deliberately.
+        """
+        self._state.sse_planned_close = True
+
+    def take_sse_planned_close(self) -> bool:
+        """Consume the planned-close latch exactly once."""
+        latched = self._state.sse_planned_close
+        self._state.sse_planned_close = False
+        return latched
+
+    def reset_sse_reconnect_backoff(self) -> None:
+        """Return the SSE reconnect interval to the base (planned close path)."""
+        self._state.sse_reconnect_ms = SSE_RECONNECT_BASE_MS
+
+    def _grow_sse_reconnect_backoff(self) -> None:
+        self._state.sse_reconnect_ms = min(self._state.sse_reconnect_ms * 2, SSE_RECONNECT_MAX_MS)
+
+    def sse_stream_duration_ms(self) -> int:
+        """Requested SSE duration — must never exceed the Hub 300s ceiling."""
+        return SSE_STREAM_DURATION_MS
+
+    def get_sse_internals_for_testing(self) -> dict[str, Any]:
+        return {
+            "sseReconnectMs": self._state.sse_reconnect_ms,
+            "ssePlannedClose": self._state.sse_planned_close,
+        }
+
+    def _dispatch_sse_frame(self, event: str, data: str) -> None:
+        """Handle one complete SSE frame from the Hub stream."""
+        if event == "close":
+            self.handle_hub_event_stream_close(data)
+            return
+        if event != "message":
+            # Unknown named events are ignored by the delivery path.
+            return
+        if not data:
+            return
+        try:
+            payload = json.loads(data)
+        except json.JSONDecodeError:
+            return
+        if isinstance(payload, dict):
+            if "id" not in payload and payload.get("type"):
+                payload = {
+                    "id": f"sse_{int(time.time() * 1000)}_{payload.get('type')}",
+                    "type": payload.get("type"),
+                    "payload": payload.get("payload") or payload,
+                }
+            self.buffer_polled_hub_events([payload])
+
+    @staticmethod
+    def emit_fetch_sse_frame_for_testing(es: Any, frame_text: str) -> None:
+        """Dispatch a raw SSE frame to an EventSource-like object.
+
+        Mirrors the Node fetch-fallback parser contract: ``data:`` frames go
+        through ``onmessage``; named events (e.g. ``close``) go through the
+        ``addEventListener`` registry via ``_dispatch_event``.
+        """
+        event = "message"
+        data = ""
+        for line in frame_text.split("\n"):
+            if line.startswith("event:"):
+                event = line[len("event:") :].strip() or "message"
+            elif line.startswith("data:"):
+                chunk = line[len("data:") :].strip()
+                data = f"{data}\n{chunk}".strip() if data else chunk
+        if event == "message":
+            if getattr(es, "onmessage", None) is not None:
+                es.onmessage({"type": "message", "data": data})
+            return
+        dispatch = getattr(es, "_dispatch_event", None)
+        if dispatch is not None:
+            dispatch(event, {"type": event, "data": data})
+
     def stream_url(self, *, node_id: str | None = None, duration_ms: int | None = None) -> str:
         """Build SSE URL (issue600: no host credentials in query)."""
         base = self._state.hub_url.rstrip("/")
@@ -410,13 +500,30 @@ class EventDeliveryManager:
         with contextlib.suppress(Exception):
             await client.aclose()
 
+    async def _drain_sse_frames(self, response: httpx.Response) -> None:
+        """Consume SSE lines, dispatching complete frames until stream end."""
+        frame_event: str | None = None
+        frame_data = ""
+        async for line in response.aiter_lines():
+            if not self._state.running:
+                break
+            if line == "":
+                self._dispatch_sse_frame(frame_event or "message", frame_data)
+                frame_event = None
+                frame_data = ""
+            elif line.startswith("event:"):
+                frame_event = line[len("event:") :].strip() or "message"
+            elif line.startswith("data:"):
+                chunk = line[len("data:") :].strip()
+                frame_data = f"{frame_data}\n{chunk}".strip() if frame_data else chunk
+
     async def _sse_loop(self) -> None:
         while self._state.running:
             nid = self._resolve_node_id()
             if not nid:
                 await asyncio.sleep(0.5)
                 continue
-            url = self.stream_url(node_id=nid)
+            url = self.stream_url(node_id=nid, duration_ms=SSE_STREAM_DURATION_MS)
             headers = self._resolve_headers()
             headers.setdefault("Accept", "text/event-stream")
             try:
@@ -426,49 +533,35 @@ class EventDeliveryManager:
                         if response.status_code >= 400:
                             self._state.sse_healthy = False
                             self._state.self_driving_poll_enabled = True
-                            await asyncio.sleep(1.0)
+                            self._grow_sse_reconnect_backoff()
+                            await asyncio.sleep(self._state.sse_reconnect_ms / 1000.0)
                             continue
                         self._state.sse_healthy = True
                         # Healthy SSE suppresses persistent long-poll.
                         self._state.self_driving_poll_enabled = False
-                        async for line in response.aiter_lines():
-                            if not self._state.running:
-                                break
-                            self._handle_sse_line(line)
+                        await self._drain_sse_frames(response)
                         # Stream ended (server closed / finite body) — fall back to poll.
                         self._state.sse_healthy = False
                         self._state.self_driving_poll_enabled = True
                         if not self._state.running:
                             return
-                        await asyncio.sleep(0.2)
+                        # A planned close (Hub max_duration rotation) reconnects at
+                        # the base interval; an unplanned end grows the backoff.
+                        if self.take_sse_planned_close():
+                            self.reset_sse_reconnect_backoff()
+                        else:
+                            self._grow_sse_reconnect_backoff()
+                        await asyncio.sleep(self._state.sse_reconnect_ms / 1000.0)
             except asyncio.CancelledError:
                 raise
             except Exception as exc:
                 logger.debug("[EventDelivery] SSE error: %s", exc)
                 self._state.sse_healthy = False
                 self._state.self_driving_poll_enabled = True
-                await asyncio.sleep(1.0)
+                self._grow_sse_reconnect_backoff()
+                await asyncio.sleep(self._state.sse_reconnect_ms / 1000.0)
             finally:
                 self._sse_client = None
-
-    def _handle_sse_line(self, line: str) -> None:
-        if not line.startswith("data:"):
-            return
-        raw = line[5:].strip()
-        if not raw:
-            return
-        try:
-            data = json.loads(raw)
-        except json.JSONDecodeError:
-            return
-        if isinstance(data, dict):
-            if "id" not in data and data.get("type"):
-                data = {
-                    "id": f"sse_{int(time.time() * 1000)}_{data.get('type')}",
-                    "type": data.get("type"),
-                    "payload": data.get("payload") or data,
-                }
-            self.buffer_polled_hub_events([data])
 
     async def _poll_loop(self) -> None:
         while self._state.running:

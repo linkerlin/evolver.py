@@ -32,11 +32,42 @@ from evolver.gep.git_ops import (
 )
 from evolver.gep.paths import get_workspace_root
 from evolver.gep.sanitize import full_leak_check
+from evolver.gep.validator.sandbox_executor import (
+    ALLOWED_EXECUTABLES,
+    assert_node_command_safe,
+    parse_command,
+)
 
 logger = logging.getLogger(__name__)
 
 # Additional paths that should never be modified by evolver itself
 _SELF_PROTECTED_PREFIXES = ("evolver/",)
+
+
+# ---------------------------------------------------------------------------
+# Validation-command gate
+# ---------------------------------------------------------------------------
+
+
+def is_validation_command_allowed(cmd: object) -> bool:
+    """Return whether a Hub-issued validation command can run in the sandbox.
+
+    The publish-side gate: must agree exactly with the validator-side gate
+    (``sandbox_executor.assert_node_command_safe`` + allowlist) so a gene can
+    never ship a validation command that dies in every validator sandbox
+    (evolver issues #607/#608/#609). Same contract as Node's
+    ``policyCheck.isValidationCommandAllowed``.
+    """
+    if not isinstance(cmd, str) or not cmd.strip():
+        return False
+    try:
+        executable, args = parse_command(cmd)
+        if executable not in ALLOWED_EXECUTABLES:
+            return False
+        assert_node_command_safe(executable, args)
+    except ValueError:
+        return False
+    return True
 
 
 # ---------------------------------------------------------------------------
@@ -220,8 +251,7 @@ def _check_secret_leaks(diff_text: str | None, violations: list[PolicyViolation]
                     rule="secret_leak",
                     severity="critical",
                     message=(
-                        f"Potential secret leak detected: {leak['type']} "
-                        f"at offset {leak['start']}"
+                        f"Potential secret leak detected: {leak['type']} at offset {leak['start']}"
                     ),
                 )
             )

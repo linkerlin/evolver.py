@@ -81,32 +81,50 @@ class TestApiCandidates:
     def test_candidates(self, monkeypatch, tmp_path):
         import evolver.webui.server.routes as routes_mod
 
-        monkeypatch.setattr(routes_mod, "load_genes", lambda: [{"id": "g1", "solidified": False}])
+        monkeypatch.setattr(
+            routes_mod,
+            "list_candidates",
+            lambda **kwargs: {"total": 1, "page": 1, "limit": 50, "items": [{"id": "g1"}]},
+        )
         resp = client.get("/api/candidates")
         assert resp.status_code == 200
-        assert len(resp.json()["candidates"]) == 1
+        assert resp.json()["total"] == 1
+        assert len(resp.json()["items"]) == 1
 
 
 class TestApiCalls:
     def test_calls(self, monkeypatch, tmp_path):
         import evolver.webui.server.routes as routes_mod
 
-        monkeypatch.setattr(routes_mod, "read_all_events", lambda: [{"type": "invoke", "id": "c1"}])
+        monkeypatch.setattr(
+            routes_mod,
+            "list_asset_calls",
+            lambda **kwargs: {"total": 1, "page": 1, "limit": 100, "items": [{"id": "c1"}]},
+        )
         resp = client.get("/api/calls")
         assert resp.status_code == 200
-        assert len(resp.json()["calls"]) == 1
+        assert resp.json()["total"] == 1
+        assert len(resp.json()["items"]) == 1
 
 
 class TestApiLineage:
     def test_lineage(self, monkeypatch, tmp_path):
         import evolver.webui.server.routes as routes_mod
 
-        monkeypatch.setattr(routes_mod, "load_genes", lambda: [{"id": "g1", "summary": "x"}])
-        monkeypatch.setattr(routes_mod, "load_capsules", lambda: [{"id": "c1", "gene_id": "g1"}])
-        monkeypatch.setattr(routes_mod, "read_all_events", lambda: [])
+        monkeypatch.setattr(
+            routes_mod,
+            "get_lineage",
+            lambda asset_id: {
+                "id": asset_id,
+                "genes": [{"id": "g1", "summary": "x"}],
+                "capsules": [{"id": "c1", "gene_id": "g1"}],
+                "events": [],
+                "calls": [],
+            },
+        )
         resp = client.get("/api/lineage?gene_id=g1")
         assert resp.status_code == 200
-        assert len(resp.json()["lineage"]) == 2
+        assert len(resp.json()["genes"]) + len(resp.json()["capsules"]) == 2
 
 
 class TestApiPersonality:

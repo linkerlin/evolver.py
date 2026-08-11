@@ -7,12 +7,16 @@ import respx
 from httpx import Response
 
 from evolver.gep.discovery import add_peer
+from evolver.gep.node_identity import reset_cached_node_id
 from evolver.gep.router import route_message
 
 
 class TestRouteMessage:
     async def test_local_delivery(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        # get_node_id() caches at module level — earlier tests in the session
+        # may have minted/persisted an id, which would shadow the env override.
         monkeypatch.setenv("A2A_NODE_ID", "self")
+        reset_cached_node_id()
         result = await route_message("self", {"type": "ping"})
         assert result["ok"] is True
         assert result.get("local") is True

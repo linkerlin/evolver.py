@@ -47,6 +47,56 @@ FORBIDDEN_PREFIXES = ("pip", "python -c", "python -m", "eval", "exec")
 
 
 # ---------------------------------------------------------------------------
+# Node validation-command gate (v1.94.0 parity)
+# ---------------------------------------------------------------------------
+# Hub-delivered validation commands are `node <script>` strings. The gates
+# below are the Python mirror of Node's sandboxExecutor.js + policyCheck.js:
+# both sides must agree on what a validator can actually run, otherwise genes
+# pass publish-side checks and then die in every validator sandbox (the
+# #607/#608/#609 dead-on-arrival regression).
+
+# Hard allowlist of executables the Hub-provided validation command may invoke.
+# npm/npx are arbitrary-code-execution-by-design (lifecycle scripts / remote
+# bin entries) and were removed in GHSA-jxh8-jh77-xh6g.
+ALLOWED_EXECUTABLES = frozenset({"node"})
+
+# Flags that turn `node` into an arbitrary-code evaluator, open an
+# UNAUTHENTICATED debug port, keep the process alive past its work, or
+# redirect module resolution. (`=value` forms are covered by splitting on '='.)
+BLOCKED_NODE_FLAGS = frozenset(
+    {
+        "-e",
+        "--eval",
+        "-p",
+        "--print",
+        "-i",
+        "--interactive",
+        "-r",
+        "--require",
+        "--loader",
+        "--experimental-loader",
+        "--import",
+        "--env-file",
+        "--inspect",
+        "--inspect-brk",
+        "--inspect-port",
+        "--inspect-publish-uid",
+        "--watch",
+        "--watch-path",
+        "--watch-preserve-output",
+        "--conditions",
+        "-C",
+    }
+)
+
+# Info-only flags: print and exit without executing user-supplied code. These
+# are the ONLY node invocations allowed to omit a script-file argument, because
+# the sandbox hands every command a fresh EMPTY directory that contains no
+# gene files (issues #607/#608/#609).
+SCRIPTLESS_NODE_FLAGS = frozenset({"--version", "-v", "--help", "-h"})
+
+
+# ---------------------------------------------------------------------------
 # Data model
 # ---------------------------------------------------------------------------
 
@@ -86,6 +136,64 @@ def _validate_command(command: list[str]) -> None:
     # Must be exactly: python <script_path> [args...]
     if len(command) < 2:
         raise ValueError("Command must include a script path")
+
+
+def parse_command(cmd_string: object) -> tuple[str, list[str]]:
+    """Parse a command string into ``(executable, args)``.
+
+    Supports single and double quotes. Does NOT expand env vars, globs,
+    redirects, pipes, or subshells. Raises ``ValueError`` on shell
+    metacharacters, unterminated quotes, or empty/non-string input.
+    """
+    if not isinstance(cmd_string, str):
+        raise ValueError(f"command must be a string, got {type(cmd_string).__name__}")
+    tokens: list[str] = []
+    buf: list[str] = []
+    quote: str | None = None
+    for ch in cmd_string:
+        if quote is not None:
+            if ch == quote:
+                quote = None
+            else:
+                buf.append(ch)
+            continue
+        if ch in ("'", '"'):
+            quote = ch
+            continue
+        if ch in (" ", "\t", "\n"):
+            if buf:
+                tokens.append("".join(buf))
+                buf = []
+            continue
+        if ch in "|&;><`$":
+            raise ValueError(f"shell metacharacter not allowed in command: {ch}")
+        buf.append(ch)
+    if quote is not None:
+        raise ValueError("unterminated quote in command")
+    if buf:
+        tokens.append("".join(buf))
+    if not tokens:
+        raise ValueError("empty command")
+    return tokens[0], tokens[1:]
+
+
+def assert_node_command_safe(executable: str, args: list[str]) -> None:
+    """Raise ``ValueError`` if a parsed node invocation must not be run.
+
+    A no-op for non-node executables (the allowlist is the gate for those).
+    """
+    if executable != "node":
+        return
+    for arg in args:
+        flag = arg.split("=", 1)[0]
+        if flag in BLOCKED_NODE_FLAGS:
+            raise ValueError(f"node flag not allowed in sandbox: {flag}")
+    first_positional = next((a for a in args if not a.startswith("-")), None)
+    has_scriptless = any(a.split("=", 1)[0] in SCRIPTLESS_NODE_FLAGS for a in args)
+    if first_positional is None and not has_scriptless:
+        raise ValueError(
+            "node requires a script file argument in sandbox (inline eval is not allowed)"
+        )
 
 
 def _validate_script(content: str) -> None:

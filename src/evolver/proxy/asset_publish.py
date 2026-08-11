@@ -8,6 +8,7 @@ Node ``proxy/index.js``. Used by ``POST /asset/submit`` and
 from __future__ import annotations
 
 import hashlib
+import json
 import os
 import re
 import secrets
@@ -16,6 +17,49 @@ from typing import Any
 from evolver.gep.content_hash import SCHEMA_VERSION, compute_asset_id
 
 _VALID_CATEGORIES = frozenset({"repair", "optimize", "innovate", "explore"})
+
+# Default validation for a published gene: `node --version` is sandbox-runnable
+# (info-only flags need no script file) and is the light command the distiller
+# prompts tell the model to emit. The old `node -e "..."` default was refused
+# by the hardened validator sandbox before spawn, so every gene published this
+# way was dead on arrival (issues #607/#608/#609).
+DEFAULT_LOOSE_ASSET_VALIDATION = ["node --version"]
+
+
+class PublishValidationError(ValueError):
+    """A caller-supplied validation command the sandbox cannot run.
+
+    Maps to HTTP 400 in the proxy routes (Node parity: ``{ statusCode: 400 }``).
+    """
+
+    status_code = 400
+
+
+def _resolve_loose_asset_validation(supplied: object) -> list[str]:
+    """Resolve the ``validation`` list for a published gene.
+
+    Falls back to the sandbox-runnable default when empty; rejects commands
+    the validator sandbox would refuse at publish time instead of shipping a
+    gene that is dead on arrival.
+    """
+    from evolver.gep.policy_check import is_validation_command_allowed  # noqa: PLC0415
+
+    raw_cmds = supplied if isinstance(supplied, list) else []
+    cmds = [str(c or "").strip() for c in raw_cmds if isinstance(c, str)]
+    cmds = [c for c in cmds if c]
+    if not cmds:
+        return list(DEFAULT_LOOSE_ASSET_VALIDATION)
+    rejected = [c for c in cmds if not is_validation_command_allowed(c)]
+    if rejected:
+        raise PublishValidationError(
+            "publish: validation command(s) the validator sandbox cannot run: "
+            f"{json.dumps(rejected, ensure_ascii=False)}. Use `node <script.js>` "
+            "(a script file the validation ships) or an info-only command like "
+            "`node --version`; inline `node -e`/`--eval`, "
+            "preload/loader/inspector/watch flags and shell operators are refused "
+            "before spawn."
+        )
+    return cmds
 
 
 def _as_text(raw: dict[str, Any]) -> str:
@@ -85,7 +129,7 @@ def build_bundle_from_loose_asset(  # noqa: PLR0915
             "signals_match": signals,
             "strategy": strategy,
             "constraints": {"max_files": 50, "forbidden_paths": []},
-            "validation": ['node -e "if (![1].length) process.exit(1)"'],
+            "validation": _resolve_loose_asset_validation(capsule.get("validation")),
         }
         gene["asset_id"] = compute_asset_id(gene)
         capsule = dict(capsule)
@@ -131,6 +175,7 @@ def build_bundle_from_loose_asset(  # noqa: PLR0915
             "publish: capsule content resolves to <50 chars; "
             "provide a longer `content` or `summary`."
         )
+    validation = _resolve_loose_asset_validation(r.get("validation"))
 
     gene: dict[str, Any] = {
         "type": "Gene",
@@ -145,11 +190,7 @@ def build_bundle_from_loose_asset(  # noqa: PLR0915
             if isinstance(r.get("constraints"), dict)
             else {"max_files": 50, "forbidden_paths": []}
         ),
-        "validation": (
-            list(r["validation"])
-            if isinstance(r.get("validation"), list) and r["validation"]
-            else ['node -e "if (![1].length) process.exit(1)"']
-        ),
+        "validation": validation,
     }
     gene["asset_id"] = compute_asset_id(gene)
 
@@ -168,6 +209,7 @@ def build_bundle_from_loose_asset(  # noqa: PLR0915
         "diff": "",
         "reused_asset_id": "",
         "env_fingerprint": {"platform": os.name},
+        "validation": validation,
     }
     capsule["asset_id"] = compute_asset_id(capsule)
     return gene, capsule

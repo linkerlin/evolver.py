@@ -16,7 +16,29 @@ from typing import Any, cast
 from filelock import FileLock
 
 from evolver.gep.content_hash import compute_asset_id, verify_asset_id
+from evolver.gep.context_routing_gene import FAMILY_GENE_IDS
 from evolver.gep.paths import get_bundled_gep_assets_dir, get_gep_assets_dir
+
+# Gene ids the upgrade pass may append into an older bundled seed (v1.94.0).
+BUNDLED_UPGRADE_GENE_IDS: tuple[str, ...] = tuple(FAMILY_GENE_IDS)
+
+# Ids that mark a store as "was an older bundled seed". Requires >=2 hits so
+# hand-authored stores are never touched (Node assetStore.js parity).
+PRIOR_BUNDLED_SEED_MARKER_IDS: frozenset[str] = frozenset(
+    {
+        "gene_gep_repair_from_errors",
+        "gene_gep_optimize_prompt_and_assets",
+        "gene_gep_innovate_from_opportunity",
+        "gene_gep_optimize_tool_usage",
+        "gene_tool_integrity",
+        "gene_distilled_s2g-env-vars",
+        "gene_publish_feishu_doc",
+        "gene_conventional_git_commit",
+        "gene_poll_bugbot_review",
+        "gene_gateway_timeout_recovery",
+        "gene_github_webhook_listener",
+    }
+)
 
 
 def _sqlite_enabled() -> bool:
@@ -219,11 +241,7 @@ def _merge_json_jsonl(
         if not isinstance(row, dict) or not row.get("id"):
             continue
         # Accept missing type for legacy rows; skip wrong type when present.
-        if (
-            type_name
-            and row.get("type") is not None
-            and row.get("type") != type_name
-        ):
+        if type_name and row.get("type") is not None and row.get("type") != type_name:
             continue
         if verify and not _maybe_verify_asset(row):
             continue
@@ -232,21 +250,77 @@ def _merge_json_jsonl(
 
 
 def ensure_genes_seeded() -> None:
-    """Copy bundled genes.seed.json → genes.json on first run only.
+    """Seed genes.json from the bundled seed, keeping the store user-owned.
 
-    Once genes.json exists it is user-owned and never re-seeded (upgrade-safe).
+    First run copies the shipped seed wholesale. Later upgrades append only
+    the bundled upgrade Gene family into stores that look like an older
+    bundled seed (>=2 prior seed marker ids present); empty scratch stores and
+    hand-authored one-off stores stay untouched (Node v1.94.0 parity).
     """
     target = genes_path()
-    if target.exists():
-        return
     seed = genes_seed_path()
     if not seed.exists():
         return
     try:
         target.parent.mkdir(parents=True, exist_ok=True)
-        target.write_bytes(seed.read_bytes())
+        if not target.exists():
+            target.write_bytes(seed.read_bytes())
+            return
+
+        before = read_json_if_exists(target) or {"version": 1, "genes": []}
+        before_genes = (
+            list(before.get("genes", [])) if isinstance(before.get("genes"), list) else []
+        )
+        if not should_append_bundled_upgrade_genes(before_genes):
+            return
+        seed_genes = read_json_if_exists(seed) or {"genes": []}
+        seed_genes_list = (
+            list(seed_genes.get("genes", [])) if isinstance(seed_genes.get("genes"), list) else []
+        )
+        before_ids = {str(g["id"]) for g in before_genes if isinstance(g, dict) and g.get("id")}
+        if not select_bundled_upgrade_genes(seed_genes_list, before_ids):
+            return
+
+        with with_file_lock(timeout=30.0, target_path=target):
+            current = read_json_if_exists(target) or {"version": 1, "genes": []}
+            existing = (
+                list(current.get("genes", [])) if isinstance(current.get("genes"), list) else []
+            )
+            if not should_append_bundled_upgrade_genes(existing):
+                return
+            existing_ids = {str(g["id"]) for g in existing if isinstance(g, dict) and g.get("id")}
+            missing = select_bundled_upgrade_genes(seed_genes_list, existing_ids)
+            if not missing:
+                return
+            atomic_write_json(
+                target,
+                {
+                    "version": int(current.get("version") or 1),
+                    "genes": existing + missing,
+                },
+            )
     except OSError:
         pass
+
+
+def should_append_bundled_upgrade_genes(existing_genes: list[dict[str, Any]]) -> bool:
+    """True when *existing_genes* look like an older bundled seed.
+
+    Requires >=2 distinct prior bundled seed marker ids; a hand-authored or
+    scratch store that merely shares one gene id stays untouched.
+    """
+    ids = {str(g["id"]) for g in existing_genes if isinstance(g, dict) and g.get("id")}
+    return len(ids & PRIOR_BUNDLED_SEED_MARKER_IDS) >= 2
+
+
+def select_bundled_upgrade_genes(
+    seed_genes: list[dict[str, Any]], existing_ids: set[str]
+) -> list[dict[str, Any]]:
+    """Pick bundled upgrade Genes from *seed_genes* that are missing locally."""
+    by_id = {str(g["id"]): g for g in seed_genes if isinstance(g, dict) and g.get("id")}
+    return [
+        by_id[gid] for gid in BUNDLED_UPGRADE_GENE_IDS if gid not in existing_ids and gid in by_id
+    ]
 
 
 def ensure_asset_files() -> None:

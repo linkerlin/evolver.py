@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import os
 import subprocess
+import os
 import sys
 from pathlib import Path
 
@@ -222,6 +223,14 @@ def test_solo_cli_routes_into_loop_and_cuts_services(tmp_path: Path) -> None:
     assert "[ValidatorDaemon] Started" not in combined
     assert "[ATP-AutoBuyer] Started" not in combined
     assert "ATP auto-spend is ON" not in combined
-    # Clean exit, no uncaught tracebacks.
-    assert proc.returncode == 0, combined
+    # Clean exit, no uncaught tracebacks. On Windows the loop deliberately
+    # exits 1 at the max-cycles handoff so an external supervisor can respawn
+    # (runner.py windows_default_skip) — that message is the clean path.
+    if (
+        os.name == "nt"
+        and "Windows default: exit 1 so external supervisor can respawn." in combined
+    ):
+        assert proc.returncode == 1, combined
+    else:
+        assert proc.returncode == 0, combined
     assert "Traceback (most recent call last)" not in combined, combined[:800]
