@@ -135,3 +135,37 @@ uv run mypy src                            # 型チェック（strict）
 ## ライセンス
 
 Apache-2.0 — 詳細は [LICENSE](LICENSE) を参照してください。
+
+## 実装ステータス
+
+> **2026-08-11（Sprint 20–21 完了）**: Node 版 **v1.94.0** との行動等価を宣言。
+> パッケージバージョン **1.94.0**。残りの深さギャップは [演进方案.md](演进方案.md)（中国語）参照。
+
+| サブシステム | 状態 | 備考 |
+|---|---|---|
+| GEP データ層 | ~90% | シード遺伝子 11+6（Claude コンテキストファミリー）; solidify 直接テスト + 学習ヘルパー |
+| GEP 認知 | ~80% | recall/reflection/distill; explore/curriculum フラグ制御 |
+| 進化パイプライン | ~90% | 7 フェーズ + Autopoiesis + ハードタイムアウト |
+| プロキシ基盤 | ~85% | マルチプロバイダ、トークン再利用、パス CLI フラグ、ポート **8081** |
+| ATP マーケット | ~65% | ローカル決済; Hub 商用 E2E は保留 |
+| IDE アダプタ | ~80% | ランタイムフック + py_compile 構文ガード |
+| Ops / Solo | ~85% | ライフサイクル、force-update、--solo |
+| WebUI | ~70% | SSR ダッシュボード + GitHub observer |
+| Validator | ~50% | サンドボックス基盤; 本番ネットワーク分離は保留 |
+| ドキュメント / リリース | ~90% | CHANGELOG + バージョン **1.94.0**; マルチ OS CI |
+
+## 主要な環境変数
+
+| 変数 | デフォルト | 用途 |
+|---|---|---|
+| `EVOLVER_HOME` | `~/.evomap` | ユーザー状態ディレクトリ |
+| `GEP_ASSETS_DIR` | `<ws>/.evolver/gep/` | GEP アセットストア |
+| `EVOLUTION_DIR` | `<ws>/memory/evolution/` | 進化状態 |
+| `A2A_HUB_URL` | `https://evomap.ai` | Hub エンドポイント |
+| `EVOLVE_STRATEGY` | `balanced` | 進化戦略 |
+| `EVOLVER_AUTOPOIESIS` | `1` | Autopoiesis フェーズ有効化 |
+| `EVOLVER_MEMORY_GRAPH_MAX_SIZE_MB` | `100` | memory_graph.jsonl ローテーション閾値 |
+| `EVOLVER_ANTI_ABUSE_TELEMETRY` | `heartbeat` | 反濫用テレメトリモード |
+| `EVOLVER_PROXY_PORT` | `8081` | プロキシポート |
+| `EVOLVER_NO_PARENT_GIT` | （なし） | `.git` 走査を無効化 |
+| `EVOLVER_ROLLBACK_MODE` | `stash` | ロールバック戦略 |

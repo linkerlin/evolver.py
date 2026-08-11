@@ -135,3 +135,37 @@ uv run mypy src                            # 타입 체크 (strict)
 ## 라이선스
 
 Apache-2.0 — 자세한 내용은 [LICENSE](LICENSE)를 참조하세요.
+
+## 구현 상태
+
+> **2026-08-11（Sprint 20–21 완료）**: Node 버전 **v1.94.0** 과의 동작 동등성 선언.
+> 패키지 버전 **1.94.0**. 잔여 깊이 격차는 [演进方案.md](演进方案.md)(중국어) 참조.
+
+| 하위 시스템 | 상태 | 비고 |
+|---|---|---|
+| GEP 데이터 레이어 | ~90% | 시드 유전자 11+6(Claude 컨텍스트 패밀리); solidify 직접 테스트 + 학습 헬퍼 |
+| GEP 인지 | ~80% | recall/reflection/distill; explore/curriculum 플래그 제어 |
+| 진화 파이프라인 | ~90% | 7 페이즈 + Autopoiesis + 하드 타임아웃 |
+| 프록시 인프라 | ~85% | 멀티 프로바이더, 토큰 재사용, 경로 CLI 플래그, 포트 **8081** |
+| ATP 마켓 | ~65% | 로컬 정산; Hub 상용 E2E 보류 |
+| IDE 어댑터 | ~80% | 런타임 훅 + py_compile 문법 가드 |
+| Ops / Solo | ~85% | 라이프사이클, force-update, --solo |
+| WebUI | ~70% | SSR 대시보드 + GitHub observer |
+| Validator | ~50% | 샌드박스 기반; 프로덕션 네트워크 격리 보류 |
+| 문서 / 릴리스 | ~90% | CHANGELOG + 버전 **1.94.0**; 멀티 OS CI |
+
+## 주요 환경 변수
+
+| 변수 | 기본값 | 용도 |
+|---|---|---|
+| `EVOLVER_HOME` | `~/.evomap` | 사용자 상태 디렉터리 |
+| `GEP_ASSETS_DIR` | `<ws>/.evolver/gep/` | GEP 에셋 저장소 |
+| `EVOLUTION_DIR` | `<ws>/memory/evolution/` | 진화 상태 |
+| `A2A_HUB_URL` | `https://evomap.ai` | Hub 엔드포인트 |
+| `EVOLVE_STRATEGY` | `balanced` | 진화 전략 |
+| `EVOLVER_AUTOPOIESIS` | `1` | Autopoiesis 페이즈 활성화 |
+| `EVOLVER_MEMORY_GRAPH_MAX_SIZE_MB` | `100` | memory_graph.jsonl 로테이션 임계값 |
+| `EVOLVER_ANTI_ABUSE_TELEMETRY` | `heartbeat` | 남용 방지 텔레메트리 모드 |
+| `EVOLVER_PROXY_PORT` | `8081` | 프록시 포트 |
+| `EVOLVER_NO_PARENT_GIT` | （없음） | `.git` 탐색 비활성화 |
+| `EVOLVER_ROLLBACK_MODE` | `stash` | 롤백 전략 |
