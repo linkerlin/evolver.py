@@ -92,12 +92,11 @@ def build_failure_reason(
 ) -> str:
     """Compose a human-readable failure reason; ``unknown`` when nothing failed."""
     parts: list[str] = []
-    violations = (
-        constraint_report.get("violations")
-        if isinstance(constraint_report, dict)
-        and isinstance(constraint_report.get("violations"), list)
-        else []
-    )
+    violations: list[Any] = []
+    if isinstance(constraint_report, dict):
+        violations_raw = constraint_report.get("violations")
+        if isinstance(violations_raw, list):
+            violations = violations_raw
     for v in violations:
         parts.append(f"constraint: {v}")
     results_raw = validation.get("results") if isinstance(validation, dict) else None
