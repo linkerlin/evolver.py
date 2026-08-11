@@ -22,14 +22,26 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
+from evolver.gep.canonical_identity_lock import process_is_alive
 from evolver.proxy.client_settings import (
     is_valid_reusable_proxy_token,
     read_reusable_client_proxy_token,
     sync_claude_proxy_settings,
 )
-from evolver.proxy.server.settings import load_settings, save_settings
 
 logger = logging.getLogger(__name__)
+
+
+def _server_settings() -> tuple[Any, Any]:
+    """Lazy server-settings accessors.
+
+    Breaks the import cycle token -> server/__init__ -> routes -> token:
+    importing ``evolver.proxy.server.settings`` pulls the ``server`` package
+    __init__, which pulls routes, which imports this module.
+    """
+    from evolver.proxy.server.settings import load_settings, save_settings
+
+    return load_settings, save_settings
 
 
 def mint_proxy_token() -> str:
@@ -38,6 +50,7 @@ def mint_proxy_token() -> str:
 
 
 def _proxy_block(settings: dict[str, Any] | None = None) -> dict[str, Any]:
+    load_settings, _save = _server_settings()
     data = settings if settings is not None else load_settings()
     proxy = data.get("proxy")
     return dict(proxy) if isinstance(proxy, dict) else {}
@@ -54,23 +67,20 @@ def _filter_previous_tokens(raw: Any) -> list[str]:
 
 
 def is_proxy_pid_stale(pid: Any) -> bool:
-    """True when *pid* is set but no longer running (ESRCH)."""
+    """True when *pid* is set but no longer running.
+
+    Uses the shared cross-platform liveness probe
+    (:func:`evolver.gep.canonical_identity_lock.process_is_alive`); an
+    indeterminate result is treated as live (never recycle a token for a
+    possibly-alive proxy).
+    """
     try:
         n = int(pid)
     except (TypeError, ValueError):
         return False
     if n <= 0:
         return False
-    try:
-        os.kill(n, 0)
-        return False  # process exists
-    except ProcessLookupError:
-        return True
-    except PermissionError:
-        # Exists but not ours — treat as live.
-        return False
-    except OSError:
-        return True
+    return process_is_alive(n) is False
 
 
 def is_stale_proxy(settings: dict[str, Any] | None = None) -> bool:
@@ -87,6 +97,7 @@ def clear_settings_proxy(*, force: bool = False) -> bool:
 
     Without *force*, refuses to clear when another live PID owns the block.
     """
+    load_settings, save_settings = _server_settings()
     data = load_settings()
     proxy = data.get("proxy")
     if not isinstance(proxy, dict):
@@ -168,6 +179,7 @@ def resolve_proxy_token(
     if prior_previous:
         proxy_block["previous_tokens"] = prior_previous
 
+    load_settings, save_settings = _server_settings()
     data = load_settings()
     data["proxy"] = proxy_block
     save_settings(data)

@@ -35,6 +35,7 @@ from typing import Any
 import psutil
 
 from evolver.config import MAX_SILENCE_MS
+from evolver.gep.canonical_identity_lock import process_is_alive
 from evolver.gep.paths import get_evolver_log_path, get_memory_dir, get_workspace_root
 
 # Cross-platform signal constant: Windows lacks SIGKILL.
@@ -144,12 +145,12 @@ def _list_evolver_processes() -> list[ProcessInfo]:
 
 
 def _is_pid_running(pid: int) -> bool:
-    """Send signal 0 to test whether *pid* exists without affecting it."""
-    try:
-        os.kill(pid, 0)
-    except (OSError, ProcessLookupError):
-        return False
-    return True
+    """Return whether *pid* exists.
+
+    Uses the shared cross-platform liveness probe; an indeterminate result is
+    treated as running (never skip a kill/restart for a possibly-alive pid).
+    """
+    return process_is_alive(pid) is not False
 
 
 def _sleep_ms(ms: float) -> None:
