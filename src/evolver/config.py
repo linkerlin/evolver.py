@@ -224,9 +224,7 @@ ACCEPTANCE_DELTA_EPSILON: Final = env_float("EVOLVER_ACCEPTANCE_DELTA_EPSILON", 
 MULTI_PROPOSE_ROUTES: Final = env_int("EVOLVER_MULTI_PROPOSE_ROUTES", 1)
 
 # --- Self-Harness external LLM templates (Sprint D) ---
-LLM_CALL_DIR: Final = env_str(
-    "EVOLVER_LLM_CALL_DIR", "<GEP_ASSETS_DIR>/llm_calls"
-)
+LLM_CALL_DIR: Final = env_str("EVOLVER_LLM_CALL_DIR", "<GEP_ASSETS_DIR>/llm_calls")
 
 MIN_PUBLISH_SCORE: Final = env_float("EVOLVER_MIN_PUBLISH_SCORE", 0.78)
 BROADCAST_SCORE_THRESHOLD: Final = 0.7

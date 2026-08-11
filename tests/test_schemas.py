@@ -7,6 +7,7 @@ from pathlib import Path
 import pytest
 
 from evolver.gep.prompt import build_gep_prompt
+from evolver.gep.schemas import capsule as capsule_mod
 from evolver.gep.schemas import (
     create_capsule,
     create_gene,
@@ -15,7 +16,6 @@ from evolver.gep.schemas import (
     validate_gene,
     validate_task,
 )
-from evolver.gep.schemas import capsule as capsule_mod
 from evolver.gep.schemas import gene as gene_mod
 from evolver.gep.schemas.protocol import (
     VALID_CATEGORIES,

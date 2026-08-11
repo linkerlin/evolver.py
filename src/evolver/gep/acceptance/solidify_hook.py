@@ -80,10 +80,7 @@ def gate_for_solidify(
         )
         should_persist = (
             t0_layer is not None
-            and (
-                result.reason == "t0_baseline_established"
-                or t0_layer.verdict == "improved"
-            )
+            and (result.reason == "t0_baseline_established" or t0_layer.verdict == "improved")
             and t0_layer.candidate_mean > 0
         )
         if should_persist and t0_layer is not None:

@@ -14,7 +14,6 @@ from fastapi.testclient import TestClient
 from evolver.webui.observer import github as gh
 from evolver.webui.server.routes import router
 
-
 GH_PR_319 = {
     "number": 319,
     "title": "refactor(proxy): centralize session payload validation",

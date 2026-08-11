@@ -29,7 +29,9 @@ class TestMultiProposePhase:
         assert result["cycle_id"] == "c1"  # ctx preserved
         # output is captured via capsys in the caller; here we assert no crash
 
-    def test_contract_content(self, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture) -> None:
+    def test_contract_content(
+        self, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture
+    ) -> None:
         monkeypatch.setattr("evolver.config.MULTI_PROPOSE_ROUTES", 2)
         ctx = {
             "cycle_id": "c1",

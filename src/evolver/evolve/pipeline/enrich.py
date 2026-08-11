@@ -5,6 +5,7 @@ Equivalent to evolver/src/evolve/pipeline/enrich.js.
 
 from __future__ import annotations
 
+import contextlib
 from typing import Any
 
 from evolver.gep.asset_store import read_recent_failed_capsules
@@ -19,10 +20,8 @@ async def enrich_phase(ctx: dict[str, Any]) -> dict[str, Any]:
     genes = ctx.get("genes", [])
 
     # Record signal snapshot
-    try:
+    with contextlib.suppress(Exception):
         record_signal_snapshot(signals=signals, run_id=ctx.get("run_id"))
-    except Exception:
-        pass
 
     ctx["observations"] = {
         "signals_count": len(signals),
@@ -66,7 +65,7 @@ async def enrich_phase(ctx: dict[str, Any]) -> dict[str, Any]:
 
     # Capability candidates (Sprint 15.5) — problem:*/action:* expansion + candidates
     try:
-        from evolver.gep.candidates import (  # noqa: PLC0415
+        from evolver.gep.candidates import (
             expand_signals,
             extract_capability_candidates,
             render_candidates_preview,

@@ -15,6 +15,7 @@ Design notes (Pythonic)
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import logging
 import time
 from collections.abc import Callable
@@ -143,10 +144,8 @@ class SyncEngine:
                 else:
                     delay = DEFAULT_POLL_INTERVAL_ACTIVE / 1000.0
 
-                try:
+                with contextlib.suppress(TimeoutError):
                     await asyncio.wait_for(
                         self._shutdown_event.wait(),
                         timeout=delay,
                     )
-                except TimeoutError:
-                    pass

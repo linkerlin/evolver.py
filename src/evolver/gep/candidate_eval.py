@@ -120,7 +120,7 @@ def _score_novelty(diff_text: str, recent_diffs: list[str]) -> float:
     for recent in recent_diffs:
         h2 = hashlib.sha256(recent.encode("utf-8")).digest()
         # Simple Jaccard-ish similarity on hash bytes
-        same = sum(1 for a, b in zip(h, h2) if a == b)
+        same = sum(1 for a, b in zip(h, h2, strict=False) if a == b)
         similarities.append(same / len(h))
     avg_sim = sum(similarities) / len(similarities)
     return 1.0 - avg_sim

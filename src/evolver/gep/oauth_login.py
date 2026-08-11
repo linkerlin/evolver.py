@@ -27,7 +27,7 @@ _keychain: WorkspaceKeychain | None = None
 
 
 def _get_keychain() -> WorkspaceKeychain:
-    global _keychain  # noqa: PLW0603
+    global _keychain
     if _keychain is None:
         _keychain = WorkspaceKeychain()
     return _keychain
@@ -143,7 +143,7 @@ def load_valid_oauth_access_token(
     Used by ``sync --dry-run`` OAuth-only auth (syncOAuthDryRun). Returns
     ``None`` when missing, unreadable, or past ``expires_at``.
     """
-    from evolver.gep.paths import get_evolver_home  # noqa: PLC0415
+    from evolver.gep.paths import get_evolver_home
 
     token_path = path or (get_evolver_home() / "oauth_token.json")
     try:

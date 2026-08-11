@@ -97,7 +97,7 @@ def compute_viability(ctx: dict[str, Any]) -> ViabilityReport:
     else:
         factors.append("no_genes")
     try:
-        from evolver.evolve.guards import check_repair_loop_circuit_breaker  # noqa: PLC0415
+        from evolver.evolve.guards import check_repair_loop_circuit_breaker
 
         breaker = check_repair_loop_circuit_breaker()
         if breaker.get("tripped"):
@@ -241,9 +241,7 @@ def format_autopoiesis_context(ctx: dict[str, Any]) -> str:
     if viability:
         score = float(viability.get("score", 0) or 0)
         parts.append(
-            "autopoiesis_viability: "
-            f"{viability.get('status', 'unknown')} "
-            f"score={score:.2f}"
+            f"autopoiesis_viability: {viability.get('status', 'unknown')} score={score:.2f}"
         )
     actions = homeostasis.get("actions") or []
     if actions:
@@ -253,9 +251,7 @@ def format_autopoiesis_context(ctx: dict[str, Any]) -> str:
             parts.append(str(item["message"]))
     if ctx.get("preflight_abort_recovery"):
         reason = ctx.get("preflight_abort_reason") or "previous cycle blocked"
-        parts.append(
-            f"preflight_abort_recovery: resolve blocker ({reason[:120]}) before innovate"
-        )
+        parts.append(f"preflight_abort_recovery: resolve blocker ({reason[:120]}) before innovate")
     return "\n".join(parts)
 
 
@@ -307,7 +303,7 @@ def capture_friction_from_ctx(report: SelfReport, ctx: dict[str, Any]) -> int:
             captured += 1
 
     try:
-        from evolver.evolve.guards import check_repair_loop_circuit_breaker  # noqa: PLC0415
+        from evolver.evolve.guards import check_repair_loop_circuit_breaker
 
         breaker = check_repair_loop_circuit_breaker()
         if breaker.get("tripped"):
@@ -400,7 +396,7 @@ def run_autopoiesis_tick(ctx: dict[str, Any]) -> dict[str, Any]:
     report = SelfReport()
     capture_friction_from_ctx(report, ctx)
     try:
-        from evolver.gep.memory_bridge import capture_memory_graph_bans_as_friction  # noqa: PLC0415
+        from evolver.gep.memory_bridge import capture_memory_graph_bans_as_friction
 
         capture_memory_graph_bans_as_friction(report, ctx.get("memory_advice"))
     except Exception:

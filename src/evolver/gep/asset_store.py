@@ -9,7 +9,7 @@ import json
 import os
 import tempfile
 from collections.abc import Iterator
-from contextlib import contextmanager
+from contextlib import contextmanager, suppress
 from pathlib import Path
 from typing import Any, cast
 
@@ -74,10 +74,8 @@ def atomic_write_json(path: Path, data: Any) -> None:
             f.write("\n")
         os.replace(tmp, path)
     except Exception:
-        try:
+        with suppress(OSError):
             os.unlink(tmp)
-        except OSError:
-            pass
         raise
 
 

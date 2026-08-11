@@ -38,9 +38,7 @@ _CHOKKEPOINT_IMPORT_RE = re.compile(
 _BARE_HTTPX_CLIENT_RE = re.compile(
     r"\bhttpx\.(AsyncClient|Client|request|get|post|put|delete|patch)\b"
 )
-_NATIVE_SOCKET_RE = re.compile(
-    r"\b(urllib\.request|requests\.(get|post)|aiohttp\.ClientSession)\b"
-)
+_NATIVE_SOCKET_RE = re.compile(r"\b(urllib\.request|requests\.(get|post)|aiohttp\.ClientSession)\b")
 
 
 def _read(rel: str) -> str:
@@ -126,7 +124,7 @@ def test_service_helper_delegates_to_hub_client() -> None:
 
 
 def test_hub_fetch_callable_surface() -> None:
-    from evolver.gep import hub_fetch as hf  # noqa: PLC0415
+    from evolver.gep import hub_fetch as hf
 
     assert callable(hf.hub_fetch)
     assert callable(hf.hub_get)

@@ -108,10 +108,7 @@ def is_critical_protected_path(rel_path: str) -> bool:
     p = normalize_rel_path(rel_path)
     if p in CRITICAL_PROTECTED_FILES:
         return True
-    for prefix in CRITICAL_PROTECTED_PREFIXES:
-        if p.startswith(prefix):
-            return True
-    return False
+    return any(p.startswith(prefix) for prefix in CRITICAL_PROTECTED_PREFIXES)
 
 
 def is_constraint_counted_path(rel_path: str) -> bool:

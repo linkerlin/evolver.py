@@ -92,16 +92,13 @@ def build_mutation(
     if category == "innovate" and high_risk_personality:
         category = "optimize"
         safety_note = "safety_downgrade_from_innovate"
-        trigger_signals = list(signals) + [safety_note]
+        trigger_signals = [*list(signals), safety_note]
     else:
         trigger_signals = list(signals)
 
     risk_level = "low"
     if allow_high_risk and category in ("innovate", "explore"):
-        if is_high_risk_mutation_allowed(personality_state):
-            risk_level = "high"
-        else:
-            risk_level = "medium"
+        risk_level = "high" if is_high_risk_mutation_allowed(personality_state) else "medium"
     if category == "repair":
         risk_level = "low"
 
@@ -139,9 +136,7 @@ def is_valid_mutation(m: Any) -> bool:
         return False
     if not isinstance(m.get("expected_effect"), str):
         return False
-    if m.get("risk_level") not in ("low", "medium", "high"):
-        return False
-    return True
+    return m.get("risk_level") in ("low", "medium", "high")
 
 
 def normalize_mutation(m: dict[str, Any] | None) -> Mutation:

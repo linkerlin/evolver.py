@@ -121,7 +121,8 @@ def infer_category(signals: list[str], text: str) -> str:
 
 
 def normalize_execution(input_data: dict[str, Any]) -> dict[str, Any]:
-    execution = input_data.get("execution") if isinstance(input_data.get("execution"), dict) else {}
+    execution_raw = input_data.get("execution")
+    execution = execution_raw if isinstance(execution_raw, dict) else {}
     validation = normalize_list(
         input_data.get("validation")
         or input_data.get("verification")
@@ -206,12 +207,14 @@ def build_strategy(input_data: dict[str, Any]) -> list[str]:
     return strategy[:10]
 
 
-META_SIGNALS: frozenset[str] = frozenset({
-    "conversation_distillation",
-    "gene_publish",
-    "agent_self_evolution",
-    "reusable_capability",
-})
+META_SIGNALS: frozenset[str] = frozenset(
+    {
+        "conversation_distillation",
+        "gene_publish",
+        "agent_self_evolution",
+        "reusable_capability",
+    }
+)
 
 META_VOCABULARY: re.Pattern[str] = re.compile(
     r"\b(gene|capsule|distill|reusable|evomap|evolver|self[- ]?evolution)\b|蒸馏|提炼|可复用|基因",
@@ -249,7 +252,11 @@ def _is_meta_only(input_data: dict[str, Any], normalized: dict[str, Any]) -> boo
 
     # Quick check: if no meta vocabulary in summary AND no user-provided strategy/artifacts,
     # then not meta-only (strategy may contain default items with meta vocabulary)
-    if not META_VOCABULARY.search(summary) and not user_provided_strategy and not user_provided_artifacts:
+    if (
+        not META_VOCABULARY.search(summary)
+        and not user_provided_strategy
+        and not user_provided_artifacts
+    ):
         return False
 
     full_text = f"{summary} {strategy_text} {artifacts_text}"
@@ -274,7 +281,11 @@ def _is_meta_only(input_data: dict[str, Any], normalized: dict[str, Any]) -> boo
 
     # Check 3: Caller-supplied signals are all meta
     caller_signals = input_data.get("signals", [])
-    if caller_signals and all(s in META_SIGNALS for s in caller_signals) and (meta_in_summary or meta_in_strategy):
+    if (
+        caller_signals
+        and all(s in META_SIGNALS for s in caller_signals)
+        and (meta_in_summary or meta_in_strategy)
+    ):
         return True
 
     # Check 4: High density of meta vocabulary in summary with no concrete evidence

@@ -1,5 +1,5 @@
 """Tests for evolver.adapters.scripts.session_start.
- 
+
 Covers the contracts ported from evolver-session-start.js:
   - belongs_to_workspace: workspace_id / cwd matching rules
   - _read_recent_workspace_entries: newest-first, scoped, limit

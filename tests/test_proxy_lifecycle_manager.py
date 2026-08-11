@@ -8,8 +8,8 @@ from pathlib import Path
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock
 
-import pytest
 import httpx
+import pytest
 
 from evolver.proxy.lifecycle.manager import (
     AuthError,
@@ -311,7 +311,7 @@ async def test_heartbeat_records_hub_unreachable_on_network_error(
     manager._state.node_id = "test-node"
     manager._state.node_secret = _VALID_SECRET
 
-    async def _connect_error(*args: Any, **kwargs: Any) -> None:  # noqa: ARG001
+    async def _connect_error(*args: Any, **kwargs: Any) -> None:
         raise httpx.ConnectError("connection refused")
 
     monkeypatch.setattr(httpx.AsyncClient, "post", _connect_error)

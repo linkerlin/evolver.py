@@ -30,28 +30,28 @@ from evolver.proxy.router.model_router import (
 )
 
 __all__ = [
-    # model_router
-    "get_upstream_preference",
-    "resolve_model",
-    "select_upstream_for_model",
-    "TIER_ORDER",
+    "BEDROCK_MODEL_MAP",
+    "CACHE_TTL_SECONDS",
     "DEFAULT_MODEL_FALLBACKS",
-    # features
-    "refresh_feature_flags",
-    "is_route_enabled",
-    "get_disabled_routes",
     "FEATURE_FLAG_REFRESH_INTERVAL",
+    "MAX_CACHE_SIZE",
+    "TIER_ORDER",
+    "cache_stats",
+    "canonicalize_for_bedrock",
     # cache_passthrough
     "get_cached",
-    "set_cache",
-    "invalidate_cache",
-    "cache_stats",
-    "CACHE_TTL_SECONDS",
-    "MAX_CACHE_SIZE",
+    "get_disabled_routes",
+    # model_router
+    "get_upstream_preference",
     # messages_route
     "handle_messages",
+    "invalidate_cache",
+    "is_route_enabled",
     "proxy_anthropic",
     "proxy_bedrock",
-    "canonicalize_for_bedrock",
-    "BEDROCK_MODEL_MAP",
+    # features
+    "refresh_feature_flags",
+    "resolve_model",
+    "select_upstream_for_model",
+    "set_cache",
 ]

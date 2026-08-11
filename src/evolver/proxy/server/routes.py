@@ -12,6 +12,7 @@ The token is read from ``~/.evomap/proxy-token`` or ``EVOMAP_PROXY_TOKEN``.
 
 from __future__ import annotations
 
+import contextlib
 import os
 import time
 import uuid
@@ -292,10 +293,8 @@ async def asset_fetch(
             "content_type": content_type,
         }
         if content_type.startswith("application/json"):
-            try:
+            with contextlib.suppress(Exception):
                 payload["json"] = resp.json()
-            except Exception:
-                pass
         return JSONResponse(payload)
     except httpx.TimeoutException:
         return JSONResponse({"ok": False, "error": "fetch_timeout"}, status_code=504)

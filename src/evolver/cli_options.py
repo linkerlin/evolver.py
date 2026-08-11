@@ -6,8 +6,9 @@ Behavioral port of ``evolver/cli-options.js`` (v1.93.0).
 from __future__ import annotations
 
 import os
+from collections.abc import Mapping, MutableMapping, Sequence
 from pathlib import Path
-from typing import Any, Mapping, MutableMapping, Sequence
+from typing import Any
 
 PROXY_PATH_FLAGS: dict[str, str] = {
     "--home": "home",
@@ -51,11 +52,7 @@ def parse_proxy_cli_path_options(
             index += 1
             value = str(argv[index]) if index < len(argv) else None
 
-        if (
-            not value
-            or not str(value).strip()
-            or (equals_index < 0 and str(value).startswith("-"))
-        ):
+        if not value or not str(value).strip() or (equals_index < 0 and str(value).startswith("-")):
             raise ValueError(f"{flag} requires a path")
 
         options[key] = str(Path(expand_home_path(str(value).strip(), env)).resolve())
@@ -101,7 +98,7 @@ def _load_dotenv_into(path: str, env: MutableMapping[str, str]) -> dict[str, Any
     resolved = str(Path(path).resolve())
     if env is os.environ:
         try:
-            from dotenv import load_dotenv  # noqa: PLC0415
+            from dotenv import load_dotenv
         except ImportError:
             return {"loaded": False, "error": "python-dotenv not installed"}
         result = load_dotenv(dotenv_path=resolved, override=False)

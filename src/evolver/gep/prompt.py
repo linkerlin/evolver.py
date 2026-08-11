@@ -18,7 +18,6 @@ from evolver.gep.schemas.protocol import (
     render_enum_list,
 )
 
-
 _PREVIEW_STRIP_FIELDS = {
     "diff",
     "compact_diff",
@@ -121,12 +120,12 @@ def build_gep_prompt(
         "",
         (
             f"- Mutation: {{ type: 'Mutation', id, category: \"{cat_enum}\", "
-            f"trigger_signals, target, expected_effect, risk_level: \"{risk_enum}\" }}"
+            f'trigger_signals, target, expected_effect, risk_level: "{risk_enum}" }}'
         ),
         "- PersonalityState: { rigor, creativity, risk_tolerance } in [0,1]",
         (
             "- EvolutionEvent: { type: 'EvolutionEvent', id, run_id, timestamp, "
-            f"gene_id, signals, outcome: {{ status: \"{outcome_enum}\", score }} }}"
+            f'gene_id, signals, outcome: {{ status: "{outcome_enum}", score }} }}'
         ),
         (
             f"- Gene: {{ type: 'Gene', id, category: \"{cat_enum}\", "
@@ -134,7 +133,7 @@ def build_gep_prompt(
         ),
         (
             "- Capsule: { type: 'Capsule', id, trigger, gene, summary, confidence, "
-            f"outcome: {{ status: \"{outcome_enum}\", score }}, "
+            f'outcome: {{ status: "{outcome_enum}", score }}, '
             f"execution_trace: [{{ step, stage: {{{trace_enum}}}, cmd, exit }}] }}"
         ),
         "",

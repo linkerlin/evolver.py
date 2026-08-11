@@ -71,9 +71,7 @@ class TestBuildPrompt:
         request = MultiProposerRequest(
             diagnosis_brief="brief",
             route_count=2,
-            already_generated=[
-                Proposal(slot_index=0, mechanism_family="prompt_instruction")
-            ],
+            already_generated=[Proposal(slot_index=0, mechanism_family="prompt_instruction")],
         )
         prompt = build_multi_proposer_prompt(request)
         assert "ALREADY GENERATED PROPOSALS" in prompt
@@ -104,9 +102,7 @@ class TestParseResponse:
 
     def test_duplicate_slot_raises(self) -> None:
         with pytest.raises(ValueError, match="duplicate slot_index"):
-            parse_multi_proposal_response(
-                _resp(_propose(0, "x"), _propose(0, "y")), route_count=2
-            )
+            parse_multi_proposal_response(_resp(_propose(0, "x"), _propose(0, "y")), route_count=2)
 
     def test_decline_without_reason_raises(self) -> None:
         with pytest.raises(ValueError, match="decline missing decline_reason"):
@@ -170,7 +166,5 @@ class TestGenerate:
 
     def test_decline_allowed_by_default(self) -> None:
         request = MultiProposerRequest(route_count=1, strict_noop=True)
-        proposals = generate_multi_proposals(
-            request, lambda _p: _resp(_decline(0))
-        )
+        proposals = generate_multi_proposals(request, lambda _p: _resp(_decline(0)))
         assert proposals[0].decision == "decline"

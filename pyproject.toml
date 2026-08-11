@@ -86,11 +86,24 @@ select = [
 ignore = [
     "PLR2004",  # magic value comparisons often useful in port
     "PLR0913",  # many arguments inherited from Node design
+    # Port-parity / design patterns (see AGENTS.md 坑阱篇 + 演进方案.md §11.4).
+    # These rules fire on the established Node-mirroring style across the whole
+    # tree; per-file-ignores below pre-date this global relaxation and remain as
+    # scoped documentation. Re-enabling any of these requires auditing every
+    # occurrence first.
+    "PLC0415",  # lazy imports: deliberate — avoid .env-load-order / circular-import / heavy-dep costs
+    "ARG001", "ARG002", "ARG005",  # unused args: Node API-parity signatures, fixtures, dispatch
+    "PLW0603",  # `global` for module-level caches (node_identity._cache etc.)
+    "PLR0911", "PLR0912", "PLR0915",  # many returns/branches/statements in Node-mirroring functions
+    "PLW2901",  # loop-var reuse in port parsers (e.g. `for line in lines`)
+    "SIM102", "SIM117",  # nested-if / multi-with refactors churn port readability
+    "RUF001",  # ambiguous CJK fullwidth punctuation is intentional in regex/commentary
 ]
 
 [tool.ruff.lint.per-file-ignores]
 # Self-contained HTML / embedded hook scripts — line breaks harm readability
 "src/evolver/webui/dashboard.py" = ["E501", "RUF001"]
+"src/evolver/webui/client/bootstrap.py" = ["E501"]
 "src/evolver/adapters/opencode.py" = ["E501"]
 "src/evolver/adapters/setup_hooks.py" = ["E501"]
 # Proxy route modules — lazy httpx import, nested async with, many error
@@ -127,6 +140,12 @@ ignore = [
 "src/evolver/adapters/scripts/session_start.py" = ["PLC0415"]
 "src/evolver/adapters/scripts/session_end.py" = ["PLC0415", "F841"]
 "src/evolver/adapters/scripts/memory_filtering.py" = ["ARG001", "PLR0912"]
+# Governance template packet — long literal template lines are content
+"tests/scripts/test_harness_governance_check.py" = ["E501"]
+# Test-file idioms: fakes with mutable class attrs, generic-exception
+# assertions, late fixture imports, regex match= patterns, JS-mirror method
+# names (EventSource addEventListener), fire-and-forget create_task
+"tests/**" = ["B017", "RUF012", "RUF006", "E402", "RUF043", "N802", "SIM108", "SIM115"]
 
 [tool.ruff.format]
 quote-style = "double"

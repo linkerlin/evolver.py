@@ -26,9 +26,7 @@ class TestPostCycleMergeHook:
     def test_single_accepted_candidate_no_merge(self) -> None:
         ctx = {
             "signals": ["log_error"],
-            "accepted_candidates": [
-                {"path": "m.py", "base": _BASE, "candidate": _cand_foo(10)}
-            ],
+            "accepted_candidates": [{"path": "m.py", "base": _BASE, "candidate": _cand_foo(10)}],
         }
         result = asyncio.run(run_post_cycle_hooks(dict(ctx)))
         assert "merged_candidates" not in result  # <2 → skip

@@ -35,9 +35,7 @@ class TestCheckForUpdates:
         assert result["updates"] == []
         assert result.get("feature_disabled") is True
 
-    def test_hub_poll_returns_updates(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-    ):
+    def test_hub_poll_returns_updates(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
         monkeypatch.setenv("EVOLVER_FF_ENABLE_SKILL_AUTO_UPDATE", "true")
         monkeypatch.setenv("A2A_HUB_URL", "https://hub.test")
         with respx.mock:
@@ -114,7 +112,9 @@ class TestApplyUpdate:
         assert result["ok"] is False
         assert result["error"] == "download_failed"
 
-    def test_zip_extract_replaces_skill_content(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    def test_zip_extract_replaces_skill_content(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ):
         import io
         import zipfile
 
@@ -250,7 +250,7 @@ class TestRollback:
         skill_dir.mkdir()
         (skill_dir / "SKILL.md").write_text("v1", encoding="utf-8")
         updater = create_skill_updater(skills_dir=tmp_path)
-        apply_result = updater.apply_update("my-skill")
+        updater.apply_update("my-skill")
         (skill_dir / "SKILL.md").write_text("v2", encoding="utf-8")
         result = updater.rollback("my-skill")
         assert result["ok"] is True

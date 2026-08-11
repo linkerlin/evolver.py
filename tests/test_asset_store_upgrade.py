@@ -52,7 +52,10 @@ def read_genes(target: Path) -> list[dict]:
 class TestSeedUpgrade:
     def test_first_run_copies_wholesale(self, iso: tuple[Path, Path]) -> None:
         seed_path, target = iso
-        seed_genes = [marker_gene("gene_gep_repair_from_errors"), marker_gene("gene_tool_integrity")]
+        seed_genes = [
+            marker_gene("gene_gep_repair_from_errors"),
+            marker_gene("gene_tool_integrity"),
+        ]
         write_seed(seed_path, seed_genes)
         asset_store.ensure_genes_seeded()
         assert [g["id"] for g in read_genes(target)] == [g["id"] for g in seed_genes]
@@ -65,7 +68,9 @@ class TestSeedUpgrade:
             {"type": "Gene", "id": "user_custom_gene", "category": "repair", "strategy": ["k"]},
         ]
         write_seed(seed_path, build_claude_context_gene_family())
-        target.write_text(json.dumps({"version": 1, "genes": old}, ensure_ascii=False), encoding="utf-8")
+        target.write_text(
+            json.dumps({"version": 1, "genes": old}, ensure_ascii=False), encoding="utf-8"
+        )
 
         asset_store.ensure_genes_seeded()
 
@@ -97,7 +102,9 @@ class TestSeedUpgrade:
         seed_path, target = iso
         old = [marker_gene("gene_gep_repair_from_errors"), marker_gene("gene_tool_integrity")]
         write_seed(seed_path, build_claude_context_gene_family())
-        target.write_text(json.dumps({"version": 1, "genes": old}, ensure_ascii=False), encoding="utf-8")
+        target.write_text(
+            json.dumps({"version": 1, "genes": old}, ensure_ascii=False), encoding="utf-8"
+        )
         asset_store.ensure_genes_seeded()
         asset_store.ensure_genes_seeded()
         ids = [g["id"] for g in read_genes(target)]

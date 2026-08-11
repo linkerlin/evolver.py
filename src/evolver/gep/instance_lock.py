@@ -9,7 +9,7 @@ from __future__ import annotations
 import os
 import time
 from collections.abc import Iterator
-from contextlib import contextmanager
+from contextlib import contextmanager, suppress
 from pathlib import Path
 
 from filelock import FileLock, Timeout
@@ -52,18 +52,14 @@ def acquire_instance_lock(
     lock = FileLock(str(path))
 
     if _is_lock_stale(path, max_age_sec):
-        try:
+        with suppress(OSError):
             path.unlink(missing_ok=True)
-        except OSError:
-            pass
 
     try:
         lock.acquire(blocking=blocking, timeout=timeout)
         # Update mtime so other processes see it as fresh
-        try:
+        with suppress(OSError):
             os.utime(path, None)
-        except OSError:
-            pass
         return True
     except Timeout:
         return False
@@ -73,14 +69,10 @@ def release_instance_lock() -> None:
     """Release the single-instance lock if held by this process."""
     path = _lock_path()
     lock = FileLock(str(path))
-    try:
+    with suppress(RuntimeError, OSError):
         lock.release()
-    except (RuntimeError, OSError):
-        pass
-    try:
+    with suppress(OSError):
         path.unlink(missing_ok=True)
-    except OSError:
-        pass
 
 
 @contextmanager

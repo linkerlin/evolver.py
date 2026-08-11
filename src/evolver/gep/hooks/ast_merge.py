@@ -49,9 +49,7 @@ def top_level_order(source: str) -> list[str]:
     """Top-level function names in source order."""
     tree = ast.parse(source)
     return [
-        node.name
-        for node in tree.body
-        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
+        node.name for node in tree.body if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
     ]
 
 
@@ -60,16 +58,12 @@ def _slice(source: str, start: int, end: int) -> str:
     return "\n".join(lines[start - 1 : end])
 
 
-def function_sources(
-    source: str, spans: dict[str, tuple[int, int]]
-) -> dict[str, str]:
+def function_sources(source: str, spans: dict[str, tuple[int, int]]) -> dict[str, str]:
     """Map function name → its source text (decorators included)."""
     return {name: _slice(source, start, end) for name, (start, end) in spans.items()}
 
 
-def _without_functions(
-    source: str, spans: dict[str, tuple[int, int]]
-) -> str:
+def _without_functions(source: str, spans: dict[str, tuple[int, int]]) -> str:
     """Source with all top-level function spans removed (blank line kept)."""
     lines = source.splitlines()
     covered: set[int] = set()
@@ -95,9 +89,7 @@ def changed_top_level_functions(base: str, candidate: str) -> list[str]:
 
     deleted = set(base_spans) - set(cand_spans)
     if deleted:
-        raise MergeConflictError(
-            f"deleted top-level function(s): {sorted(deleted)}"
-        )
+        raise MergeConflictError(f"deleted top-level function(s): {sorted(deleted)}")
 
     if _code_lines(_without_functions(base, base_spans)) != _code_lines(
         _without_functions(candidate, cand_spans)
@@ -107,9 +99,7 @@ def changed_top_level_functions(base: str, candidate: str) -> list[str]:
     base_funcs = function_sources(base, base_spans)
     cand_funcs = function_sources(candidate, cand_spans)
     return [
-        name
-        for name in base_funcs
-        if name in cand_funcs and base_funcs[name] != cand_funcs[name]
+        name for name in base_funcs if name in cand_funcs and base_funcs[name] != cand_funcs[name]
     ]
 
 
@@ -168,10 +158,7 @@ def merge_candidate_changes(base: str, candidates: list[str]) -> str:
         cand_spans = top_level_function_spans(candidate)
         cand_funcs = function_sources(candidate, cand_spans)
         cand_order = top_level_order(candidate)
-        new_names = [
-            name for name in cand_order
-            if name not in base_funcs
-        ]
+        new_names = [name for name in cand_order if name not in base_funcs]
 
         for name in [*changed, *new_names]:
             cand_src = cand_funcs[name]
@@ -182,9 +169,7 @@ def merge_candidate_changes(base: str, candidates: list[str]) -> str:
                 # Another candidate already added/changed this function.
                 if working_funcs[name] == cand_src:
                     continue  # identical edit already applied → no-op
-                raise MergeConflictError(
-                    f"conflicting edits to function {name!r}"
-                )
+                raise MergeConflictError(f"conflicting edits to function {name!r}")
             working = apply_function_definition(
                 working,
                 name,

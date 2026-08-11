@@ -41,14 +41,7 @@ def _cand_bar() -> str:
 
 class TestTopLevelFunctionSpans:
     def test_spans_include_decorators(self) -> None:
-        src = (
-            "@decorator\n"
-            "def f():\n"
-            "    return 1\n"
-            "\n"
-            "def g():\n"
-            "    return 2\n"
-        )
+        src = "@decorator\ndef f():\n    return 1\n\ndef g():\n    return 2\n"
         spans = top_level_function_spans(src)
         assert spans["f"] == (1, 3)  # decorator line included
         assert spans["g"] == (5, 6)
@@ -76,9 +69,7 @@ class TestChangedTopLevelFunctions:
         assert changed_top_level_functions(_BASE, _BASE) == []
 
     def test_deletion_rejected(self) -> None:
-        deleted = _BASE.replace(
-            "def bar():\n    return 2\n\n\n", ""
-        )
+        deleted = _BASE.replace("def bar():\n    return 2\n\n\n", "")
         with pytest.raises(MergeConflictError, match="deleted top-level function"):
             changed_top_level_functions(_BASE, deleted)
 
@@ -106,9 +97,7 @@ class TestApplyFunctionDefinition:
     def test_insert_new_function(self) -> None:
         added = _BASE + "\ndef baz():\n    return 3\n"
         baz_src = _slice_func(added, "baz")
-        result = apply_function_definition(
-            _BASE, "baz", baz_src, cand_order=top_level_order(added)
-        )
+        result = apply_function_definition(_BASE, "baz", baz_src, cand_order=top_level_order(added))
         assert "def baz():" in result
         # inserted after its predecessor (bar) in candidate order
         assert result.index("def bar") < result.index("def baz")

@@ -22,9 +22,7 @@ def _load_json(path: str) -> Any:
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(
-        description="Run a controlled evolution experiment"
-    )
+    parser = argparse.ArgumentParser(description="Run a controlled evolution experiment")
     parser.add_argument(
         "--tasks", required=True, help="Path to tasks JSON file (list of task dicts)"
     )
@@ -48,7 +46,7 @@ def main() -> None:
             print("Genes file must be a JSON list", file=sys.stderr)
             raise SystemExit(1)
 
-    from evolver.experiment.comparison import run_comparison  # noqa: PLC0415
+    from evolver.experiment.comparison import run_comparison
 
     result = run_comparison(tasks, genes=genes)
 

@@ -16,7 +16,6 @@ from evolver.proxy.trace.extractor import (
     hash_trace_value,
 )
 
-
 # ── hash_trace_value ────────────────────────────────────────────────
 
 
@@ -133,9 +132,7 @@ class TestExtractThinkingEffort:
         assert result == "budget:8192"
 
     def test_metadata_fallback(self) -> None:
-        assert extract_thinking_effort(
-            {"metadata": {"thinking_effort": "max"}}
-        ) == "max"
+        assert extract_thinking_effort({"metadata": {"thinking_effort": "max"}}) == "max"
 
     def test_empty(self) -> None:
         assert extract_thinking_effort({}) == ""
@@ -156,9 +153,7 @@ class TestExtractUsage:
         assert u["output_tokens"] == 80
 
     def test_gemini_shape(self) -> None:
-        u = extract_usage(
-            {"usageMetadata": {"promptTokenCount": 300, "candidatesTokenCount": 120}}
-        )
+        u = extract_usage({"usageMetadata": {"promptTokenCount": 300, "candidatesTokenCount": 120}})
         assert u["input_tokens"] == 300
         assert u["output_tokens"] == 120
 

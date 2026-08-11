@@ -71,9 +71,8 @@ def parse_yaml_frontmatter(content: str) -> dict[str, Any] | None:
                     if next_trimmed.startswith("- ") or next_trimmed == "---":
                         break
                     if not next_trimmed:
-                        if (
-                            index + 1 < len(yaml_lines)
-                            and yaml_lines[index + 1].strip().startswith("- ")
+                        if index + 1 < len(yaml_lines) and yaml_lines[index + 1].strip().startswith(
+                            "- "
                         ):
                             index += 1
                             break

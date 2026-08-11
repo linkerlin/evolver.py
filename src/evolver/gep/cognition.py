@@ -173,7 +173,8 @@ def post_solidify_hooks(
     task_id = last_run.get("curriculum_task_id")
     if task_id and is_enabled("enable_curriculum"):
         try:
-            from evolver.gep.curriculum import advance_level, record_attempt as curriculum_record
+            from evolver.gep.curriculum import advance_level
+            from evolver.gep.curriculum import record_attempt as curriculum_record
 
             curriculum_record(str(task_id), success=outcome.get("status") == "success")
             hooks["curriculum_level"] = advance_level()

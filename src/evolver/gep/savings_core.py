@@ -23,7 +23,7 @@ _EPSILON = 2.220446049250313e-16
 
 
 def _vendor_dir() -> Path:
-    import evolver  # noqa: PLC0415  (mirror paths.get_bundled_gep_assets_dir)
+    import evolver
 
     return Path(evolver.__file__).resolve().parent / "assets" / "conformance" / "savings-core"
 

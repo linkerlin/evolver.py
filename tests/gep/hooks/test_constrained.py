@@ -65,15 +65,11 @@ class TestValidateMechanismContract:
 
     def test_unknown_family_raises(self) -> None:
         with pytest.raises(MechanismContractError, match="unknown mechanism_family"):
-            validate_mechanism_contract(
-                mechanism_family="bogus", candidate_values={"x": 1}
-            )
+            validate_mechanism_contract(mechanism_family="bogus", candidate_values={"x": 1})
 
     def test_empty_values_raises(self) -> None:
         with pytest.raises(MechanismContractError, match="non-empty dict"):
-            validate_mechanism_contract(
-                mechanism_family="prompt_instruction", candidate_values={}
-            )
+            validate_mechanism_contract(mechanism_family="prompt_instruction", candidate_values={})
 
     def test_two_hooks_raises(self) -> None:
         with pytest.raises(MechanismContractError, match="exactly one hook"):
@@ -107,7 +103,7 @@ class TestApplyPromptInstruction:
             surface=_SOURCE,
         )
         assert '"new prompt"' in result
-        assert "return \"old prompt\"" not in result
+        assert 'return "old prompt"' not in result
         assert "def other():" in result  # untouched
         ast.parse(result)  # valid python
 

@@ -64,6 +64,7 @@ def _run_git(*args: str, cwd: Path | None = None) -> str:
             text=True,
             timeout=10,
             encoding="utf-8",
+            check=False,
             errors="replace",
         )
         if result.returncode == 0:

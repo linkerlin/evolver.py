@@ -442,9 +442,7 @@ class TestOpenAIE2E:
         monkeypatch.setenv("OPENAI_API_KEY", "sk-test")
         monkeypatch.setenv("OPENAI_BASE_URL", "https://api.openai.com")
         respx.post(url__regex=r".*/v1/chat/completions").mock(
-            return_value=httpx.Response(
-                429, json={"error": {"message": "rate limited"}}
-            )
+            return_value=httpx.Response(429, json={"error": {"message": "rate limited"}})
         )
         res = proxy_client.post(
             "/v1/a2a/v1/messages",

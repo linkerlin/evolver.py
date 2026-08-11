@@ -138,7 +138,9 @@ def test_asset_submissions(client: TestClient, monkeypatch: pytest.MonkeyPatch) 
     assert "submissions" in resp.json()
 
 
-def test_asset_fetch_requires_id_or_url(client: TestClient, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_asset_fetch_requires_id_or_url(
+    client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
     monkeypatch.setenv("EVOMAP_PROXY_TOKEN", "secret")
     resp = client.post(
         "/v1/a2a/asset/fetch",
@@ -149,9 +151,7 @@ def test_asset_fetch_requires_id_or_url(client: TestClient, monkeypatch: pytest.
     assert resp.json()["error"] == "missing_asset_id_or_url"
 
 
-def test_asset_fetch_hub_asset_id(
-    client: TestClient, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_asset_fetch_hub_asset_id(client: TestClient, monkeypatch: pytest.MonkeyPatch) -> None:
     from unittest.mock import AsyncMock
 
     monkeypatch.setenv("EVOMAP_PROXY_TOKEN", "secret")
@@ -194,15 +194,11 @@ def test_asset_search_local_fallback(
     assert any("repair" in r["name"] for r in data["results"])
 
 
-def test_asset_search_hub(
-    client: TestClient, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_asset_search_hub(client: TestClient, monkeypatch: pytest.MonkeyPatch) -> None:
     from unittest.mock import AsyncMock
 
     monkeypatch.setenv("EVOMAP_PROXY_TOKEN", "secret")
-    mock_search = AsyncMock(
-        return_value={"ok": True, "assets": [{"id": "g1", "type": "Gene"}]}
-    )
+    mock_search = AsyncMock(return_value={"ok": True, "assets": [{"id": "g1", "type": "Gene"}]})
     monkeypatch.setattr("evolver.gep.fetch.search_assets", mock_search)
     resp = client.post(
         "/v1/a2a/asset/search",
@@ -342,9 +338,7 @@ def test_atp_order_lifecycle(client: TestClient, monkeypatch: pytest.MonkeyPatch
 # ---------------------------------------------------------------------------
 
 
-def test_extensions_skills_updates(
-    client: TestClient, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_extensions_skills_updates(client: TestClient, monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("EVOMAP_PROXY_TOKEN", "secret")
     resp = client.get(
         "/v1/a2a/extensions/skills/updates",
@@ -356,9 +350,7 @@ def test_extensions_skills_updates(
     assert "updates" in data
 
 
-def test_extensions_skills_process(
-    client: TestClient, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_extensions_skills_process(client: TestClient, monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("EVOMAP_PROXY_TOKEN", "secret")
     resp = client.post(
         "/v1/a2a/extensions/skills/process",

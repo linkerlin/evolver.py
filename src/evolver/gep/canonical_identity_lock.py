@@ -58,7 +58,7 @@ def _sleep_ms(ms: float) -> None:
     time.sleep(ms / 1000.0)
 
 
-def process_is_alive(pid: int) -> bool | None:  # noqa: PLR0911
+def process_is_alive(pid: int) -> bool | None:
     """Return True if *pid* is alive, False if dead, None if indeterminate."""
     if not isinstance(pid, int) or pid <= 0:
         return None
@@ -85,7 +85,7 @@ def process_is_alive(pid: int) -> bool | None:  # noqa: PLR0911
         return None
 
 
-def _read_linux_process_start_identity(pid: int) -> str | None:  # noqa: PLR0911
+def _read_linux_process_start_identity(pid: int) -> str | None:
     try:
         boot_id = Path("/proc/sys/kernel/random/boot_id").read_text(encoding="utf-8").strip()
         stat_contents = Path(f"/proc/{pid}/stat").read_text(encoding="utf-8").strip()
@@ -295,9 +295,7 @@ def _current_abandoned_snapshot_matches(lock_dir: Path, expected: dict[str, Any]
     return _same_discovered_owner(_discover_owner(lock_dir), expected)
 
 
-def _remove_abandoned_lock(  # noqa: PLR0911, PLR0912
-    lock_dir: Path, expected: dict[str, Any]
-) -> bool:
+def _remove_abandoned_lock(lock_dir: Path, expected: dict[str, Any]) -> bool:
     if not _current_abandoned_snapshot_matches(lock_dir, expected):
         return False
 
@@ -350,7 +348,7 @@ def _remove_abandoned_lock(  # noqa: PLR0911, PLR0912
         return False
 
 
-def _abandoned_lock_snapshot(lock_dir: Path) -> dict[str, Any] | None:  # noqa: PLR0911
+def _abandoned_lock_snapshot(lock_dir: Path) -> dict[str, Any] | None:
     identity = _read_lock_identity(lock_dir)
     if not identity:
         return None

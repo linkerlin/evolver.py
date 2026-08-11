@@ -31,13 +31,9 @@ Design notes
 from __future__ import annotations
 
 import logging
-import os
-import signal
 import threading
 import time
-from collections import deque
 from dataclasses import dataclass, field
-from typing import Any
 
 from evolver.gep.validator.reporter import submit_report
 from evolver.gep.validator.sandbox_executor import SandboxResult, execute_in_sandbox
@@ -299,6 +295,5 @@ def start_validator() -> ValidatorDaemon | None:
 
 def stop_validator() -> None:
     """Stop the global validator daemon."""
-    global _default_daemon
     if _default_daemon is not None:
         _default_daemon.stop()

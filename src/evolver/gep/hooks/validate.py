@@ -42,14 +42,10 @@ def validate_mechanism_contract(
     Returns the hook names the candidate changes.
     """
     if not known_family(mechanism_family):
-        raise MechanismContractError(
-            f"unknown mechanism_family: {mechanism_family!r}"
-        )
+        raise MechanismContractError(f"unknown mechanism_family: {mechanism_family!r}")
 
     if not isinstance(candidate_values, dict) or not candidate_values:
-        raise MechanismContractError(
-            "candidate_values must be a non-empty dict of hook → value"
-        )
+        raise MechanismContractError("candidate_values must be a non-empty dict of hook → value")
     if len(candidate_values) > 1:
         raise MechanismContractError(
             f"exactly one hook per candidate, got {sorted(candidate_values)}"
@@ -60,8 +56,7 @@ def validate_mechanism_contract(
         raise MechanismContractError("hook name must be a non-empty string")
     if not hook_belongs_to_family(mechanism_family, hook):
         raise MechanismContractError(
-            f"hook {hook!r} does not belong to family "
-            f"{mechanism_family!r}"
+            f"hook {hook!r} does not belong to family {mechanism_family!r}"
         )
 
     if current_values is not None:

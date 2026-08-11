@@ -71,7 +71,7 @@ def resolve_npm_cmd_shim(
     return (sys.executable, [str(entry_abs), *forward_args])
 
 
-def _parse_shim_entry(bin_path: str | Path | None) -> Path | None:  # noqa: PLR0911
+def _parse_shim_entry(bin_path: str | Path | None) -> Path | None:
     """Parse an npm .cmd shim and return the resolved entry path, or None."""
     if not _is_windows() or not bin_path:
         return None

@@ -154,9 +154,7 @@ def content_tokens(text: Any) -> dict[str, set[str]]:
         if match.group(0).lower() not in _STOPWORDS
     }
     hard = {
-        match.group(0)
-        for match in _NUM_RE.finditer(value)
-        if not is_trivial_number(match.group(0))
+        match.group(0) for match in _NUM_RE.finditer(value) if not is_trivial_number(match.group(0))
     }
     for pattern in (_QUOTED_RE, _CODE_SPAN_RE):
         for match in pattern.finditer(value):
@@ -176,28 +174,18 @@ def public_hard_tokens(text: Any) -> set[str]:
     hard = set(content_tokens(value)["hard"])
     for match in _BARE_STRUCTURED_RE.finditer(value):
         token = match.group(0).strip("`'\".,:;()[]{}<>").lower()
-        if (
-            _alnum_count(token) >= 2
-            and token not in _STOPWORDS
-            and is_structured_literal(token)
-        ):
+        if _alnum_count(token) >= 2 and token not in _STOPWORDS and is_structured_literal(token):
             hard.add(token)
     return hard
 
 
 def _hidden_blob(execution: dict[str, Any] | None) -> str:
     source = execution or {}
-    parts = [
-        str(source[key])
-        for key in ("final_solution", "content_summary")
-        if source.get(key)
-    ]
+    parts = [str(source[key]) for key in ("final_solution", "content_summary") if source.get(key)]
     for trace in source.get("trace") or []:
         if isinstance(trace, dict):
             parts.extend(
-                str(trace[key])
-                for key in ("stdout_tail", "stderr_tail")
-                if trace.get(key)
+                str(trace[key]) for key in ("stdout_tail", "stderr_tail") if trace.get(key)
             )
     for rollout in source.get("rollouts") or []:
         if isinstance(rollout, dict) and rollout.get("feedback_tail"):

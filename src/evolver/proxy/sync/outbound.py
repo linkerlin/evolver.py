@@ -97,7 +97,7 @@ class OutboundSync:
             "created_at": m.created_at,
         }
 
-    async def flush(self, channel: str = "evomap-hub") -> dict[str, Any]:  # noqa: PLR0911, PLR0912, PLR0915
+    async def flush(self, channel: str = "evomap-hub") -> dict[str, Any]:
         """Flush one size-bounded batch of pending outbound messages."""
         result: dict[str, Any] = {
             "sent": 0,

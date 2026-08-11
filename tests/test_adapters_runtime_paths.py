@@ -36,18 +36,14 @@ class TestResolveProjectDir:
         monkeypatch.setenv("CLAUDE_PROJECT_DIR", str(tmp_path))
         assert runtime_paths.resolve_project_dir() == tmp_path
 
-    def test_cursor_takes_precedence(
-        self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
-    ) -> None:
+    def test_cursor_takes_precedence(self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
         other = tmp_path / "other"
         other.mkdir()
         monkeypatch.setenv("CURSOR_PROJECT_DIR", str(tmp_path))
         monkeypatch.setenv("CLAUDE_PROJECT_DIR", str(other))
         assert runtime_paths.resolve_project_dir() == tmp_path
 
-    def test_falls_back_to_cwd(
-        self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
-    ) -> None:
+    def test_falls_back_to_cwd(self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
         monkeypatch.delenv("CURSOR_PROJECT_DIR", raising=False)
         monkeypatch.delenv("CLAUDE_PROJECT_DIR", raising=False)
         monkeypatch.chdir(tmp_path)
@@ -87,9 +83,7 @@ class TestFsWorkspaceRoot:
         sub.mkdir()
         assert runtime_paths._fs_workspace_root(sub).resolve() == tmp_path.resolve()
 
-    def test_workspace_subdir(
-        self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
-    ) -> None:
+    def test_workspace_subdir(self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
         monkeypatch.delenv("OPENCLAW_WORKSPACE", raising=False)
         subprocess.run(["git", "init", "-q"], cwd=tmp_path, check=True)
         (tmp_path / "workspace").mkdir()
@@ -110,9 +104,7 @@ class TestFsWorkspaceRoot:
 
 
 class TestFsWorkspaceId:
-    def test_creates_and_returns_id(
-        self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
-    ) -> None:
+    def test_creates_and_returns_id(self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
         monkeypatch.delenv("OPENCLAW_WORKSPACE", raising=False)
         monkeypatch.delenv("EVOLVER_WORKSPACE_ID", raising=False)
         # No git → project dir itself.
@@ -123,9 +115,7 @@ class TestFsWorkspaceId:
         assert id_file.exists()
         assert id_file.read_text(encoding="utf-8").strip() == result
 
-    def test_id_stable_across_calls(
-        self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
-    ) -> None:
+    def test_id_stable_across_calls(self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
         monkeypatch.delenv("OPENCLAW_WORKSPACE", raising=False)
         monkeypatch.delenv("EVOLVER_WORKSPACE_ID", raising=False)
         first = runtime_paths._fs_workspace_id(tmp_path)
@@ -180,15 +170,11 @@ class TestFindMemoryGraph:
         monkeypatch.setenv("MEMORY_GRAPH_PATH", str(custom))
         assert runtime_paths.find_memory_graph(None) == custom
 
-    def test_user_fallback(
-        self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
-    ) -> None:
+    def test_user_fallback(self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
         monkeypatch.delenv("MEMORY_GRAPH_PATH", raising=False)
         monkeypatch.setattr(Path, "home", lambda: tmp_path)
         # Force evolver_root=None so the user fallback path is taken.
-        monkeypatch.setattr(
-            runtime_paths, "find_evolver_root", lambda: None
-        )
+        monkeypatch.setattr(runtime_paths, "find_evolver_root", lambda: None)
         result = runtime_paths.find_memory_graph(None)
         assert result == tmp_path / ".evolver" / "memory" / "evolution" / "memory_graph.jsonl"
         assert result.parent.exists()

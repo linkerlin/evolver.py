@@ -61,7 +61,6 @@ def set_cache(body: dict[str, Any], response: Any) -> None:
 
 def invalidate_cache() -> int:
     """Invalidate all cached entries. Returns count removed."""
-    global _cache
     count = len(_cache)
     _cache.clear()
     return count

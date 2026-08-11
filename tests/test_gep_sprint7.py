@@ -143,18 +143,14 @@ class TestMemoryGraphAdapter:
 
 
 class TestClaimNudge:
-    def test_build_nudge_with_tasks(
-        self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
-    ) -> None:
+    def test_build_nudge_with_tasks(self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
         monkeypatch.setattr(cn, "_nudge_state_path", lambda: tmp_path / "nudge.json")
         cn.reset_nudge()
         result = cn.build_nudge(3, {"task_id": "t1", "bounty": 5.0})
         assert result is not None
         assert "3 task(s)" in result
 
-    def test_no_nudge_for_zero_tasks(
-        self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
-    ) -> None:
+    def test_no_nudge_for_zero_tasks(self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
         monkeypatch.setattr(cn, "_nudge_state_path", lambda: tmp_path / "nudge.json")
         cn.reset_nudge()
         assert cn.build_nudge(0) is None

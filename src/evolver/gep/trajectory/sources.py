@@ -95,7 +95,7 @@ def detect_source(records: list[dict[str, Any]], filename: str = "") -> str | No
 # ---------------------------------------------------------------------------
 # Codex rollout
 # ---------------------------------------------------------------------------
-def build_codex_trajectory(records: list[dict[str, Any]], source_path: str = "") -> Trajectory:  # noqa: PLR0912, PLR0915
+def build_codex_trajectory(records: list[dict[str, Any]], source_path: str = "") -> Trajectory:
     session_id = ""
     task = ""
     system_prompt = ""
@@ -244,7 +244,7 @@ def build_codex_trajectory(records: list[dict[str, Any]], source_path: str = "")
 # ---------------------------------------------------------------------------
 # Claude Code transcript
 # ---------------------------------------------------------------------------
-def build_claude_code_trajectory(  # noqa: PLR0912, PLR0915
+def build_claude_code_trajectory(
     records: list[dict[str, Any]], source_path: str = ""
 ) -> Trajectory:
     session_id = _fallback_session_id(source_path)
@@ -396,7 +396,7 @@ def build_claude_code_trajectory(  # noqa: PLR0912, PLR0915
 # ---------------------------------------------------------------------------
 # Generic OpenAI messages JSONL (top-level role-tagged messages)
 # ---------------------------------------------------------------------------
-def build_generic_chat_trajectory(  # noqa: PLR0912, PLR0915
+def build_generic_chat_trajectory(
     records: list[dict[str, Any]], source_path: str = ""
 ) -> Trajectory:
     session_id = _fallback_session_id(source_path)
@@ -574,21 +574,21 @@ def _finalise(
     )
 
 
-def build_trajectory_from_session_log(  # noqa: PLR0911
+def build_trajectory_from_session_log(
     path: Path | str,
 ) -> Trajectory | None:
     """Classify and parse a session-log (JSONL/JSON/vscdb) into a trajectory."""
     p = Path(path)
     # Vendor path-based adapters (Slice 3b).
-    from evolver.gep.trajectory.cursor_vscdb import (  # noqa: PLC0415
+    from evolver.gep.trajectory.cursor_vscdb import (
         build_cursor_trajectories_from_vscdb,
         is_cursor_vscdb_path,
     )
-    from evolver.gep.trajectory.gemini_cli import (  # noqa: PLC0415
+    from evolver.gep.trajectory.gemini_cli import (
         build_gemini_cli_trajectory_from_path,
         is_gemini_cli_path,
     )
-    from evolver.gep.trajectory.kimi_wire import (  # noqa: PLC0415
+    from evolver.gep.trajectory.kimi_wire import (
         build_kimi_wire_trajectory_from_path,
         is_kimi_wire_path,
     )
@@ -610,7 +610,7 @@ def build_trajectory_from_session_log(  # noqa: PLR0911
         except (OSError, ValueError):
             return None
         if isinstance(whole, dict) and isinstance(whole.get("messages"), list):
-            from evolver.gep.trajectory.gemini_cli import (  # noqa: PLC0415
+            from evolver.gep.trajectory.gemini_cli import (
                 build_gemini_cli_trajectory,
             )
 

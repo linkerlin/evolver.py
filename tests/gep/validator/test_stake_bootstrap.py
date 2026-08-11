@@ -104,14 +104,16 @@ class TestWaitForConfirmation:
         assert result.status == "pending"
 
     def test_confirmed_during_poll(self, tmp_path):
-        with patch(
-            "evolver.gep.validator.stake_bootstrap._query_stake_status",
-            return_value={"status": "confirmed", "tx_hash": "abc"},
-        ):
-            with patch(
+        with (
+            patch(
+                "evolver.gep.validator.stake_bootstrap._query_stake_status",
+                return_value={"status": "confirmed", "tx_hash": "abc"},
+            ),
+            patch(
                 "evolver.gep.validator.stake_bootstrap._state_path",
                 return_value=tmp_path / "state.json",
-            ):
-                result = wait_for_confirmation("n1", poll_interval=0.1, max_attempts=2)
+            ),
+        ):
+            result = wait_for_confirmation("n1", poll_interval=0.1, max_attempts=2)
         assert result.status == "confirmed"
         assert result.tx_hash == "abc"

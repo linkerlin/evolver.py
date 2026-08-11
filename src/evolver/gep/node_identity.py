@@ -139,7 +139,7 @@ def _write_private_file(path: Path, content: str) -> None:
                 tmp.unlink(missing_ok=True)
 
 
-def persist_legacy_node_id(node_id: str | None) -> None:  # noqa: PLR0912
+def persist_legacy_node_id(node_id: str | None) -> None:
     """Write *node_id* to the shared legacy file (NODE_ID_RE gated).
 
     On canonical id transition (existing different valid id, or orphan
@@ -161,7 +161,7 @@ def persist_legacy_node_id(node_id: str | None) -> None:  # noqa: PLR0912
         release = None
         try:
             if file == canonical:
-                from evolver.gep.canonical_identity_lock import (  # noqa: PLC0415
+                from evolver.gep.canonical_identity_lock import (
                     acquire_canonical_identity_lock,
                 )
 
@@ -352,9 +352,9 @@ def _hub_rotate_tuple(
     }
 
 
-def _claim_node_id_exclusive(node_id: str) -> str:  # noqa: PLR0915
+def _claim_node_id_exclusive(node_id: str) -> str:
     """Claim *node_id* under the identity lock; adopt on-disk winner on race."""
-    from evolver.gep.canonical_identity_lock import (  # noqa: PLC0415
+    from evolver.gep.canonical_identity_lock import (
         CanonicalIdentityLockError,
         acquire_canonical_identity_lock,
     )
@@ -545,9 +545,9 @@ def resolve_identity_tuple(*, create: bool = True) -> dict[str, Any]:
     mailbox_tuple: dict[str, Any] | None = None
     if node_id and mailbox.get("node_id") == node_id:
         mailbox_tuple = _hub_rotate_tuple(
-            mailbox.get("secret"),  # type: ignore[arg-type]
-            mailbox.get("version"),  # type: ignore[arg-type]
-            mailbox.get("source"),  # type: ignore[arg-type]
+            mailbox.get("secret"),
+            mailbox.get("version"),
+            mailbox.get("source"),
             "mailbox",
         )
     elif node_id is None and mailbox.get("node_id"):
@@ -555,9 +555,9 @@ def resolve_identity_tuple(*, create: bool = True) -> dict[str, Any]:
         mailbox_tuple = None
 
     persisted_tuple = _hub_rotate_tuple(
-        persisted.get("secret"),  # type: ignore[arg-type]
-        persisted.get("version"),  # type: ignore[arg-type]
-        persisted.get("source"),  # type: ignore[arg-type]
+        persisted.get("secret"),
+        persisted.get("version"),
+        persisted.get("source"),
         "persisted",
     )
 
@@ -568,16 +568,16 @@ def resolve_identity_tuple(*, create: bool = True) -> dict[str, Any]:
 
     if selected:
         secret = str(selected["secret"])
-        version = selected.get("version")  # type: ignore[assignment]
+        version = selected.get("version")
     elif env_secret and _is_valid_node_secret(env_secret):
         secret = env_secret
         version = env_version
     elif persisted.get("secret"):
         secret = str(persisted["secret"])
-        version = persisted.get("version")  # type: ignore[assignment]
+        version = persisted.get("version")
     elif mailbox.get("secret") and (node_id is None or mailbox.get("node_id") == node_id):
         secret = str(mailbox["secret"])
-        version = mailbox.get("version")  # type: ignore[assignment]
+        version = mailbox.get("version")
 
     return {
         "node_id": node_id,

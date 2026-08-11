@@ -73,7 +73,6 @@ def create_file_trigger(payload: dict[str, Any] | str | None = None) -> dict[str
 
 def check_http_trigger_allowed() -> bool:
     """Check if enough time has passed since the last HTTP trigger."""
-    global _last_trigger_time
     return time.time() - _last_trigger_time >= TRIGGER_COOLDOWN_SECONDS
 
 

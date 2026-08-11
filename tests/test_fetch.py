@@ -33,7 +33,7 @@ async def test_search_assets_no_hub(monkeypatch: pytest.MonkeyPatch) -> None:
 async def test_download_asset_success(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("A2A_HUB_URL", "https://mock.hub")
     asset = {"id": "g1", "type": "Gene", "category": "repair"}
-    route = respx.post("https://mock.hub/v1/a2a/assets").mock(
+    respx.post("https://mock.hub/v1/a2a/assets").mock(
         return_value=Response(200, json={"asset": asset})
     )
     # Use a non-sha256 id to skip hash verification
@@ -46,7 +46,7 @@ async def test_download_asset_success(monkeypatch: pytest.MonkeyPatch) -> None:
 async def test_download_asset_hash_mismatch(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("A2A_HUB_URL", "https://mock.hub")
     asset = {"id": "g1", "type": "Gene"}
-    route = respx.post("https://mock.hub/v1/a2a/assets").mock(
+    respx.post("https://mock.hub/v1/a2a/assets").mock(
         return_value=Response(200, json={"asset": asset})
     )
     result = await fetch.download_asset(
@@ -81,7 +81,7 @@ def test_install_capsule(tmp_path, monkeypatch: pytest.MonkeyPatch) -> None:
 @respx.mock
 async def test_fetch_and_install_dry_run(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("A2A_HUB_URL", "https://mock.hub")
-    route = respx.post("https://mock.hub/v1/a2a/search").mock(
+    respx.post("https://mock.hub/v1/a2a/search").mock(
         return_value=Response(
             200,
             json={

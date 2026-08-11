@@ -97,9 +97,7 @@ def _read_flags_json(path: Path) -> dict[str, bool]:
     try:
         raw = json.loads(path.read_text(encoding="utf-8"))
         if isinstance(raw, dict):
-            return {
-                k: bool(v) for k, v in raw.items() if isinstance(v, (bool, int))
-            }
+            return {k: bool(v) for k, v in raw.items() if isinstance(v, (bool, int))}
     except (OSError, json.JSONDecodeError) as exc:
         logger.warning("[FeatureFlags] Failed to read %s: %s", path, exc)
     return {}

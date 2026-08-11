@@ -27,9 +27,21 @@ from evolver.gep import mailbox_transport
 class TestCliSubcommands:
     def test_all_commands_in_map(self) -> None:
         expected = {
-            "status", "enable", "disable", "buy", "orders",
-            "tasks", "claim", "deliver", "settle", "dispute",
-            "publish", "policy", "proofs", "tier", "order",
+            "status",
+            "enable",
+            "disable",
+            "buy",
+            "orders",
+            "tasks",
+            "claim",
+            "deliver",
+            "settle",
+            "dispute",
+            "publish",
+            "policy",
+            "proofs",
+            "tier",
+            "order",
         }
         assert expected == set(cli._COMMAND_MAP.keys())
 
@@ -135,11 +147,9 @@ class TestTaskPickup:
         assert "capability_match" in score
         assert "eligible" in score
 
-    def test_forget_clears_ledger(
-        self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
-    ) -> None:
+    def test_forget_clears_ledger(self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
         monkeypatch.setenv("MEMORY_DIR", str(tmp_path / "memory"))
-        import evolver.gep.paths as paths_mod  # noqa: PLC0415
+        import evolver.gep.paths as paths_mod
 
         monkeypatch.setattr(paths_mod, "get_memory_dir", lambda: tmp_path / "memory")
         forget("test-task-id")

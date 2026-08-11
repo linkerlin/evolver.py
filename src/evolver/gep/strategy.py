@@ -100,9 +100,8 @@ def resolve_strategy(ctx: dict[str, Any] | None = None) -> Strategy:
 
     # Saturation signals override explicit strategy unless explicit is set and not auto
     saturation_signals = {"evolution_saturation", "force_steady_state"}
-    if saturation_signals.intersection(signals):
-        if env_strategy in ("", "auto"):
-            return STRATEGIES["steady-state"]
+    if saturation_signals.intersection(signals) and env_strategy in ("", "auto"):
+        return STRATEGIES["steady-state"]
 
     # Force innovation env var
     if _force_innovation_env() and env_strategy in ("", "auto"):

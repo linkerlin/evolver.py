@@ -61,9 +61,7 @@ def _parse_args(raw: Any) -> Any:
     return raw
 
 
-def build_kimi_wire_trajectory(  # noqa: PLR0912, PLR0915
-    chunk: str, *, source_path: str = ""
-) -> Trajectory:
+def build_kimi_wire_trajectory(chunk: str, *, source_path: str = "") -> Trajectory:
     task = ""
     turns: list[Turn] = []
     has_test = False
@@ -104,7 +102,8 @@ def build_kimi_wire_trajectory(  # noqa: PLR0912, PLR0915
                         )
                     )
             else:
-                text = payload.get("text") if isinstance(payload.get("text"), str) else ""
+                text_raw = payload.get("text")
+                text = text_raw if isinstance(text_raw, str) else ""
                 if text:
                     turns.append(
                         Turn(
@@ -117,7 +116,8 @@ def build_kimi_wire_trajectory(  # noqa: PLR0912, PLR0915
             continue
 
         if mtype == "ToolCall":
-            fn = payload.get("function") if isinstance(payload.get("function"), dict) else {}
+            fn_raw = payload.get("function")
+            fn = fn_raw if isinstance(fn_raw, dict) else {}
             name = str(fn.get("name") or payload.get("name") or "")
             tool_id = str(payload["id"]) if payload.get("id") else None
             args_raw = fn.get("arguments")
@@ -153,9 +153,8 @@ def build_kimi_wire_trajectory(  # noqa: PLR0912, PLR0915
             continue
 
         if mtype == "ToolResult":
-            ret = (
-                payload.get("return_value") if isinstance(payload.get("return_value"), dict) else {}
-            )
+            ret_raw = payload.get("return_value")
+            ret = ret_raw if isinstance(ret_raw, dict) else {}
             output = ret.get("output")
             if not isinstance(output, str):
                 output = json.dumps(output if output is not None else ret, ensure_ascii=False)

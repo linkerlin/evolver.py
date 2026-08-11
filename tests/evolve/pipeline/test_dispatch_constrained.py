@@ -51,9 +51,7 @@ class TestDispatchConstrainedHook:
     def test_unknown_family_noop(self, monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.setenv("EVOLVER_FF_ENABLE_CONSTRAINED_GENES", "1")
         result = asyncio.run(
-            dispatch_phase(
-                _ctx({"id": "g2", "mechanism_family": "bogus", "target_hook": "x"})
-            )
+            dispatch_phase(_ctx({"id": "g2", "mechanism_family": "bogus", "target_hook": "x"}))
         )
         assert "constrained_hook_block" not in result
 

@@ -1,7 +1,7 @@
 """Tests for evolver.gep.cli_contracts (reuse.v1 / publish.v1)."""
 
 # Loop-local closures mutate dict flags; ARG002 unused store args match Node fixtures.
-# ruff: noqa: B023, ARG002, E501
+# ruff: noqa: B023
 
 from __future__ import annotations
 
@@ -629,9 +629,7 @@ async def test_publish_rejects_missing_json_and_positional_before_hub() -> None:
                 "hub_url": "https://hub.test",
                 "node_secret": "s" * 64,
                 "a2a": _fake_a2a(),
-                "asset_store": _FakeStore(
-                    [_gene(asset_id="g"), _capsule(asset_id="c", gene="g")]
-                ),
+                "asset_store": _FakeStore([_gene(asset_id="g"), _capsule(asset_id="c", gene="g")]),
                 "validate": _validate,
                 "publish": _publish,
             }
@@ -695,7 +693,9 @@ async def test_publish_actual_fail_closes_empty_validate_before_publish() -> Non
         buf, deps = _capture()
         published = {"called": False}
 
-        async def _validate(_message: dict[str, Any], resp: dict[str, Any] = response) -> dict[str, Any]:
+        async def _validate(
+            _message: dict[str, Any], resp: dict[str, Any] = response
+        ) -> dict[str, Any]:
             return resp
 
         async def _publish(_message: dict[str, Any]) -> dict[str, Any]:
@@ -707,9 +707,7 @@ async def test_publish_actual_fail_closes_empty_validate_before_publish() -> Non
                 "hub_url": "https://hub.test",
                 "node_secret": "s" * 64,
                 "a2a": _fake_a2a(),
-                "asset_store": _FakeStore(
-                    [_gene(asset_id="g"), _capsule(asset_id="c", gene="g")]
-                ),
+                "asset_store": _FakeStore([_gene(asset_id="g"), _capsule(asset_id="c", gene="g")]),
                 "validate": _validate,
                 "publish": _publish,
             }
@@ -785,9 +783,7 @@ async def test_publish_validate_failures_map_status_to_contract_reasons() -> Non
     for status, reason, retryable in cases:
         buf, deps = _capture()
 
-        async def _validate(
-            _message: dict[str, Any], st: int = status
-        ) -> dict[str, Any]:
+        async def _validate(_message: dict[str, Any], st: int = status) -> dict[str, Any]:
             return {
                 "ok": False,
                 "status": st,
@@ -799,9 +795,7 @@ async def test_publish_validate_failures_map_status_to_contract_reasons() -> Non
                 "hub_url": "https://hub.test",
                 "node_secret": "s" * 64,
                 "a2a": _fake_a2a(),
-                "asset_store": _FakeStore(
-                    [_gene(asset_id="g"), _capsule(asset_id="c", gene="g")]
-                ),
+                "asset_store": _FakeStore([_gene(asset_id="g"), _capsule(asset_id="c", gene="g")]),
                 "validate": _validate,
                 "publish": lambda _m: (_ for _ in ()).throw(AssertionError("no publish")),
             }
@@ -818,9 +812,7 @@ async def test_publish_preserves_stable_hub_capability_reasons() -> None:
     for reason in ("unsupported", "cli_unavailable"):
         dry_buf, dry_deps = _capture()
 
-        async def _validate_dry(
-            _message: dict[str, Any], r: str = reason
-        ) -> dict[str, Any]:
+        async def _validate_dry(_message: dict[str, Any], r: str = reason) -> dict[str, Any]:
             return {"ok": False, "status": 400, "reason": r, "body": {"payload": {"reason": r}}}
 
         dry_deps.update(
@@ -828,9 +820,7 @@ async def test_publish_preserves_stable_hub_capability_reasons() -> None:
                 "hub_url": "https://hub.test",
                 "node_secret": "s" * 64,
                 "a2a": _fake_a2a(),
-                "asset_store": _FakeStore(
-                    [_gene(asset_id="g"), _capsule(asset_id="c", gene="g")]
-                ),
+                "asset_store": _FakeStore([_gene(asset_id="g"), _capsule(asset_id="c", gene="g")]),
                 "validate": _validate_dry,
             }
         )
@@ -844,9 +834,7 @@ async def test_publish_preserves_stable_hub_capability_reasons() -> None:
 
         actual_buf, actual_deps = _capture()
 
-        async def _validate_actual(
-            _message: dict[str, Any], r: str = reason
-        ) -> dict[str, Any]:
+        async def _validate_actual(_message: dict[str, Any], r: str = reason) -> dict[str, Any]:
             return {"ok": False, "status": 404, "body": {"payload": {"reason": r}}}
 
         actual_deps.update(
@@ -854,15 +842,11 @@ async def test_publish_preserves_stable_hub_capability_reasons() -> None:
                 "hub_url": "https://hub.test",
                 "node_secret": "s" * 64,
                 "a2a": _fake_a2a(),
-                "asset_store": _FakeStore(
-                    [_gene(asset_id="g"), _capsule(asset_id="c", gene="g")]
-                ),
+                "asset_store": _FakeStore([_gene(asset_id="g"), _capsule(asset_id="c", gene="g")]),
                 "validate": _validate_actual,
             }
         )
-        actual_code = await run_publish_command(
-            ["--asset=g", "--asset=c", "--json"], actual_deps
-        )
+        actual_code = await run_publish_command(["--asset=g", "--asset=c", "--json"], actual_deps)
         assert actual_code == 1
         assert json.loads(actual_buf.getvalue())["reason"] == reason
 
@@ -965,9 +949,7 @@ async def test_publish_rejects_oauth_only_for_node_scoped_endpoints() -> None:
                 "hub_url": "https://hub.test",
                 "node_secret": None,
                 "a2a": _OauthOnly(),
-                "asset_store": _FakeStore(
-                    [_gene(asset_id="g"), _capsule(asset_id="c", gene="g")]
-                ),
+                "asset_store": _FakeStore([_gene(asset_id="g"), _capsule(asset_id="c", gene="g")]),
                 "hub_fetch": _hub_fetch,
             }
         )
@@ -1313,9 +1295,7 @@ async def test_publish_redacts_secret_shaped_keys_and_nested_values() -> None:
         }
     )
 
-    code = await run_publish_command(
-        ["--asset=g", "--asset=c", "--dry-run", "--json"], deps
-    )
+    code = await run_publish_command(["--asset=g", "--asset=c", "--dry-run", "--json"], deps)
     payload = json.loads(buf.getvalue())
     text = json.dumps(payload)
     metadata = payload["payload"]["assets"][0]["metadata"]
@@ -1350,9 +1330,7 @@ async def test_publish_redacted_payload_remains_clean_and_validates() -> None:
             "validate": _validate,
         }
     )
-    code = await run_publish_command(
-        ["--asset=g", "--asset=c", "--dry-run", "--json"], deps
-    )
+    code = await run_publish_command(["--asset=g", "--asset=c", "--dry-run", "--json"], deps)
     payload = json.loads(buf.getvalue())
 
     assert code == 0
@@ -1384,9 +1362,7 @@ async def test_publish_leak_gate_ignores_legacy_mode(
                 ),
             }
         )
-        code = await run_publish_command(
-            ["--asset=g", "--asset=c", "--dry-run", "--json"], deps
-        )
+        code = await run_publish_command(["--asset=g", "--asset=c", "--dry-run", "--json"], deps)
         payload = json.loads(buf.getvalue())
         assert code == 0
         assert payload["blocked"] is True
@@ -1433,15 +1409,11 @@ async def test_publish_invalid_json_response_preserves_stable_reason() -> None:
             "hub_url": "https://hub.test",
             "node_secret": "s" * 64,
             "a2a": _fake_a2a(),
-            "asset_store": _FakeStore(
-                [_gene(asset_id="g"), _capsule(asset_id="c", gene="g")]
-            ),
+            "asset_store": _FakeStore([_gene(asset_id="g"), _capsule(asset_id="c", gene="g")]),
             "hub_fetch": _hub_fetch,
         }
     )
-    code = await run_publish_command(
-        ["--asset=g", "--asset=c", "--dry-run", "--json"], deps
-    )
+    code = await run_publish_command(["--asset=g", "--asset=c", "--dry-run", "--json"], deps)
 
     assert calls["n"] == 1
     assert code == 1
@@ -1476,9 +1448,7 @@ async def test_publish_uses_node_secret_for_validate_and_publish() -> None:
             "hub_url": "https://hub.test",
             "node_secret": node_secret,
             "a2a": _OauthA2a(),
-            "asset_store": _FakeStore(
-                [_gene(asset_id="g"), _capsule(asset_id="c", gene="g")]
-            ),
+            "asset_store": _FakeStore([_gene(asset_id="g"), _capsule(asset_id="c", gene="g")]),
             "hub_fetch": _hub_fetch,
         }
     )
@@ -1505,9 +1475,7 @@ async def test_publish_requires_node_secret_before_injected_validate() -> None:
             "hub_url": "https://hub.test",
             "node_secret": None,
             "a2a": _fake_a2a(),
-            "asset_store": _FakeStore(
-                [_gene(asset_id="g"), _capsule(asset_id="c", gene="g")]
-            ),
+            "asset_store": _FakeStore([_gene(asset_id="g"), _capsule(asset_id="c", gene="g")]),
             "validate": _validate,
         }
     )
@@ -1560,15 +1528,11 @@ async def test_publish_dry_run_rehashes_and_resigns_after_mutation() -> None:
             "node_secret": secret,
             "node_id": "node_preview",
             "a2a": _Mutating(),
-            "asset_store": _FakeStore(
-                [_gene(asset_id="g"), _capsule(asset_id="c", gene="g")]
-            ),
+            "asset_store": _FakeStore([_gene(asset_id="g"), _capsule(asset_id="c", gene="g")]),
             "validate": _validate,
         }
     )
-    code = await run_publish_command(
-        ["--asset=g", "--asset=c", "--dry-run", "--json"], deps
-    )
+    code = await run_publish_command(["--asset=g", "--asset=c", "--dry-run", "--json"], deps)
     assets = seen["payload"]["assets"]
 
     assert code == 0
@@ -1584,9 +1548,7 @@ async def test_publish_failure_hides_raw_error_and_lifecycle_status() -> None:
             "hub_url": "https://hub.test",
             "node_secret": "s" * 64,
             "a2a": _fake_a2a(),
-            "asset_store": _FakeStore(
-                [_gene(asset_id="g"), _capsule(asset_id="c", gene="g")]
-            ),
+            "asset_store": _FakeStore([_gene(asset_id="g"), _capsule(asset_id="c", gene="g")]),
             "validate": lambda _m: {
                 "ok": True,
                 "status": 200,
@@ -1624,9 +1586,7 @@ async def test_publish_success_does_not_fabricate_status_or_receipt() -> None:
             "hub_url": "https://hub.test",
             "node_secret": "s" * 64,
             "a2a": _fake_a2a(),
-            "asset_store": _FakeStore(
-                [_gene(asset_id="g"), _capsule(asset_id="c", gene="g")]
-            ),
+            "asset_store": _FakeStore([_gene(asset_id="g"), _capsule(asset_id="c", gene="g")]),
             "validate": lambda _m: {
                 "ok": True,
                 "status": 200,
@@ -1656,9 +1616,7 @@ async def test_publish_rejects_non_a2a_decisions() -> None:
                 "hub_url": "https://hub.test",
                 "node_secret": "s" * 64,
                 "a2a": _fake_a2a(),
-                "asset_store": _FakeStore(
-                    [_gene(asset_id="g"), _capsule(asset_id="c", gene="g")]
-                ),
+                "asset_store": _FakeStore([_gene(asset_id="g"), _capsule(asset_id="c", gene="g")]),
                 "validate": lambda _m: {
                     "ok": True,
                     "status": 200,
@@ -1804,9 +1762,7 @@ async def test_publish_dry_run_does_not_create_persistent_node_id(
             "hub_url": "https://hub.test",
             "node_secret": "s" * 64,
             "a2a": _CaptureNodeA2a(),
-            "asset_store": _FakeStore(
-                [_gene(asset_id="g"), _capsule(asset_id="c", gene="g")]
-            ),
+            "asset_store": _FakeStore([_gene(asset_id="g"), _capsule(asset_id="c", gene="g")]),
             "validate": lambda _m: {
                 "ok": True,
                 "status": 200,
@@ -1814,9 +1770,7 @@ async def test_publish_dry_run_does_not_create_persistent_node_id(
             },
         }
     )
-    code = await run_publish_command(
-        ["--asset=g", "--asset=c", "--dry-run", "--json"], deps
-    )
+    code = await run_publish_command(["--asset=g", "--asset=c", "--dry-run", "--json"], deps)
 
     assert code == 0
     assert seen["node_id"] == "node_000000000000"
@@ -1830,9 +1784,7 @@ async def test_publish_reads_raw_text_and_valid_json_responses() -> None:
             "hub_url": "https://hub.test",
             "node_secret": "s" * 64,
             "a2a": _fake_a2a(),
-            "asset_store": _FakeStore(
-                [_gene(asset_id="g"), _capsule(asset_id="c", gene="g")]
-            ),
+            "asset_store": _FakeStore([_gene(asset_id="g"), _capsule(asset_id="c", gene="g")]),
             "hub_fetch": lambda _url, _opts: {
                 "ok": False,
                 "status": 400,
@@ -1852,9 +1804,7 @@ async def test_publish_reads_raw_text_and_valid_json_responses() -> None:
     def _json_fetch(_url: str, _opts: dict[str, Any]) -> dict[str, Any]:
         calls["n"] += 1
         body = (
-            {"payload": {"valid": True}}
-            if calls["n"] == 1
-            else {"payload": {"status": "accepted"}}
+            {"payload": {"valid": True}} if calls["n"] == 1 else {"payload": {"status": "accepted"}}
         )
         return {"ok": True, "status": 200, "text": lambda: json.dumps(body)}
 
@@ -1863,15 +1813,11 @@ async def test_publish_reads_raw_text_and_valid_json_responses() -> None:
             "hub_url": "https://hub.test",
             "node_secret": "s" * 64,
             "a2a": _fake_a2a(),
-            "asset_store": _FakeStore(
-                [_gene(asset_id="g"), _capsule(asset_id="c", gene="g")]
-            ),
+            "asset_store": _FakeStore([_gene(asset_id="g"), _capsule(asset_id="c", gene="g")]),
             "hub_fetch": _json_fetch,
         }
     )
-    json_code = await run_publish_command(
-        ["--asset=g", "--asset=c", "--json"], json_deps
-    )
+    json_code = await run_publish_command(["--asset=g", "--asset=c", "--json"], json_deps)
     assert json_code == 0
     assert calls["n"] == 2
     assert json.loads(json_buf.getvalue())["status"] == "accepted"
@@ -1896,9 +1842,7 @@ async def test_publish_actual_network_failure_occurs_after_validate() -> None:
             "hub_url": "https://hub.test",
             "node_secret": "s" * 64,
             "a2a": _fake_a2a(),
-            "asset_store": _FakeStore(
-                [_gene(asset_id="g"), _capsule(asset_id="c", gene="g")]
-            ),
+            "asset_store": _FakeStore([_gene(asset_id="g"), _capsule(asset_id="c", gene="g")]),
             "hub_fetch": _hub_fetch,
         }
     )
@@ -2053,9 +1997,7 @@ async def test_publish_asset_summary_uses_final_payload() -> None:
             "hub_url": "https://hub.test",
             "node_secret": "s" * 64,
             "a2a": _TraceA2a(),
-            "asset_store": _FakeStore(
-                [_gene(asset_id="g"), _capsule(asset_id="c", gene="g")]
-            ),
+            "asset_store": _FakeStore([_gene(asset_id="g"), _capsule(asset_id="c", gene="g")]),
             "validate": lambda _m: {
                 "ok": True,
                 "status": 200,
@@ -2063,9 +2005,7 @@ async def test_publish_asset_summary_uses_final_payload() -> None:
             },
         }
     )
-    code = await run_publish_command(
-        ["--asset=g", "--asset=c", "--dry-run", "--json"], deps
-    )
+    code = await run_publish_command(["--asset=g", "--asset=c", "--dry-run", "--json"], deps)
     payload = json.loads(buf.getvalue())
 
     assert code == 0
@@ -2083,9 +2023,7 @@ async def test_publish_credits_omit_all_fractional_fields() -> None:
             "hub_url": "https://hub.test",
             "node_secret": "s" * 64,
             "a2a": _fake_a2a(),
-            "asset_store": _FakeStore(
-                [_gene(asset_id="g"), _capsule(asset_id="c", gene="g")]
-            ),
+            "asset_store": _FakeStore([_gene(asset_id="g"), _capsule(asset_id="c", gene="g")]),
             "validate": lambda _m: {
                 "ok": True,
                 "status": 200,
@@ -2123,9 +2061,7 @@ async def test_publish_already_published_rejected_alias_is_success() -> None:
             "hub_url": "https://hub.test",
             "node_secret": "s" * 64,
             "a2a": _fake_a2a(),
-            "asset_store": _FakeStore(
-                [_gene(asset_id="g"), _capsule(asset_id="c", gene="g")]
-            ),
+            "asset_store": _FakeStore([_gene(asset_id="g"), _capsule(asset_id="c", gene="g")]),
             "validate": lambda _m: {
                 "ok": True,
                 "status": 200,

@@ -124,7 +124,8 @@ class HubEventBridge:
     def _apply_extension(self, event: dict[str, Any]) -> None:
         """Apply well-known Hub control events to local store state."""
         event_type = event.get("type")
-        payload = event.get("payload") if isinstance(event.get("payload"), dict) else {}
+        payload_raw = event.get("payload")
+        payload = payload_raw if isinstance(payload_raw, dict) else {}
         if event_type == "trace_collection_config":
             enabled = payload.get("enabled")
             if enabled is not None:

@@ -58,7 +58,7 @@ def _match_pattern_to_signals(pattern: str, signals: list[str]) -> bool:
         base = sig.split(":", 1)[0]
         for alias in aliases:
             a = alias.lower()
-            if a == sig or a == base or a in sig:
+            if a in (sig, base) or a in sig:
                 return True
     return False
 
@@ -245,10 +245,7 @@ def select_multi_gene_chunk(
     """
     advice = memory_advice or {}
     banned = set(advice.get("bannedGeneIds") or [])
-    if isinstance(banned, set):
-        banned_ids = banned
-    else:
-        banned_ids = set(banned)
+    banned_ids = banned if isinstance(banned, set) else set(banned)
 
     scored: list[dict[str, Any]] = []
     for gene in genes:

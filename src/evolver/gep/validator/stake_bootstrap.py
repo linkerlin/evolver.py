@@ -224,7 +224,7 @@ def wait_for_confirmation(
     if state.status == "confirmed":
         return state
 
-    for attempt in range(max_attempts):
+    for _attempt in range(max_attempts):
         result = _query_stake_status(node_id)
         if result:
             status = result.get("status", "").lower()

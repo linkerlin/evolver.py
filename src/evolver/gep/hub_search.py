@@ -24,7 +24,7 @@ logger = logging.getLogger(__name__)
 class ServiceHit:
     service_id: str
     title: str
-    score: float  # combined score (0–1)
+    score: float  # combined score (0-1)
     signals: dict[str, float] = field(default_factory=dict)
 
 
@@ -71,7 +71,7 @@ def _tfidf_similarity(query: str, description: str, corpus: list[str]) -> float:
 
 
 def _signal_score(service: dict[str, Any]) -> float:
-    """Compute a 0–1 signal score from service metadata."""
+    """Compute a 0-1 signal score from service metadata."""
     # Uptime rate
     uptime = float(service.get("uptime_rate", 1.0))
     # Avg response time (ms) — lower is better, clamp at 5 s

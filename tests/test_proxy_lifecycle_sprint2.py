@@ -29,7 +29,7 @@ class FakeStore:
     def set_state(self, key: str, value: Any) -> None:
         self._state[key] = value
 
-    def count_pending(self, direction: str = "outbound") -> int:  # noqa: ARG002
+    def count_pending(self, direction: str = "outbound") -> int:
         return 0
 
 
@@ -92,9 +92,7 @@ class TestTlsEnforcement:
         assert result["ok"] is True
         assert len(result["warnings"]) > 0
 
-    def test_http_rejected_in_production(
-        self, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
+    def test_http_rejected_in_production(self, monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.setenv("EVOLVER_ENV", "production")
         result = LifecycleManager.enforce_tls("http://evomap.ai")
         assert result["ok"] is False

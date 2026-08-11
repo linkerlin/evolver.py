@@ -140,9 +140,7 @@ async def _cmd_order_status(args: argparse.Namespace) -> int:
 async def _cmd_status(_args: argparse.Namespace) -> int:
     consent = get_consent()
     enabled = consent.get("enabled") if consent else False
-    _print_json(
-        {"auto_buyer": "enabled" if enabled else "disabled", "consent": consent}
-    )
+    _print_json({"auto_buyer": "enabled" if enabled else "disabled", "consent": consent})
     return 0
 
 
@@ -246,9 +244,7 @@ async def run_atp_command(args: argparse.Namespace) -> int:
     handler = _COMMAND_MAP.get(args.atp_command)
     if handler is None:
         print(f"Unknown ATP command: {args.atp_command}", file=sys.stderr)
-        print(
-            "Available: " + ", ".join(sorted(_COMMAND_MAP.keys())), file=sys.stderr
-        )
+        print("Available: " + ", ".join(sorted(_COMMAND_MAP.keys())), file=sys.stderr)
         return 1
     return int(await handler(args))
 

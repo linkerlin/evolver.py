@@ -142,9 +142,7 @@ class TestFlagOff:
 
 
 class TestGateReject:
-    def test_reject_returns_error(
-        self, git_ws: Path, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
+    def test_reject_returns_error(self, git_ws: Path, monkeypatch: pytest.MonkeyPatch) -> None:
         _ = git_ws
         monkeypatch.setenv("EVOLVER_FF_ENABLE_ACCEPTANCE_GATE", "1")
         _patch_gate(monkeypatch, _rejected())

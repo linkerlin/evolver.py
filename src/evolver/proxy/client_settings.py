@@ -5,7 +5,6 @@ Equivalent to ``evolver/src/proxy/clientSettings.js`` (G10.6).  Distinct from
 """
 
 # Direct port of Node fail-fast branch structure.
-# ruff: noqa: PLR0912, PLR0915
 
 from __future__ import annotations
 

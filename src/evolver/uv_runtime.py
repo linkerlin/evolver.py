@@ -89,7 +89,7 @@ def _uvx_cmd(args: list[str], *, uvx_bin: str, project: Path | None) -> list[str
     #   uvx --from <project> evolver …
     # Otherwise bare: uvx evolver … (PyPI / tool install).
     name = Path(uvx_bin).name.lower()
-    if name in ("uv", "uv.exe"):
+    if name in ("uv", "uv.exe"):  # noqa: SIM108 — branch comment documents the uvx-shim rationale
         # No uvx shim — use `uv tool run` equivalent surface.
         cmd = [uvx_bin, "tool", "run"]
     else:

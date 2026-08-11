@@ -210,7 +210,7 @@ async def dispatch_phase(ctx: dict[str, Any]) -> dict[str, Any]:
     )
 
     if ctx.get("bridge_enabled"):
-        artifact_path = write_prompt_artifact(prompt)
+        write_prompt_artifact(prompt)
         spawn = render_sessions_spawn_call(
             {
                 "task": prompt[:4000],

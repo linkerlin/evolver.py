@@ -58,7 +58,7 @@ class InboundSync:
                 body = response.json()
         except httpx.HTTPStatusError as exc:
             if exc.response.status_code in (401, 403):
-                raise AuthError(str(exc), exc.response.status_code)
+                raise AuthError(str(exc), exc.response.status_code) from exc
             return {"received": 0, "error": str(exc)}
         except Exception as exc:
             return {"received": 0, "error": str(exc)}
@@ -102,7 +102,7 @@ class InboundSync:
                 response.raise_for_status()
         except httpx.HTTPStatusError as exc:
             if exc.response.status_code in (401, 403):
-                raise AuthError(str(exc), exc.response.status_code)
+                raise AuthError(str(exc), exc.response.status_code) from exc
             return {"acked": 0, "error": str(exc)}
         except Exception as exc:
             return {"acked": 0, "error": str(exc)}

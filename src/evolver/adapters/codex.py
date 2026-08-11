@@ -7,6 +7,7 @@ and toggles ``codex_hooks`` in ``config.toml``.
 
 from __future__ import annotations
 
+import contextlib
 import json
 import re
 from pathlib import Path
@@ -59,10 +60,8 @@ def _ensure_config_toml(codex_dir: Path) -> bool:
     toml_path = codex_dir / "config.toml"
     content = ""
     if toml_path.exists():
-        try:
+        with contextlib.suppress(OSError):
             content = toml_path.read_text(encoding="utf-8")
-        except OSError:
-            pass
 
     if re.search(r"codex_hooks\s*=\s*true", content, re.IGNORECASE):
         return False

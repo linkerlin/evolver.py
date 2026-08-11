@@ -306,7 +306,7 @@ def _create_pr_via_api(
 ) -> dict[str, Any] | None:
     """Try GitHub API. Returns parsed JSON or None."""
     try:
-        import httpx  # noqa: PLC0415 — optional dependency path
+        import httpx
 
         resp = httpx.post(
             f"https://api.github.com/repos/{repo}/pulls",
@@ -366,7 +366,7 @@ def _build_pr_body(
 # ---------------------------------------------------------------------------
 
 
-def create_self_pr(  # noqa: PLR0911
+def create_self_pr(
     *,
     diff_text: str,
     gene_id: str,

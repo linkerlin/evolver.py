@@ -220,6 +220,7 @@ def _repo_from_git() -> str | None:
             text=True,
             timeout=5,
             cwd=str(get_workspace_root()),
+            check=False,
         )
         if result.returncode != 0:
             return None

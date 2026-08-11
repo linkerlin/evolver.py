@@ -25,12 +25,13 @@ VERTEX_TIMEOUT = 90.0
 
 def _vertex_endpoint(model: str, stream: bool) -> str:
     project = os.environ.get("VERTEX_PROJECT", os.environ.get("GOOGLE_CLOUD_PROJECT", ""))
-    location = os.environ.get("VERTEX_LOCATION", os.environ.get("GOOGLE_CLOUD_LOCATION", "us-central1"))
+    location = os.environ.get(
+        "VERTEX_LOCATION", os.environ.get("GOOGLE_CLOUD_LOCATION", "us-central1")
+    )
     method = "streamGenerateContent" if stream else "generateContent"
     base = f"https://{location}-aiplatform.googleapis.com/v1"
     return (
-        f"{base}/projects/{project}/locations/{location}"
-        f"/publishers/google/models/{model}:{method}"
+        f"{base}/projects/{project}/locations/{location}/publishers/google/models/{model}:{method}"
     )
 
 
@@ -53,23 +54,27 @@ def _get_access_token() -> str:
     return os.environ.get("GOOGLE_OAUTH_ACCESS_TOKEN", "")
 
 
-async def proxy_vertex(
-    request: Request, body: dict[str, Any]
-) -> JSONResponse | StreamingResponse:
+async def proxy_vertex(request: Request, body: dict[str, Any]) -> JSONResponse | StreamingResponse:
     """Proxy request to Google Vertex AI."""
     import httpx
 
     token = _get_access_token()
     if not token:
         return JSONResponse(
-            {"error": "missing_vertex_credentials", "detail": "No ADC token or GOOGLE_OAUTH_ACCESS_TOKEN"},
+            {
+                "error": "missing_vertex_credentials",
+                "detail": "No ADC token or GOOGLE_OAUTH_ACCESS_TOKEN",
+            },
             status_code=401,
         )
 
     project = os.environ.get("VERTEX_PROJECT", os.environ.get("GOOGLE_CLOUD_PROJECT", ""))
     if not project:
         return JSONResponse(
-            {"error": "missing_vertex_project", "detail": "Set VERTEX_PROJECT or GOOGLE_CLOUD_PROJECT"},
+            {
+                "error": "missing_vertex_project",
+                "detail": "Set VERTEX_PROJECT or GOOGLE_CLOUD_PROJECT",
+            },
             status_code=400,
         )
 

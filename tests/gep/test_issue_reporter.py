@@ -66,7 +66,7 @@ class TestCountFailures:
         ]
         counts = _count_failures_by_signal(events, window_seconds=10000, now=now)
         assert len(counts) == 1
-        assert list(counts.values())[0] == 3
+        assert next(iter(counts.values())) == 3
 
     def test_ignores_success(self):
         now = 1000100

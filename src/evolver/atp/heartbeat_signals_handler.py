@@ -109,8 +109,6 @@ async def handle_signals(body: dict[str, Any]) -> dict[str, Any]:
             buy_result = await auto_buyer.run_tick(signal_texts)
             summary["auto_buyer"] = buy_result
 
-        from evolver.atp import auto_deliver
-
         deliver = getattr(handle_signals, "_auto_deliver", None)
         if deliver is not None and deliver.is_started():
             await deliver._tick()

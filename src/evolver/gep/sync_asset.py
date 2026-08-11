@@ -127,7 +127,7 @@ def _optional_string(prefix: str, field: str, value: Any) -> str | None:
     return value
 
 
-def _validate_gene_payload(payload: dict[str, Any]) -> None:  # noqa: PLR0912, SIM102
+def _validate_gene_payload(payload: dict[str, Any]) -> None:
     if "signals_match" not in payload or not isinstance(payload.get("signals_match"), list):
         raise ValueError("Gene.signals_match must be an array")
 
@@ -177,7 +177,7 @@ def _validate_gene_payload(payload: dict[str, Any]) -> None:  # noqa: PLR0912, S
         )
 
 
-def _validate_capsule_payload(payload: dict[str, Any]) -> None:  # noqa: PLR0912, SIM102
+def _validate_capsule_payload(payload: dict[str, Any]) -> None:
     outcome = payload.get("outcome")
     if not _is_plain_object(outcome):
         raise ValueError("Capsule.outcome must be an object")
@@ -329,6 +329,7 @@ def prepare_sync_asset(opts: dict[str, Any] | None) -> dict[str, Any]:
     payload = options.get("payload")
     if not _is_plain_object(payload):
         payload = {}
+    assert isinstance(payload, dict)  # _is_plain_object guarantees plain-dict shape
     # Defensive: only plain dicts — drop non-own contract junk by re-keying.
     clean_payload = {
         k: v
@@ -356,7 +357,7 @@ def install_sync_asset(
     force: bool = False,
 ) -> dict[str, Any]:
     """Install a prepared sync asset; *force* overwrites local id collisions."""
-    from evolver.gep.asset_store import (  # noqa: PLC0415
+    from evolver.gep.asset_store import (
         append_capsule,
         load_capsules,
         load_genes,

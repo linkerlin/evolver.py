@@ -48,7 +48,7 @@ def get_node_id() -> str | None:
     Matches Node ``getNodeId()``: first call may mint and write
     ``~/.evomap/node_id`` under the canonical identity lock.
     """
-    from evolver.gep.node_identity import get_or_create_node_id  # noqa: PLC0415
+    from evolver.gep.node_identity import get_or_create_node_id
 
     return get_or_create_node_id()
 
@@ -59,7 +59,7 @@ def get_hub_node_secret() -> str | None:
     if env:
         # Prefer explicit env when set; identity tuple still used for version.
         return env
-    from evolver.gep.node_identity import resolve_identity_tuple  # noqa: PLC0415
+    from evolver.gep.node_identity import resolve_identity_tuple
 
     secret = resolve_identity_tuple(create=False).get("secret")
     return str(secret) if secret else None
@@ -69,7 +69,7 @@ def get_hub_node_secret_version() -> str | None:
     raw = os.environ.get("A2A_NODE_SECRET_VERSION") or os.environ.get("EVOMAP_NODE_SECRET_VERSION")
     if raw and str(raw).strip():
         return str(raw).strip()
-    from evolver.gep.node_identity import resolve_identity_tuple  # noqa: PLC0415
+    from evolver.gep.node_identity import resolve_identity_tuple
 
     version = resolve_identity_tuple(create=False).get("version")
     return str(version) if version is not None else None
@@ -85,7 +85,7 @@ def build_hub_headers() -> dict[str, str]:
 
 def build_node_scoped_hub_headers(*, create: bool = True) -> dict[str, str]:
     """Node-scoped Hub auth from the active identity tuple."""
-    from evolver.gep.node_identity import build_identity_hub_headers  # noqa: PLC0415
+    from evolver.gep.node_identity import build_identity_hub_headers
 
     return build_identity_hub_headers(create=create)
 
@@ -168,7 +168,6 @@ def _bundle_signature(assets: list[dict[str, Any]], secret: str) -> str:
         if asset.get("type") in ("Gene", "Capsule") and asset.get("asset_id")
     )
     return hmac.new(secret.encode(), "|".join(ids).encode(), hashlib.sha256).hexdigest()
-
 
 
 def build_publish(

@@ -19,6 +19,7 @@ Design notes (Pythonic)
 
 from __future__ import annotations
 
+import contextlib
 import json
 import logging
 import os
@@ -442,13 +443,13 @@ _process_table_override: list[_ProcessRow] | None = None
 
 def _set_process_table_for_test(rows: list[_ProcessRow] | None) -> None:
     """Test hook: inject a synthetic process table (Node _setProcessTableForTest)."""
-    global _process_table_override  # noqa: PLW0603
+    global _process_table_override
     _process_table_override = rows
 
 
 def _reset_process_table_for_test() -> None:
     """Test hook: clear the synthetic process table."""
-    global _process_table_override  # noqa: PLW0603
+    global _process_table_override
     _process_table_override = None
 
 
@@ -671,7 +672,5 @@ def env_int(key: str, fallback: int) -> int:
 def _unlink_pid_file() -> None:
     """Remove the PID file; ignore races."""
     pid_file = _pid_file_path()
-    try:
+    with contextlib.suppress(OSError):
         pid_file.unlink(missing_ok=True)
-    except OSError:
-        pass

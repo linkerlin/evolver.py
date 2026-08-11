@@ -69,8 +69,8 @@ def test_get_memory_advice_bans_failing_gene(
     monkeypatch.setenv("EVOLUTION_DIR", str(tmp_path))
     monkeypatch.setenv("MEMORY_GRAPH_PATH", str(tmp_path / "memory_graph.jsonl"))
     signals = ["log_error", "recurring_error"]
-    key = mg.compute_signal_key(signals)
-    for i in range(5):
+    mg.compute_signal_key(signals)
+    for _i in range(5):
         mg.record_outcome(
             signals=signals,
             selected_gene={"id": "gene_repair_failing", "category": "repair"},
@@ -196,9 +196,7 @@ def test_562_real_successes_do_build_confidence(
     assert advice["preferredGeneId"] == _INERT_GENE["id"]
 
 
-def test_562_inert_streak_ban_at_threshold(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_562_inert_streak_ban_at_threshold(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """Gene banned after GENE_INERT_BAN_STREAK consecutive inert outcomes."""
     from evolver.config import GENE_INERT_BAN_STREAK
 

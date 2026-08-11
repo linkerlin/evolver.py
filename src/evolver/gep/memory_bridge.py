@@ -129,7 +129,7 @@ def sync_living_friction_to_memory_graph(
     run_id: str | None = None,
 ) -> dict[str, Any]:
     """Push unsynced living-memory friction into memory_graph (deduped by friction id)."""
-    from evolver.gep.memory_graph import (  # noqa: PLC0415
+    from evolver.gep.memory_graph import (
         patch_sync_state,
         read_sync_state,
         record_friction_observation,
@@ -205,7 +205,7 @@ def capture_memory_graph_bans_as_friction(
     advice: dict[str, Any] | None,
 ) -> int:
     """Mirror newly banned genes from memory_graph into living memory (once per gene)."""
-    from evolver.gep.memory_graph import patch_sync_state, read_sync_state  # noqa: PLC0415
+    from evolver.gep.memory_graph import patch_sync_state, read_sync_state
 
     if not advice:
         return 0
@@ -255,8 +255,8 @@ def build_memory_sync_summary(
     signals: list[str] | None = None,
 ) -> dict[str, Any]:
     """Aggregate living_memory ↔ memory_graph sync state for observers."""
-    from evolver.gep.living_memory import load_living_memory  # noqa: PLC0415
-    from evolver.gep.memory_graph import (  # noqa: PLC0415
+    from evolver.gep.living_memory import load_living_memory
+    from evolver.gep.memory_graph import (
         get_memory_advice,
         read_sync_state,
         try_read_memory_graph_events,
@@ -286,7 +286,7 @@ def build_memory_sync_summary(
 
     preflight_pending = False
     try:
-        from evolver.gep.autopoiesis import read_preflight_abort_report  # noqa: PLC0415
+        from evolver.gep.autopoiesis import read_preflight_abort_report
 
         preflight_pending = read_preflight_abort_report() is not None
     except Exception:
@@ -315,7 +315,7 @@ def reinforce_solidify_failure_in_graph(
     error: str,
 ) -> dict[str, Any]:
     """Mirror solidify failure into memory_graph friction (complements living_memory)."""
-    from evolver.gep.memory_graph import record_friction_observation  # noqa: PLC0415
+    from evolver.gep.memory_graph import record_friction_observation
 
     signals = list(last_run.get("signals") or [])
     gene_id = str(last_run.get("selected_gene_id") or "?")
@@ -400,8 +400,6 @@ __all__ = [
     "build_memory_sync_summary",
     "capture_memory_graph_bans_as_friction",
     "gene_ids_from_solidify_failure",
-    "reinforce_solidify_failure_in_graph",
-    "serialize_memory_advice",
     "living_memory_score_adjustment",
     "living_memory_signal_hints",
     "memory_graph_signal_hints",
@@ -409,5 +407,7 @@ __all__ = [
     "merge_hints_into_signals",
     "merge_living_memory_into_advice",
     "merge_unified_hints",
+    "reinforce_solidify_failure_in_graph",
+    "serialize_memory_advice",
     "sync_living_friction_to_memory_graph",
 ]

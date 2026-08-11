@@ -274,7 +274,7 @@ def resolve_workspace_id(
     root = evolver_root or find_evolver_root()
     if root is not None:
         try:
-            from evolver.gep.paths import get_workspace_id  # noqa: PLC0415
+            from evolver.gep.paths import get_workspace_id
 
             return get_workspace_id()
         except Exception:

@@ -38,9 +38,7 @@ def _stub_t0(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> Path:
     monkeypatch.setattr(orchestrator.t0_frozen, "discover_test_ids", fake_discover)
     monkeypatch.setattr(orchestrator.t0_frozen, "run_pass_rate", fake_run)
     monkeypatch.setattr(orchestrator.t0_frozen, "freeze_snapshot", lambda _ids, d: d / "snap.txt")
-    monkeypatch.setattr(
-        orchestrator.t0_frozen, "load_snapshot", lambda _p: list(frozen_ids)
-    )
+    monkeypatch.setattr(orchestrator.t0_frozen, "load_snapshot", lambda _p: list(frozen_ids))
     return tmp_path
 
 
@@ -62,9 +60,7 @@ class TestBaselinePersistence:
 
 
 class TestEstablishingMode:
-    def test_no_baseline_accepts_and_establishes(
-        self, _stub_t0: Path, tmp_path: Path
-    ) -> None:
+    def test_no_baseline_accepts_and_establishes(self, _stub_t0: Path, tmp_path: Path) -> None:
         result = run_acceptance_gate(
             cwd=tmp_path,
             snapshot_dir=tmp_path / "snap",

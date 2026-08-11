@@ -79,12 +79,18 @@ class TestMetrics:
 
     def test_format_report(self) -> None:
         baseline = {
-            "success_rate": 0.3, "avg_tokens": 1000,
-            "avg_latency_s": 5.0, "total": 10, "successes": 3,
+            "success_rate": 0.3,
+            "avg_tokens": 1000,
+            "avg_latency_s": 5.0,
+            "total": 10,
+            "successes": 3,
         }
         evolved = {
-            "success_rate": 0.6, "avg_tokens": 800,
-            "avg_latency_s": 3.0, "total": 10, "successes": 6,
+            "success_rate": 0.6,
+            "avg_tokens": 800,
+            "avg_latency_s": 3.0,
+            "total": 10,
+            "successes": 6,
         }
         comp = compare_metrics(baseline, evolved)
         report = format_report(baseline, evolved, comp)

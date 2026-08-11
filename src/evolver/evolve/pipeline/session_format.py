@@ -91,7 +91,7 @@ def _format_role_line(role: str, text: str, tools: list[str]) -> str | None:
     return line
 
 
-def _parse_one_record(obj: dict[str, Any]) -> list[str]:  # noqa: PLR0911, PLR0912, PLR0915
+def _parse_one_record(obj: dict[str, Any]) -> list[str]:
     """Convert one JSONL object into zero or more formatted lines."""
     lines: list[str] = []
     rtype = str(obj.get("type") or "")
@@ -110,21 +110,24 @@ def _parse_one_record(obj: dict[str, Any]) -> list[str]:  # noqa: PLR0911, PLR09
 
     # ---- Manus ----
     if rtype == "user_message":
-        um = obj.get("user_message") if isinstance(obj.get("user_message"), dict) else {}
+        um_raw = obj.get("user_message")
+        um = um_raw if isinstance(um_raw, dict) else {}
         text = str(um.get("content") or "")
         line = _format_role_line("user", text, [])
         if line:
             lines.append(line)
         return lines
     if rtype == "assistant_message":
-        am = obj.get("assistant_message") if isinstance(obj.get("assistant_message"), dict) else {}
+        am_raw = obj.get("assistant_message")
+        am = am_raw if isinstance(am_raw, dict) else {}
         text = str(am.get("content") or "")
         line = _format_role_line("assistant", text, [])
         if line:
             lines.append(line)
         return lines
     if rtype == "tool_used":
-        tu = obj.get("tool_used") if isinstance(obj.get("tool_used"), dict) else {}
+        tu_raw = obj.get("tool_used")
+        tu = tu_raw if isinstance(tu_raw, dict) else {}
         name = str(tu.get("name") or "tool")
         lines.append(f"[TOOL: {name}]")
         return lines
@@ -163,11 +166,11 @@ def _parse_one_record(obj: dict[str, Any]) -> list[str]:  # noqa: PLR0911, PLR09
 
     # ---- Claude / OpenClaw tool_result top-level ----
     if rtype == "tool_result":
-        content = obj.get("content")
+        tool_content = obj.get("content")
         text = (
-            content
-            if isinstance(content, str)
-            else (json.dumps(content, ensure_ascii=False) if content is not None else "")
+            tool_content
+            if isinstance(tool_content, str)
+            else (json.dumps(tool_content, ensure_ascii=False) if tool_content is not None else "")
         )
         if text.strip():
             lines.append(f"[TOOL RESULT] {text.strip()[:500]}")
@@ -281,7 +284,7 @@ def format_session_log(raw: str, *, max_lines: int = 2_000) -> str:
     return "\n".join(out_lines)
 
 
-def format_cursor_transcript(raw: str) -> str:  # noqa: PLR0912
+def format_cursor_transcript(raw: str) -> str:
     """Sanitize a Cursor-style plain-text transcript.
 
     Keeps user/assistant turns and ``[Tool call] Name`` markers; drops
@@ -319,14 +322,18 @@ def format_cursor_transcript(raw: str) -> str:  # noqa: PLR0912
                 and not stripped.startswith("assistant:")
             ):
                 # Drop param lines and tool result body until next speaker/marker.
-                if (stripped.endswith(":") and stripped in ("user:", "A:", "assistant:")) or (
-                    stripped.startswith("user:")
-                    or stripped.startswith("A:")
-                    or stripped.startswith("assistant:")
-                ) or (
-                    stripped.startswith("[Tool")
-                    or stripped.startswith("user")
-                    or stripped.startswith("A")
+                if (
+                    (stripped.endswith(":") and stripped in ("user:", "A:", "assistant:"))
+                    or (
+                        stripped.startswith("user:")
+                        or stripped.startswith("A:")
+                        or stripped.startswith("assistant:")
+                    )
+                    or (
+                        stripped.startswith("[Tool")
+                        or stripped.startswith("user")
+                        or stripped.startswith("A")
+                    )
                 ):
                     skip_params = False
                 else:

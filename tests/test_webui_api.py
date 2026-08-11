@@ -11,7 +11,6 @@ client = TestClient(app)
 
 class TestApiInsights:
     def test_insights(self, monkeypatch, tmp_path):
-        import evolver.gep.paths as paths_mod
 
         monkeypatch.setattr(
             "evolver.webui.observer.insights.get_solidify_state_path",

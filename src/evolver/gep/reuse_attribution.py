@@ -92,7 +92,7 @@ def build_reuse_attribution(
     return block
 
 
-def build_outcome_report_payload(  # noqa: PLR0911
+def build_outcome_report_payload(
     *,
     last_run: dict[str, Any] | None,
     last_action: dict[str, Any] | None,

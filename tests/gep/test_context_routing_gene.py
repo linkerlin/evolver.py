@@ -112,9 +112,18 @@ class TestContextBloatSignals:
             "validation": ['node -e "true"'],
         }
         cases = [
-            (["prompt_budget_measurement", "token_budget_overflow"], "gene_claude_prompt_budget_ledger"),
-            (["claude_code_context_bloat", "schema_routing_gene_request"], "gene_claude_context_schema_routing"),
-            (["tool_schema_bloat", "mcp_tool_schema", "lazy_load_schema"], "gene_claude_tool_schema_lazy_load"),
+            (
+                ["prompt_budget_measurement", "token_budget_overflow"],
+                "gene_claude_prompt_budget_ledger",
+            ),
+            (
+                ["claude_code_context_bloat", "schema_routing_gene_request"],
+                "gene_claude_context_schema_routing",
+            ),
+            (
+                ["tool_schema_bloat", "mcp_tool_schema", "lazy_load_schema"],
+                "gene_claude_tool_schema_lazy_load",
+            ),
             (["skill_manual_bloat", "skill_list_bloat"], "gene_claude_skill_manual_routing"),
             (
                 ["transcript_context_bloat", "conversation_handoff_bloat"],
@@ -123,6 +132,6 @@ class TestContextBloatSignals:
             (["memory_index_budget"], "gene_claude_memory_index_budget"),
         ]
         for signals, expected in cases:
-            result = select_gene([generic] + family, signals, {})
+            result = select_gene([generic, *family], signals, {})
             assert result["selected"] is not None, expected
             assert result["selected"]["id"] == expected

@@ -13,10 +13,7 @@ def personality_data(memory_dir: Path | None = None) -> dict[str, Any]:
 
     mem = memory_dir or get_memory_dir()
     path = mem / "personality.json"
-    if path.exists():
-        data = json.loads(path.read_text(encoding="utf-8"))
-    else:
-        data = {}
+    data = json.loads(path.read_text(encoding="utf-8")) if path.exists() else {}
 
     # Normalize to radar dimensions
     dimensions = {

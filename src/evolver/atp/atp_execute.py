@@ -73,9 +73,7 @@ def _build_capsule(answer: str, task: dict[str, Any]) -> dict[str, Any]:
     return capsule
 
 
-def _run_validation(
-    commands: list[str], cwd: Path | None = None
-) -> dict[str, Any]:
+def _run_validation(commands: list[str], cwd: Path | None = None) -> dict[str, Any]:
     """Run validation commands safely (whitelist + timeout).
 
     Returns ``{passed: bool, output: str, duration_ms: float}``.
@@ -208,7 +206,7 @@ def main() -> None:
     parser.add_argument("--no-validate", action="store_true")
     args = parser.parse_args()
 
-    import asyncio  # noqa: PLC0415
+    import asyncio
 
     result = asyncio.run(
         complete_atp_task(

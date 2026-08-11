@@ -114,9 +114,7 @@ def run_acceptance_gate(
         )
 
     total = len(frozen)
-    baseline_repeats = [
-        RepeatObs(repeat_index=0, score=baseline_t0_rate, denominator=total)
-    ]
+    baseline_repeats = [RepeatObs(repeat_index=0, score=baseline_t0_rate, denominator=total)]
     b_mean, c_mean, delta, verdict = classify_rate(
         baseline_repeats, candidate_repeats, epsilon=epsilon
     )

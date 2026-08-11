@@ -86,11 +86,11 @@ class TestBuildStageRecords:
         steps = normalize_trace_steps(
             {
                 "execution_trace": [
-                    _entry(cmd="pytest"),          # stage 0 (no change) → stays open
-                    _entry(cmd="edit foo.py"),     # change → closes stage 0
-                    _entry(cmd="pytest"),          # stage 1, open
-                    _entry(cmd="write bar.py"),    # change → closes stage 1
-                    _entry(cmd="ruff check"),      # stage 2, final partial
+                    _entry(cmd="pytest"),  # stage 0 (no change) → stays open
+                    _entry(cmd="edit foo.py"),  # change → closes stage 0
+                    _entry(cmd="pytest"),  # stage 1, open
+                    _entry(cmd="write bar.py"),  # change → closes stage 1
+                    _entry(cmd="ruff check"),  # stage 2, final partial
                 ]
             }
         )

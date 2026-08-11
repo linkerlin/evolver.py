@@ -5,7 +5,6 @@ from :mod:`evolver.recipe`, which installs file-template recipes.
 """
 
 # Direct port orchestrators intentionally use fail-fast return branches.
-# ruff: noqa: PLR0911, PLR0912
 
 from __future__ import annotations
 
@@ -106,9 +105,7 @@ def normalize_manifest(
         position = step.get("position")
         steps.append(
             {
-                "skill_path": step.get("skill_path")
-                or step.get("skillPath")
-                or step.get("path"),
+                "skill_path": step.get("skill_path") or step.get("skillPath") or step.get("path"),
                 "skill_name": step.get("skill_name") or step.get("skillName"),
                 "platform": step.get("platform"),
                 "position": position if isinstance(position, int) else index,
@@ -269,10 +266,7 @@ def hydrolyze_and_verify(
             source["skill_name"] = step["skill_name"]
 
     repo_root = Path(
-        options.get("repo_root")
-        or options.get("repoRoot")
-        or get_repo_root()
-        or Path.cwd()
+        options.get("repo_root") or options.get("repoRoot") or get_repo_root() or Path.cwd()
     )
     runner = options.get("run_validations")
     validation = (
@@ -608,9 +602,7 @@ async def compose_recipe_from_skills(
     state_target = Path(options.get("state_path") or state_path())
     state = _read_state(state_target)
     recipes = state.setdefault("recipes", {})
-    state_key = _short_hash(
-        title + "|" + ",".join(str(step["asset_id"]) for step in recipe_steps)
-    )
+    state_key = _short_hash(title + "|" + ",".join(str(step["asset_id"]) for step in recipe_steps))
     recipes[state_key] = {
         "at": datetime.now(UTC).isoformat(),
         "title": title,
@@ -629,9 +621,7 @@ async def compose_recipe_from_skills(
         "recipe_id": recipe_result.get("recipe_id"),
         "title": title,
         "market_url": (
-            "https://evomap.ai/market?tab=recipes"
-            if recipe_result.get("recipe_id")
-            else None
+            "https://evomap.ai/market?tab=recipes" if recipe_result.get("recipe_id") else None
         ),
         "steps": [
             {

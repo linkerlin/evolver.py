@@ -29,9 +29,7 @@ def render_causal_brief(analyses: list[CausalAnalysis]) -> str:
     lines: list[str] = ["# Causal Diagnosis (terminal-cause-first)"]
     for analysis in analyses:
         rc = pick_root_cause(analysis)
-        lines.append(
-            f"## event {analysis.event_id} — {analysis.terminal_failure_kind}"
-        )
+        lines.append(f"## event {analysis.event_id} — {analysis.terminal_failure_kind}")
         if rc:
             criticality, terminal_cause, agent_mechanism = rc
             lines.append(
@@ -45,8 +43,7 @@ def render_causal_brief(analyses: list[CausalAnalysis]) -> str:
             cause = stage.terminal_cause or "unknown"
             mech = stage.agent_mechanism or "unknown"
             lines.append(
-                f"  - stage {stage.stage_index} [{stage.criticality}]: "
-                f"cause={cause} mech={mech}"
+                f"  - stage {stage.stage_index} [{stage.criticality}]: cause={cause} mech={mech}"
             )
     return "\n".join(lines)
 

@@ -29,7 +29,7 @@ class TestScoreRecentAttempts:
             {"type": "attempt", "timestamp": now, "outcome": "success", "changed_files": ["a.py"]},
             {"type": "attempt", "timestamp": now, "outcome": "failure", "changed_files": ["b.py"]},
         ]
-        sr, ac, an = _score_recent_attempts(events, now=now)
+        sr, _ac, _an = _score_recent_attempts(events, now=now)
         assert sr == 0.5
 
     def test_outside_window_ignored(self):
@@ -37,7 +37,7 @@ class TestScoreRecentAttempts:
         events = [
             {"type": "attempt", "timestamp": now - 100000, "outcome": "success"},
         ]
-        sr, ac, an = _score_recent_attempts(events, window_seconds=3600, now=now)
+        sr, _ac, _an = _score_recent_attempts(events, window_seconds=3600, now=now)
         assert sr == 0.5  # no recent attempts
 
 
@@ -101,12 +101,14 @@ class TestReflect:
         events = [
             {"type": "attempt", "timestamp": now, "outcome": "success", "changed_files": ["a.py"]},
         ]
-        with patch(
-            "evolver.gep.reflection.load_personality",
-            return_value={"rigor": 0.5, "creativity": 0.5, "risk_tolerance": 0.5},
+        with (
+            patch(
+                "evolver.gep.reflection.load_personality",
+                return_value={"rigor": 0.5, "creativity": 0.5, "risk_tolerance": 0.5},
+            ),
+            patch("evolver.gep.reflection.save_personality") as mock_save,
         ):
-            with patch("evolver.gep.reflection.save_personality") as mock_save:
-                delta = reflect(events=events, dry_run=True, now=now)
+            delta = reflect(events=events, dry_run=True, now=now)
         assert isinstance(delta, ReflectionDelta)
         mock_save.assert_not_called()
 
@@ -115,12 +117,14 @@ class TestReflect:
         events = [
             {"type": "attempt", "timestamp": now, "outcome": "failure", "changed_files": ["a.py"]},
         ]
-        with patch(
-            "evolver.gep.reflection.load_personality",
-            return_value={"rigor": 0.5, "creativity": 0.5, "risk_tolerance": 0.5},
+        with (
+            patch(
+                "evolver.gep.reflection.load_personality",
+                return_value={"rigor": 0.5, "creativity": 0.5, "risk_tolerance": 0.5},
+            ),
+            patch("evolver.gep.reflection.save_personality") as mock_save,
         ):
-            with patch("evolver.gep.reflection.save_personality") as mock_save:
-                delta = reflect(events=events, dry_run=False, now=now)
+            delta = reflect(events=events, dry_run=False, now=now)
         assert isinstance(delta, ReflectionDelta)
         mock_save.assert_called_once()
 

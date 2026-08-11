@@ -132,9 +132,7 @@ class TestRenderClusterBrief:
         assert render_cluster_brief([]) == ""
 
     def test_renders_header_and_cluster(self) -> None:
-        clusters = build_causal_clusters(
-            [_analysis("e1", terminal_cause="agent_timeout")]
-        )
+        clusters = build_causal_clusters([_analysis("e1", terminal_cause="agent_timeout")])
         brief = render_cluster_brief(clusters)
         assert "Causal Failure Clusters" in brief
         assert "Passing cases are regression tests" in brief
@@ -143,9 +141,7 @@ class TestRenderClusterBrief:
         assert "high-confidence" in brief
 
     def test_model_dump_round_trip(self) -> None:
-        clusters = build_causal_clusters(
-            [_analysis("e1", terminal_cause="agent_timeout")]
-        )
+        clusters = build_causal_clusters([_analysis("e1", terminal_cause="agent_timeout")])
         rebuilt = CausalCluster.model_validate(clusters[0].model_dump())
         assert rebuilt.size == 1
         assert rebuilt.signature.terminal_cause == "agent_timeout"

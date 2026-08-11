@@ -119,7 +119,7 @@ def load_gateway_captured_session_hashes(opts: dict[str, Any] | None = None) -> 
     return out
 
 
-def candidate_session_ids_for_file(file_path: Path | str) -> list[str]:  # noqa: PLR0912
+def candidate_session_ids_for_file(file_path: Path | str) -> list[str]:
     path = Path(file_path)
     ids: set[str] = set()
     base = path.name

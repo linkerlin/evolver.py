@@ -85,10 +85,7 @@ def _should_skip(path: Path, root: Path) -> bool:
         "build/",
         ".egg-info/",
     ]
-    for pat in skip_patterns:
-        if pat in rel:
-            return True
-    return False
+    return any(pat in rel for pat in skip_patterns)
 
 
 def _find_missing_docstrings(tree: ast.AST, path: Path) -> list[ExplorationTask]:

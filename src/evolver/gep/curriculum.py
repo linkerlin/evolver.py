@@ -242,7 +242,7 @@ def frontier_tasks(*, count: int = 3) -> list[CurriculumTask]:
 
 def frontier_signals(*, count: int = 3) -> list[str]:
     """Signal tokens marking the current curriculum frontier for predictive boost."""
-    from evolver.gep.ttt_inspired import curriculum_frontier_signals  # noqa: PLC0415
+    from evolver.gep.ttt_inspired import curriculum_frontier_signals
 
     tasks = frontier_tasks(count=count)
     return curriculum_frontier_signals([t.task_id for t in tasks])

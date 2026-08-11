@@ -8,7 +8,7 @@ and service listings used across the ATP marketplace.
 
 from __future__ import annotations
 
-from enum import Enum
+from enum import StrEnum
 from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field
@@ -18,19 +18,19 @@ from pydantic import BaseModel, ConfigDict, Field
 # ---------------------------------------------------------------------------
 
 
-class VerifyMode(str, Enum):
+class VerifyMode(StrEnum):
     strict = "strict"
     lenient = "lenient"
     auto = "auto"
 
 
-class RoutingMode(str, Enum):
+class RoutingMode(StrEnum):
     direct = "direct"
     proxy = "proxy"
     relay = "relay"
 
 
-class OrderStatus(str, Enum):
+class OrderStatus(StrEnum):
     pending = "pending"
     confirmed = "confirmed"
     delivered = "delivered"
@@ -41,21 +41,21 @@ class OrderStatus(str, Enum):
     refunded = "refunded"
 
 
-class Role(str, Enum):
+class Role(StrEnum):
     consumer = "consumer"
     merchant = "merchant"
     validator = "validator"
     judge = "judge"
 
 
-class ServiceCategory(str, Enum):
+class ServiceCategory(StrEnum):
     skill = "skill"
     compute = "compute"
     data = "data"
     verification = "verification"
 
 
-class ExecutionMode(str, Enum):
+class ExecutionMode(StrEnum):
     exclusive = "exclusive"
     open = "open"
     swarm = "swarm"

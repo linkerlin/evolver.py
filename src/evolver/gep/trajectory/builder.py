@@ -259,7 +259,7 @@ def _is_valid_json(text: str) -> bool:
         return False
 
 
-def _extract_streamed_openai_chat_tool_calls(response: dict[str, Any]) -> list[ToolCall]:  # noqa: PLR0912
+def _extract_streamed_openai_chat_tool_calls(response: dict[str, Any]) -> list[ToolCall]:
     """Reconstruct OpenAI Chat tool calls from streamed argument deltas.
 
     Each event carries ``choices[].delta.tool_calls[]`` keyed by ``index``; the
@@ -470,7 +470,7 @@ def _is_gemini_route(path: str, row: dict[str, Any]) -> bool:
     )
 
 
-def _extract_tool_calls(row: dict[str, Any]) -> list[ToolCall]:  # noqa: PLR0912, PLR0915
+def _extract_tool_calls(row: dict[str, Any]) -> list[ToolCall]:
     """Extract tool calls from request + response across the three API shapes.
 
     Declared tool definitions come first (``declared=True``); actual invocations
@@ -581,7 +581,7 @@ def _row_is_failure(row: dict[str, Any]) -> bool:
 # ---------------------------------------------------------------------------
 
 
-def build_trajectory_from_rows(session_id: str, rows: list[dict[str, Any]]) -> Trajectory:  # noqa: PLR0912
+def build_trajectory_from_rows(session_id: str, rows: list[dict[str, Any]]) -> Trajectory:
     """Build a single coding trajectory for *session_id* from its trace *rows*."""
     session_rows = [
         r for r in rows if r.get("sessionId") == session_id or r.get("session_id") == session_id

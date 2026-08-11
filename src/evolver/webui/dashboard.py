@@ -143,7 +143,7 @@ def _event_status_class(status: str) -> str:
     }.get(status or "", "warn")
 
 
-def render_dashboard() -> str:  # noqa: PLR0915
+def render_dashboard() -> str:
     solidify = read_json_if_exists(get_solidify_state_path()) or {}
     last_run = solidify.get("last_run")
     last_solidify = solidify.get("last_solidify")

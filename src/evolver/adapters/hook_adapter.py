@@ -14,6 +14,7 @@ Design notes (Pythonic)
 
 from __future__ import annotations
 
+import contextlib
 import json
 import os
 import shutil
@@ -201,10 +202,8 @@ def copy_hook_scripts(dest_dir: Path, evolver_root: Path | None = None) -> list[
         assert_not_symlink(dest, f"hook destination {name}")
         shutil.copy2(src, dest)
         # Best-effort executable bit (no-op on Windows)
-        try:
+        with contextlib.suppress(OSError):
             dest.chmod(dest.stat().st_mode | 0o755)
-        except OSError:
-            pass
         copied.append(dest)
     return copied
 

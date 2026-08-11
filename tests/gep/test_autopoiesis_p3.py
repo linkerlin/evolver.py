@@ -3,12 +3,12 @@
 from __future__ import annotations
 
 import asyncio
-import json
 
 import pytest
 
 from evolver.evolve import guards
 from evolver.evolve.runner import _run_single_cycle
+from evolver.gep import memory_graph as mg
 from evolver.gep import selector
 from evolver.gep.autopoiesis import (
     capture_solidify_success,
@@ -16,10 +16,8 @@ from evolver.gep.autopoiesis import (
     read_preflight_abort_report,
     run_preflight_abort_self_report,
 )
-from evolver.gep import memory_graph as mg
 from evolver.gep.cognition import post_solidify_hooks
 from evolver.gep.memory_bridge import living_memory_score_adjustment
-
 
 GENES = [
     {

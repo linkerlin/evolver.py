@@ -61,21 +61,16 @@ def test_triggers_on_upstream_harness_surfaces() -> None:
 def test_triggers_on_python_repo_paths() -> None:
     assert hg.changed_files_touch_governance_surface(["src/evolver/gep/selector.py"]) is True
     assert (
-        hg.changed_files_touch_governance_surface(
-            ["src/evolver/proxy/router/messages_route.py"]
-        )
+        hg.changed_files_touch_governance_surface(["src/evolver/proxy/router/messages_route.py"])
         is True
     )
     assert (
-        hg.changed_files_touch_governance_surface(["scripts/harness_governance_check.py"])
-        is True
+        hg.changed_files_touch_governance_surface(["scripts/harness_governance_check.py"]) is True
     )
 
 
 def test_requires_governance_packet_for_sensitive_changes() -> None:
-    errors = hg.validate_governance_packet(
-        "## Summary\nchange selector", ["src/gep/selector.js"]
-    )
+    errors = hg.validate_governance_packet("## Summary\nchange selector", ["src/gep/selector.js"])
     assert len(errors) >= 8
     assert any("Live promotion" in e for e in errors)
     assert any("Autonomous evaluator self-editing" in e for e in errors)

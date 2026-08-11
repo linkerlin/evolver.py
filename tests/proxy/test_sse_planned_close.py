@@ -29,7 +29,9 @@ class TestSsePlannedClose:
     def test_requests_duration_within_hub_ceiling(self) -> None:
         assert 0 < SSE_STREAM_DURATION_MS <= 300_000
 
-    def test_latches_planned_close_and_reports_it_exactly_once(self, mgr: EventDeliveryManager) -> None:
+    def test_latches_planned_close_and_reports_it_exactly_once(
+        self, mgr: EventDeliveryManager
+    ) -> None:
         mgr.handle_hub_event_stream_close(json.dumps({"reason": "max_duration"}))
         assert mgr.take_sse_planned_close() is True, "first read must see the planned close"
         assert mgr.take_sse_planned_close() is False, "flag must be consumed, not sticky"
@@ -63,7 +65,7 @@ class TestSsePlannedClose:
                     fn(ev)
 
         es = FakeEventSource()
-        es.addEventListener("close", lambda ev: seen.append(ev))
+        es.addEventListener("close", seen.append)
 
         EventDeliveryManager.emit_fetch_sse_frame_for_testing(
             es, 'event: close\ndata: {"reason":"max_duration"}\n\n'
@@ -83,14 +85,14 @@ class TestSsePlannedClose:
             def _dispatch_event(self, event_type: str, ev: dict) -> None:  # type: ignore[no-untyped-def]
                 raise AssertionError("message frames must go through onmessage")
 
-        EventDeliveryManager.emit_fetch_sse_frame_for_testing(
-            FakeEventSource(), "data: hello\n\n"
-        )
+        EventDeliveryManager.emit_fetch_sse_frame_for_testing(FakeEventSource(), "data: hello\n\n")
         assert len(seen) == 1
         assert seen[0]["type"] == "message"
         assert seen[0]["data"] == "hello"
 
-    def test_planned_close_resets_saturated_backoff_to_base(self, mgr: EventDeliveryManager) -> None:
+    def test_planned_close_resets_saturated_backoff_to_base(
+        self, mgr: EventDeliveryManager
+    ) -> None:
         for _ in range(6):
             mgr._grow_sse_reconnect_backoff()
         assert mgr.get_sse_internals_for_testing()["sseReconnectMs"] == SSE_RECONNECT_MAX_MS
@@ -111,6 +113,8 @@ class TestSsePlannedClose:
         assert mgr.get_sse_internals_for_testing()["ssePlannedClose"] is True
 
     def test_message_frame_without_id_gets_synthesized_id(self, mgr: EventDeliveryManager) -> None:
-        mgr._dispatch_sse_frame("message", json.dumps({"type": "task_assigned", "payload": {"x": 1}}))
+        mgr._dispatch_sse_frame(
+            "message", json.dumps({"type": "task_assigned", "payload": {"x": 1}})
+        )
         internals = mgr.get_sse_internals_for_testing()
         assert internals["ssePlannedClose"] is False

@@ -347,6 +347,7 @@ def _extract_llm(corpus: str) -> list[str]:
             capture_output=True,
             text=True,
             timeout=12,
+            check=False,
         )
         if result.returncode != 0 or not result.stdout:
             return []
@@ -407,8 +408,8 @@ def _extract_regex(corpus: str, lower: str, error_hit: bool) -> list[str]:
         signals.append("log_error")
 
     try:
-        lines = [l.strip() for l in corpus.split("\n") if l.strip()]
-        err_line = next((l for l in lines if _ERROR_LINE_RE.search(l)), None)
+        lines = [line.strip() for line in corpus.split("\n") if line.strip()]
+        err_line = next((line for line in lines if _ERROR_LINE_RE.search(line)), None)
         if err_line:
             clipped = re.sub(r"\s+", " ", err_line)[:260]
             signals.append("errsig:" + clipped)
@@ -702,11 +703,10 @@ def _extract_regex(corpus: str, lower: str, error_hit: bool) -> list[str]:
         r"\b(not supported|cannot|doesn'?t support|no way to|missing feature|"
         r"unsupported|not available|not implemented|no support for)\b"
     )
-    if re.search(_cap_gap_pat, lower, re.IGNORECASE):
-        if not any(
-            s in signals for s in ("memory_missing", "user_missing", "session_logs_missing")
-        ):
-            signals.append("capability_gap")
+    if re.search(_cap_gap_pat, lower, re.IGNORECASE) and not any(
+        s in signals for s in ("memory_missing", "user_missing", "session_logs_missing")
+    ):
+        signals.append("capability_gap")
 
     # Tool usage analytics
     tool_usage: dict[str, int] = {}

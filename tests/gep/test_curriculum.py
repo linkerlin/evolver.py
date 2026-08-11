@@ -122,15 +122,17 @@ class TestAdvanceLevel:
 
 class TestNextTasks:
     def test_returns_tasks_at_level(self, tmp_path):
-        with patch(
-            "evolver.gep.curriculum._curriculum_path", return_value=tmp_path / "curriculum.json"
+        with (
+            patch(
+                "evolver.gep.curriculum._curriculum_path", return_value=tmp_path / "curriculum.json"
+            ),
+            patch("evolver.gep.curriculum.is_enabled", return_value=True),
         ):
-            with patch("evolver.gep.curriculum.is_enabled", return_value=True):
-                add_task("t1", "desc", difficulty=2)
-                add_task("t2", "desc2", difficulty=2)
-                tasks = next_tasks(count=2, level=2)
-                assert len(tasks) == 2
-                assert all(t.difficulty == 2 for t in tasks)
+            add_task("t1", "desc", difficulty=2)
+            add_task("t2", "desc2", difficulty=2)
+            tasks = next_tasks(count=2, level=2)
+            assert len(tasks) == 2
+            assert all(t.difficulty == 2 for t in tasks)
 
     def test_respects_feature_flag(self, tmp_path, monkeypatch):
         monkeypatch.setenv("EVOLVER_FF_ENABLE_CURRICULUM", "0")

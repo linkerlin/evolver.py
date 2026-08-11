@@ -28,7 +28,7 @@ class CauseCategory(Enum):
 
 @dataclass
 class Diagnosis:
-    confidence: float  # 0.0 – 1.0
+    confidence: float  # 0.0 - 1.0
     category: CauseCategory
     cause: str
     recommendation: str
@@ -59,11 +59,7 @@ def _match_module_not_found(text: str) -> Diagnosis | None:
 
 def _match_assertion(text: str) -> Diagnosis | None:
     if "AssertionError" in text or "assert " in text:
-        lines = [
-            ln
-            for ln in text.splitlines()
-            if "assert" in ln.lower() or "AssertionError" in ln
-        ]
+        lines = [ln for ln in text.splitlines() if "assert" in ln.lower() or "AssertionError" in ln]
         return Diagnosis(
             confidence=0.90,
             category=CauseCategory.TEST,

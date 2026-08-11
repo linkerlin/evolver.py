@@ -131,7 +131,7 @@ def spawn_replacement_process(
     log = Path(log_path) if log_path else Path("evolver-daemon.log")
     try:
         log.parent.mkdir(parents=True, exist_ok=True)
-        log_handle = open(log, "a", encoding="utf-8")
+        log_handle = open(log, "a", encoding="utf-8")  # noqa: SIM115 — handle kept open for daemon lifetime
     except OSError as exc:
         logger.error("[Daemon] Spawn-replacement failed (%s): %s", reason, exc)
         return {"spawned": False, "reason": "spawn_error", "error": exc}
@@ -144,7 +144,7 @@ def spawn_replacement_process(
                 subprocess, "DETACHED_PROCESS", 0
             )
         # Prefer uv run / uvx when available (EVOLVER_LAUNCHER=auto|uv|uvx).
-        from evolver.uv_runtime import build_evolver_command  # noqa: PLC0415
+        from evolver.uv_runtime import build_evolver_command
 
         cmd = build_evolver_command(argv)
         kwargs: dict[str, Any] = {

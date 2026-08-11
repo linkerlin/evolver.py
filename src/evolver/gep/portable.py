@@ -145,7 +145,7 @@ def import_gepx(path: Path, *, merge: bool = True) -> dict[str, Any]:
         for name, expected_hash in manifest.get("files", {}).items():
             if name == "manifest.json":
                 continue
-            member = tf.getmember(name)
+            tf.getmember(name)
             member_file = tf.extractfile(name)
             if member_file is None:
                 raise ImportError(f"Missing archive member: {name}")

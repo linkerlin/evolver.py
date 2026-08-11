@@ -82,7 +82,7 @@ def build_execution_trace(
         return []
 
     trace: list[dict[str, Any]] = []
-    for cmd, out in zip(commands, outputs):
+    for cmd, out in zip(commands, outputs, strict=False):
         entry: dict[str, Any] = {
             "tool": infer_tool_chain(cmd),
             "command_preview": cmd[:120],

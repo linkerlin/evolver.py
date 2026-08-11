@@ -25,10 +25,7 @@ from evolver.gep.diagnosis.schemas import (
 )
 
 _GUIDANCE_BY_CRITICALITY: dict[str, str] = {
-    "root_cause": (
-        "high-confidence actionable — select this cluster for the next "
-        "proposal"
-    ),
+    "root_cause": ("high-confidence actionable — select this cluster for the next proposal"),
     "contributor": "contributing factor — treat as secondary, not primary",
     "non_terminal_friction": "non-terminal friction — informational only",
     "recovered_friction": "recovered friction — NOT actionable by itself",
@@ -112,9 +109,7 @@ def build_causal_clusters(analyses: list[CausalAnalysis]) -> list[CausalCluster]
             )
         )
 
-    clusters.sort(
-        key=lambda c: (CRITICALITY_RANK.get(c.signature.criticality, 4), -c.size)
-    )
+    clusters.sort(key=lambda c: (CRITICALITY_RANK.get(c.signature.criticality, 4), -c.size))
     return clusters
 
 

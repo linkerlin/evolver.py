@@ -74,7 +74,7 @@ def _content_to_text(value: Any) -> str:
     return str(value)
 
 
-def _user_account_key_from_identity_field(value: Any) -> str:  # noqa: PLR0911
+def _user_account_key_from_identity_field(value: Any) -> str:
     """Extract a stable identity key from various user_id formats.
 
     Claude Code packs per-session identity into metadata.user_id as a
@@ -166,10 +166,9 @@ def extract_user_id_hash(
     identity = ""
     metadata = body.get("metadata")
     if isinstance(metadata, dict):
-        identity = (
-            _user_account_key_from_identity_field(metadata.get("user_id"))
-            or _user_account_key_from_identity_field(metadata.get("account_id"))
-        )
+        identity = _user_account_key_from_identity_field(
+            metadata.get("user_id")
+        ) or _user_account_key_from_identity_field(metadata.get("account_id"))
     if not identity:
         identity = _user_account_key_from_identity_field(body.get("user"))
     if not identity:
@@ -229,7 +228,7 @@ def _pick_effort(value: Any) -> str:
     return ""
 
 
-def extract_thinking_effort(body: dict[str, Any] | None = None) -> str:  # noqa: PLR0911, PLR0912
+def extract_thinking_effort(body: dict[str, Any] | None = None) -> str:
     """Extract thinking/reasoning effort from a request body.
 
     Supports OpenAI reasoning_effort, Anthropic thinking config,

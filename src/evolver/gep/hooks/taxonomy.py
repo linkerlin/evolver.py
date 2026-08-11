@@ -41,9 +41,7 @@ HOOKS_BY_MECHANISM_FAMILY: dict[str, tuple[str, ...]] = {
 }
 
 #: families implemented in this sprint (others are declared, not yet wired).
-IMPLEMENTED_FAMILIES: frozenset[str] = frozenset(
-    {"prompt_instruction", "gene_library"}
-)
+IMPLEMENTED_FAMILIES: frozenset[str] = frozenset({"prompt_instruction", "gene_library"})
 
 
 def known_family(family: str) -> bool:

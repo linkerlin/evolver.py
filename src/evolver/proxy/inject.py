@@ -21,9 +21,7 @@ def inject_trace_id(body: dict[str, Any]) -> dict[str, Any]:
     return body
 
 
-def inject_feature_hints(
-    body: dict[str, Any], hints: dict[str, Any]
-) -> dict[str, Any]:
+def inject_feature_hints(body: dict[str, Any], hints: dict[str, Any]) -> dict[str, Any]:
     """Inject feature-routing hints into the request body."""
     if hints:
         body.setdefault("metadata", {})
@@ -44,9 +42,7 @@ def strip_internal_fields(body: dict[str, Any]) -> dict[str, Any]:
     return body
 
 
-def post_process_response(
-    response_body: dict[str, Any], trace_id: str = ""
-) -> dict[str, Any]:
+def post_process_response(response_body: dict[str, Any], trace_id: str = "") -> dict[str, Any]:
     """Add internal metadata to the response before returning to client."""
     if trace_id:
         response_body.setdefault("_evolver", {})

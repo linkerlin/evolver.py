@@ -130,13 +130,11 @@ class TestTrySniffModes:
         assert "conv_capability_candidate" in r["signals"]
         assert "conv_capability:publish-feishu-doc" in r["signals"]
 
-    def test_cooldown_gates_second_sniff(
-        self, monkeypatch: pytest.MonkeyPatch, tmp_path
-    ) -> None:
+    def test_cooldown_gates_second_sniff(self, monkeypatch: pytest.MonkeyPatch, tmp_path) -> None:
         monkeypatch.setenv("EVOLVER_CONV_SNIFF_ENABLED", "enforce")
         monkeypatch.setenv("EVOLVER_REPO_ROOT", str(tmp_path))
         # Force the state path into isolation.
-        import evolver.gep.conversation_sniffer as cs_mod  # noqa: PLC0415
+        import evolver.gep.conversation_sniffer as cs_mod
 
         monkeypatch.setattr(cs_mod, "_state_path", lambda: tmp_path / "state.json")
         state = {"seen": {}, "last_sniff_ts": 0}
@@ -147,12 +145,10 @@ class TestTrySniffModes:
         second = cs.try_sniff("lark-cli published successfully again", st2)
         assert second["signals"] == []
 
-    def test_empty_sniff_no_cooldown(
-        self, monkeypatch: pytest.MonkeyPatch, tmp_path
-    ) -> None:
+    def test_empty_sniff_no_cooldown(self, monkeypatch: pytest.MonkeyPatch, tmp_path) -> None:
         monkeypatch.setenv("EVOLVER_CONV_SNIFF_ENABLED", "enforce")
         monkeypatch.setenv("EVOLVER_REPO_ROOT", str(tmp_path))
-        import evolver.gep.conversation_sniffer as cs_mod  # noqa: PLC0415
+        import evolver.gep.conversation_sniffer as cs_mod
 
         monkeypatch.setattr(cs_mod, "_state_path", lambda: tmp_path / "state.json")
         state = {"seen": {}, "last_sniff_ts": 0}

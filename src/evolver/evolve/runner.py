@@ -6,6 +6,7 @@ Equivalent to evolver/src/evolve.js (obfuscated in Node).
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import datetime
 import os
 import secrets
@@ -55,7 +56,6 @@ BRIDGE_STALE_TIMEOUT_S: float = float(
 
 
 def _current_event() -> asyncio.Event | None:
-    global _shutdown_event
     return _shutdown_event
 
 
@@ -264,10 +264,8 @@ async def run_loop(
                 backoff = min(interval * (2 ** (consecutive_errors - 1)), max_backoff_interval)
                 print(f"[loop] Cycle failed ({consecutive_errors}): {exc}")
                 print(f"[loop] Backing off for {backoff:.1f}s")
-                try:
+                with contextlib.suppress(TimeoutError):
                     await asyncio.wait_for(shutdown.wait(), timeout=backoff)
-                except TimeoutError:
-                    pass
                 continue
             finally:
                 if progress_ticker is not None:
@@ -304,10 +302,8 @@ async def run_loop(
                     raise SystemExit(1)
                 # spawn_error / test doubles: exit loop gracefully without killing pytest.
                 break
-            try:
+            with contextlib.suppress(TimeoutError):
                 await asyncio.wait_for(shutdown.wait(), timeout=interval)
-            except TimeoutError:
-                pass
 
         print("[loop] Graceful shutdown complete.")
 

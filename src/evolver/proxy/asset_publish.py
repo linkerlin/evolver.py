@@ -42,7 +42,7 @@ def _resolve_loose_asset_validation(supplied: object) -> list[str]:
     the validator sandbox would refuse at publish time instead of shipping a
     gene that is dead on arrival.
     """
-    from evolver.gep.policy_check import is_validation_command_allowed  # noqa: PLC0415
+    from evolver.gep.policy_check import is_validation_command_allowed
 
     raw_cmds = supplied if isinstance(supplied, list) else []
     cmds = [str(c or "").strip() for c in raw_cmds if isinstance(c, str)]
@@ -66,7 +66,7 @@ def _as_text(raw: dict[str, Any]) -> str:
     return str(raw.get("content") or raw.get("summary") or "").strip()
 
 
-def build_bundle_from_loose_asset(  # noqa: PLR0915
+def build_bundle_from_loose_asset(
     raw: dict[str, Any] | None,
 ) -> tuple[dict[str, Any], dict[str, Any]]:
     """Build a Hub-shaped Gene+Capsule pair from a loose MCP / distill asset."""
@@ -177,7 +177,7 @@ def build_bundle_from_loose_asset(  # noqa: PLR0915
         )
     validation = _resolve_loose_asset_validation(r.get("validation"))
 
-    gene: dict[str, Any] = {
+    bundle_gene: dict[str, Any] = {
         "type": "Gene",
         "schema_version": schema_version,
         "id": gid,
@@ -192,9 +192,9 @@ def build_bundle_from_loose_asset(  # noqa: PLR0915
         ),
         "validation": validation,
     }
-    gene["asset_id"] = compute_asset_id(gene)
+    bundle_gene["asset_id"] = compute_asset_id(bundle_gene)
 
-    capsule: dict[str, Any] = {
+    bundle_capsule: dict[str, Any] = {
         "type": "Capsule",
         "schema_version": schema_version,
         "id": f"mcp_c_{secrets.token_hex(6)}",
@@ -211,8 +211,8 @@ def build_bundle_from_loose_asset(  # noqa: PLR0915
         "env_fingerprint": {"platform": os.name},
         "validation": validation,
     }
-    capsule["asset_id"] = compute_asset_id(capsule)
-    return gene, capsule
+    bundle_capsule["asset_id"] = compute_asset_id(bundle_capsule)
+    return bundle_gene, bundle_capsule
 
 
 def publish_assets(
@@ -242,7 +242,7 @@ def publish_assets(
             hub_response: dict[str, Any] | None = None
             if try_hub:
                 try:
-                    from evolver.gep.a2a_protocol import (  # noqa: PLC0415
+                    from evolver.gep.a2a_protocol import (
                         build_publish_bundle,
                         post_hub_envelope,
                     )

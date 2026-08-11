@@ -415,7 +415,7 @@ def _read_solidify_last_run() -> dict[str, Any] | None:
 def record_outcome_from_state(
     *,
     signals: list[str] | None = None,
-    observations: Any = None,  # noqa: ARG001 — Node parity surface
+    observations: Any = None,
     selected_gene: dict[str, Any] | None = None,
     blast_radius: dict[str, Any] | None = None,
     run_id: str | None = None,
@@ -428,8 +428,8 @@ def record_outcome_from_state(
     and optionally fire-and-forgets a Hub outcome report.
     """
     # Lazy: avoid import cycles with node_identity / a2a paths at module load.
-    from evolver.gep.node_identity import get_or_create_node_id  # noqa: PLC0415
-    from evolver.gep.reuse_attribution import (  # noqa: PLC0415
+    from evolver.gep.node_identity import get_or_create_node_id
+    from evolver.gep.reuse_attribution import (
         build_outcome_report_payload,
         build_reuse_attribution,
         post_outcome_report,
@@ -461,7 +461,7 @@ def record_outcome_from_state(
 
     attribution = build_reuse_attribution(last_run, last_action)
     # TTT predictive outcome block (signal clarity + frontier).
-    from evolver.gep.ttt_inspired import compute_predictive_boost  # noqa: PLC0415
+    from evolver.gep.ttt_inspired import compute_predictive_boost
 
     outcome_signals = list(signals) if signals is not None else current_signals
     predictive = compute_predictive_boost(
@@ -661,7 +661,7 @@ def compute_predictive_boost(
     currentObserved: dict[str, Any] | None = None,  # noqa: N803
 ) -> dict[str, Any]:
     """Public re-export of :func:`evolver.gep.ttt_inspired.compute_predictive_boost`."""
-    from evolver.gep.ttt_inspired import (  # noqa: PLC0415
+    from evolver.gep.ttt_inspired import (
         compute_predictive_boost as _compute,
     )
 
@@ -675,14 +675,14 @@ def compute_predictive_boost(
 def check_epoch_boundary(
     *,
     signals: list[str] | None = None,
-    current_env_fingerprint_key: str | None = None,  # noqa: ARG001
-    current_gene_lib_version: str | None = None,  # noqa: ARG001
+    current_env_fingerprint_key: str | None = None,
+    current_gene_lib_version: str | None = None,
     # CamelCase aliases (Node)
-    currentEnvFingerprintKey: str | None = None,  # noqa: N803, ARG001
-    currentGeneLibVersion: str | None = None,  # noqa: N803, ARG001
+    currentEnvFingerprintKey: str | None = None,  # noqa: N803
+    currentGeneLibVersion: str | None = None,  # noqa: N803
 ) -> dict[str, Any]:
     """Decide whether consecutive-failure signals warrant a memory epoch reset."""
-    from evolver.gep.ttt_inspired import should_reset_epoch  # noqa: PLC0415
+    from evolver.gep.ttt_inspired import should_reset_epoch
 
     should, reason = should_reset_epoch(signals)
     return {
@@ -742,11 +742,11 @@ def read_current_epoch() -> dict[str, Any]:
     }
 
 
-def get_memory_advice(  # noqa: PLR0912, PLR0915
+def get_memory_advice(
     *,
     signals: list[str] | None,
     genes: list[dict[str, Any]] | None,
-    drift_enabled: bool = False,  # noqa: ARG001
+    drift_enabled: bool = False,
 ) -> dict[str, Any]:
     signals = list(signals) if isinstance(signals, list) else []
     genes = list(genes) if isinstance(genes, list) else []
@@ -863,6 +863,8 @@ with contextlib.suppress(Exception):
 
 
 __all__ = [
+    "check_epoch_boundary",
+    "compute_predictive_boost",
     "compute_signal_key",
     "get_memory_advice",
     "get_memory_graph_path",
@@ -870,19 +872,17 @@ __all__ = [
     "patch_sync_state",
     "prune_rotated_archives",
     "read_all",
+    "read_current_epoch",
     "read_sync_state",
     "record_attempt",
     "record_external_candidate",
     "record_friction_observation",
     "record_hypothesis",
-    "check_epoch_boundary",
-    "compute_predictive_boost",
-    "read_current_epoch",
     "record_outcome",
     "record_outcome_from_state",
     "record_signal_gene_preference",
-    "reset_memory_preferences",
     "record_signal_snapshot",
+    "reset_memory_preferences",
     "rotate_memory_graph_now",
     "rotate_on_startup_if_oversized",
     "rotation_enabled",

@@ -300,6 +300,7 @@ def execute_in_sandbox(
             text=True,
             timeout=timeout,
             preexec_fn=_linux_child_preexec if platform.system() == "Linux" else None,
+            check=False,
         )
 
         elapsed = (time.time() - t0) * 1000.0

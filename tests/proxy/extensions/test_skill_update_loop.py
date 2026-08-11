@@ -12,9 +12,7 @@ from evolver.proxy.extensions.skill_update_loop import SkillUpdateLoop
 from evolver.proxy.extensions.skill_updater import create_skill_updater
 
 
-async def test_loop_runs_process_updates(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
-) -> None:
+async def test_loop_runs_process_updates(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     monkeypatch.setenv("EVOLVER_FF_ENABLE_SKILL_AUTO_UPDATE", "true")
     calls = {"n": 0}
 

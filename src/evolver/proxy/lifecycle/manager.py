@@ -266,6 +266,7 @@ class LifecycleManager:
         # authoritative: it must not be shadowed by the env override or the
         # shared legacy node_id file (which is only a mirror for other tools).
         store_text = str(store_id).strip() if store_id else ""
+        resolved: str | None
         if store_text and not is_valid_node_id(store_text):
             resolved = store_text
         else:
@@ -413,9 +414,7 @@ class LifecycleManager:
     # Hello
     # ------------------------------------------------------------------
 
-    async def hello(  # noqa: PLR0912, PLR0915
-        self, *, rotate_secret: bool = False
-    ) -> dict[str, Any]:
+    async def hello(self, *, rotate_secret: bool = False) -> dict[str, Any]:
         """Register or re-register with the Hub."""
         # Gap 3: respect Hub-unreachable backoff.
         wait_ms = self._hub_unreachable_wait_ms()
@@ -517,7 +516,7 @@ class LifecycleManager:
     # Heartbeat
     # ------------------------------------------------------------------
 
-    async def heartbeat(self, *, _skip_reauth: bool = False) -> dict[str, Any]:  # noqa: PLR0911, PLR0912, PLR0915
+    async def heartbeat(self, *, _skip_reauth: bool = False) -> dict[str, Any]:
         """Send a heartbeat to the Hub."""
         # L1: Skip if in ERROR_BACKOFF.
         if self._is_in_error_backoff():

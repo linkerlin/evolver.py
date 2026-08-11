@@ -53,8 +53,7 @@ def test_main_calls_load_dotenv_first() -> None:
 
     assert first_stmt is not None, "main() appears empty"
     assert first_stmt.startswith("_load_dotenv("), (
-        "main() must call _load_dotenv() first (cf #460). "
-        f"First statement was: {first_stmt!r}"
+        f"main() must call _load_dotenv() first (cf #460). First statement was: {first_stmt!r}"
     )
 
 
@@ -66,10 +65,12 @@ def test_cli_top_level_imports_are_stdlib_only() -> None:
         if line.startswith(("import ", "from "))
     ]
     forbidden = [
-        (n, ln) for n, ln in top_imports if re.search(r"\bevolver\b", ln) and "evolver.cli" not in ln
+        (n, ln)
+        for n, ln in top_imports
+        if re.search(r"\bevolver\b", ln) and "evolver.cli" not in ln
     ]
     assert forbidden == [], (
-        "cli.py must not import evolver.* at module top-level. Offenders: " f"{forbidden}"
+        f"cli.py must not import evolver.* at module top-level. Offenders: {forbidden}"
     )
 
 

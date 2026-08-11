@@ -8,8 +8,6 @@ discussions (genes about genes) while preserving real domain work.
 
 from __future__ import annotations
 
-import pytest
-
 from evolver.gep.conversation_distiller import (
     distill_conversation,
     evaluate_gate,
@@ -34,8 +32,7 @@ _META_ONLY = {
 
 _DOMAIN = {
     "summary": (
-        "Publish a markdown file as a Feishu doc via lark-cli and "
-        "return the shareable url."
+        "Publish a markdown file as a Feishu doc via lark-cli and return the shareable url."
     ),
     "strategy": [
         "Render the markdown body with the im-markdown format",
@@ -83,8 +80,7 @@ class TestEvaluateGate:
     def test_meta_only_appears_in_strategy(self) -> None:
         inp = {
             "summary": (
-                "We captured a repeatable workflow and debated whether "
-                "it should be preserved."
+                "We captured a repeatable workflow and debated whether it should be preserved."
             ),
             "strategy": [
                 "Discuss how gene distillation works in the evolver",
@@ -103,8 +99,7 @@ class TestEvaluateGate:
     def test_caller_supplied_meta_signals(self) -> None:
         inp = {
             "summary": (
-                "We discussed whether this reusable workflow should be "
-                "stored for later recall."
+                "We discussed whether this reusable workflow should be stored for later recall."
             ),
             "signals": ["gene_publish"],
             "strategy": [

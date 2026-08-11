@@ -58,8 +58,8 @@ def is_frontier_signal(signal: str) -> bool:
 def compute_predictive_boost(
     *,
     signals: list[str] | None = None,
-    baseline_observed: dict[str, Any] | None = None,  # noqa: ARG001 — Node parity
-    current_observed: dict[str, Any] | None = None,  # noqa: ARG001 — Node parity
+    baseline_observed: dict[str, Any] | None = None,
+    current_observed: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Score signal clarity and a small predictive score boost.
 

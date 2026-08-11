@@ -3,15 +3,15 @@
 from __future__ import annotations
 
 from evolver.ops.commentary import (
-    _explorer_short,
     _critic_short,
+    _critic_verbose,
+    _explorer_short,
+    _explorer_verbose,
     _pragmatist_short,
     _pragmatist_verbose,
-    _explorer_verbose,
-    _critic_verbose,
+    commentary_timeline,
     generate_all_commentaries,
     generate_commentary,
-    commentary_timeline,
 )
 
 

@@ -50,8 +50,10 @@ def _content_text(content: Any) -> str:
             elif isinstance(item, str):
                 parts.append(item)
         return "\n".join(parts)
-    if isinstance(content, dict) and isinstance(content.get("text"), str):
-        return content["text"]
+    if isinstance(content, dict):
+        text = content.get("text")
+        if isinstance(text, str):
+            return text
     return ""
 
 
@@ -118,9 +120,7 @@ def _tool_result_text(result: Any) -> str:
     return "\n".join(p for p in parts if p)
 
 
-def build_gemini_cli_trajectory(  # noqa: PLR0912, PLR0915
-    chunk: str, *, source_path: str = ""
-) -> Trajectory:
+def build_gemini_cli_trajectory(chunk: str, *, source_path: str = "") -> Trajectory:
     records = gemini_cli_message_records(chunk)
     session_id = ""
     task = ""

@@ -10,7 +10,6 @@ Ports ``evolver/src/webui/observer/github.js``:
 """
 
 # Module-level caches mirror Node (Map + slug latch); intentional globals.
-# ruff: noqa: PLW0603
 
 from __future__ import annotations
 
@@ -69,7 +68,7 @@ def _get_github_token() -> str:
     )
 
 
-def normalize_number(input_value: Any) -> int | None:  # noqa: PLR0911
+def normalize_number(input_value: Any) -> int | None:
     """Accept only a positive *safe* integer (mirrors Node ``_normalizeNumber``)."""
     max_safe = (1 << 53) - 1  # Number.MAX_SAFE_INTEGER
     if isinstance(input_value, bool):
@@ -234,7 +233,7 @@ def _fetch_via_gh(n: int) -> dict[str, Any] | None:
     return _normalize_gh(parsed)
 
 
-def _fetch_via_api(n: int) -> dict[str, Any]:  # noqa: PLR0911
+def _fetch_via_api(n: int) -> dict[str, Any]:
     slug = _resolve_repo_slug()
     if not slug:
         return {"number": n, "available": False, "reason": "no_repo_slug"}
@@ -273,13 +272,14 @@ def _cache_get(n: int) -> dict[str, Any] | None:
     if not hit:
         return None
     data = hit["data"]
+    assert isinstance(data, dict)
     ttl = _get_ttl_ms() if data.get("available") else NEG_CACHE_TTL_MS
     if _now_ms() - hit["at"] >= ttl:
         _pr_cache.pop(n, None)
         return None
     # LRU touch
     _pr_cache.move_to_end(n)
-    return data  # type: ignore[return-value]
+    return data
 
 
 def _cache_set(n: int, data: dict[str, Any]) -> None:

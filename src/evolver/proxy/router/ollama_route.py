@@ -61,9 +61,7 @@ def _transform_to_openai(body: dict[str, Any]) -> dict[str, Any]:
     return payload
 
 
-async def proxy_ollama(
-    request: Request, body: dict[str, Any]
-) -> JSONResponse | StreamingResponse:
+async def proxy_ollama(request: Request, body: dict[str, Any]) -> JSONResponse | StreamingResponse:
     """Proxy request to local Ollama instance."""
     import httpx
 
@@ -98,9 +96,7 @@ async def proxy_ollama(
         return JSONResponse({"error": "proxy_error", "detail": str(exc)}, status_code=502)
 
 
-async def _proxy_ollama_stream(
-    url: str, body: dict[str, Any]
-) -> StreamingResponse:
+async def _proxy_ollama_stream(url: str, body: dict[str, Any]) -> StreamingResponse:
     import httpx
 
     async def event_stream() -> AsyncIterator[bytes]:

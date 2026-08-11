@@ -5,8 +5,8 @@ Port of ``evolver/test/proxyCliOptions.test.js`` (v1.93.0).
 
 from __future__ import annotations
 
+from collections.abc import Iterator
 from pathlib import Path
-from typing import Iterator
 
 import pytest
 
@@ -36,9 +36,7 @@ def _isolate_env(monkeypatch: pytest.MonkeyPatch) -> Iterator[None]:
     yield
 
 
-def test_derives_paths_from_home_and_overrides_stale(
-    tmp_path: Path, _isolate_env: None
-) -> None:
+def test_derives_paths_from_home_and_overrides_stale(tmp_path: Path, _isolate_env: None) -> None:
     root = str(tmp_path / "v1-proxy-cli-home")
     env = {
         "EVOLVER_HOME": "/stale/home",
@@ -93,9 +91,7 @@ def test_loads_env_file_then_reapplies_cli_path_priority(
     assert env["EVOLVER_PROXY_STORE"] == str(Path(root).resolve() / "mailbox")
 
 
-def test_loads_environment_selected_evolver_env_file(
-    tmp_path: Path, _isolate_env: None
-) -> None:
+def test_loads_environment_selected_evolver_env_file(tmp_path: Path, _isolate_env: None) -> None:
     env_file = tmp_path / "proxy.env"
     env_file.write_text("A2A_HUB_URL=https://env-selected.example\n", encoding="utf-8")
     env: dict[str, str] = {"EVOLVER_ENV_FILE": str(env_file)}

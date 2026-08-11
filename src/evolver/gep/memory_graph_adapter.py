@@ -21,9 +21,7 @@ def query_by_signal(
     limit: int = 100,
 ) -> list[dict[str, Any]]:
     """Return entries whose signals list contains *signal_key*."""
-    result = [
-        e for e in entries if signal_key in e.get("signals", [])
-    ]
+    result = [e for e in entries if signal_key in e.get("signals", [])]
     return result[-limit:]
 
 

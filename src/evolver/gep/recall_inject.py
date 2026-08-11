@@ -70,7 +70,7 @@ def _jaccard(a: set[str], b: set[str]) -> float:
 
 def _extract_keywords(text: str) -> set[str]:
     """Extract lowercase alphanumeric keywords from *text*."""
-    return set(w.lower() for w in text.split() if w.isalnum() and len(w) > 2)
+    return {w.lower() for w in text.split() if w.isalnum() and len(w) > 2}
 
 
 def _signal_fingerprint(signals: list[str]) -> set[str]:

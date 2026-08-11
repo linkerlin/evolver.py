@@ -41,58 +41,119 @@ _STRATEGY_CAP = 28  # compact cap on strategy steps
 #: Map a heading's keyword set to a logical section.
 _SECTION_KEYWORDS: dict[str, list[str]] = {
     "workflow": [
-        "workflow", "quick workflow", "steps", "process", "procedure",
-        "how to use", "usage", "guide",
+        "workflow",
+        "quick workflow",
+        "steps",
+        "process",
+        "procedure",
+        "how to use",
+        "usage",
+        "guide",
         # CJK
-        "工作流", "快速工作流", "步骤", "流程",
+        "工作流",
+        "快速工作流",
+        "步骤",
+        "流程",
     ],
     "preconditions": [
-        "prerequisite", "prerequisites", "preconditions", "requirements",
-        "before you start", "setup",
+        "prerequisite",
+        "prerequisites",
+        "preconditions",
+        "requirements",
+        "before you start",
+        "setup",
         # CJK
-        "前置条件", "前提条件", "触发条件",
+        "前置条件",
+        "前提条件",
+        "触发条件",
     ],
     "avoid": [
-        "avoid", "anti-pattern", "anti pattern", "don't", "do not",
-        "pitfalls", "common mistakes",
+        "avoid",
+        "anti-pattern",
+        "anti pattern",
+        "don't",
+        "do not",
+        "pitfalls",
+        "common mistakes",
         # CJK
-        "不要做", "避免", "注意事项",
+        "不要做",
+        "避免",
+        "注意事项",
     ],
     "output_contract": [
-        "output contract", "output gate", "deliverable",
+        "output contract",
+        "output gate",
+        "deliverable",
         # CJK
-        "输出门", "输出契约",
+        "输出门",
+        "输出契约",
     ],
     "human_gate": [
-        "human gate", "human confirmation", "approval",
+        "human gate",
+        "human confirmation",
+        "approval",
         # CJK
-        "人工审核", "审批",
+        "人工审核",
+        "审批",
     ],
 }
 
 #: Signals that trigger repair classification (inflected forms included).
 _REPAIR_SIGNALS = [
-    "error", "errors", "exception", "failed", "failure", "fail",
-    "crash", "crashes", "bug", "bugs", "broken", "fix", "fixed",
-    "unstable", "log_error", "test_failure", "recurring_error",
+    "error",
+    "errors",
+    "exception",
+    "failed",
+    "failure",
+    "fail",
+    "crash",
+    "crashes",
+    "bug",
+    "bugs",
+    "broken",
+    "fix",
+    "fixed",
+    "unstable",
+    "log_error",
+    "test_failure",
+    "recurring_error",
     # CJK
-    "错误", "失败", "异常", "修复",
+    "错误",
+    "失败",
+    "异常",
+    "修复",
 ]
 
 #: Signals that trigger innovate classification (word-boundary matched).
 _INNOVATE_SIGNALS = [
-    "add", "create", "implement", "new feature", "new module",
-    "build", "introduce",
+    "add",
+    "create",
+    "implement",
+    "new feature",
+    "new module",
+    "build",
+    "introduce",
     # CJK
-    "新增", "创建", "实现",
+    "新增",
+    "创建",
+    "实现",
 ]
 
 #: Signals that trigger optimize classification.
 _OPTIMIZE_SIGNALS = [
-    "optimize", "improve", "refactor", "enhance", "upgrade",
-    "streamline", "simplify", "performance",
+    "optimize",
+    "improve",
+    "refactor",
+    "enhance",
+    "upgrade",
+    "streamline",
+    "simplify",
+    "performance",
     # CJK
-    "优化", "改进", "重构", "升级",
+    "优化",
+    "改进",
+    "重构",
+    "升级",
 ]
 
 #: Safety words that should NOT force repair on an upgrade/optimization skill.
@@ -433,14 +494,13 @@ def skill_to_gene_dict(path: Path | str) -> dict[str, Any] | None:
         "type": "Gene",
         "id": gene_id,
         "summary": (
-            parsed.description[:200]
-            if parsed.description
-            else f"Distilled from skill {skill_name}"
+            parsed.description[:200] if parsed.description else f"Distilled from skill {skill_name}"
         ),
         "category": category,
         "signals_match": parsed.signals_match[:14],  # compact
         "preconditions": parsed.preconditions or ["Skill has been executed locally"],
-        "strategy": parsed.strategy or [
+        "strategy": parsed.strategy
+        or [
             "Identify the dominant trigger signals from the Skill description.",
             "Apply the smallest targeted change that satisfies the Skill workflow.",
             "Run the Skill validation commands and abort if any fails.",

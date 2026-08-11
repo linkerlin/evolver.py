@@ -29,7 +29,7 @@ _AUTH_REQUIRED_MSG = "sync requires an existing node_secret or a valid OAuth acc
 def _resolve_sync_auth(
     *,
     dry_run: bool,
-    identity: dict[str, Any],  # noqa: ARG001 — reserved for future node-scoped OAuth
+    identity: dict[str, Any],
 ) -> dict[str, Any]:
     """Pick Authorization for published sync: node secret, else OAuth (dry-run).
 
@@ -52,7 +52,7 @@ def _resolve_sync_auth(
         return {"ok": True, "headers": headers, "auth": "oauth"}
 
     # Expired / missing OAuth: distinguish for clearer errors.
-    from evolver.gep.paths import get_evolver_home  # noqa: PLC0415
+    from evolver.gep.paths import get_evolver_home
 
     token_path = get_evolver_home() / "oauth_token.json"
     if token_path.is_file() and dry_run:
@@ -64,7 +64,7 @@ async def _sync_published_by_me(
     *,
     dry_run: bool,
     identity: dict[str, Any],
-    force: bool = False,  # noqa: ARG001 — install uses force at caller
+    force: bool = False,
 ) -> dict[str, Any]:
     """GET /a2a/assets/published-by-me with the resolved identity tuple."""
     hub = (get_hub_url() or "").rstrip("/")
@@ -114,7 +114,7 @@ async def _sync_published_by_me(
     return {"ok": False, "error": last_error or "published_by_me_failed", "requests": []}
 
 
-async def sync_all(  # noqa: PLR0912, PLR0915
+async def sync_all(
     *,
     dry_run: bool = False,
     scope: str | None = None,
@@ -173,7 +173,7 @@ async def sync_all(  # noqa: PLR0912, PLR0915
                     continue
                 # Real sync: normalize via prepareSyncAsset then install.
                 try:
-                    from datetime import UTC, datetime  # noqa: PLC0415
+                    from datetime import UTC, datetime
 
                     synced_at = str(
                         asset.get("synced_at")

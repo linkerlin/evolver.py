@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Any
 from unittest.mock import AsyncMock
 
 import pytest
@@ -69,6 +68,7 @@ async def test_lifecycle_heartbeat_invokes_signals(
 ) -> None:
     import httpx
     import respx
+
     from evolver.proxy.lifecycle.manager import LifecycleManager
     from evolver.proxy.mailbox.store import MailboxStore
 

@@ -5,6 +5,7 @@ Equivalent to evolver/src/evolve/pipeline/select.js.
 
 from __future__ import annotations
 
+import contextlib
 import secrets
 import time
 from typing import Any
@@ -65,25 +66,21 @@ async def select_phase(ctx: dict[str, Any]) -> dict[str, Any]:
     selected_capsule = selection.get("selectedCapsule")
 
     # Record hypothesis/attempt
-    try:
+    with contextlib.suppress(Exception):
         record_hypothesis(
             signals=signals,
             selected_gene=selected_gene,
             drift_enabled=drift_enabled,
             run_id=ctx.get("run_id"),
         )
-    except Exception:
-        pass
 
-    try:
+    with contextlib.suppress(Exception):
         record_attempt(
             signals=signals,
             selected_gene=selected_gene,
             drift_enabled=drift_enabled,
             run_id=ctx.get("run_id"),
         )
-    except Exception:
-        pass
 
     mutation = build_mutation(
         signals=signals,

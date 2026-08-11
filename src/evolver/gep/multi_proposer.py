@@ -98,8 +98,7 @@ def build_multi_proposer_prompt(request: MultiProposerRequest) -> str:
         "",
         "CONTEXT:",
         f"- diagnosis_brief: {request.diagnosis_brief or '(none)'}",
-        f"- causal_clusters_brief: "
-        f"{request.causal_clusters_brief or '(none)'}",
+        f"- causal_clusters_brief: {request.causal_clusters_brief or '(none)'}",
         f"- strict_noop: {request.strict_noop}",
     ]
     if request.extra_context:
@@ -202,10 +201,7 @@ def parse_multi_proposal_response(
     if set(by_slot) != expected:
         missing = expected - set(by_slot)
         extra = set(by_slot) - expected
-        raise ValueError(
-            "slot coverage mismatch "
-            f"missing={sorted(missing)} extra={sorted(extra)}"
-        )
+        raise ValueError(f"slot coverage mismatch missing={sorted(missing)} extra={sorted(extra)}")
 
     proposals: list[Proposal] = []
     for slot in range(route_count):
@@ -277,9 +273,7 @@ def generate_multi_proposals(
         raw = llm_call(build_multi_proposer_prompt(slot_request))
         parsed = parse_multi_proposal_response(raw, route_count=request.route_count)
         if len(parsed) != request.route_count or parsed[slot].slot_index != slot:
-            raise ValueError(
-                f"slot {slot}: response did not cover all slots in order"
-            )
+            raise ValueError(f"slot {slot}: response did not cover all slots in order")
         proposal = parsed[slot]
         signature = proposal_signature(proposal)
         if signature is not None:
@@ -289,9 +283,7 @@ def generate_multi_proposals(
                 for _attempt in range(_MAX_DUP_RETRIES):
                     retry_raw = llm_call(
                         build_multi_proposer_prompt(
-                            slot_request.model_copy(
-                                update={"already_generated": list(proposals)}
-                            )
+                            slot_request.model_copy(update={"already_generated": list(proposals)})
                         )
                     )
                     retry_parsed = parse_multi_proposal_response(

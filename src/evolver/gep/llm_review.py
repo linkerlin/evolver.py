@@ -212,8 +212,10 @@ def review_diff(
         return LLMReviewResult(
             approved=False,
             confidence=0.0,
-            concerns=["Secret leak detected — refusing to send to LLM"]
-            + leak.get("pattern_leaks", []),
+            concerns=[
+                "Secret leak detected — refusing to send to LLM",
+                *leak.get("pattern_leaks", []),
+            ],
         )
 
     t0 = time.time()

@@ -21,7 +21,7 @@ class TestStreamJsonl:
     def test_basic(self, tmp_path: Path):
         path = tmp_path / "events.jsonl"
         lines = [{"id": 1}, {"id": 2}]
-        path.write_text("\n".join(json.dumps(l) for l in lines))
+        path.write_text("\n".join(json.dumps(line) for line in lines))
         result = list(stream_jsonl(path))
         assert len(result) == 2
         assert result[0]["id"] == 1
@@ -29,7 +29,7 @@ class TestStreamJsonl:
     def test_limit(self, tmp_path: Path):
         path = tmp_path / "events.jsonl"
         lines = [{"id": i} for i in range(10)]
-        path.write_text("\n".join(json.dumps(l) for l in lines))
+        path.write_text("\n".join(json.dumps(line) for line in lines))
         result = list(stream_jsonl(path, limit=3))
         assert len(result) == 3
 
@@ -40,7 +40,7 @@ class TestStreamJsonl:
             {"id": 2, "timestamp": 200.0},
             {"id": 3, "timestamp": 300.0},
         ]
-        path.write_text("\n".join(json.dumps(l) for l in lines))
+        path.write_text("\n".join(json.dumps(line) for line in lines))
         result = list(stream_jsonl(path, since=150.0))
         assert len(result) == 2
         assert result[0]["id"] == 2

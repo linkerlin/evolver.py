@@ -72,7 +72,7 @@ def filter_relevant_memories(
     (via ``cwd`` tag) are considered. Otherwise all entries are scored.
     """
     try:
-        from evolver.gep.paths import get_memory_dir  # noqa: PLC0415
+        from evolver.gep.paths import get_memory_dir
     except ImportError:
         return []
 

@@ -85,10 +85,8 @@ def render_sse_client_js(
     logs_path: str = API_LOGS_PATH,
 ) -> str:
     """Return inline JS with configured SSE endpoint paths."""
-    return (
-        SSE_CLIENT_JS.replace("__EVENT_STREAM_PATH__", stream_path).replace(
-            "__API_LOGS_PATH__", logs_path
-        )
+    return SSE_CLIENT_JS.replace("__EVENT_STREAM_PATH__", stream_path).replace(
+        "__API_LOGS_PATH__", logs_path
     )
 
 

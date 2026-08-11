@@ -86,6 +86,7 @@ def _npm_install(skill_dir: Path) -> dict[str, Any]:
             text=True,
             timeout=120,
             shell=False,
+            check=False,
         )
         return {
             "ok": result.returncode == 0,
@@ -105,6 +106,7 @@ def _uv_sync(skill_dir: Path) -> dict[str, Any]:
             text=True,
             timeout=120,
             shell=False,
+            check=False,
         )
         return {
             "ok": result.returncode == 0,

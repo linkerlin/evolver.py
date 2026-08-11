@@ -8,6 +8,7 @@ proofs for completed tasks.
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import json
 import logging
 import time
@@ -53,12 +54,10 @@ class AutoDeliver:
                 await self._tick()
             except Exception as exc:
                 logger.warning("[AutoDeliver] Tick error: %s", exc)
-            try:
+            with contextlib.suppress(TimeoutError):
                 await asyncio.wait_for(
                     asyncio.sleep(self.poll_interval_s), timeout=self.poll_interval_s + 5
                 )
-            except TimeoutError:
-                pass
 
     async def _tick(self) -> None:
         result = await list_my_tasks()

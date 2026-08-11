@@ -80,7 +80,7 @@ def build_recall_output(prompt: str) -> dict[str, str]:
         query = query.replace(trigger, "").strip()
 
     try:
-        from evolver.adapters.scripts.runtime_paths import (  # noqa: PLC0415
+        from evolver.adapters.scripts.runtime_paths import (
             find_evolver_root,
             find_memory_graph,
         )

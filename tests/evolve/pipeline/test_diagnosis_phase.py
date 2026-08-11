@@ -20,8 +20,7 @@ def _failed_event(eid: str, *, kind_hint: str = "timeout") -> dict:
         "id": eid,
         "outcome": {"status": "failed", "score": 0},
         "execution_trace": [
-            {"tool": "python", "command_preview": "edit a.py",
-             "error_signature": kind_hint},
+            {"tool": "python", "command_preview": "edit a.py", "error_signature": kind_hint},
             {"tool": "python", "command_preview": "edit b.py"},
         ],
     }
@@ -173,9 +172,7 @@ class TestIntervalGating:
         monkeypatch.setenv("EVOLVER_FF_ENABLE_DIAGNOSIS", "1")
         # DIAGNOSIS_INTERVAL is a module-level Final (import-time); patch the
         # name the phase reads directly, since env_int already bound at import.
-        monkeypatch.setattr(
-            "evolver.evolve.pipeline.diagnosis.DIAGNOSIS_INTERVAL", 5
-        )
+        monkeypatch.setattr("evolver.evolve.pipeline.diagnosis.DIAGNOSIS_INTERVAL", 5)
         ctx = {
             "cycle_num": 3,
             "cycle_id": "c3",
@@ -192,9 +189,7 @@ class TestIntervalGating:
         _tmp_assets: Path,
     ) -> None:
         monkeypatch.setenv("EVOLVER_FF_ENABLE_DIAGNOSIS", "1")
-        monkeypatch.setattr(
-            "evolver.evolve.pipeline.diagnosis.DIAGNOSIS_INTERVAL", 5
-        )
+        monkeypatch.setattr("evolver.evolve.pipeline.diagnosis.DIAGNOSIS_INTERVAL", 5)
         ctx = {
             "cycle_num": 5,
             "cycle_id": "c5",
@@ -249,7 +244,7 @@ class TestClusterFlagOn:
     ) -> None:
         monkeypatch.setenv("EVOLVER_FF_ENABLE_DIAGNOSIS_CLUSTER", "1")
         # Force attributed analyses by patching the analyzer with a fake LLM.
-        from evolver.gep.diagnosis import causal as causal_mod  # noqa: PLC0415
+        from evolver.gep.diagnosis import causal as causal_mod
 
         def fake_analyze(event: dict) -> object:
             return causal_mod.analyze(
@@ -269,7 +264,7 @@ class TestClusterFlagOn:
 
         monkeypatch.setattr(
             "evolver.evolve.pipeline.diagnosis.run_diagnosis",
-            lambda events, **kw: [  # noqa: ARG005
+            lambda events, **kw: [
                 fake_analyze(e) for e in events if e.get("outcome", {}).get("status") != "success"
             ],
         )

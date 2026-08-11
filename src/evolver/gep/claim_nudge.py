@@ -19,7 +19,7 @@ _NUDGE_COOLDOWN_S = 3600  # 1 hour between nudges
 
 
 def _nudge_state_path() -> Path:
-    from evolver.gep.paths import get_evolution_dir  # noqa: PLC0415
+    from evolver.gep.paths import get_evolution_dir
 
     return get_evolution_dir() / "claim_nudge_state.json"
 

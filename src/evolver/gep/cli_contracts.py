@@ -4,7 +4,7 @@ Equivalent to evolver/src/gep/cliContracts.js.
 """
 
 # Port of Node cliContracts.js — parser/command orchestrators are intentionally branchy.
-# ruff: noqa: PLR0911, PLR0912, PLR0915, E501, SIM108, SIM101
+# ruff: noqa: E501, SIM108, SIM101
 
 from __future__ import annotations
 

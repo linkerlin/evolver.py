@@ -5,6 +5,7 @@ Equivalent to evolver/src/gep/solidify.js (obfuscated).
 
 from __future__ import annotations
 
+import contextlib
 import json
 import secrets
 import subprocess
@@ -47,8 +48,6 @@ def write_state_for_solidify(last_run: dict[str, Any]) -> None:
 def _read_solidify_state() -> dict[str, Any] | None:
     path = get_solidify_state_path()
     return read_json_if_exists(path)
-
-
 
 
 def classify_failure_mode(
@@ -333,15 +332,11 @@ def solidify(
     append_event_jsonl(event)
 
     # Generate narrative and reflection
-    try:
+    with contextlib.suppress(Exception):
         record_narrative_and_reflection(event)
-    except Exception:
-        pass
 
-    try:
+    with contextlib.suppress(Exception):
         post_solidify_hooks(event, last_run)
-    except Exception:
-        pass
 
     # Update solidify state
     state["last_solidify"] = {

@@ -37,8 +37,8 @@ def test_every_adapter_script_parses() -> None:
         if not ok:
             rel = path.relative_to(_REPO).as_posix()
             failures.append(f"  {rel}: {err.strip()}")
-    assert not failures, (
-        f"py_compile failed for {len(failures)} adapter script(s):\n" + "\n".join(failures)
+    assert not failures, f"py_compile failed for {len(failures)} adapter script(s):\n" + "\n".join(
+        failures
     )
 
 
@@ -50,8 +50,8 @@ def test_adapter_modules_parse() -> None:
         ok, err = _py_check(path)
         if not ok:
             failures.append(f"  {path.name}: {err.strip()}")
-    assert not failures, (
-        f"py_compile failed for {len(failures)} adapter module(s):\n" + "\n".join(failures)
+    assert not failures, f"py_compile failed for {len(failures)} adapter module(s):\n" + "\n".join(
+        failures
     )
 
 

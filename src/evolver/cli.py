@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+import contextlib
 import json
 import os
 import sys
@@ -294,7 +295,7 @@ def _build_parser() -> argparse.ArgumentParser:
 
 def _run_cli_contract(raw_args: list[str]) -> int | None:
     if raw_args and raw_args[0] in {"reuse", "publish"}:
-        from evolver.gep.cli_contracts import (  # noqa: PLC0415
+        from evolver.gep.cli_contracts import (
             run_publish_command,
             run_reuse_command,
         )
@@ -616,7 +617,7 @@ async def _cmd_run(_args: argparse.Namespace) -> int:
     return 0
 
 
-def _cmd_trajectory(args: argparse.Namespace) -> int:  # noqa: PLR0911, PLR0912, PLR0915
+def _cmd_trajectory(args: argparse.Namespace) -> int:
     """Export proxy traces or session logs into coding trajectories (G10.1).
 
     Auto-detects the input kind: a Codex/Claude Code session JSONL (or a
@@ -648,10 +649,7 @@ def _cmd_trajectory(args: argparse.Namespace) -> int:  # noqa: PLR0911, PLR0912,
 
     # Session-log path: a session JSONL file, or a directory of them.
     session_files: list[Path]
-    if input_path.is_dir():
-        session_files = sorted(input_path.rglob("*.jsonl"))
-    else:
-        session_files = [input_path]
+    session_files = sorted(input_path.rglob("*.jsonl")) if input_path.is_dir() else [input_path]
     session_trajectories = []
     for sf in session_files:
         try:
@@ -667,7 +665,7 @@ def _cmd_trajectory(args: argparse.Namespace) -> int:  # noqa: PLR0911, PLR0912,
     ):
         try:
             write_trajectories_to_path(output_path, session_trajectories)
-        except Exception as exc:  # noqa: BLE001
+        except Exception as exc:
             print(f"trajectory export failed: {exc}", file=sys.stderr)
             return 1
         print(f"Wrote {len(session_trajectories)} session trajectory(ies) → {output_path}")
@@ -716,7 +714,7 @@ def _cmd_trajectory(args: argparse.Namespace) -> int:  # noqa: PLR0911, PLR0912,
             stats = {"total_rows": len(rows), "encrypted_rows": 0, "decrypt_failures": 0}
         trajectories = build_trajectories(rows)
         write_trajectories_to_path(output_path, trajectories)
-    except Exception as exc:  # noqa: BLE001
+    except Exception as exc:
         print(f"trajectory export failed: {exc}", file=sys.stderr)
         return 1
     enc = stats.get("encrypted_rows", 0)
@@ -739,19 +737,15 @@ async def _cmd_loop(args: argparse.Namespace) -> int:
     # Windows' ProactorEventLoop doesn't implement add_signal_handler; guard so
     # --loop/--solo work cross-platform (SIGINT still flows via KeyboardInterrupt).
     for sig in (signal.SIGINT, signal.SIGTERM):
-        try:
+        with contextlib.suppress(NotImplementedError, RuntimeError, ValueError):
             loop.add_signal_handler(sig, request_shutdown)
-        except (NotImplementedError, RuntimeError, ValueError):
-            pass
 
     try:
         await run_loop(review_mode=args.review)
     finally:
         for sig in (signal.SIGINT, signal.SIGTERM):
-            try:
+            with contextlib.suppress(NotImplementedError, RuntimeError, ValueError):
                 loop.remove_signal_handler(sig)
-            except (NotImplementedError, RuntimeError, ValueError):
-                pass
     return 0
 
 
@@ -984,6 +978,7 @@ def _cmd_exec(args: argparse.Namespace) -> int:
                 capture_output=True,
                 text=True,
                 timeout=args.timeout,
+                check=False,
             )
             print(proc.stdout)
             if proc.stderr:
@@ -1033,6 +1028,7 @@ def _cmd_exec(args: argparse.Namespace) -> int:
                 capture_output=True,
                 text=True,
                 timeout=args.timeout,
+                check=False,
             )
             if proc.stdout:
                 print(proc.stdout)

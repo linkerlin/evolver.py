@@ -37,7 +37,7 @@ def _collect_hardware_signals() -> list[str]:
     # Machine GUID on Windows.
     if platform.system() == "Windows":
         try:
-            import winreg  # type: ignore[import-not-found, unused-ignore]  # noqa: PLC0415
+            import winreg  # type: ignore[import-not-found, unused-ignore]
 
             with winreg.OpenKey(
                 winreg.HKEY_LOCAL_MACHINE,

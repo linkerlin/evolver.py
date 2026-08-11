@@ -12,9 +12,7 @@ from evolver.gep.surface import load_snapshot
 
 
 @pytest.fixture
-def _surface_ws(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> tuple[Path, Path]:
+def _surface_ws(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> tuple[Path, Path]:
     """A workspace with one surface file + isolated GEP assets dir."""
     ws = tmp_path / "ws"
     ws.mkdir()

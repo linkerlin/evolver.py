@@ -2,11 +2,10 @@
 
 from __future__ import annotations
 
-import json
-
 import pytest
 
 from evolver.gep.autopoiesis import (
+    ViabilityReport,
     apply_homeostasis,
     capture_friction_from_ctx,
     compute_viability,
@@ -16,7 +15,6 @@ from evolver.gep.autopoiesis import (
     read_latest_tick,
     record_autopoiesis_tick,
     run_autopoiesis_tick,
-    ViabilityReport,
 )
 from evolver.gep.self_report import SelfReport
 

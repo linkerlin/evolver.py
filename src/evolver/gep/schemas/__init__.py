@@ -21,9 +21,9 @@ from evolver.gep.schemas.gene import (
     validate_gene,
 )
 from evolver.gep.schemas.protocol import (
-    A2AEnvelope,
     VALID_RISK_LEVELS,
     VALID_TRACE_STAGES,
+    A2AEnvelope,
     render_enum,
     render_enum_list,
 )

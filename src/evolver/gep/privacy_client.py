@@ -37,8 +37,8 @@ def _derive_key(passphrase: str, salt: bytes | None = None) -> tuple[bytes, byte
     try:
         from cryptography.hazmat.primitives import hashes
         from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC
-    except ImportError:
-        raise RuntimeError("cryptography package required for privacy client")
+    except ImportError as exc:
+        raise RuntimeError("cryptography package required for privacy client") from exc
 
     if salt is None:
         salt = os.urandom(16)

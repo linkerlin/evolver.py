@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import logging
 import os
 from typing import TYPE_CHECKING
@@ -59,10 +60,8 @@ class SkillUpdateLoop:
                         logger.info("[SkillUpdateLoop] Applied %d skill update(s)", len(applied))
                 except Exception as exc:
                     logger.warning("[SkillUpdateLoop] Tick error: %s", exc)
-            try:
+            with contextlib.suppress(TimeoutError):
                 await asyncio.wait_for(self._shutdown.wait(), timeout=interval_sec)
-            except TimeoutError:
-                pass
 
 
 __all__ = ["DEFAULT_SKILL_UPDATE_INTERVAL_SEC", "SkillUpdateLoop"]

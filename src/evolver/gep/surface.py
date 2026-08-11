@@ -114,9 +114,7 @@ def surface_delta(
     added = sorted(set(current_files) - set(base_files))
     removed = sorted(set(base_files) - set(current_files))
     changed = sorted(
-        rel
-        for rel in set(base_files) & set(current_files)
-        if base_files[rel] != current_files[rel]
+        rel for rel in set(base_files) & set(current_files) if base_files[rel] != current_files[rel]
     )
     return {"added": added, "removed": removed, "changed": changed}
 
@@ -134,11 +132,9 @@ def render_surface_block(
     if not baseline.files:
         return ""
     lines: list[str] = [
-        "# PROPOSER SURFACE (stable baseline — diff against THIS, not the "
-        "current eval state)",
+        "# PROPOSER SURFACE (stable baseline — diff against THIS, not the current eval state)",
         f"- baseline snapshot_id: {baseline.snapshot_id}",
-        f"- surface files ({len(baseline.files)}): "
-        + ", ".join(sorted(baseline.files)),
+        f"- surface files ({len(baseline.files)}): " + ", ".join(sorted(baseline.files)),
     ]
     if delta:
         parts = []

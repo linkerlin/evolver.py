@@ -94,7 +94,7 @@ def build_narrative(events: list[dict[str, Any]], *, max_entries: int = 50) -> s
 def get_narrative(events_path: Path | None = None) -> str:
     """Convenience: load events and build narrative in one call."""
     if events_path is None:
-        from evolver.gep.paths import get_evolution_dir  # noqa: PLC0415
+        from evolver.gep.paths import get_evolution_dir
 
         events_path = get_evolution_dir() / "events.jsonl"
     return build_narrative(load_events(events_path))

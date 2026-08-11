@@ -148,13 +148,15 @@ def _failed_capsule_candidates(
     for cap in recent_failed:
         if not isinstance(cap, dict):
             continue
-        outcome = cap.get("outcome") if isinstance(cap.get("outcome"), dict) else {}
+        outcome_raw = cap.get("outcome")
+        outcome = outcome_raw if isinstance(outcome_raw, dict) else {}
         status = outcome.get("status")
         # Missing outcome counts as failed; explicit non-failed statuses are skipped.
         if status is not None and status != "failed":
             continue
 
-        trigger = cap.get("trigger") if isinstance(cap.get("trigger"), list) else []
+        trigger_raw = cap.get("trigger")
+        trigger = trigger_raw if isinstance(trigger_raw, list) else []
         reason = str(cap.get("failure_reason") or cap.get("reason") or "")
         hay_parts = [str(t) for t in trigger if t] + ([reason] if reason else [])
         tags = expand_signals(hay_parts, reason)
@@ -321,7 +323,8 @@ def render_candidates_preview(
     for cand in items:
         if not isinstance(cand, dict):
             continue
-        shape = cand.get("shape") if isinstance(cand.get("shape"), dict) else {}
+        shape_raw = cand.get("shape")
+        shape = shape_raw if isinstance(shape_raw, dict) else {}
         lines.append(f"- {cand.get('id')}: {cand.get('title')}")
         lines.append(f"  - input: {shape.get('input') or ''}")
         lines.append(f"  - output: {shape.get('output') or ''}")

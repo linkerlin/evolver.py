@@ -41,7 +41,7 @@ def clip(text: str, max_chars: int = PROMPT_MAX_CHARS) -> str:
 
 def write_prompt_artifact(prompt: str, path: Path | str | None = None) -> Path:
     if path is None:
-        from evolver.gep.paths import get_evolution_dir  # noqa: PLC0415
+        from evolver.gep.paths import get_evolution_dir
 
         path = get_evolution_dir() / "last_prompt.md"
     p = Path(path)
@@ -55,7 +55,7 @@ def render_sessions_spawn_call(payload: dict[str, Any]) -> str:
     return "sessions_spawn(" + json.dumps(payload, ensure_ascii=False, separators=(",", ":")) + ")"
 
 
-def extract_first_spawn_payload(text: str | None) -> str | None:  # noqa: PLR0912
+def extract_first_spawn_payload(text: str | None) -> str | None:
     """Extract the raw JSON string from the first sessions_spawn(...) call."""
     if not isinstance(text, str) or not text:
         return None

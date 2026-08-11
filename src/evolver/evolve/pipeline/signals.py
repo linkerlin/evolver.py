@@ -74,7 +74,7 @@ async def signals_phase(ctx: dict[str, Any]) -> dict[str, Any]:
     if guard_added:
         ctx["autopoiesis_guard_signals"] = guard_added
     try:
-        from evolver.gep.autopoiesis import (  # noqa: PLC0415
+        from evolver.gep.autopoiesis import (
             apply_preflight_abort_recovery,
             preflight_abort_signal_keys,
         )

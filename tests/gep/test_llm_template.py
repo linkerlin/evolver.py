@@ -38,9 +38,7 @@ class TestRunExternalTemplate:
         )
         assert "hello" in out
 
-    def test_records_call_to_disk(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
+    def test_records_call_to_disk(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.setenv("EVOLVER_LLM_CALL_DIR", str(tmp_path / "calls"))
         out = run_external_template(
             "echo recorded",
@@ -69,24 +67,16 @@ class TestRunExternalTemplate:
 
 
 class TestBuildLlmCall:
-    def test_flag_off_returns_none(
-        self, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
+    def test_flag_off_returns_none(self, monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.setenv("EVOLVER_FF_ENABLE_LLM_TEMPLATE", "0")
-        assert (
-            build_llm_call("echo x", kind="t", placeholders={}) is None
-        )
+        assert build_llm_call("echo x", kind="t", placeholders={}) is None
 
-    def test_no_template_returns_none(
-        self, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
+    def test_no_template_returns_none(self, monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.setenv("EVOLVER_FF_ENABLE_LLM_TEMPLATE", "1")
         assert build_llm_call(None, kind="t", placeholders={}) is None
         assert build_llm_call("   ", kind="t", placeholders={}) is None
 
-    def test_flag_on_runs_template(
-        self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
-    ) -> None:
+    def test_flag_on_runs_template(self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
         monkeypatch.setenv("EVOLVER_FF_ENABLE_LLM_TEMPLATE", "1")
         monkeypatch.setenv("EVOLVER_LLM_CALL_DIR", str(tmp_path / "calls"))
         out = build_llm_call(

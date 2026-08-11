@@ -91,9 +91,7 @@ def normalize_trace_steps(event: dict[str, Any]) -> list[NormalizedStep]:
     for entry in raw_trace:
         if not isinstance(entry, dict):
             continue
-        summary = str(
-            entry.get("error_signature") or entry.get("command_preview") or ""
-        )[:200]
+        summary = str(entry.get("error_signature") or entry.get("command_preview") or "")[:200]
         steps.append(
             NormalizedStep(
                 index=next_index,

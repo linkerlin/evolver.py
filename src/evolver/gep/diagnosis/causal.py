@@ -76,8 +76,7 @@ def build_analysis_prompt(
     ``criticality`` in the fixed enum and snake_case signature tokens.
     """
     stage_lines = [
-        f"- stage_index={s.stage_index}: {s.summary or '(no summary)'}"
-        for s in stages
+        f"- stage_index={s.stage_index}: {s.summary or '(no summary)'}" for s in stages
     ] or ["- (no stages)"]
     criticality_values = ", ".join(CRITICALITY_RANK)
     example = (
@@ -97,7 +96,7 @@ def build_analysis_prompt(
         "",
         "RULES:",
         '- "root_cause" = the FIRST UNRECOVERABLE critical failure, NOT the',
-        '  first visible (possibly recovered) tool error. Distinguish from',
+        "  first visible (possibly recovered) tool error. Distinguish from",
         '  "recovered_friction".',
         f"- criticality MUST be one of: {criticality_values}",
         "- terminal_cause and agent_mechanism MUST be snake_case tokens",
@@ -147,33 +146,25 @@ def _extract_json_object(text: str) -> dict[str, Any]:
 def _validate_attribution(attr: Any, expected_stage_index: int) -> dict[str, Any]:
     """Validate one stage attribution dict; return the cleaned fields."""
     if not isinstance(attr, dict):
-        raise CausalAnalysisError(
-            f"stage attribution {expected_stage_index} is not an object"
-        )
+        raise CausalAnalysisError(f"stage attribution {expected_stage_index} is not an object")
     terminal_cause = attr.get("terminal_cause")
     criticality = attr.get("criticality")
     agent_mechanism = attr.get("agent_mechanism")
     if not isinstance(terminal_cause, str) or not terminal_cause:
-        raise CausalAnalysisError(
-            f"stage {expected_stage_index} missing terminal_cause"
-        )
+        raise CausalAnalysisError(f"stage {expected_stage_index} missing terminal_cause")
     if not isinstance(agent_mechanism, str) or not agent_mechanism:
-        raise CausalAnalysisError(
-            f"stage {expected_stage_index} missing agent_mechanism"
-        )
+        raise CausalAnalysisError(f"stage {expected_stage_index} missing agent_mechanism")
     if criticality not in CRITICALITY_RANK:
         raise CausalAnalysisError(
             f"stage {expected_stage_index} invalid criticality: {criticality!r}"
         )
     if not is_signature_token(terminal_cause):
         raise CausalAnalysisError(
-            f"stage {expected_stage_index} terminal_cause not snake_case: "
-            f"{terminal_cause!r}"
+            f"stage {expected_stage_index} terminal_cause not snake_case: {terminal_cause!r}"
         )
     if not is_signature_token(agent_mechanism):
         raise CausalAnalysisError(
-            f"stage {expected_stage_index} agent_mechanism not snake_case: "
-            f"{agent_mechanism!r}"
+            f"stage {expected_stage_index} agent_mechanism not snake_case: {agent_mechanism!r}"
         )
     terminal_link = attr.get("terminal_link")
     result: dict[str, Any] = {
@@ -194,9 +185,7 @@ def _apply_attributions(
     for attr in attributions:
         idx = attr.get("stage_index")
         if not isinstance(idx, int):
-            raise CausalAnalysisError(
-                f"attribution missing integer stage_index: {attr!r}"
-            )
+            raise CausalAnalysisError(f"attribution missing integer stage_index: {attr!r}")
         if idx in by_index:
             raise CausalAnalysisError(f"duplicate stage_index: {idx}")
         by_index[idx] = _validate_attribution(attr, idx)
@@ -241,9 +230,7 @@ def analyze(
             stages=stages,
         )
 
-    prompt = build_analysis_prompt(
-        stages, terminal_failure_kind, event_id=event_id
-    )
+    prompt = build_analysis_prompt(stages, terminal_failure_kind, event_id=event_id)
     raw = llm_call(prompt)
     if not isinstance(raw, str) or not raw.strip():
         raise CausalAnalysisError("llm_call returned empty response")

@@ -10,11 +10,10 @@ from evolver.evolve.pipeline.hub import hub_phase
 from evolver.evolve.pipeline.select import select_phase
 from evolver.evolve.pipeline.signals import signals_phase
 from evolver.gep.autopoiesis import (
+    consume_skip_hub_flag,
     merge_autopoiesis_signals,
     persist_skip_hub_flag,
-    consume_skip_hub_flag,
 )
-from evolver.gep.autopoiesis_rules import guard_check_signal_keys
 from evolver.gep.mutation import build_mutation
 from evolver.gep.self_report import SelfReport
 

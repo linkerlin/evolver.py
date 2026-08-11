@@ -118,9 +118,7 @@ def test_writes_event_jsonl(git_ws: Path) -> None:
     result = solidify(skip_validation=True)
     lines = [
         ln
-        for ln in (get_gep_assets_dir() / "events.jsonl")
-        .read_text(encoding="utf-8")
-        .splitlines()
+        for ln in (get_gep_assets_dir() / "events.jsonl").read_text(encoding="utf-8").splitlines()
         if ln.strip()
     ]
     evt = json.loads(lines[-1])
@@ -162,9 +160,7 @@ def test_run_validations_success(git_ws: Path) -> None:
 
 
 def test_run_validations_failure(git_ws: Path) -> None:
-    res = solidify_mod._run_validations(
-        [[sys.executable, "-c", "import sys; sys.exit(2)"]], git_ws
-    )
+    res = solidify_mod._run_validations([[sys.executable, "-c", "import sys; sys.exit(2)"]], git_ws)
     assert res["ok"] is False
 
 

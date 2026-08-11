@@ -55,9 +55,7 @@ def gate_hub_services(
     services: list[dict[str, Any]],
 ) -> list[dict[str, Any]]:
     by_id = {
-        str(s.get("service_id")): s
-        for s in services
-        if isinstance(s, dict) and s.get("service_id")
+        str(s.get("service_id")): s for s in services if isinstance(s, dict) and s.get("service_id")
     }
     gated: list[dict[str, Any]] = []
     for hit in hits:

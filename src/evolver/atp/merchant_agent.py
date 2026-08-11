@@ -6,6 +6,7 @@ Equivalent to ``evolver/src/atp/merchantAgent.js``.
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import logging
 from collections.abc import Callable, Coroutine
 from typing import Any
@@ -82,10 +83,8 @@ class MerchantAgent:
                             )
             except Exception as exc:
                 logger.warning("[Merchant] Poll error: %s", exc)
-            try:
+            with contextlib.suppress(TimeoutError):
                 await asyncio.wait_for(
                     asyncio.sleep(self.poll_interval_s),
                     timeout=self.poll_interval_s + 5,
                 )
-            except TimeoutError:
-                pass

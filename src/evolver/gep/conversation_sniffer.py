@@ -112,7 +112,7 @@ _COOLDOWN_S = 300.0  # 5 min between sniffs
 def _state_path() -> Path:
     """Return the path to the sniffer state file in the evolution dir."""
     try:
-        from evolver.gep.paths import get_evolution_dir  # noqa: PLC0415
+        from evolver.gep.paths import get_evolution_dir
 
         return get_evolution_dir() / "conversation_sniffer_state.json"
     except Exception:

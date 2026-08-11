@@ -86,11 +86,13 @@ def lower_confidence(
     a2a["received_at"] = received_at
     a2a["confidence_factor"] = factor
     if not cloned.get("schema_version"):
-        from evolver.gep.content_hash import SCHEMA_VERSION  # noqa: PLC0415
+        from evolver.gep.content_hash import SCHEMA_VERSION
+
         cloned["schema_version"] = SCHEMA_VERSION
     if not cloned.get("asset_id"):
         try:
-            from evolver.gep.content_hash import compute_asset_id  # noqa: PLC0415
+            from evolver.gep.content_hash import compute_asset_id
+
             cloned["asset_id"] = compute_asset_id(cloned)
         except Exception:
             pass
@@ -98,7 +100,8 @@ def lower_confidence(
 
 
 def read_evolution_events() -> list[dict[str, Any]]:
-    from evolver.gep.asset_store import read_all_events  # noqa: PLC0415
+    from evolver.gep.asset_store import read_all_events
+
     events = read_all_events()
     return [e for e in events if isinstance(e, dict) and e.get("type") == "EvolutionEvent"]
 
@@ -152,7 +155,8 @@ def export_eligible_capsules(params: dict[str, Any] | None = None) -> list[dict[
         for c in capsules
         if isinstance(c, dict) and is_capsule_broadcast_eligible(c, {"events": evs})
     ]
-    from evolver.gep.content_hash import SCHEMA_VERSION, compute_asset_id  # noqa: PLC0415
+    from evolver.gep.content_hash import SCHEMA_VERSION, compute_asset_id
+
     for c in eligible:
         if not c.get("schema_version"):
             c["schema_version"] = SCHEMA_VERSION
@@ -179,7 +183,8 @@ def export_eligible_genes(params: dict[str, Any] | None = None) -> list[dict[str
         params = {}
     genes = params["genes"] if isinstance(params.get("genes"), list) else []
     eligible = [g for g in genes if isinstance(g, dict) and is_gene_broadcast_eligible(g)]
-    from evolver.gep.content_hash import SCHEMA_VERSION, compute_asset_id  # noqa: PLC0415
+    from evolver.gep.content_hash import SCHEMA_VERSION, compute_asset_id
+
     for g in eligible:
         if not g.get("schema_version"):
             g["schema_version"] = SCHEMA_VERSION
@@ -194,10 +199,12 @@ def parse_a2a_input(text: str) -> list[dict[str, Any]]:
     if not raw:
         return []
     try:
-        from evolver.gep.a2a_protocol import unwrap_asset_from_message  # noqa: PLC0415
+        from evolver.gep.a2a_protocol import unwrap_asset_from_message
     except ImportError:
+
         def unwrap_asset_from_message(input_obj: Any) -> dict[str, Any] | None:
             return input_obj if isinstance(input_obj, dict) else None
+
     try:
         maybe = json.loads(raw)
         if isinstance(maybe, list):

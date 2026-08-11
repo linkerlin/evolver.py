@@ -16,7 +16,6 @@ import json
 import logging
 import os
 import platform
-import sys
 from pathlib import Path
 from typing import Any
 
@@ -42,18 +41,6 @@ def detect_platform_signals() -> list[dict[str, Any]]:
                 "type": "platform_warning",
                 "severity": "info",
                 "message": "macOS detected: default filesystem is case-insensitive (APFS)",
-            }
-        )
-
-    if sys.version_info < (3, 11):
-        signals.append(
-            {
-                "type": "python_version",
-                "severity": "warning",
-                "message": (
-                    f"Python {sys.version_info.major}.{sys.version_info.minor} "
-                    "may lack features used by evolver.py"
-                ),
             }
         )
 

@@ -282,15 +282,14 @@ def _check_rollback_safety(
         return
 
     # Check for untracked files that would be lost on hard reset
-    if mode == "hard":
-        if untracked:
-            violations.append(
-                PolicyViolation(
-                    rule="rollback_hard_untracked",
-                    severity="warning",
-                    message=f"Hard reset would delete {len(untracked)} untracked file(s)",
-                )
+    if mode == "hard" and untracked:
+        violations.append(
+            PolicyViolation(
+                rule="rollback_hard_untracked",
+                severity="warning",
+                message=f"Hard reset would delete {len(untracked)} untracked file(s)",
             )
+        )
 
     # Stash mode is generally safe for tracked files
     # but warn if there are uncommitted changes in protected files

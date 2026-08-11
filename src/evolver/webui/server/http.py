@@ -55,15 +55,7 @@ def create_app(*, title: str = "Evolver WebUI", version: str = "1.8.0") -> FastA
 
     @app.get("/app.js", response_class=PlainTextResponse)
     async def app_js() -> str:
-        return (
-            BOOTSTRAP_JS
-            + "\n"
-            + COMMON_JS
-            + "\n"
-            + render_sse_client_js()
-            + "\n"
-            + I18N_JS
-        )
+        return BOOTSTRAP_JS + "\n" + COMMON_JS + "\n" + render_sse_client_js() + "\n" + I18N_JS
 
     @app.get("/app.css", response_class=PlainTextResponse)
     async def app_css() -> str:

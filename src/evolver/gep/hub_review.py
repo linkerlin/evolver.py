@@ -33,7 +33,7 @@ class ReviewComment:
 @dataclass
 class ReviewResult:
     verdict: Verdict
-    score: float  # 0.0 – 100.0
+    score: float  # 0.0 - 100.0
     comments: list[ReviewComment] = field(default_factory=list)
     summary: str = ""
 

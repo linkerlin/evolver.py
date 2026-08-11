@@ -148,7 +148,7 @@ _in_flight: bool = False
 
 def _reset_in_flight_for_testing() -> None:
     """Test hook: clear the module-level concurrency mutex and copy hooks."""
-    global _in_flight, _copy_tree_fn, _copy_file_fn, _rename_fn  # noqa: PLW0603
+    global _in_flight, _copy_tree_fn, _copy_file_fn, _rename_fn
     _in_flight = False
     _copy_tree_fn = None
     _copy_file_fn = None
@@ -431,7 +431,7 @@ def _restore_moved_entries(
     return ok
 
 
-def install_downloaded_tree(  # noqa: PLR0911, PLR0912, PLR0915
+def install_downloaded_tree(
     install_root: Path,
     temp_target: Path,
     *,
@@ -806,7 +806,7 @@ def apply_update(
 # ---------------------------------------------------------------------------
 
 
-def force_update(  # noqa: PLR0911
+def force_update(
     *,
     current_version: str,
     target_version: str | None = None,
@@ -931,7 +931,7 @@ def force_update(  # noqa: PLR0911
 def _installed_version() -> str | None:
     """Best-effort read of the installed evolver version."""
     try:
-        from evolver import __version__  # noqa: PLC0415  # lazy: avoid import cycle
+        from evolver import __version__  # lazy: avoid import cycle
 
         return str(__version__)
     except Exception:
@@ -953,7 +953,7 @@ def execute_force_update(
       :data:`FORCE_UPDATE_BUSY` without re-entering the download path.
     * Failures are frozen, coded results (see :func:`is_force_update_failure`).
     """
-    global _in_flight  # noqa: PLW0603
+    global _in_flight
     if _in_flight:
         logger.debug("[ForceUpdate] re-entrant call while upgrade in flight → BUSY")
         return FORCE_UPDATE_BUSY

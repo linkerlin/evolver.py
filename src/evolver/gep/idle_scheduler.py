@@ -148,7 +148,7 @@ def _detect_build_activity() -> bool:
     """
     now = time.time()
     try:
-        from evolver.gep.paths import get_workspace_root  # noqa: PLC0415
+        from evolver.gep.paths import get_workspace_root
 
         root = get_workspace_root()
     except Exception:
@@ -173,7 +173,7 @@ def _fs_idle_fallback() -> float:
     if nothing was written recently, the user is likely idle.
     """
     try:
-        from evolver.gep.paths import get_memory_dir  # noqa: PLC0415
+        from evolver.gep.paths import get_memory_dir
 
         memory_dir = get_memory_dir()
     except Exception:
@@ -263,7 +263,7 @@ def notify(title: str, message: str) -> None:
     system = platform.system()
     if system == "Windows":
         with suppress(Exception):
-            from ctypes import windll  # noqa: PLC0415
+            from ctypes import windll
 
             windll.user32.MessageBoxW(0, message, title, 0x40 | 0x0)
     elif system == "Darwin":

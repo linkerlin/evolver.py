@@ -155,16 +155,15 @@ def _composer_task(bubbles: list[dict[str, Any]]) -> str:
     return ""
 
 
-def build_cursor_trajectory_from_composer(  # noqa: PLR0912
+def build_cursor_trajectory_from_composer(
     composer: dict[str, Any],
     *,
     bubble_lookup: dict[str, dict[str, Any]] | None = None,
     source_path: str = "",
 ) -> Trajectory | None:
     """Build one trajectory from a Cursor composer envelope + optional bubble rows."""
-    cmap = (
-        composer.get("conversationMap") if isinstance(composer.get("conversationMap"), dict) else {}
-    )
+    cmap_raw = composer.get("conversationMap")
+    cmap = cmap_raw if isinstance(cmap_raw, dict) else {}
     ordered = _ordered_bubble_ids(composer)
     bubble_ids = ordered or list(cmap.keys())
     bubbles: list[dict[str, Any]] = []
@@ -209,7 +208,8 @@ def build_cursor_trajectory_from_composer(  # noqa: PLR0912
         # User message only — still emit a minimal trajectory with task.
         pass
 
-    model_cfg = composer.get("modelConfig") if isinstance(composer.get("modelConfig"), dict) else {}
+    model_cfg_raw = composer.get("modelConfig")
+    model_cfg = model_cfg_raw if isinstance(model_cfg_raw, dict) else {}
     model = str(
         model_cfg.get("modelName") or model_cfg.get("model") or model_cfg.get("name") or ""
     ) or str(composer.get("model") or composer.get("modelName") or "")
@@ -233,7 +233,7 @@ def build_cursor_trajectory_from_composer(  # noqa: PLR0912
     return traj
 
 
-def build_cursor_trajectories_from_vscdb(  # noqa: PLR0912
+def build_cursor_trajectories_from_vscdb(
     db_path: Path | str,
 ) -> list[Trajectory]:
     """Open *db_path* (state.vscdb) and return trajectories for every composer."""

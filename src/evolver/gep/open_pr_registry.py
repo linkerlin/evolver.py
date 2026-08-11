@@ -185,6 +185,7 @@ def archive_merged_prs(path: Path | None = None) -> list[dict[str, Any]]:
                 text=True,
                 timeout=10,
                 cwd=str(get_workspace_root()),
+                check=False,
             )
             if result.returncode == 0:
                 remote_status = result.stdout.strip().lower()

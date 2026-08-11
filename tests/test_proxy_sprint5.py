@@ -34,9 +34,7 @@ class TestSelectUpstream:
         monkeypatch.delenv("GOOGLE_CLOUD_PROJECT", raising=False)
         assert model_router.select_upstream_for_model("gemini-2.0-flash") == "gemini"
 
-    def test_gemini_to_vertex_when_configured(
-        self, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
+    def test_gemini_to_vertex_when_configured(self, monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.setenv("VERTEX_PROJECT", "my-project")
         assert model_router.select_upstream_for_model("gemini-2.0-flash") == "vertex"
 
@@ -128,9 +126,13 @@ class TestOpenAITransform:
 class TestListModels:
     def test_empty_when_no_keys(self, monkeypatch: pytest.MonkeyPatch) -> None:
         for key in (
-            "ANTHROPIC_API_KEY", "ANTHROPIC_AUTH_TOKEN",
-            "OPENAI_API_KEY", "GEMINI_API_KEY", "GOOGLE_API_KEY",
-            "VERTEX_PROJECT", "GOOGLE_CLOUD_PROJECT",
+            "ANTHROPIC_API_KEY",
+            "ANTHROPIC_AUTH_TOKEN",
+            "OPENAI_API_KEY",
+            "GEMINI_API_KEY",
+            "GOOGLE_API_KEY",
+            "VERTEX_PROJECT",
+            "GOOGLE_CLOUD_PROJECT",
         ):
             monkeypatch.delenv(key, raising=False)
         result = list_models()
@@ -156,17 +158,13 @@ class TestListModels:
 
 
 class TestSettings:
-    def test_load_defaults(
-        self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
-    ) -> None:
+    def test_load_defaults(self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
         monkeypatch.setenv("EVOLVER_PROXY_SETTINGS_PATH", str(tmp_path / "settings.json"))
         settings = load_settings()
         assert settings["upstream"] == "anthropic"
         assert settings["port"] == 8081
 
-    def test_save_and_load(
-        self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
-    ) -> None:
+    def test_save_and_load(self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
         path = tmp_path / "settings.json"
         monkeypatch.setenv("EVOLVER_PROXY_SETTINGS_PATH", str(path))
         save_settings({"upstream": "gemini", "port": 9090})

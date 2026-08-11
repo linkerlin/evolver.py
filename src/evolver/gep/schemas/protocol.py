@@ -9,7 +9,8 @@ prompt.py.
 
 from __future__ import annotations
 
-from typing import Any, Sequence
+from collections.abc import Sequence
+from typing import Any
 
 from pydantic import BaseModel, ConfigDict
 
@@ -56,7 +57,6 @@ class A2AEnvelope(BaseModel):
 
 
 __all__ = [
-    "A2AEnvelope",
     "VALID_CATEGORIES",
     "VALID_OUTCOME_STATUSES",
     "VALID_REASONING_LEVELS",
@@ -64,6 +64,7 @@ __all__ = [
     "VALID_ROUTING_TIERS",
     "VALID_TOOL_POLICY_SEVERITIES",
     "VALID_TRACE_STAGES",
+    "A2AEnvelope",
     "render_enum",
     "render_enum_list",
 ]

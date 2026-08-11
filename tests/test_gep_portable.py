@@ -112,7 +112,7 @@ class TestImport:
         # Local gets newer event
         (mem / "events.jsonl").write_text('{"id":"b","timestamp":5}\n', encoding="utf-8")
 
-        imported = import_gepx(out, merge=True)
+        import_gepx(out, merge=True)
         rows = _read_jsonl(mem / "events.jsonl", 10)
         ids = {r["id"] for r in rows}
         assert ids == {"a", "b"}
