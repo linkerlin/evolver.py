@@ -66,6 +66,7 @@ def test_repair_safe_fetch(git_repo: Path, monkeypatch: pytest.MonkeyPatch) -> N
     assert isinstance(report.actions, list)
 
 
+@pytest.mark.slow
 def test_repair_hard_reset(git_repo: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     # Add a remote pointing to itself so fetch/reset can work
     run_cmd(["remote", "add", "origin", str(git_repo)], cwd=git_repo)

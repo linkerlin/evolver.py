@@ -25,6 +25,7 @@ def isolated_evolver_env(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
 
 
 @pytest.mark.asyncio
+@pytest.mark.slow
 async def test_run_loop_runs_at_least_one_cycle(
     isolated_evolver_env: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:

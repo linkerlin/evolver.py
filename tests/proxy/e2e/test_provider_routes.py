@@ -81,6 +81,7 @@ class TestUpstreamSelection:
 
 
 class TestModelsE2E:
+    @pytest.mark.slow
     def test_list_models_openai_schema(
         self, proxy_client: TestClient, monkeypatch: pytest.MonkeyPatch
     ) -> None:

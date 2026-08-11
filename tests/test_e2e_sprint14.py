@@ -82,6 +82,7 @@ def _init_git(path: Path) -> None:
 
 
 class TestE2ERunDispatchAttribution:
+    @pytest.mark.slow
     def test_cli_run_writes_source_type_and_created_at(self, e2e_env: Path) -> None:
         code = main(["run"])
         assert code == 0
@@ -595,6 +596,7 @@ class TestE2ECycleTimeoutAndProgress:
 
 
 class TestE2ERunSolidifyMemoryChain:
+    @pytest.mark.slow
     def test_run_solidify_then_record_outcome(
         self, e2e_env: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
@@ -653,17 +655,20 @@ class TestE2ERunSolidifyMemoryChain:
 
 
 class TestE2ECliSmoke:
+    @pytest.mark.slow
     def test_check_after_run(self, e2e_env: Path) -> None:
         assert main(["run"]) == 0
         # check may return non-zero on some platforms; ensure it does not crash
         code = main(["check"])
         assert code in (0, 1)
 
+    @pytest.mark.slow
     def test_self_report_after_run(self, e2e_env: Path) -> None:
         assert main(["run"]) == 0
         code = main(["self-report", "--no-write"])
         assert code == 0
 
+    @pytest.mark.slow
     def test_run_twice_updates_solidify_run_id(self, e2e_env: Path) -> None:
         assert main(["run"]) == 0
         first = json.loads(get_solidify_state_path().read_text(encoding="utf-8"))["last_run"][

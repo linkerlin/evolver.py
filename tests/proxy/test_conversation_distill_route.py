@@ -68,6 +68,7 @@ def test_distill_draft_when_publish_and_persist_disabled(client: TestClient) -> 
     assert isinstance(body["capsule"]["env_fingerprint"], dict)
 
 
+@pytest.mark.slow
 def test_publishes_gene_and_capsule(client: TestClient) -> None:
     res = client.post(
         "/v1/a2a/conversation/distill",

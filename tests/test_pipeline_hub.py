@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import pytest
+
 from evolver.evolve.pipeline.hub import hub_phase
 
 
@@ -11,6 +13,7 @@ class TestHubPhase:
         result = await hub_phase(ctx)
         assert result["hub_hit"]["reason"] == "idle_skip"
 
+    @pytest.mark.slow
     async def test_offline(self, monkeypatch):
         async def fail(*a, **k):
             raise Exception("no network")

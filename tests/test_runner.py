@@ -41,6 +41,7 @@ async def test_run_single_cycle_selects_gene(
 
 
 @pytest.mark.asyncio
+@pytest.mark.slow
 async def test_run_writes_solidify_state(isolated_evolver_env: Path) -> None:
     await run()
     state_path = isolated_evolver_env / "evolution" / "evolution_solidify_state.json"

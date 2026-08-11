@@ -59,6 +59,7 @@ def _init_git_repo(path: Path) -> None:
 
 
 class TestFullRunSolidifyCycle:
+    @pytest.mark.slow
     def test_run_creates_solidify_state(
         self, isolated_evolver_env: Path, capsys: pytest.CaptureFixture[str]
     ) -> None:
@@ -72,6 +73,7 @@ class TestFullRunSolidifyCycle:
         assert "last_run" in data
         assert "run_id" in data["last_run"]
 
+    @pytest.mark.slow
     def test_solidify_after_run_in_git_repo(
         self, isolated_evolver_env: Path, capsys: pytest.CaptureFixture[str]
     ) -> None:
@@ -109,6 +111,7 @@ class TestFullRunSolidifyCycle:
 
 
 class TestWebUIFullPipeline:
+    @pytest.mark.slow
     def test_status_shows_solidify_pending_after_run(
         self, client: TestClient, isolated_evolver_env: Path
     ) -> None:
@@ -118,6 +121,7 @@ class TestWebUIFullPipeline:
         data = response.json()
         assert data["solidify_pending"] is True
 
+    @pytest.mark.slow
     def test_genes_endpoint_after_run(self, client: TestClient, isolated_evolver_env: Path) -> None:
         main(["run"])
         response = client.get("/genes")
@@ -126,6 +130,7 @@ class TestWebUIFullPipeline:
         assert "genes" in data
         assert len(data["genes"]) >= 3  # seed genes always present
 
+    @pytest.mark.slow
     def test_events_endpoint_after_run_and_solidify(
         self, client: TestClient, isolated_evolver_env: Path
     ) -> None:
@@ -138,6 +143,7 @@ class TestWebUIFullPipeline:
         assert "events" in data
         assert len(data["events"]) > 0
 
+    @pytest.mark.slow
     def test_events_replay_api_after_run_and_solidify(
         self, client: TestClient, isolated_evolver_env: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
@@ -152,6 +158,7 @@ class TestWebUIFullPipeline:
         assert len(data["events"]) > 0
         assert data["since_id"] == 0
 
+    @pytest.mark.slow
     def test_capsules_endpoint_after_run(
         self, client: TestClient, isolated_evolver_env: Path
     ) -> None:
@@ -168,6 +175,7 @@ class TestWebUIFullPipeline:
 
 
 class TestSQLiteStoreFullPipeline:
+    @pytest.mark.slow
     def test_sqlite_events_after_run_and_solidify(
         self, isolated_evolver_env: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
@@ -432,6 +440,7 @@ class TestPeerLifecycle:
 
 
 class TestCrossSubsystemWorkflow:
+    @pytest.mark.slow
     def test_run_then_webui_then_replay(
         self, client: TestClient, isolated_evolver_env: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
@@ -482,6 +491,7 @@ class TestCrossSubsystemWorkflow:
             with pytest.raises(Exception):
                 ws.receive_json()
 
+    @pytest.mark.slow
     def test_solidify_in_git_clears_pending(
         self, client: TestClient, isolated_evolver_env: Path
     ) -> None:

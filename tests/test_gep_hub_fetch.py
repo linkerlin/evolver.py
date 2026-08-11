@@ -152,6 +152,7 @@ class TestHubFetch:
         assert route.called
 
     @respx.mock
+    @pytest.mark.slow
     def test_circuit_breaker_opens(self):
         reset_circuit_breaker()
         route = respx.get("https://hub.example/cb").mock(return_value=Response(500))

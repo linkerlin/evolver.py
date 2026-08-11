@@ -105,6 +105,7 @@ class TestAtpExecute:
         result = atp_execute._run_validation(["python -c 'print(1)'; rm -rf /"])
         assert not result["passed"]
 
+    @pytest.mark.slow
     def test_run_validation_allows_python(self) -> None:
         result = atp_execute._run_validation(["python --version"])
         assert result["passed"]
