@@ -4,7 +4,7 @@ Equivalent to ``evolver/src/experiment/cli.js``.
 
 Usage::
 
-    python -m evolver.experiment.cli --tasks tasks.json --genes genes.json
+    evolver experiment --tasks tasks.json --genes genes.json
     python -m evolver.experiment.cli --tasks tasks.json  # baseline only
 """
 
@@ -13,6 +13,7 @@ from __future__ import annotations
 import argparse
 import json
 import sys
+from collections.abc import Sequence
 from pathlib import Path
 from typing import Any
 
@@ -21,7 +22,7 @@ def _load_json(path: str) -> Any:
     return json.loads(Path(path).read_text(encoding="utf-8"))
 
 
-def main() -> None:
+def main(argv: Sequence[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Run a controlled evolution experiment")
     parser.add_argument(
         "--tasks", required=True, help="Path to tasks JSON file (list of task dicts)"
@@ -32,19 +33,19 @@ def main() -> None:
     parser.add_argument(
         "--output", default=None, help="Path to write results JSON (default: stdout)"
     )
-    args = parser.parse_args()
+    args = parser.parse_args(argv)
 
     tasks = _load_json(args.tasks)
     if not isinstance(tasks, list):
         print("Tasks file must be a JSON list", file=sys.stderr)
-        raise SystemExit(1)
+        return 1
 
     genes = None
     if args.genes:
         genes = _load_json(args.genes)
         if not isinstance(genes, list):
             print("Genes file must be a JSON list", file=sys.stderr)
-            raise SystemExit(1)
+            return 1
 
     from evolver.experiment.comparison import run_comparison
 
@@ -65,7 +66,8 @@ def main() -> None:
         print(f"Results written to {args.output}", file=sys.stderr)
     else:
         print(output_json)
+    return 0
 
 
 if __name__ == "__main__":
-    main()
+    raise SystemExit(main())

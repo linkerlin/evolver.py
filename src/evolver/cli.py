@@ -147,6 +147,12 @@ def _build_parser() -> argparse.ArgumentParser:
     replay_p = sub.add_parser("replay", help="Replay events from SQLite store")
     replay_p.add_argument("--since-id", type=int, default=0, help="Start after this row id")
     replay_p.add_argument("--limit", type=int, default=100, help="Max events to replay")
+    experiment_p = sub.add_parser(
+        "experiment", help="Run a controlled evolution experiment (baseline vs evolved)"
+    )
+    experiment_p.add_argument("--tasks", required=True, help="Path to tasks JSON (list of dicts)")
+    experiment_p.add_argument("--genes", default=None, help="Path to genes JSON (list of dicts)")
+    experiment_p.add_argument("--output", default=None, help="Path to write results JSON")
     webui_p = sub.add_parser("webui", help="Launch the WebUI dashboard")
     webui_p.add_argument("--host", default="127.0.0.1", help="Bind host")
     webui_p.add_argument(
@@ -386,6 +392,9 @@ def main(argv: Sequence[str] | None = None) -> int:
         return asyncio.run(_cmd_atp(args))
     if command == "replay":
         return _cmd_replay(args)
+
+    if command == "experiment":
+        return _cmd_experiment(args)
 
     if command == "sync":
         return asyncio.run(_cmd_sync(args))
@@ -851,6 +860,18 @@ def _cmd_replay(args: argparse.Namespace) -> int:
         gid = evt.get("gene_id", "?")
         print(f"  {eid}  {ts}  {gid}")
     return 0
+
+
+def _cmd_experiment(args: argparse.Namespace) -> int:
+    """Run a controlled evolution experiment (baseline vs evolved agent)."""
+    from evolver.experiment.cli import main as experiment_main
+
+    experiment_args = ["--tasks", args.tasks]
+    if args.genes:
+        experiment_args += ["--genes", args.genes]
+    if args.output:
+        experiment_args += ["--output", args.output]
+    return experiment_main(experiment_args)
 
 
 def _cmd_asset_log(args: argparse.Namespace) -> int:
