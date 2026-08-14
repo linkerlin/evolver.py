@@ -63,6 +63,9 @@ DEFAULT_FLAGS: dict[str, bool] = {
     # Sprint 22.3 bandit selection (演进方案.md §13.5 P1-5): UCB1-sampled parent
     # choice instead of argmax; --review keeps deterministic selection.
     "enable_bandit_selection": False,
+    # Sprint 22.4 niche archive (演进方案.md §13.5 P1-6): per-signal top-k
+    # preferred genes + 30-day ban probation instead of permanent bans.
+    "enable_niche_topk": False,
     # Proxy-only routes (also readable via ``EVOLVER_FF_*``)
     "enable_skill_auto_update": False,
     "enable_trace_upload": False,

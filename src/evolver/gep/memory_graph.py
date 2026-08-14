@@ -24,6 +24,7 @@ from pathlib import Path
 from typing import Any, cast
 
 from evolver.config import GENE_INERT_BAN_STREAK
+from evolver.gep.feature_flags import is_enabled
 from evolver.gep.paths import get_evolution_dir, get_memory_graph_path, get_solidify_state_path
 
 # --- Rotation (#519) --------------------------------------------------------
@@ -623,6 +624,43 @@ def record_signal_gene_preference(
     return {"signalKey": key, **entry}
 
 
+# Sprint 22.4: probation window (days) for banned genes under enable_niche_topk.
+BAN_PROBATION_DAYS: int = 30
+
+
+def _probation_until(key: str, gene_id: str) -> float | None:
+    """Active probation deadline for *gene_id* on *signal_key*, else None."""
+    state = _read_state()
+    pb = state.get("probation_by_signal") or {}
+    if not isinstance(pb, dict):
+        return None
+    entry = (pb.get(key) or {}).get(gene_id)
+    if isinstance(entry, (int, float)) and entry > time.time():
+        return float(entry)
+    return None
+
+
+def _set_probation(key: str, gene_id: str) -> None:
+    """Persist a 30-day probation for *gene_id* (replaces the permanent ban).
+
+    # ponytail: probation is a bounded second chance, not failure accounting —
+    # a gene whose stats still qualify is re-banned on the next advice call
+    # after its window lapses; swap for failure-count tracking if the
+    # on/off cadence ever measurably hurts.
+    """
+    state = _read_state()
+    pb = state.setdefault("probation_by_signal", {})
+    if not isinstance(pb, dict):
+        pb = {}
+        state["probation_by_signal"] = pb
+    by_key = pb.setdefault(key, {})
+    if not isinstance(by_key, dict):
+        by_key = {}
+        pb[key] = by_key
+    by_key[gene_id] = time.time() + BAN_PROBATION_DAYS * 86400.0
+    _write_state(state)
+
+
 def _count_trailing_inert(
     outcomes: list[dict[str, Any]], signal_key: str, gene_id: str
 ) -> tuple[int, bool]:
@@ -833,15 +871,51 @@ def get_memory_advice(
         if trailing_inert >= GENE_INERT_BAN_STREAK:
             banned.add(gene_id)
 
+    # Sprint 22.4 (enable_niche_topk): 30-day probation instead of permanent
+    # bans — a gene under an active probation stays selectable; fresh bans get
+    # a probation window persisted (re-ban only after the window lapses).
+    if is_enabled("enable_niche_topk"):
+        fresh_bans: set[str] = set()
+        for gid in banned:
+            if _probation_until(key, gid) is not None:
+                continue  # probation running -> allow selection
+            fresh_bans.add(gid)
+            _set_probation(key, gid)
+        banned = fresh_bans
+
     if solidify_preferred and solidify_preferred not in banned:
         preferred = solidify_preferred
+
+    # Sprint 22.4: top-k preferred genes per signal-key niche (MAP-Elites
+    # style elites) for the bandit selector's exploit term.
+    preferred_ids: list[str] = []
+    if is_enabled("enable_niche_topk"):
+        ranked = sorted(
+            (
+                (gid, stats)
+                for gid, stats in gene_stats.items()
+                if gid not in banned and stats["attempts"] > 0
+            ),
+            key=lambda kv: kv[1]["successes"] / kv[1]["attempts"],
+            reverse=True,
+        )
+        preferred_ids = [gid for gid, _ in ranked[:3]]
+        if (
+            solidify_preferred
+            and solidify_preferred not in banned
+            and solidify_preferred not in preferred_ids
+        ):
+            preferred_ids.insert(0, solidify_preferred)
+            preferred_ids = preferred_ids[:3]
 
     explanation_parts = [
         f"signal_key={key}",
         f"matching_outcomes={len([e for e in outcomes if e.get('signal', {}).get('key') == key])}",
     ]
     if banned:
-        explanation_parts.append(f"banned={','.join(banned)}")
+        explanation_parts.append(f"banned={','.join(sorted(banned))}")
+    if preferred_ids:
+        explanation_parts.append(f"preferred_top={','.join(preferred_ids)}")
     if solidify_preferred:
         explanation_parts.append(f"solidify_preferred={solidify_preferred}")
     if friction_cats:
@@ -850,6 +924,7 @@ def get_memory_advice(
     return {
         "currentSignalKey": key,
         "preferredGeneId": preferred,
+        "preferredGeneIds": preferred_ids,
         "bannedGeneIds": banned,
         "solidifyPreferredGeneId": solidify_preferred,
         "frictionCategories": sorted(friction_cats),
@@ -872,6 +947,7 @@ with contextlib.suppress(Exception):
 
 
 __all__ = [
+    "BAN_PROBATION_DAYS",
     "check_epoch_boundary",
     "compute_predictive_boost",
     "compute_signal_key",

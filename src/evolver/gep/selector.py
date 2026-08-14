@@ -167,6 +167,8 @@ def select_gene(
     options = options or {}
     banned: set[str] = options.get("bannedGeneIds") or set()
     preferred = options.get("preferredGeneId")
+    # Sprint 22.4: top-k preferred gene ids per signal-key niche.
+    preferred_ids: set[str] = set(options.get("preferredGeneIds") or [])
     prefer_inplace = bool(options.get("preferInplace", False))
     drift_enabled = bool(options.get("driftEnabled", False))
     effective_pop = options.get("effectivePopulationSize", max(1, len(genes)))
@@ -200,10 +202,12 @@ def select_gene(
         if score > 0:
             candidates.append({"gene": gene, "score": score})
 
-    # Apply preferred gene multiplier
+    # Apply preferred gene multiplier (single anchor + top-k niche elites)
     if preferred:
+        preferred_ids.add(preferred)
+    if preferred_ids:
         for c in candidates:
-            if c["gene"].get("id") == preferred:
+            if c["gene"].get("id") in preferred_ids:
                 c["score"] *= 1.5
 
     # Apply drift jitter
@@ -370,6 +374,7 @@ def select_gene_and_capsule(ctx: dict[str, Any]) -> dict[str, Any]:
         {
             "bannedGeneIds": banned,
             "preferredGeneId": preferred,
+            "preferredGeneIds": memory_advice.get("preferredGeneIds") or [],
             "driftEnabled": drift_enabled,
             "memoryEvidence": memory_evidence,
             "livingMemoryHints": memory_advice.get("livingMemoryHints") or [],
