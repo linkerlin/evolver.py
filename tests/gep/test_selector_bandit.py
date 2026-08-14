@@ -149,9 +149,9 @@ class TestSelectGeneAndCapsuleBandit:
 
 class TestReviewModeThreading:
     def test_build_initial_context_threads_review(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        monkeypatch.setattr(selector.random, "choices", lambda *a, **k: [])
-        from evolver.evolve.runner import _build_initial_context
+        from evolver.evolve import runner
 
-        ctx = _build_initial_context(review_mode=True)
-        assert ctx["IS_REVIEW_MODE"] is True
-        assert _build_initial_context(review_mode=False)["IS_REVIEW_MODE"] is False
+        monkeypatch.setattr(runner, "_loop_review_mode", True)
+        assert runner._build_initial_context()["IS_REVIEW_MODE"] is True
+        monkeypatch.setattr(runner, "_loop_review_mode", False)
+        assert runner._build_initial_context()["IS_REVIEW_MODE"] is False
