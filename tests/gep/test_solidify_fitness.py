@@ -34,7 +34,7 @@ class TestNormalizeValidationCommand:
         assert timeout is None
 
     def test_dict_spec_timeout(self) -> None:
-        argv, display, timeout = solidify._normalize_validation_command(
+        argv, _display, timeout = solidify._normalize_validation_command(
             {"command": ["pytest"], "timeout_ms": 600_000}
         )
         assert argv == ["pytest"]
@@ -154,7 +154,7 @@ class TestCascadeFailurePath:
             solidify, "rollback_new_untracked_files", lambda files: order.append("rollback2")
         )
         monkeypatch.setattr(solidify, "git_list_untracked_files", lambda cwd: [])
-        monkeypatch.setattr(solidify, "append_event_jsonl", lambda evt: appended.update(evt))
+        monkeypatch.setattr(solidify, "append_event_jsonl", appended.update)
         monkeypatch.setattr(
             solidify,
             "record_solidify_failure",
