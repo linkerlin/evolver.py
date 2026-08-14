@@ -146,3 +146,26 @@ def test_evaluate_release_window_active() -> None:
     result = guards.evaluate_release_window("chore(release) v1", (now - 60_000) / 1000.0, now=now)
     assert result.yield_required is True
     assert result.reason == "release_window_active"
+
+
+class TestWindowsLoadFallback:
+    def test_disabled_by_default(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        def _raise() -> tuple[float, float, float]:
+            raise AttributeError("no getloadavg on Windows")
+
+        monkeypatch.setattr("os.getloadavg", _raise, raising=False)
+        sample = guards.get_system_load()
+        assert (sample.load1m, sample.load5m, sample.load15m) == (0.0, 0.0, 0.0)
+
+    def test_enabled_uses_psutil_proxy(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setenv("EVOLVER_FF_ENABLE_WINDOWS_LOAD_GUARD", "true")
+
+        def _raise() -> tuple[float, float, float]:
+            raise AttributeError("no getloadavg on Windows")
+
+        monkeypatch.setattr("os.getloadavg", _raise, raising=False)
+        monkeypatch.setattr("psutil.cpu_percent", lambda interval: 50.0)
+        sample = guards.get_system_load()
+        cpus = guards.detect_cpu_count()
+        assert sample.load1m == pytest.approx(0.5 * cpus)
+        assert sample.load5m == sample.load1m

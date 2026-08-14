@@ -437,6 +437,12 @@ def record_outcome_from_state(
 
     state = _read_state()
     last_action = state.get("last_action") if isinstance(state.get("last_action"), dict) else None
+    # Sprint 22.1: guard against double bookkeeping — only infer an outcome for
+    # attempts that never received one (no solidify outcome recorded them).
+    if not isinstance(last_action, dict):
+        return None
+    if last_action.get("outcome_recorded"):
+        return None
     last_run = _read_solidify_last_run()
 
     current_signals = list(signals) if signals is not None else []

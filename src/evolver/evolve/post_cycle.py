@@ -5,12 +5,35 @@ Runs lightweight side effects that should not block the core GEP prompt path.
 
 from __future__ import annotations
 
+import json
 import logging
+import time
+from pathlib import Path
 from typing import Any
 
 from evolver.gep.hooks.merge_integration import merge_accepted_candidates
 
 logger = logging.getLogger(__name__)
+
+
+def _persist_atp_spawn(spawn: str) -> None:
+    """Sprint 22.1 (§13.3-#5): persist the spawn instruction so an external
+    agent/bridge can consume it after the cycle ends (ctx dies with the cycle)."""
+    try:
+        from evolver.gep.paths import get_evolution_dir
+
+        path = Path(get_evolution_dir()) / "atp_spawn_instruction.json"
+        path.parent.mkdir(parents=True, exist_ok=True)
+        payload = {
+            "ts": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+            "instruction": spawn,
+        }
+        tmp = path.with_suffix(".json.tmp")
+        tmp.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
+        tmp.replace(path)
+        logger.info("[post_cycle] ATP spawn instruction persisted: %s", path)
+    except Exception as exc:
+        logger.debug("[post_cycle] ATP spawn persist skipped: %s", exc)
 
 
 def _signal_texts(ctx: dict[str, Any]) -> list[str]:
@@ -52,6 +75,7 @@ async def run_post_cycle_hooks(ctx: dict[str, Any]) -> dict[str, Any]:
             spawn = await pick_one()
             if spawn:
                 ctx["atp_spawn_instruction"] = spawn
+                _persist_atp_spawn(spawn)
                 logger.info("[post_cycle] ATP task pickup produced spawn instruction")
         except Exception as exc:
             logger.debug("[post_cycle] ATP task pickup skipped: %s", exc)

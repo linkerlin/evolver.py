@@ -68,3 +68,23 @@ async def test_post_cycle_task_pickup_instruction(monkeypatch: pytest.MonkeyPatc
     ctx = {"signals": ["log_error"]}
     result = await run_post_cycle_hooks(ctx)
     assert "atp_spawn_instruction" in result
+
+
+@pytest.mark.asyncio
+async def test_post_cycle_persists_atp_spawn_instruction(
+    temp_workspace: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    spawn = "sessions_spawn: work on task t-1 (bounty 5)"
+    monkeypatch.setenv("EVOLVER_FF_ENABLE_AUTO_BUYER", "false")
+    monkeypatch.setattr(
+        "evolver.atp.atp_task_pickup.pick_one",
+        AsyncMock(return_value=spawn),
+    )
+    ctx = await run_post_cycle_hooks({"signals": ["log_error"]})
+    assert ctx["atp_spawn_instruction"] == spawn
+    path = temp_workspace / "memory" / "evolution" / "atp_spawn_instruction.json"
+    assert path.exists()
+    import json
+
+    payload = json.loads(path.read_text(encoding="utf-8"))
+    assert payload["instruction"] == spawn

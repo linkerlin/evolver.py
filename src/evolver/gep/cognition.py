@@ -252,6 +252,24 @@ def record_solidify_failure(
     except Exception as exc:
         logger.debug("[Cognition] autopoiesis solidify friction skipped: %s", exc)
 
+    # Sprint 22.1 (§13.3-#4): failed innovate attempts must land in the ROI
+    # denominator too (mirrors the success path in post_solidify_hooks).
+    inv_attempt_id = last_run.get("innovation_attempt_id")
+    inv_mutation = last_run.get("mutation") or {}
+    if inv_attempt_id or inv_mutation.get("category") == "innovate":
+        try:
+            from evolver.ops.innovation import record_innovation_outcome
+
+            record_innovation_outcome(
+                attempt_id=str(inv_attempt_id or "unknown"),
+                gene_id=last_run.get("selected_gene_id"),
+                status="failed",
+                run_id=last_run.get("run_id"),
+                note=error[:200],
+            )
+        except Exception as exc:
+            logger.debug("[Cognition] innovation failure outcome skipped: %s", exc)
+
     if not is_enabled("enable_memory_graph"):
         return
     try:

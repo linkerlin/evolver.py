@@ -101,3 +101,42 @@ class TestPostSolidifyHooks:
         assert result.get("memory_outcome") is True
         text = (tmp_path / "graph.jsonl").read_text(encoding="utf-8")
         assert "outcome" in text
+
+
+class TestRecordSolidifyFailure:
+    @pytest.mark.usefixtures("temp_workspace")
+    def test_innovation_failure_outcome_recorded(
+        self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+    ) -> None:
+        monkeypatch.setenv("EVOLVER_INNOVATION_LOG_PATH", str(tmp_path / "innovation_log.jsonl"))
+        from evolver.gep.cognition import record_solidify_failure
+        from evolver.ops.innovation import _read_innovation_events
+
+        record_solidify_failure(
+            {
+                "run_id": "run-9",
+                "signals": ["log_error"],
+                "selected_gene_id": "gene-9",
+                "innovation_attempt_id": "inv-9",
+            },
+            error="validation failed",
+        )
+        events = _read_innovation_events()
+        outcomes = [e for e in events if e.get("kind") == "outcome"]
+        assert len(outcomes) == 1
+        assert outcomes[0]["attempt_id"] == "inv-9"
+        assert outcomes[0]["status"] == "failed"
+
+    @pytest.mark.usefixtures("temp_workspace")
+    def test_no_innovation_outcome_for_repair_failure(
+        self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+    ) -> None:
+        monkeypatch.setenv("EVOLVER_INNOVATION_LOG_PATH", str(tmp_path / "innovation_log.jsonl"))
+        from evolver.gep.cognition import record_solidify_failure
+        from evolver.ops.innovation import _read_innovation_events
+
+        record_solidify_failure(
+            {"run_id": "run-8", "signals": ["log_error"], "selected_gene_id": "gene-8"},
+            error="boom",
+        )
+        assert _read_innovation_events() == []

@@ -53,6 +53,10 @@ DEFAULT_FLAGS: dict[str, bool] = {
     "enable_surface_decouple": False,
     "enable_constrained_genes": False,
     "enable_llm_template": False,
+    # Sprint 22.1 open-loop closures (methodology audit, off by default; see 演进方案.md §13.3).
+    "enable_event_history": False,
+    "enable_gap_outcome_inference": False,
+    "enable_windows_load_guard": False,
     # Proxy-only routes (also readable via ``EVOLVER_FF_*``)
     "enable_skill_auto_update": False,
     "enable_trace_upload": False,

@@ -36,8 +36,28 @@ def get_system_load() -> LoadSample:
         raw = os.getloadavg()  # type: ignore[attr-defined]
         loads = [min(float(x), 2.0 * cpu_count) for x in raw]
     except (AttributeError, OSError):
-        loads = [0.0, 0.0, 0.0]
+        loads = _windows_load_fallback()
     return LoadSample(load1m=loads[0], load5m=loads[1], load15m=loads[2])
+
+
+def _windows_load_fallback() -> list[float]:
+    """Sprint 22.1 (§13.3-#9): ``os.getloadavg`` does not exist on Windows.
+
+    Uses psutil CPU utilization as a load proxy (flag-gated, default off).
+    # ponytail: utilization is a proxy for run-queue depth, not a true loadavg;
+    # swap for GetSystemTimes if sustained-pressure false positives ever matter.
+    """
+    from evolver.gep.feature_flags import is_enabled
+
+    if not is_enabled("enable_windows_load_guard"):
+        return [0.0, 0.0, 0.0]
+    try:
+        import psutil
+
+        busy = psutil.cpu_percent(interval=0.2) / 100.0 * detect_cpu_count()
+        return [busy, busy, busy]
+    except Exception:
+        return [0.0, 0.0, 0.0]
 
 
 def get_default_load_max() -> float:

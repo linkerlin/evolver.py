@@ -267,7 +267,7 @@ atp/                Agent 交易协议市场
 - **`asyncio_mode = "auto"`**：所有 `async def test_*` 自动视为异步测试。无需标记。
 - **`from __future__ import annotations`**：所有注解在运行时皆为字符串。勿将注解用于 `isinstance()` 检查。
 - **原子写入**：`asset_store.atomic_write_json` 用临时文件 + `os.replace`。在 Windows 上，若目标被另一进程打开（如守护循环），此操作将败。
-- **`canary.py` 为子进程运行**：其在 `solidify` 提交之前于子进程中运行。测试中勿直接从中导入。
+- **`canary.py` 之实况**（2026-08-14 校正）：`solidify(canary=...)` 仅接受可选 dict 且生产路径无人传入——canary 不在 solidify 主路径自动运行。其当前角色为独立 CLI 加载性子进程检查。测试中勿直接从中导入。
 - **种子数据**：`src/evolver/assets/gep/genes.seed.json` 为捆绑之默认基因。测试不应修改之——用 `GEP_ASSETS_DIR` 覆盖。
 - **测试隔离**：环境变量总是用 `monkeypatch.setenv`，勿直接用 `os.environ`。`temp_workspace` fixture 为此常用路径处理之。
 - **Proxy 路径前缀**：所有 `routes.py` 路由挂载于 `/v1/a2a`（如 `/v1/a2a/mailbox/send`）。LLM 中继为 `/v1/a2a/v1/messages`。
