@@ -84,9 +84,7 @@ async def signals_phase(ctx: dict[str, Any]) -> dict[str, Any]:
     # like memory_missing must not mark an attempt failed.
     if is_enabled("enable_gap_outcome_inference"):
         error_signals = [
-            s
-            for s in signals
-            if s == "log_error" or s.startswith(("errsig:", "recurring_errsig"))
+            s for s in signals if s == "log_error" or s.startswith(("errsig:", "recurring_errsig"))
         ]
         try:
             from evolver.gep.memory_graph import record_outcome_from_state

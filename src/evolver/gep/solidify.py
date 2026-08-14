@@ -203,9 +203,7 @@ def _run_validations(
             "stderr": "",
         }
         timeout_s = (
-            timeout_ms / 1000.0
-            if timeout_ms is not None
-            else VALIDATION_TIMEOUT_MS / 1000.0
+            timeout_ms / 1000.0 if timeout_ms is not None else VALIDATION_TIMEOUT_MS / 1000.0
         )
         try:
             proc = subprocess.run(
