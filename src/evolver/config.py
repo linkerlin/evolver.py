@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import os
 import warnings
-from typing import Final
+from typing import Any, Final
 from urllib.parse import urlparse
 
 _ENV_WARNED: set[str] = set()
@@ -222,6 +222,14 @@ ACCEPTANCE_DELTA_EPSILON: Final = env_float("EVOLVER_ACCEPTANCE_DELTA_EPSILON", 
 
 # --- Self-Harness multi-proposer (Sprint C2; 1 = existing single-proposal) ---
 MULTI_PROPOSE_ROUTES: Final = env_int("EVOLVER_MULTI_PROPOSE_ROUTES", 1)
+
+# --- Sprint 22.2 fitness cascade (flag enable_fitness_cascade; assumes Python/uv repo) ---
+FITNESS_PYTEST_TIMEOUT_MS: Final = env_int("EVOLVER_FITNESS_PYTEST_TIMEOUT_MS", 600_000)
+FITNESS_CASCADE_COMMANDS: Final[list[dict[str, Any]]] = [
+    {"command": ["ruff", "check", "src", "tests"]},
+    {"command": ["mypy", "src"]},
+    {"command": ["pytest", "-m", "not slow", "-q"], "timeout_ms": FITNESS_PYTEST_TIMEOUT_MS},
+]
 
 # --- Self-Harness external LLM templates (Sprint D) ---
 LLM_CALL_DIR: Final = env_str("EVOLVER_LLM_CALL_DIR", "<GEP_ASSETS_DIR>/llm_calls")

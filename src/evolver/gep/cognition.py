@@ -243,6 +243,7 @@ def record_solidify_failure(
     last_run: dict[str, Any],
     *,
     error: str,
+    score: float | None = None,
 ) -> None:
     """Record a failed solidify attempt into the memory graph."""
     try:
@@ -264,6 +265,7 @@ def record_solidify_failure(
                 attempt_id=str(inv_attempt_id or "unknown"),
                 gene_id=last_run.get("selected_gene_id"),
                 status="failed",
+                score=score,
                 run_id=last_run.get("run_id"),
                 note=error[:200],
             )
@@ -277,10 +279,13 @@ def record_solidify_failure(
         from evolver.gep.memory_graph import record_outcome
 
         gene_id = last_run.get("selected_gene_id")
+        outcome: dict[str, Any] = {"status": "failed", "error": error}
+        if score is not None:
+            outcome["score"] = score
         record_outcome(
             signals=list(last_run.get("signals", [])),
             selected_gene={"id": gene_id} if gene_id else None,
-            outcome={"status": "failed", "error": error},
+            outcome=outcome,
             run_id=last_run.get("run_id"),
         )
         reinforce_solidify_failure_in_graph(last_run, error=error)

@@ -57,6 +57,9 @@ DEFAULT_FLAGS: dict[str, bool] = {
     "enable_event_history": False,
     "enable_gap_outcome_inference": False,
     "enable_windows_load_guard": False,
+    # Sprint 22.2 quantitative fitness (演进方案.md §13.5 P1-4): engine-owned
+    # validation cascade (ruff → mypy → pytest), outcome score = cascade progress.
+    "enable_fitness_cascade": False,
     # Proxy-only routes (also readable via ``EVOLVER_FF_*``)
     "enable_skill_auto_update": False,
     "enable_trace_upload": False,

@@ -7,17 +7,19 @@ from __future__ import annotations
 
 import contextlib
 import json
+import re
 import secrets
 import subprocess
 import time
 from pathlib import Path
 from typing import Any
 
-from evolver.config import VALIDATION_TIMEOUT_MS
+from evolver.config import FITNESS_CASCADE_COMMANDS, VALIDATION_TIMEOUT_MS
 from evolver.gep.acceptance.solidify_hook import gate_or_none
 from evolver.gep.asset_store import append_event_jsonl, read_json_if_exists
 from evolver.gep.cognition import post_solidify_hooks, record_solidify_failure
 from evolver.gep.execution_trace import build_execution_trace
+from evolver.gep.feature_flags import is_enabled
 from evolver.gep.git_ops import (
     capture_diff_snapshot,
     git_list_changed_files,
@@ -165,34 +167,53 @@ def build_soft_failure_learning_signals(
     return out
 
 
-def _normalize_validation_command(cmd: Any) -> tuple[list[str], str]:
-    """Return (argv for subprocess, display string for logs/traces)."""
+def _normalize_validation_command(cmd: Any) -> tuple[list[str], str, int | None]:
+    """Return (argv for subprocess, display string, timeout_ms override).
+
+    Accepts a plain string, an argv list, or a Sprint 22.2 dict spec
+    ``{"command": str|list, "timeout_ms": int}`` (engine-owned fitness cascade).
+    """
+    timeout_ms: int | None = None
+    if isinstance(cmd, dict):
+        timeout_ms = cmd.get("timeout_ms")
+        cmd = cmd.get("command")
     if isinstance(cmd, list):
         argv = [str(part) for part in cmd]
-        return argv, " ".join(argv)
+        return argv, " ".join(argv), timeout_ms
     text = str(cmd)
-    return [text], text
+    return [text], text, timeout_ms
 
 
-def _run_validations(commands: list[Any], cwd: Path) -> dict[str, Any]:
+def _run_validations(
+    commands: list[Any],
+    cwd: Path,
+    *,
+    cascade: bool = False,
+) -> dict[str, Any]:
+    """Run validation commands; ``cascade`` short-circuits on first failure."""
     results: list[dict[str, Any]] = []
     overall_ok = True
     started_at = time.time() * 1000.0
     for cmd in commands:
-        argv, display = _normalize_validation_command(cmd)
+        argv, display, timeout_ms = _normalize_validation_command(cmd)
         result: dict[str, Any] = {
             "command": display,
             "ok": False,
             "stdout": "",
             "stderr": "",
         }
+        timeout_s = (
+            timeout_ms / 1000.0
+            if timeout_ms is not None
+            else VALIDATION_TIMEOUT_MS / 1000.0
+        )
         try:
             proc = subprocess.run(
                 argv,
                 cwd=cwd,
                 capture_output=True,
                 text=True,
-                timeout=VALIDATION_TIMEOUT_MS / 1000.0,
+                timeout=timeout_s,
                 shell=False,
                 check=False,
             )
@@ -204,6 +225,8 @@ def _run_validations(commands: list[Any], cwd: Path) -> dict[str, Any]:
         if not result["ok"]:
             overall_ok = False
         results.append(result)
+        if cascade and not result["ok"]:
+            break
     finished_at = time.time() * 1000.0
     return {
         "ok": overall_ok,
@@ -211,6 +234,41 @@ def _run_validations(commands: list[Any], cwd: Path) -> dict[str, Any]:
         "started_at": started_at,
         "finished_at": finished_at,
     }
+
+
+def _parse_pytest_rate(text: str) -> float | None:
+    """Parse a pytest summary line into a pass rate (0.0 to 1.0), else None."""
+    if not text:
+        return None
+    passed_m = re.search(r"(\d+) passed", text)
+    if not passed_m:
+        return None
+    p = int(passed_m.group(1))
+    failed_m = re.search(r"(\d+) failed", text)
+    f = int(failed_m.group(1)) if failed_m else 0
+    err = sum(int(m.group(1)) for m in re.finditer(r"(\d+) errors?\b", text))
+    denom = p + f + err
+    if denom <= 0:
+        return None
+    return p / denom
+
+
+def _cascade_score(results: list[dict[str, Any]]) -> float:
+    """Partial credit for a failed cascade: passed stages count fully; the
+    failing pytest stage contributes its pass rate (Sprint 22.2 fitness)."""
+    total = len(results)
+    if total == 0:
+        return 0.0
+    score = float(sum(1 for r in results if r.get("ok")))
+    if score == total:
+        return 1.0
+    for r in results:
+        if not r.get("ok"):
+            rate = _parse_pytest_rate(f"{r.get('stdout') or ''}\n{r.get('stderr') or ''}")
+            if rate is not None:
+                score += rate
+            break
+    return round(max(0.0, min(1.0, score / total)), 4)
 
 
 def _apply_acceptance_gate(
@@ -247,6 +305,49 @@ def _compute_blast_radius() -> dict[str, int]:
     return {"files": files, "lines": lines}
 
 
+def get_fitness_cascade_commands() -> list[dict[str, Any]]:
+    """Engine-owned fitness cascade (deep copy; never trusts mutation input)."""
+    return [{**spec, "command": list(spec["command"])} for spec in FITNESS_CASCADE_COMMANDS]
+
+
+def _handle_cascade_validation_failure(
+    *,
+    last_run: dict[str, Any],
+    mutation: dict[str, Any],
+    cwd: Path,
+    validation_result: dict[str, Any],
+    validation_report: dict[str, Any] | None,
+) -> dict[str, Any]:
+    """Sprint 22.2 graded failure: blast radius captured *before* rollback, a
+    failed EvolutionEvent lands in events.jsonl (feeds the repair-loop breaker
+    and signal-history modulation), and the memory-graph failure outcome
+    carries a partial-credit score."""
+    score = _cascade_score(validation_result["results"])
+    failed_blast = _compute_blast_radius()
+    rollback_tracked()
+    rollback_new_untracked_files(git_list_untracked_files(cwd))
+    append_event_jsonl(
+        {
+            "type": "EvolutionEvent",
+            "id": f"evt_{int(time.time() * 1000)}_{secrets.token_hex(4)}",
+            "run_id": last_run.get("run_id") or (last_run.get("mutation") or {}).get("id"),
+            "timestamp": time.strftime("%Y-%m-%dT%H:%M:%S.", time.gmtime())
+            + f"{int((time.time() % 1) * 1000):03d}Z",
+            "gene_id": last_run.get("selected_gene_id"),
+            "signals": last_run.get("signals", []),
+            "mutation": mutation,
+            "blast_radius": failed_blast,
+            "outcome": {"status": "failed", "score": score, "error": "validation_failed"},
+        }
+    )
+    record_solidify_failure(last_run, error="validation_failed", score=score)
+    details = dict(validation_result)
+    details["score"] = score
+    if validation_report is not None:
+        details["validation_report"] = validation_report
+    return {"ok": False, "error": "validation_failed", "details": details}
+
+
 def solidify(
     *,
     mutation_override: dict[str, Any] | None = None,
@@ -264,12 +365,19 @@ def solidify(
         return {"ok": False, "error": "not_a_git_repo"}
 
     mutation = mutation_override or last_run.get("mutation", {})
-    validation_commands = mutation.get("validation") or []
+    # Sprint 22.2 (enable_fitness_cascade): the validation set is engine-owned
+    # (config FITNESS_CASCADE_COMMANDS). mutation.validation comes from
+    # external LLM output (distill) and is never executed in this mode.
+    cascade_mode = is_enabled("enable_fitness_cascade") and not skip_validation
+    if cascade_mode:
+        validation_commands = get_fitness_cascade_commands()
+    else:
+        validation_commands = mutation.get("validation") or []
 
     validation_result: dict[str, Any] | None = None
     validation_report: dict[str, Any] | None = None
     if not skip_validation and validation_commands:
-        validation_result = _run_validations(validation_commands, cwd)
+        validation_result = _run_validations(validation_commands, cwd, cascade=cascade_mode)
         try:
             validation_report = build_validation_report(
                 gene_id=last_run.get("selected_gene_id"),
@@ -281,6 +389,14 @@ def solidify(
         except Exception:
             validation_report = None
         if not validation_result["ok"]:
+            if cascade_mode:
+                return _handle_cascade_validation_failure(
+                    last_run=last_run,
+                    mutation=mutation,
+                    cwd=cwd,
+                    validation_result=validation_result,
+                    validation_report=validation_report,
+                )
             rollback_tracked()
             rollback_new_untracked_files(git_list_untracked_files(cwd))
             record_solidify_failure(last_run, error="validation_failed")
