@@ -853,6 +853,9 @@ def get_memory_advice(
         "bannedGeneIds": banned,
         "solidifyPreferredGeneId": solidify_preferred,
         "frictionCategories": sorted(friction_cats),
+        # Sprint 22.3: expose per-gene outcome stats so the selector can run
+        # UCB1 exploration (n_i / success-rate per signal-key niche).
+        "geneStats": {k: dict(v) for k, v in gene_stats.items()},
         "explanation": "; ".join(explanation_parts),
     }
 

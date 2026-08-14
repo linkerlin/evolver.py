@@ -68,13 +68,13 @@ def request_shutdown() -> None:
         ev.set()
 
 
-def _build_initial_context() -> dict[str, Any]:
+def _build_initial_context(*, review_mode: bool = False) -> dict[str, Any]:
     return {
         "run_id": f"run_{int(time.time() * 1000)}_{secrets.token_hex(4)}",
         "cycle_num": 1,
         "cycle_id": secrets.token_hex(8),
         "IS_RANDOM_DRIFT": False,
-        "IS_REVIEW_MODE": False,
+        "IS_REVIEW_MODE": review_mode,
         "IS_DRY_RUN": False,
         "bridge_enabled": determine_bridge_enabled(),
         "AGENT_NAME": __import__("os").environ.get("AGENT_NAME", "main"),
@@ -82,9 +82,9 @@ def _build_initial_context() -> dict[str, Any]:
     }
 
 
-async def _run_single_cycle(*, is_loop: bool = False) -> dict[str, Any]:
+async def _run_single_cycle(*, is_loop: bool = False, review_mode: bool = False) -> dict[str, Any]:
     """Execute one full evolution cycle and return the final context."""
-    ctx = _build_initial_context()
+    ctx = _build_initial_context(review_mode=review_mode)
     preflight = await guards.run_preflight_checks(is_loop=is_loop)
     if preflight.abort:
         print(f"Preflight abort: {preflight.reason}")
@@ -211,7 +211,9 @@ async def run_loop(
                     if shutdown.is_set() or _shutdown_requested:
                         break
 
-                evolve_task = asyncio.create_task(_run_single_cycle(is_loop=True))
+                evolve_task = asyncio.create_task(
+                    _run_single_cycle(is_loop=True, review_mode=review_mode)
+                )
                 # Progress ticker: refresh updated_at while cycle is in flight.
                 progress_ticker = asyncio.create_task(
                     _progress_ticker(progress_path, progress_fields)

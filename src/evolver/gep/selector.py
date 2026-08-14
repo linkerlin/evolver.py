@@ -12,6 +12,7 @@ from typing import Any
 
 from evolver.config import GENE_EPIGENETIC_HARD_BOOST
 from evolver.gep.env_fingerprint import capture_env_fingerprint, env_fingerprint_key
+from evolver.gep.feature_flags import is_enabled
 from evolver.gep.memory_bridge import living_memory_score_adjustment
 
 # In-place (parameter-only) gene blast-radius hard caps — Node INPLACE_* constants.
@@ -113,6 +114,34 @@ def compute_drift_intensity(
     return base
 
 
+# Sprint 22.3: UCB1 exploration coefficient (per-signal-key niche).
+UCB1_C: float = 1.0
+
+
+def _ucb1_weight(
+    *,
+    score: float,
+    attempts: int,
+    successes: int,
+    total_attempts: int,
+) -> float:
+    """UCB1-inspired exploration multiplier (Sprint 22.3).
+
+    ``weight = score * (1 + exploration)`` where exploration = mean success
+    rate + confidence term ``sqrt(ln N / n_i)``. Untried genes (n_i == 0) get
+    the maximum confidence term — classic UCB1 zero-pull behavior. Score keeps
+    the immediate signal-match context; exploration only tips near-ties.
+    """
+    n = max(1, attempts)
+    log_n = math.log(max(2, total_attempts))
+    if attempts <= 0:
+        exploration = UCB1_C * math.sqrt(log_n)
+    else:
+        mean = successes / n
+        exploration = UCB1_C * (math.sqrt(log_n / n) + mean)
+    return max(0.0, score) * (1.0 + exploration)
+
+
 def is_epigenetically_suppressed(gene: dict[str, Any], env: dict[str, str] | None = None) -> bool:
     marks = gene.get("epigenetic_marks") or []
     if not marks:
@@ -143,6 +172,8 @@ def select_gene(
     effective_pop = options.get("effectivePopulationSize", max(1, len(genes)))
     memory_evidence = options.get("memoryEvidence", 0)
     living_memory_hints = list(options.get("livingMemoryHints") or [])
+    bandit = bool(options.get("bandit", False))
+    gene_stats = options.get("geneStats") or {}
 
     drift_intensity = compute_drift_intensity(
         drift_enabled=drift_enabled,
@@ -208,6 +239,31 @@ def select_gene(
 
     selected = candidates[0]["gene"]
     selected_score = float(candidates[0]["score"])
+    drift_mode = "score_ranked"
+    # Sprint 22.3: UCB1-weighted sampling replaces argmax — every non-banned
+    # candidate keeps a non-zero selection probability (DGM/ShinkaEvolve
+    # parent-sampling lineage); --review forces deterministic argmax.
+    if bandit:
+        total_attempts = sum(int(s.get("attempts") or 0) for s in gene_stats.values()) or max(
+            1, memory_evidence
+        )
+        weights = []
+        for c in candidates:
+            gid = str(c["gene"].get("id"))
+            stats = gene_stats.get(gid) or {}
+            weights.append(
+                _ucb1_weight(
+                    score=float(c["score"]),
+                    attempts=int(stats.get("attempts") or 0),
+                    successes=int(stats.get("successes") or 0),
+                    total_attempts=total_attempts,
+                )
+            )
+        if any(w > 0 for w in weights):
+            picked = random.choices(candidates, weights=weights, k=1)[0]
+            selected = picked["gene"]
+            selected_score = float(picked["score"])
+            drift_mode = "ucb1_sample"
     # TTT: when preferInplace, pick an inplace gene within score gap of the top.
     if prefer_inplace and not is_inplace_gene(selected):
         top = selected_score
@@ -225,7 +281,7 @@ def select_gene(
         "selected": selected,
         "alternatives": alternatives,
         "driftIntensity": drift_intensity,
-        "driftMode": "score_ranked",
+        "driftMode": drift_mode,
         "score": selected_score,
     }
 
@@ -305,6 +361,9 @@ def select_gene_and_capsule(ctx: dict[str, Any]) -> dict[str, Any]:
     preferred = memory_advice.get("preferredGeneId")
     memory_evidence = memory_advice.get("totalAttempts", 0)
 
+    # Sprint 22.3: bandit sampling unless in review mode (deterministic).
+    bandit = is_enabled("enable_bandit_selection") and not bool(ctx.get("IS_REVIEW_MODE"))
+
     selector = select_gene(
         genes,
         signals,
@@ -314,6 +373,8 @@ def select_gene_and_capsule(ctx: dict[str, Any]) -> dict[str, Any]:
             "driftEnabled": drift_enabled,
             "memoryEvidence": memory_evidence,
             "livingMemoryHints": memory_advice.get("livingMemoryHints") or [],
+            "bandit": bandit,
+            "geneStats": memory_advice.get("geneStats") or {},
         },
     )
 
