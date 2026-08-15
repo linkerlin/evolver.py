@@ -253,3 +253,62 @@ class TestAtpSpawnBridge:
         ctx = await run_post_cycle_hooks({"signals": ["log_error"], "bridge_enabled": False})
         assert "atp_spawn_emitted" not in ctx
         assert "sessions_spawn" not in capsys.readouterr().out
+
+
+class TestRollbackSparesEngineState:
+    def test_rollback_tracked_without_untracked_keeps_files(self, git_ws: Path) -> None:
+        from evolver.gep.git_ops import rollback_tracked
+
+        (git_ws / "loose.txt").write_text("untracked\n", encoding="utf-8")
+        (git_ws / "README.md").write_text("modified\n", encoding="utf-8")
+        result = rollback_tracked(cwd=git_ws, include_untracked=False)
+        assert result["ok"] is True
+        assert (git_ws / "loose.txt").exists()  # untracked spared
+        assert (git_ws / "README.md").read_text(encoding="utf-8") == "init\n"  # tracked reverted
+
+    def test_disposable_untracked_excludes_engine_and_pycache(self, git_ws: Path) -> None:
+        from evolver.gep.solidify import _disposable_untracked
+
+        (git_ws / "feature.txt").write_text("x", encoding="utf-8")
+        (git_ws / ".evolver" / "gep").mkdir(parents=True, exist_ok=True)
+        (git_ws / ".evolver" / "gep" / "events.jsonl").write_text("{}", encoding="utf-8")
+        (git_ws / "memory").mkdir(exist_ok=True)
+        (git_ws / "memory" / "graph.jsonl").write_text("{}", encoding="utf-8")
+        (git_ws / "src").mkdir(exist_ok=True)
+        (git_ws / "src" / "__pycache__").mkdir(exist_ok=True)
+        (git_ws / "src" / "__pycache__" / "m.pyc").write_text("bin", encoding="utf-8")
+        disposable = _disposable_untracked(git_ws)
+        assert disposable == ["feature.txt"]
+
+    def test_engine_events_survive_cascade_failure_rollback(
+        self, git_ws: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setenv("EVOLVER_FF_ENABLE_FITNESS_CASCADE", "true")
+        # untracked engine state (real workspaces never commit .evolver)
+        capsules = git_ws / ".evolver" / "gep" / "capsules.jsonl"
+        capsules.parent.mkdir(parents=True, exist_ok=True)
+        capsules.write_text('{"type": "Capsule", "id": "prior"}\n', encoding="utf-8")
+        (git_ws / "feature.txt").write_text("mutation\n", encoding="utf-8")
+        monkeypatch.setattr(
+            solidify_mod,
+            "_run_validations",
+            lambda *a, **k: {
+                "ok": False,
+                "results": [
+                    {"ok": False, "command": "pytest", "stdout": "", "stderr": "1 failed"}
+                ],
+                "started_at": 0.0,
+                "finished_at": 1.0,
+            },
+        )
+        write_state_for_solidify(_last_run())
+        result = solidify()
+        assert result["ok"] is False
+        assert result["error"] == "validation_failed"
+        # untracked engine memory survived; mutation file rolled back
+        assert "prior" in capsules.read_text(encoding="utf-8")
+        assert not (git_ws / "feature.txt").exists()
+        # failure event still lands (appended to events.jsonl)
+        from evolver.gep.asset_store import read_all_events
+
+        assert read_all_events()[-1]["outcome"]["error"] == "validation_failed"

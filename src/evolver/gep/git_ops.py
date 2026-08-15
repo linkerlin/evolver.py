@@ -130,8 +130,16 @@ def is_constraint_counted_path(rel_path: str) -> bool:
 def rollback_tracked(
     mode: str | None = None,
     cwd: Path | str | None = None,
+    *,
+    include_untracked: bool = True,
 ) -> dict[str, Any]:
-    """Roll back tracked changes according to EVOLVER_ROLLBACK_MODE."""
+    """Roll back tracked changes according to EVOLVER_ROLLBACK_MODE.
+
+    ``include_untracked=False`` (Sprint 23): stash tracked changes only —
+    untracked disposal is the caller's business (the fitness-cascade /
+    novelty paths delete untracked files selectively so engine state dirs
+    that the workspace does not gitignore survive the rollback).
+    """
     if mode is None:
         mode = os.environ.get("EVOLVER_ROLLBACK_MODE", "stash").lower().strip()
 
@@ -141,7 +149,10 @@ def rollback_tracked(
             run_cmd(["reset", "--hard", "HEAD"], cwd=cwd)
             result["ok"] = True
         elif mode == "stash":
-            run_cmd(["stash", "push", "--include-untracked", "-m", "evolver rollback"], cwd=cwd)
+            argv = ["stash", "push", "-m", "evolver rollback"]
+            if include_untracked:
+                argv.insert(3, "--include-untracked")
+            run_cmd(argv, cwd=cwd)
             result["ok"] = True
         elif mode == "none":
             result["ok"] = True

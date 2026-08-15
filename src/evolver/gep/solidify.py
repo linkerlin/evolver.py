@@ -363,8 +363,24 @@ def _diff_similarity(a: str, b: str, *, cap: int = 4_000) -> float:
 NOVELTY_SIMILARITY_THRESHOLD: float = 0.9
 
 # Engine-owned state dirs must not pollute the novelty fingerprint (their
-# JSONL contents embed the capsules we compare against).
-_FINGERPRINT_EXCLUDED_DIRS: tuple[str, ...] = (".evolver", "memory", ".evomap")
+# JSONL contents embed the capsules we compare against), nor be swallowed
+# by rollbacks in workspaces that do not gitignore them (E2E calibration:
+# stash --include-untracked ate events.jsonl).
+_FINGERPRINT_EXCLUDED_DIRS: tuple[str, ...] = (".evolver", "memory", ".evomap", "logs")
+
+
+def _is_disposable_path(rel: str) -> bool:
+    """False for engine state dirs and Python cache artifacts."""
+    norm = rel.replace("\\", "/")
+    head = norm.split("/", 1)[0]
+    if head in _FINGERPRINT_EXCLUDED_DIRS:
+        return False
+    return "__pycache__" not in norm and not norm.endswith(".pyc")
+
+
+def _disposable_untracked(cwd: Path) -> list[str]:
+    """Untracked files a mutation-rollback may delete (engine state spared)."""
+    return [f for f in git_list_untracked_files(cwd) if _is_disposable_path(f)]
 
 
 def _novelty_fingerprint(cwd: Path) -> str:
@@ -373,8 +389,7 @@ def _novelty_fingerprint(cwd: Path) -> str:
     ``git diff HEAD`` misses — found by Sprint 23 calibration)."""
     parts = [capture_diff_snapshot(cwd)]
     for rel in git_list_untracked_files(cwd):
-        head = rel.replace("\\", "/").split("/", 1)[0]
-        if head in _FINGERPRINT_EXCLUDED_DIRS:
+        if not _is_disposable_path(rel):
             continue
         try:
             parts.append((cwd / rel).read_text(encoding="utf-8", errors="replace"))
@@ -418,8 +433,10 @@ def _handle_cascade_validation_failure(
     failed_blast = _compute_blast_radius()
     # cwd must be explicit: without it the rollback targets the process cwd
     # (the engine's own repo), not the workspace (Sprint 23 test finding).
-    rollback_tracked(cwd=cwd)
-    rollback_new_untracked_files(git_list_untracked_files(cwd), cwd=cwd)
+    # include_untracked=False + selective disposal: engine state dirs that
+    # the workspace does not gitignore must survive (E2E calibration bug).
+    rollback_tracked(cwd=cwd, include_untracked=False)
+    rollback_new_untracked_files(_disposable_untracked(cwd), cwd=cwd)
     append_event_jsonl(
         {
             "type": "EvolutionEvent",
@@ -473,8 +490,8 @@ def solidify(
     # reject near-duplicate mutations BEFORE paying for the expensive cascade.
     if cascade_mode and is_enabled("enable_novelty_gate") and _novelty_duplicate_diff(cwd):
         failed_blast = _compute_blast_radius()
-        rollback_tracked(cwd=cwd)
-        rollback_new_untracked_files(git_list_untracked_files(cwd), cwd=cwd)
+        rollback_tracked(cwd=cwd, include_untracked=False)
+        rollback_new_untracked_files(_disposable_untracked(cwd), cwd=cwd)
         append_event_jsonl(
             {
                 "type": "EvolutionEvent",
