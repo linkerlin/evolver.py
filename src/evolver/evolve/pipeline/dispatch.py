@@ -182,9 +182,7 @@ def _build_lineage_lessons(
         if outcome.get("status") != "failed":
             continue
         reason = (
-            outcome.get("error")
-            or (evt.get("acceptance_result") or {}).get("reason")
-            or "unknown"
+            outcome.get("error") or (evt.get("acceptance_result") or {}).get("reason") or "unknown"
         )
         br = evt.get("blast_radius") or {}
         signals = ", ".join(str(s) for s in (evt.get("signals") or [])[:3])

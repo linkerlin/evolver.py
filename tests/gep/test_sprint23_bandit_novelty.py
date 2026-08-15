@@ -66,8 +66,7 @@ class TestDiffSimilarity:
     def test_bare_content_matches_diff_form(self) -> None:
         assert (
             solidify_mod._diff_similarity("change\n", "+ change\n- old\n") > 0.5
-            or solidify_mod._diff_similarity("change\n", "diff --git a/f b/f\n@@\n+change\n")
-            > 0.5
+            or solidify_mod._diff_similarity("change\n", "diff --git a/f b/f\n@@\n+change\n") > 0.5
         )
 
 
@@ -115,9 +114,7 @@ class TestNoveltyGate:
         assert ev["outcome"]["error"] == "novelty_duplicate"
         assert not (git_ws / "feature.txt").exists()  # rolled back (cwd-correct)
 
-    def test_novel_diff_proceeds(
-        self, git_ws: Path, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
+    def test_novel_diff_proceeds(self, git_ws: Path, monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.setenv("EVOLVER_FF_ENABLE_FITNESS_CASCADE", "true")
         monkeypatch.setenv("EVOLVER_FF_ENABLE_NOVELTY_GATE", "true")
         self._apply_change(git_ws)
@@ -126,8 +123,10 @@ class TestNoveltyGate:
         monkeypatch.setattr(
             solidify_mod,
             "_run_validations",
-            lambda *a, **k: ran.append(True)
-            or {"ok": True, "results": [], "started_at": 0.0, "finished_at": 1.0},
+            lambda *a, **k: (
+                ran.append(True)
+                or {"ok": True, "results": [], "started_at": 0.0, "finished_at": 1.0}
+            ),
         )
         monkeypatch.setattr(solidify_mod, "post_solidify_hooks", lambda *a, **k: {})
         monkeypatch.setattr(solidify_mod, "record_narrative_and_reflection", lambda *a, **k: None)
@@ -146,8 +145,10 @@ class TestNoveltyGate:
         monkeypatch.setattr(
             solidify_mod,
             "_run_validations",
-            lambda *a, **k: ran.append(True)
-            or {"ok": True, "results": [], "started_at": 0.0, "finished_at": 1.0},
+            lambda *a, **k: (
+                ran.append(True)
+                or {"ok": True, "results": [], "started_at": 0.0, "finished_at": 1.0}
+            ),
         )
         monkeypatch.setattr(solidify_mod, "post_solidify_hooks", lambda *a, **k: {})
         monkeypatch.setattr(solidify_mod, "record_narrative_and_reflection", lambda *a, **k: None)
@@ -161,9 +162,7 @@ class TestOperatorBandit:
         m = mutation_mod.build_mutation(signals=["log_error", "errsig:x"])
         assert m["category"] == "repair"
 
-    def test_flag_on_samples_valid_category(
-        self, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
+    def test_flag_on_samples_valid_category(self, monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.setenv("EVOLVER_FF_ENABLE_OPERATOR_BANDIT", "true")
         monkeypatch.setattr(mutation_mod, "_category_stats", lambda: {})
         picks: list[int] = []
@@ -177,9 +176,7 @@ class TestOperatorBandit:
         assert m["category"] in mutation_mod.VALID_CATEGORIES
         assert len(picks) == len(mutation_mod.VALID_CATEGORIES)
 
-    def test_flag_on_mocked_pick_lands_on_index(
-        self, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
+    def test_flag_on_mocked_pick_lands_on_index(self, monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.setenv("EVOLVER_FF_ENABLE_OPERATOR_BANDIT", "true")
         monkeypatch.setattr(mutation_mod, "_category_stats", lambda: {})
         cats = list(mutation_mod.VALID_CATEGORIES)
@@ -207,9 +204,7 @@ class TestOperatorBandit:
         m = mutation_mod.build_mutation(signals=["log_error"], drift_enabled=True)
         assert m["category"] == "innovate"
 
-    def test_high_risk_personality_still_downgrades(
-        self, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
+    def test_high_risk_personality_still_downgrades(self, monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.setenv("EVOLVER_FF_ENABLE_OPERATOR_BANDIT", "true")
         monkeypatch.setattr(mutation_mod, "_category_stats", lambda: {})
         cats = list(mutation_mod.VALID_CATEGORIES)
