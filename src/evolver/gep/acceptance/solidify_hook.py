@@ -22,7 +22,7 @@ from typing import Any
 
 from evolver.config import ACCEPTANCE_DELTA_EPSILON, ACCEPTANCE_REPEATS
 from evolver.gep.acceptance.orchestrator import (
-    load_baseline,
+    load_baseline_payload,
     run_acceptance_gate,
     save_baseline,
 )
@@ -63,7 +63,8 @@ def gate_for_solidify(
 
     baseline_path = _baseline_path()
     snapshot_dir = _snapshot_dir()
-    baseline = load_baseline(baseline_path)
+    baseline_payload = load_baseline_payload(baseline_path)
+    baseline = baseline_payload.get("t0_pass_rate") if baseline_payload else None
 
     result = run_acceptance_gate(
         cwd=cwd,
@@ -71,6 +72,9 @@ def gate_for_solidify(
         baseline_t0_rate=baseline,
         repeats=ACCEPTANCE_REPEATS,
         epsilon=ACCEPTANCE_DELTA_EPSILON,
+        baseline_t0_snapshot=(
+            baseline_payload.get("t0_snapshot_hash") if baseline_payload else None
+        ),
     )
 
     if result.accepted:

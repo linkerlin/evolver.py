@@ -33,16 +33,19 @@ _BASELINE_FORMAT = "evolver.acceptance_baseline.v0"
 
 def load_baseline(path: Path) -> float | None:
     """Read the persisted last-known-good T0 pass rate (or None if absent)."""
+    payload = load_baseline_payload(path)
+    return payload.get("t0_pass_rate") if payload else None
+
+
+def load_baseline_payload(path: Path) -> dict | None:
+    """Read the full baseline record (rate + snapshot hash), None if absent."""
     if not path.exists():
         return None
     try:
         payload = json.loads(path.read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError):
         return None
-    if not isinstance(payload, dict):
-        return None
-    rate = payload.get("t0_pass_rate")
-    return float(rate) if isinstance(rate, (int, float)) else None
+    return payload if isinstance(payload, dict) else None
 
 
 def save_baseline(path: Path, t0_pass_rate: float, snapshot_hash: str) -> None:
@@ -80,6 +83,7 @@ def run_acceptance_gate(
     repeats: int = 2,
     epsilon: float = 0.0,
     strict_t2: bool = False,
+    baseline_t0_snapshot: str | None = None,
 ) -> AcceptanceResult:
     """Run the gate. Returns the :class:`AcceptanceResult`.
 
@@ -87,17 +91,31 @@ def run_acceptance_gate(
     without gating; caller persists the candidate rate). T0-only degraded mode:
     the gate accepts iff T0 did not regress. (The ``held_in`` layer is attached
     by a later increment once Sprint B1/B2 wire it.)
+
+    Soak fix: with a baseline present, the frozen ID set is loaded from the
+    BASELINE snapshot (``t0_snapshot_hash``), not re-derived from the current
+    tree — re-freezing made deleted tests vanish from the denominator and the
+    gate blind to test deletion (soak round 3). Falls back to discovery when
+    the baseline snapshot is missing.
     """
-    test_ids = t0_frozen.discover_test_ids(cwd)
-    snap = t0_frozen.freeze_snapshot(test_ids, snapshot_dir)
-    frozen = t0_frozen.load_snapshot(snap)
+    frozen: list[str] = []
+    snap_label = ""
+    if baseline_t0_rate is not None and baseline_t0_snapshot:
+        snap_hash = baseline_t0_snapshot.split("@")[-1]
+        frozen = t0_frozen.load_snapshot(snapshot_dir / f"t0_{snap_hash}.txt")
+        snap_label = baseline_t0_snapshot
+    if not frozen:
+        test_ids = t0_frozen.discover_test_ids(cwd)
+        snap = t0_frozen.freeze_snapshot(test_ids, snapshot_dir)
+        frozen = t0_frozen.load_snapshot(snap)
+        snap_label = snap.stem
     candidate_repeats = _run_t0_repeats(frozen, cwd, repeats=repeats)
 
     if baseline_t0_rate is None:
         # Establishing mode: record only, no gating.
         total = len(frozen)
         t0_layer = LayerMetric(
-            layer_id=f"T0_frozen@{snap.stem}",
+            layer_id=f"T0_frozen@{snap_label.removeprefix('t0_')}",
             kind="T0_frozen",
             baseline_repeats=[],
             candidate_repeats=candidate_repeats,
@@ -119,7 +137,7 @@ def run_acceptance_gate(
         baseline_repeats, candidate_repeats, epsilon=epsilon
     )
     t0_layer = LayerMetric(
-        layer_id=f"T0_frozen@{snap.stem}",
+        layer_id=f"T0_frozen@{snap_label.removeprefix('t0_')}",
         kind="T0_frozen",
         baseline_repeats=baseline_repeats,
         candidate_repeats=candidate_repeats,
@@ -137,6 +155,7 @@ def run_acceptance_gate(
 
 __all__ = [
     "load_baseline",
+    "load_baseline_payload",
     "run_acceptance_gate",
     "save_baseline",
 ]
