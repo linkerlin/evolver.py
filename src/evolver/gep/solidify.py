@@ -403,9 +403,7 @@ def _commit_mutation(cwd: Path, label: str) -> bool:
         from evolver.gep.git_ops import run_cmd
 
         targets = [
-            f
-            for f in dict.fromkeys(git_list_changed_files(cwd) + _disposable_untracked(cwd))
-            if f
+            f for f in dict.fromkeys(git_list_changed_files(cwd) + _disposable_untracked(cwd)) if f
         ]
         if not targets:
             return False

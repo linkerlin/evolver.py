@@ -40,9 +40,7 @@ def _establish(t0_ws: Path, snapshot_dir: Path, baseline_path: Path) -> None:
 
 
 class TestDeletedTests:
-    def test_baseline_ids_frozen_across_runs(
-        self, t0_ws: Path, tmp_path: Path
-    ) -> None:
+    def test_baseline_ids_frozen_across_runs(self, t0_ws: Path, tmp_path: Path) -> None:
         snapshot_dir = tmp_path / "snaps"
         baseline_path = tmp_path / "baseline.json"
         _establish(t0_ws, snapshot_dir, baseline_path)
@@ -82,9 +80,7 @@ class TestDeletedTests:
         assert result.accepted is False
         assert result.reason == "T0_frozen_regressed"
 
-    def test_missing_snapshot_falls_back_to_discovery(
-        self, t0_ws: Path, tmp_path: Path
-    ) -> None:
+    def test_missing_snapshot_falls_back_to_discovery(self, t0_ws: Path, tmp_path: Path) -> None:
         snapshot_dir = tmp_path / "snaps"
         baseline_path = tmp_path / "baseline.json"
         _establish(t0_ws, snapshot_dir, baseline_path)
