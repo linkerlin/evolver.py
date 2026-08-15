@@ -9,6 +9,7 @@ import json
 from typing import Any
 
 from evolver import config as config_mod
+from evolver.gep.asset_store import get_last_event_id
 from evolver.gep.bridge import render_sessions_spawn_call, write_prompt_artifact
 from evolver.gep.feature_flags import is_enabled
 from evolver.gep.hooks.taxonomy import (
@@ -162,6 +163,44 @@ def _format_preview(items: list[dict[str, Any]]) -> str:
     return "```json\n" + json.dumps(items, indent=2, ensure_ascii=False) + "\n```"
 
 
+def _build_lineage_lessons(
+    gene_id: str,
+    events: list[dict[str, Any]],
+    *,
+    limit: int = 3,
+) -> str:
+    """Sprint 22.6 (GEPA ancestry): the selected gene's recent failures,
+    compacted into prompt lessons so candidates inherit their lineage's
+    learning signals instead of rediscovering them."""
+    if not gene_id or not events:
+        return ""
+    lessons: list[str] = []
+    for evt in reversed(events):  # newest first
+        if evt.get("gene_id") != gene_id:
+            continue
+        outcome = evt.get("outcome") or {}
+        if outcome.get("status") != "failed":
+            continue
+        reason = (
+            outcome.get("error")
+            or (evt.get("acceptance_result") or {}).get("reason")
+            or "unknown"
+        )
+        br = evt.get("blast_radius") or {}
+        signals = ", ".join(str(s) for s in (evt.get("signals") or [])[:3])
+        category = (evt.get("mutation") or {}).get("category") or "?"
+        lessons.append(
+            f"- [{category}] {reason} "
+            f"(blast {br.get('files', '?')}f/{br.get('lines', '?')}l; signals: {signals})"
+        )
+        if len(lessons) >= limit:
+            break
+    if not lessons:
+        return ""
+    header = "## Lineage Lessons (GEPA ancestry)"
+    return f"{header}\nGene `{gene_id}` failed before with:\n" + "\n".join(lessons)
+
+
 async def dispatch_phase(ctx: dict[str, Any]) -> dict[str, Any]:
     _write_solidify_state(ctx)
     _anchor_proposer_surface(ctx)
@@ -179,6 +218,19 @@ async def dispatch_phase(ctx: dict[str, Any]) -> dict[str, Any]:
     genes_preview = _format_preview(ctx.get("genes", [])[:10])
     capsules_preview = _format_preview(ctx.get("capsules", [])[:10])
 
+    # Sprint 22.6 (enable_lineage_lessons, GEPA ancestry): fill the prompt's
+    # existing parent_event_id slot and inject the selected gene's failure
+    # lineage as lessons.
+    parent_event_id = ctx.get("parent_event_id")
+    lineage_block = ""
+    if is_enabled("enable_lineage_lessons"):
+        if parent_event_id is None:
+            parent_event_id = get_last_event_id()
+        lineage_block = _build_lineage_lessons(
+            str(gene.get("id") or ""),
+            ctx.get("recent_events") or [],
+        )
+
     context_parts = [
         ctx.get("mutation_directive", ""),
         ctx.get("health_report", ""),
@@ -187,13 +239,14 @@ async def dispatch_phase(ctx: dict[str, Any]) -> dict[str, Any]:
         ctx.get("causal_cluster_brief", ""),  # Self-Harness B2
         ctx.get("proposer_surface_block", ""),  # Self-Harness A2
         ctx.get("constrained_hook_block", ""),  # Self-Harness C1
+        lineage_block,  # Sprint 22.6
     ]
     prompt = build_gep_prompt(
         now_iso=ctx.get("scan_time_iso", ""),
         context="\n".join(part for part in context_parts if part),
         signals=ctx.get("signals", []),
         selector={"selectedBy": ctx.get("selected_by", "score_ranked")},
-        parent_event_id=ctx.get("parent_event_id"),
+        parent_event_id=parent_event_id,
         selected_gene=gene,
         capsule_candidates="(none)",
         genes_preview=genes_preview,

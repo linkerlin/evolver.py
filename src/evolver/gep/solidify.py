@@ -14,9 +14,17 @@ import time
 from pathlib import Path
 from typing import Any
 
-from evolver.config import FITNESS_CASCADE_COMMANDS, VALIDATION_TIMEOUT_MS
+from evolver.config import (
+    ACCEPTANCE_SHADOW,
+    FITNESS_CASCADE_COMMANDS,
+    VALIDATION_TIMEOUT_MS,
+)
 from evolver.gep.acceptance.solidify_hook import gate_or_none
-from evolver.gep.asset_store import append_event_jsonl, read_json_if_exists
+from evolver.gep.asset_store import (
+    append_event_jsonl,
+    get_last_event_id,
+    read_json_if_exists,
+)
 from evolver.gep.cognition import post_solidify_hooks, record_solidify_failure
 from evolver.gep.execution_trace import build_execution_trace
 from evolver.gep.feature_flags import is_enabled
@@ -277,6 +285,10 @@ def _apply_acceptance_gate(
     """Handle a rejection from the acceptance gate; None → gate passed/absent."""
     if gate_result is None or gate_result.accepted:
         return None
+    # Sprint 22.5 shadow mode: record the verdict on the event but never
+    # enforce (gray-scale — measure interception/false-kill rates first).
+    if ACCEPTANCE_SHADOW:
+        return None
     rollback_tracked()
     rollback_new_untracked_files(git_list_untracked_files(cwd))
     record_solidify_failure(last_run, error="acceptance_gate_rejected")
@@ -308,6 +320,14 @@ def get_fitness_cascade_commands() -> list[dict[str, Any]]:
     return [{**spec, "command": list(spec["command"])} for spec in FITNESS_CASCADE_COMMANDS]
 
 
+def _lineage_fields() -> dict[str, Any]:
+    """Sprint 22.6 (GEPA ancestry): link each event to its predecessor."""
+    if not is_enabled("enable_lineage_lessons"):
+        return {}
+    parent = get_last_event_id()
+    return {"parent_event_id": parent} if parent else {}
+
+
 def _handle_cascade_validation_failure(
     *,
     last_run: dict[str, Any],
@@ -336,6 +356,7 @@ def _handle_cascade_validation_failure(
             "mutation": mutation,
             "blast_radius": failed_blast,
             "outcome": {"status": "failed", "score": score, "error": "validation_failed"},
+            **_lineage_fields(),
         }
     )
     record_solidify_failure(last_run, error="validation_failed", score=score)
@@ -438,11 +459,16 @@ def solidify(
         "diff_snapshot": diff_snapshot[:2000],
         "outcome": {"status": "success", "score": 1.0},
         "execution_trace": trace,
+        **_lineage_fields(),
     }
     if validation_report is not None:
         event["validation_report"] = validation_report
     if gate_result is not None:
-        event["acceptance_result"] = gate_result.model_dump()
+        payload = gate_result.model_dump()
+        if ACCEPTANCE_SHADOW and not gate_result.accepted:
+            payload["shadow"] = True
+            payload["would_accept"] = False
+        event["acceptance_result"] = payload
     append_event_jsonl(event)
 
     # Generate narrative and reflection

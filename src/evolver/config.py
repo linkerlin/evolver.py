@@ -219,6 +219,9 @@ DIAGNOSIS_MAX_EVENTS: Final = env_int("EVOLVER_DIAGNOSIS_MAX_EVENTS", 20)
 # --- Self-Harness acceptance gate (Sprint A1; opt-in, off by default) ---
 ACCEPTANCE_REPEATS: Final = env_int("EVOLVER_ACCEPTANCE_REPEATS", 2)
 ACCEPTANCE_DELTA_EPSILON: Final = env_float("EVOLVER_ACCEPTANCE_DELTA_EPSILON", 0.0)
+# Sprint 22.5 gray-scale: compute + record gate verdicts but never enforce
+# (interception / false-kill rates measurable before turning the gate on).
+ACCEPTANCE_SHADOW: Final = env_bool("EVOLVER_ACCEPTANCE_SHADOW", False)
 
 # --- Self-Harness multi-proposer (Sprint C2; 1 = existing single-proposal) ---
 MULTI_PROPOSE_ROUTES: Final = env_int("EVOLVER_MULTI_PROPOSE_ROUTES", 1)
