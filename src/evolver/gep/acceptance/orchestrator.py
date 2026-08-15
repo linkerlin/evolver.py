@@ -37,7 +37,7 @@ def load_baseline(path: Path) -> float | None:
     return payload.get("t0_pass_rate") if payload else None
 
 
-def load_baseline_payload(path: Path) -> dict | None:
+def load_baseline_payload(path: Path) -> dict[str, object] | None:
     """Read the full baseline record (rate + snapshot hash), None if absent."""
     if not path.exists():
         return None
