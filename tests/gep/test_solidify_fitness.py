@@ -149,9 +149,9 @@ class TestCascadeFailurePath:
             return {"files": 2, "lines": 10}
 
         monkeypatch.setattr(solidify, "_compute_blast_radius", fake_blast)
-        monkeypatch.setattr(solidify, "rollback_tracked", lambda: order.append("rollback"))
+        monkeypatch.setattr(solidify, "rollback_tracked", lambda **kw: order.append("rollback"))
         monkeypatch.setattr(
-            solidify, "rollback_new_untracked_files", lambda files: order.append("rollback2")
+            solidify, "rollback_new_untracked_files", lambda *a, **kw: order.append("rollback2")
         )
         monkeypatch.setattr(solidify, "git_list_untracked_files", lambda cwd: [])
         monkeypatch.setattr(solidify, "append_event_jsonl", appended.update)
