@@ -6,6 +6,7 @@ Equivalent to evolver/src/gep/solidify.js (obfuscated).
 from __future__ import annotations
 
 import contextlib
+import difflib
 import json
 import re
 import secrets
@@ -328,6 +329,79 @@ def _lineage_fields() -> dict[str, Any]:
     return {"parent_event_id": parent} if parent else {}
 
 
+def _normalize_change_text(text: str) -> str:
+    """Reduce a diff or raw file content to its changed-content tokens:
+    keep ``+``/``-`` payload lines from diffs, else the raw lines; drop
+    hunk headers/metadata so a diff and its bare content compare alike."""
+    lines: list[str] = []
+    for line in text.splitlines():
+        stripped = line.strip()
+        if not stripped:
+            continue
+        if stripped.startswith(("@@", "diff --git", "index ", "--- ", "+++ ", "new file")):
+            continue
+        if line[:1] in ("+", "-"):
+            lines.append(stripped[1:].strip())
+        else:
+            lines.append(stripped)
+    return "".join(lines).casefold()
+
+
+def _diff_similarity(a: str, b: str, *, cap: int = 4_000) -> float:
+    """Change-text similarity for the novelty gate (Sprint 23.1).
+
+    # ponytail: SequenceMatcher ratio on capped normalized change text —
+    # swap for embeddings if near-duplicate paraphrases ever slip past.
+    """
+    na = _normalize_change_text(a)[:cap]
+    nb = _normalize_change_text(b)[:cap]
+    if not na or not nb:
+        return 0.0
+    return difflib.SequenceMatcher(None, na, nb, autojunk=False).ratio()
+
+
+NOVELTY_SIMILARITY_THRESHOLD: float = 0.9
+
+# Engine-owned state dirs must not pollute the novelty fingerprint (their
+# JSONL contents embed the capsules we compare against).
+_FINGERPRINT_EXCLUDED_DIRS: tuple[str, ...] = (".evolver", "memory", ".evomap")
+
+
+def _novelty_fingerprint(cwd: Path) -> str:
+    """Content fingerprint for the novelty gate: tracked diff + untracked
+    file contents (a fresh mutation is often entirely untracked, which
+    ``git diff HEAD`` misses — found by Sprint 23 calibration)."""
+    parts = [capture_diff_snapshot(cwd)]
+    for rel in git_list_untracked_files(cwd):
+        head = rel.replace("\\", "/").split("/", 1)[0]
+        if head in _FINGERPRINT_EXCLUDED_DIRS:
+            continue
+        try:
+            parts.append((cwd / rel).read_text(encoding="utf-8", errors="replace"))
+        except OSError:
+            continue
+    return "\n".join(parts)
+
+
+def _novelty_duplicate_diff(cwd: Path) -> bool:
+    """True when the working-tree mutation near-duplicates a recent capsule."""
+    try:
+        from evolver.gep.asset_store import load_capsules
+
+        current = _novelty_fingerprint(cwd)
+        if not current.strip():
+            return False
+        for cap in load_capsules()[-20:]:
+            prior = cap.get("diff") or ""
+            if not prior:
+                continue
+            if _diff_similarity(current, str(prior)) >= NOVELTY_SIMILARITY_THRESHOLD:
+                return True
+    except Exception:
+        return False
+    return False
+
+
 def _handle_cascade_validation_failure(
     *,
     last_run: dict[str, Any],
@@ -342,8 +416,10 @@ def _handle_cascade_validation_failure(
     carries a partial-credit score."""
     score = _cascade_score(validation_result["results"])
     failed_blast = _compute_blast_radius()
-    rollback_tracked()
-    rollback_new_untracked_files(git_list_untracked_files(cwd))
+    # cwd must be explicit: without it the rollback targets the process cwd
+    # (the engine's own repo), not the workspace (Sprint 23 test finding).
+    rollback_tracked(cwd=cwd)
+    rollback_new_untracked_files(git_list_untracked_files(cwd), cwd=cwd)
     append_event_jsonl(
         {
             "type": "EvolutionEvent",
@@ -392,6 +468,34 @@ def solidify(
         validation_commands = get_fitness_cascade_commands()
     else:
         validation_commands = mutation.get("validation") or []
+
+    # Sprint 23.1 (enable_novelty_gate, ShinkaEvolve rejection sampling):
+    # reject near-duplicate mutations BEFORE paying for the expensive cascade.
+    if cascade_mode and is_enabled("enable_novelty_gate") and _novelty_duplicate_diff(cwd):
+        failed_blast = _compute_blast_radius()
+        rollback_tracked(cwd=cwd)
+        rollback_new_untracked_files(git_list_untracked_files(cwd), cwd=cwd)
+        append_event_jsonl(
+            {
+                "type": "EvolutionEvent",
+                "id": f"evt_{int(time.time() * 1000)}_{secrets.token_hex(4)}",
+                "run_id": last_run.get("run_id") or (last_run.get("mutation") or {}).get("id"),
+                "timestamp": time.strftime("%Y-%m-%dT%H:%M:%S.", time.gmtime())
+                + f"{int((time.time() % 1) * 1000):03d}Z",
+                "gene_id": last_run.get("selected_gene_id"),
+                "signals": last_run.get("signals", []),
+                "mutation": mutation,
+                "blast_radius": failed_blast,
+                "outcome": {"status": "failed", "score": 0.0, "error": "novelty_duplicate"},
+                **_lineage_fields(),
+            }
+        )
+        record_solidify_failure(last_run, error="novelty_duplicate", score=0.0)
+        return {
+            "ok": False,
+            "error": "novelty_duplicate",
+            "details": {"blast_radius": failed_blast},
+        }
 
     validation_result: dict[str, Any] | None = None
     validation_report: dict[str, Any] | None = None

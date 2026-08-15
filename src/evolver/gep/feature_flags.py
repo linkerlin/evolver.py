@@ -69,6 +69,15 @@ DEFAULT_FLAGS: dict[str, bool] = {
     # Sprint 22.6 lineage lessons (演进方案.md §13.5 P2-8, GEPA ancestry):
     # parent_event_id on events + selected-gene failure lineage in the prompt.
     "enable_lineage_lessons": False,
+    # Sprint 23.1 pre-evaluation novelty gate (P2-9, ShinkaEvolve rejection
+    # sampling): reject near-duplicate diffs BEFORE running the cascade.
+    "enable_novelty_gate": False,
+    # Sprint 23.2 operator bandit (P2-10, AOS/FRRMAB): mutation category
+    # sampled by UCB1 over graded outcomes instead of keyword argmax.
+    "enable_operator_bandit": False,
+    # Sprint 23.3 ATP spawn bridge (P2-11 minimal): print sessions_spawn for
+    # picked-up ATP tasks when bridge mode is active.
+    "enable_atp_spawn_bridge": False,
     # Proxy-only routes (also readable via ``EVOLVER_FF_*``)
     "enable_skill_auto_update": False,
     "enable_trace_upload": False,

@@ -77,6 +77,25 @@ async def run_post_cycle_hooks(ctx: dict[str, Any]) -> dict[str, Any]:
                 ctx["atp_spawn_instruction"] = spawn
                 _persist_atp_spawn(spawn)
                 logger.info("[post_cycle] ATP task pickup produced spawn instruction")
+                # Sprint 23.3 (P2-11 minimal): close the loop — emit the task
+                # to the host platform when bridge mode is active.
+                if ctx.get("bridge_enabled") and is_enabled("enable_atp_spawn_bridge"):
+                    try:
+                        from evolver.gep.bridge import render_sessions_spawn_call
+
+                        print(
+                            render_sessions_spawn_call(
+                                {
+                                    "task": spawn[:4000],
+                                    "agentId": ctx.get("AGENT_NAME", "main"),
+                                    "label": "atp_task",
+                                    "cleanup": "delete",
+                                }
+                            )
+                        )
+                        ctx["atp_spawn_emitted"] = True
+                    except Exception as exc:
+                        logger.debug("[post_cycle] ATP spawn emit skipped: %s", exc)
         except Exception as exc:
             logger.debug("[post_cycle] ATP task pickup skipped: %s", exc)
 
