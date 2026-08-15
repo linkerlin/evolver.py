@@ -460,8 +460,6 @@ class TestRejectedRetryNovelty:
         assert ran == []
 
     def test_reversal_below_threshold_passes_novelty(self) -> None:
-        fix = "def add(a, b): return a + b"
-        undo = "def add(a, b): return a - b"
         a = "def add(a, b):\n-    return a - b\n+    return a + b\n"
         b = "def add(a, b):\n-    return a + b\n+    return a - b\n"
         assert solidify_mod._diff_similarity(a, b) < solidify_mod.NOVELTY_SIMILARITY_THRESHOLD
