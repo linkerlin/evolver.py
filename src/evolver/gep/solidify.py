@@ -290,8 +290,8 @@ def _apply_acceptance_gate(
     # enforce (gray-scale — measure interception/false-kill rates first).
     if ACCEPTANCE_SHADOW:
         return None
-    rollback_tracked()
-    rollback_new_untracked_files(git_list_untracked_files(cwd))
+    rollback_tracked(cwd=cwd, include_untracked=False)
+    rollback_new_untracked_files(_disposable_untracked(cwd), cwd=cwd)
     record_solidify_failure(last_run, error="acceptance_gate_rejected")
     return {
         "ok": False,
