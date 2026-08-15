@@ -346,7 +346,9 @@ class TestNoveltyContainment:
 
 
 class TestSoakFixes:
-    def test_cascade_success_commits_mutation(self, git_ws: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    def test_cascade_success_commits_mutation(
+        self, git_ws: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
         monkeypatch.setenv("EVOLVER_FF_ENABLE_FITNESS_CASCADE", "true")
         (git_ws / "feature.txt").write_text("accepted change\n", encoding="utf-8")
         monkeypatch.setattr(
@@ -360,16 +362,24 @@ class TestSoakFixes:
         assert solidify()["ok"] is True
         log = subprocess.run(
             ["git", "-C", str(git_ws), "log", "-1", "--format=%s"],
-            capture_output=True, text=True, encoding="utf-8",
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            check=False,
         ).stdout.strip()
         assert log.startswith("evolver:")
         status = subprocess.run(
             ["git", "-C", str(git_ws), "status", "--porcelain"],
-            capture_output=True, text=True, encoding="utf-8",
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            check=False,
         ).stdout.strip()
         assert "feature.txt" not in status  # committed clean
 
-    def test_no_commit_when_cascade_off(self, git_ws: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    def test_no_commit_when_cascade_off(
+        self, git_ws: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
         (git_ws / "feature.txt").write_text("change\n", encoding="utf-8")
         monkeypatch.setattr(solidify_mod, "post_solidify_hooks", lambda *a, **k: {})
         monkeypatch.setattr(solidify_mod, "record_narrative_and_reflection", lambda *a, **k: None)
@@ -377,7 +387,10 @@ class TestSoakFixes:
         assert solidify(skip_validation=True)["ok"] is True
         log = subprocess.run(
             ["git", "-C", str(git_ws), "log", "-1", "--format=%s"],
-            capture_output=True, text=True, encoding="utf-8",
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            check=False,
         ).stdout.strip()
         assert not log.startswith("evolver:")
 
@@ -399,7 +412,9 @@ class TestSoakFixes:
                 "diff_snapshot": snapshot,
             }
         )
-        (git_ws / "feature.txt").write_text("accepted line one\naccepted line two\n", encoding="utf-8")
+        (git_ws / "feature.txt").write_text(
+            "accepted line one\naccepted line two\n", encoding="utf-8"
+        )
         monkeypatch.setattr(
             solidify_mod,
             "_run_validations",
