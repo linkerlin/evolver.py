@@ -360,7 +360,8 @@ def _diff_similarity(a: str, b: str, *, cap: int = 4_000) -> float:
     return difflib.SequenceMatcher(None, na, nb, autojunk=False).ratio()
 
 
-NOVELTY_SIMILARITY_THRESHOLD: float = 0.9
+NOVELTY_SIMILARITY_THRESHOLD: float = 0.95  # ShinkaEvolve eta (soak round 3:
+# reversal diffs score ~0.89 vs their original — 0.9 false-positived undos)
 
 # Engine-owned state dirs must not pollute the novelty fingerprint (their
 # JSONL contents embed the capsules we compare against), nor be swallowed
@@ -454,6 +455,9 @@ def _novelty_duplicate_diff(cwd: Path) -> bool:
         norm_current = _normalize_change_text(current)
         priors: list[str] = [str(c.get("diff") or "") for c in load_capsules()[-20:]]
         priors += [str(e.get("diff_snapshot") or "") for e in read_all_events()[-20:]]
+        # Rejected-mutation fingerprints (soak round 3: re-attempting a just-
+        # rejected mutation is the live duplicate case under auto-commit).
+        priors += [str(e.get("novelty_fingerprint") or "") for e in read_all_events()[-20:]]
         for prior in priors:
             if not prior:
                 continue
@@ -488,6 +492,7 @@ def _handle_cascade_validation_failure(
     carries a partial-credit score."""
     score = _cascade_score(validation_result["results"])
     failed_blast = _compute_blast_radius()
+    failed_fp = _novelty_fingerprint(cwd)[:4000]
     # cwd must be explicit: without it the rollback targets the process cwd
     # (the engine's own repo), not the workspace (Sprint 23 test finding).
     # include_untracked=False + selective disposal: engine state dirs that
@@ -506,7 +511,7 @@ def _handle_cascade_validation_failure(
             "mutation": mutation,
             "blast_radius": failed_blast,
             "outcome": {"status": "failed", "score": score, "error": "validation_failed"},
-            **_lineage_fields(),
+            "novelty_fingerprint": failed_fp,
         }
     )
     record_solidify_failure(last_run, error="validation_failed", score=score)
@@ -547,6 +552,7 @@ def solidify(
     # reject near-duplicate mutations BEFORE paying for the expensive cascade.
     if cascade_mode and is_enabled("enable_novelty_gate") and _novelty_duplicate_diff(cwd):
         failed_blast = _compute_blast_radius()
+        rejected_fp = _novelty_fingerprint(cwd)[:4000]
         rollback_tracked(cwd=cwd, include_untracked=False)
         rollback_new_untracked_files(_disposable_untracked(cwd), cwd=cwd)
         append_event_jsonl(
@@ -561,6 +567,7 @@ def solidify(
                 "mutation": mutation,
                 "blast_radius": failed_blast,
                 "outcome": {"status": "failed", "score": 0.0, "error": "novelty_duplicate"},
+                "novelty_fingerprint": rejected_fp,
                 **_lineage_fields(),
             }
         )

@@ -424,3 +424,44 @@ class TestSoakFixes:
         result = solidify()
         assert result["ok"] is False
         assert result["error"] == "novelty_duplicate"
+
+
+class TestRejectedRetryNovelty:
+    def test_retrying_rejected_mutation_is_duplicate(
+        self, git_ws: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        from evolver.gep.asset_store import append_event_jsonl
+
+        monkeypatch.setenv("EVOLVER_FF_ENABLE_FITNESS_CASCADE", "true")
+        monkeypatch.setenv("EVOLVER_FF_ENABLE_NOVELTY_GATE", "true")
+        (git_ws / "rejected.txt").write_text(
+            "rejected content line one\nrejected content line two\n", encoding="utf-8"
+        )
+        fp = solidify_mod._novelty_fingerprint(git_ws)
+        assert fp.strip()
+        append_event_jsonl(
+            {
+                "type": "EvolutionEvent",
+                "id": "evt_rejected_prior",
+                "outcome": {"status": "failed", "score": 0.0, "error": "validation_failed"},
+                "novelty_fingerprint": fp[:4000],
+            }
+        )
+        ran: list[bool] = []
+        monkeypatch.setattr(
+            solidify_mod,
+            "_run_validations",
+            lambda *a, **k: ran.append(True) or {"ok": True, "results": []},
+        )
+        write_state_for_solidify(_last_run())
+        result = solidify()
+        assert result["ok"] is False
+        assert result["error"] == "novelty_duplicate"
+        assert ran == []
+
+    def test_reversal_below_threshold_passes_novelty(self) -> None:
+        fix = "def add(a, b): return a + b"
+        undo = "def add(a, b): return a - b"
+        a = f"def add(a, b):\n-    return a - b\n+    return a + b\n"
+        b = f"def add(a, b):\n-    return a + b\n+    return a - b\n"
+        assert solidify_mod._diff_similarity(a, b) < solidify_mod.NOVELTY_SIMILARITY_THRESHOLD
