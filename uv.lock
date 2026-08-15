@@ -330,7 +330,7 @@ wheels = [
 
 [[package]]
 name = "evolver"
-version = "1.94.0"
+version = "1.95.0"
 source = { editable = "." }
 dependencies = [
     { name = "boto3" },

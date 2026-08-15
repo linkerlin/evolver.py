@@ -8,6 +8,33 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.95.0] — 2026-08-15
+
+### Added — Sprint 22/23: methodology hardening (演进方案.md §13; all behind feature flags, default OFF; flag-off behavior byte-identical with 1.94.0)
+
+- **Open-loop closures (22.1)**: `enable_event_history` (EvolutionEvent history feeds signal modulation — saturation/dedup/ban_gene/plateau revived), `enable_gap_outcome_inference` (error-cleared ⇒ success bookkeeping, double-record guard), innovation-failure outcomes (ROI denominator), ATP spawn persisted to disk, `enable_windows_load_guard` (psutil CPU proxy where `os.getloadavg` is missing).
+- **Quantitative fitness (22.2)**: `enable_fitness_cascade` — engine-owned validation cascade (ruff → mypy → pytest, short-circuit, per-stage timeouts); graded failure score (stage progress + pytest pass rate) flows into memory graph / innovation / events; untrusted `mutation.validation` (LLM-distilled) is never executed in this mode; failed EvolutionEvents land in `events.jsonl` (revives repair-loop breaker).
+- **UCB1 selection (22.3)**: `enable_bandit_selection` — parent sampling `score × (1 + mean + c·√(ln N/nᵢ))`; `get_memory_advice` exposes per-gene `geneStats`; `--review` stays deterministic (module-level `_loop_review_mode`).
+- **Niche archive (22.4)**: `enable_niche_topk` — per-signal top-3 preferred genes (solidify success anchors #1); permanent bans become 30-day probations (`probation_by_signal`).
+- **Acceptance gray-scale (22.5)**: `EVOLVER_ACCEPTANCE_SHADOW` — gate verdicts recorded, never enforced; `acceptance/report.summarize_acceptance()` (interception / validation-disagreement / false-kill-risk).
+- **Lineage lessons (22.6)**: `enable_lineage_lessons` — `parent_event_id` on events (fills the always-empty prompt slot) + "Lineage Lessons" block (selected gene's recent failures) in the GEP prompt.
+- **Novelty gate (23.1)**: `enable_novelty_gate` — pre-cascade rejection sampling (ShinkaEvolve η=0.95) over added-line sets vs capsule diffs / event snapshots / rejected fingerprints; reversals do not false-positive.
+- **Operator bandit (23.2)**: `enable_operator_bandit` — mutation category UCB1 sampling over graded outcomes; keyword category keeps the dominant prior; `force_category`/drift authoritative; personality safety downgrade still applies.
+- **ATP spawn bridge (23.3)**: `enable_atp_spawn_bridge` — picked-up ATP tasks emitted as `sessions_spawn` when bridge mode is active.
+- **Auto-commit (soak)**: cascade-mode success commits the accepted mutation (atomic evolution steps) so later failure rollbacks stop at the last acceptance.
+
+### Fixed
+- **Gap outcome attribution**: inferred outcomes landed under the current (post-fix, empty-signal) key — disconnected from the attempt niche, breaking geneStats/UCB1 data. Now attributed to `last_action`'s key.
+- **Rollback cwd family (3 sites)**: cascade-failure / novelty / acceptance-gate rollbacks lacked `cwd` — would stash the ENGINE's repo instead of the workspace.
+- **Rollback destroyed accepted work**: `stash --include-untracked` ate engine state (`events.jsonl`) and every prior accepted-but-uncommitted mutation in no-gitignore workspaces; rollbacks are now tracked-only + selective disposable-untracked disposal (engine dirs, `.pytest_cache`, `__pycache__` spared).
+- **T0 acceptance gate blind to test deletion**: re-froze the current test set per run (deleted tests vanished from the denominator — "delete tests to go green" passed). Frozen IDs now load from the persisted baseline snapshot.
+- **CI version assertion**: `__init__.py.__version__` was still 1.93.0 while CI asserted 1.94.0 (latent red) — now in sync at 1.95.0.
+- **Novelty fingerprint pollution**: engine state dirs / `__pycache__` / committed engine-state diffs diluted or poisoned the fingerprint; fingerprint now pathspec-filtered and split into (full, added) views.
+
+### Verified
+- 3-cycle E2E + 12-cycle soak (scripted mutation mix): graded scores, novelty rejections, shadow interception (del_tests_break case: cascade green + T0 regressed), lineage chain, niche stats — all green.
+- 3100 tests, ruff/mypy clean; flags default OFF keep 1.94.0 behavior.
+
 ## [1.94.0] — 2026-08-11
 
 ### Added
