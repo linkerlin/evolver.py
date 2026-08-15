@@ -66,14 +66,13 @@ def git_ws(temp_workspace: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     evo.mkdir(parents=True, exist_ok=True)
     monkeypatch.setenv("GEP_ASSETS_DIR", str(gep))
     monkeypatch.setenv("EVOLUTION_DIR", str(evo))
-    # git_ops.rollback_tracked() runs git in Path.cwd() when no cwd is given
-    # (solidify calls it without one). Patch solidify's imported name so the
-    # rollback targets THIS workspace. (chdir is avoided: on Windows the temp
+    # Patch solidify's imported name so any legacy no-cwd rollback still
+    # targets THIS workspace. (chdir is avoided: on Windows the temp
     # workspace can't be removed while it is the process cwd.)
     monkeypatch.setattr(
         solidify_mod,
         "rollback_tracked",
-        lambda: git_ops.rollback_tracked(cwd=temp_workspace),
+        lambda **kw: git_ops.rollback_tracked(**{**kw, "cwd": temp_workspace}),
     )
     _init_git_repo(temp_workspace)
     return temp_workspace
