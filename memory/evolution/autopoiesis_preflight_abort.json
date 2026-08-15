@@ -1,17 +1,17 @@
 {
-  "timestamp": 1785399798.1986365,
+  "timestamp": 1786793565.362562,
   "reason": "test abort",
   "report": {
-    "timestamp": "2026-07-30T08:23:18.197258+00:00",
+    "timestamp": "2026-08-15T11:32:45.362098+00:00",
     "system_state": {
       "rules_version": "1.0.0",
       "evolution_dir_exists": true,
       "living_memory_exists": true,
       "solidify_pending": true,
-      "genes_count": 12,
+      "genes_count": 18,
       "capsules_count": 0,
-      "events_count": 79,
-      "last_run_id": "run_1784388613603_b1818206"
+      "events_count": 84,
+      "last_run_id": "r1"
     },
     "friction_summary": {
       "total": 1,

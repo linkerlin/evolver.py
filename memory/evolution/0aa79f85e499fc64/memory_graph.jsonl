@@ -1,0 +1,3 @@
+{"type": "MemoryGraphEvent", "kind": "signal", "id": "sig_1786786071300_6bfa01e0", "ts": "2026-08-15T09:27:51.300Z", "signal": {"key": "90afadf3c4de0eae96e40b6ed96adcd5", "signals": ["s1"]}, "observations": {}}
+{"type": "MemoryGraphEvent", "kind": "signal", "id": "sig_1786786071316_b6de558b", "ts": "2026-08-15T09:27:51.316Z", "signal": {"key": "a0a443f04c101af4032a522382ccdd7d", "signals": ["plateau_pivot_required"]}, "observations": {}}
+{"type": "MemoryGraphEvent", "kind": "signal", "id": "sig_1786786071335_dc767d57", "ts": "2026-08-15T09:27:51.335Z", "signal": {"key": "9cd7b7b2de06a9180be6eface227bfdd", "signals": ["plateau_pivot_suggested"]}, "observations": {}}
