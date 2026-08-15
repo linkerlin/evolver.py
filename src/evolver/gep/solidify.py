@@ -417,29 +417,6 @@ def _commit_mutation(cwd: Path, label: str) -> bool:
         return False
 
 
-def _novelty_fingerprint(cwd: Path) -> str:
-    """Content fingerprint for the novelty gate: tracked diff + untracked
-    file contents (a fresh mutation is often entirely untracked, which
-    ``git diff HEAD`` misses — found by Sprint 23 calibration). Both parts
-    are filtered to disposable paths: workspaces that COMMIT engine state
-    (.evolver/memory) must not have their own event log pollute the diff
-    (soak round-2)."""
-    from evolver.gep.git_ops import try_run_cmd
-
-    parts: list[str] = []
-    changed = [f for f in git_list_changed_files(cwd) if _is_disposable_path(f)]
-    if changed:
-        parts.append(try_run_cmd(["diff", "HEAD", "--", *changed], cwd=cwd))
-    for rel in git_list_untracked_files(cwd):
-        if not _is_disposable_path(rel):
-            continue
-        try:
-            parts.append((cwd / rel).read_text(encoding="utf-8", errors="replace"))
-        except OSError:
-            continue
-    return "\n".join(parts)
-
-
 def _added_from_diff(text: str) -> str:
     """Strictly the ``+`` payload lines of a diff (context lines excluded —
     they dominate tiny diffs and made reversals score ~0.95, soak round 3)."""
