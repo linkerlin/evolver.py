@@ -294,9 +294,7 @@ class TestRollbackSparesEngineState:
             "_run_validations",
             lambda *a, **k: {
                 "ok": False,
-                "results": [
-                    {"ok": False, "command": "pytest", "stdout": "", "stderr": "1 failed"}
-                ],
+                "results": [{"ok": False, "command": "pytest", "stdout": "", "stderr": "1 failed"}],
                 "started_at": 0.0,
                 "finished_at": 1.0,
             },
@@ -312,3 +310,46 @@ class TestRollbackSparesEngineState:
         from evolver.gep.asset_store import read_all_events
 
         assert read_all_events()[-1]["outcome"]["error"] == "validation_failed"
+
+
+class TestNoveltyContainment:
+    def test_noisy_duplicate_rejected_via_containment(self, git_ws: Path) -> None:
+        from evolver.gep.asset_store import append_capsule
+
+        append_capsule(
+            {
+                "type": "Capsule",
+                "id": "cap_noise",
+                "trigger": ["log_error"],
+                "gene": "g",
+                "summary": "s",
+                "confidence": 0.5,
+                "outcome": {"status": "success", "score": 1.0},
+                "diff": "diff --git a/src/calc.py b/src/calc.py\n@@\n-def add(a, b):\n-    return a - b\n+def add(a, b):\n+    return a + b\n",
+            }
+        )
+        # engine-noise settings file (untracked, now excluded dirs only cover
+        # the tuple; simulate leftover noise INSIDE the fingerprint by patching)
+        import evolver.gep.solidify as s
+
+        fingerprint = (
+            "diff --git a/src/calc.py b/src/calc.py\n@@\n"
+            "-def add(a, b):\n-    return a - b\n"
+            "+def add(a, b):\n+    return a + b\n"
+            + "settings noise that dilutes the ratio far below 0.9 "
+            * 20
+        )
+        norm_current = s._normalize_change_text(fingerprint)
+        norm_prior = s._normalize_change_text(
+            "diff --git a/src/calc.py b/src/calc.py\n@@\n"
+            "-def add(a, b):\n-    return a - b\n+def add(a, b):\n+    return a + b\n"
+        )
+        assert (
+            s._diff_similarity(
+                fingerprint,
+                "diff --git a/src/calc.py b/src/calc.py\n@@\n-def add(a, b):\n-    return a - b\n+def add(a, b):\n+    return a + b\n",
+            )
+            < 0.9
+        )
+        assert len(norm_prior) >= s._CONTAINMENT_MIN_CHARS
+        assert norm_prior in norm_current  # containment path catches it

@@ -366,7 +366,17 @@ NOVELTY_SIMILARITY_THRESHOLD: float = 0.9
 # JSONL contents embed the capsules we compare against), nor be swallowed
 # by rollbacks in workspaces that do not gitignore them (E2E calibration:
 # stash --include-untracked ate events.jsonl).
-_FINGERPRINT_EXCLUDED_DIRS: tuple[str, ...] = (".evolver", "memory", ".evomap", "logs")
+_FINGERPRINT_EXCLUDED_DIRS: tuple[str, ...] = (
+    ".evolver",
+    ".evolver_settings",
+    ".evomap",
+    ".pytest_cache",
+    "logs",
+    "memory",
+)
+# Below this many normalized change-text chars, containment matching is too
+# trigger-happy to trust (any small capsule would match any large mutation).
+_CONTAINMENT_MIN_CHARS: int = 40
 
 
 def _is_disposable_path(rel: str) -> bool:
@@ -406,11 +416,22 @@ def _novelty_duplicate_diff(cwd: Path) -> bool:
         current = _novelty_fingerprint(cwd)
         if not current.strip():
             return False
+        norm_current = _normalize_change_text(current)
         for cap in load_capsules()[-20:]:
             prior = cap.get("diff") or ""
             if not prior:
                 continue
             if _diff_similarity(current, str(prior)) >= NOVELTY_SIMILARITY_THRESHOLD:
+                return True
+            # Containment: an exact re-application adds engine/cache noise
+            # around the change, which dilutes the ratio below threshold
+            # (E2E calibration round 2). A sufficiently large normalized
+            # capsule text appearing verbatim inside the fingerprint is a
+            # duplicate regardless of the noise.
+            # ponytail: substring containment, not alignment — swap for
+            # embedding containment if paraphrased duplicates ever slip past.
+            norm_prior = _normalize_change_text(str(prior))
+            if len(norm_prior) >= _CONTAINMENT_MIN_CHARS and norm_prior in norm_current:
                 return True
     except Exception:
         return False
