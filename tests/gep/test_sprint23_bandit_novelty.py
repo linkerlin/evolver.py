@@ -437,14 +437,14 @@ class TestRejectedRetryNovelty:
         (git_ws / "rejected.txt").write_text(
             "rejected content line one\nrejected content line two\n", encoding="utf-8"
         )
-        fp = solidify_mod._novelty_fingerprint(git_ws)
-        assert fp.strip()
+        _fp, added = solidify_mod._novelty_fingerprint(git_ws)
+        assert added.strip()
         append_event_jsonl(
             {
                 "type": "EvolutionEvent",
                 "id": "evt_rejected_prior",
                 "outcome": {"status": "failed", "score": 0.0, "error": "validation_failed"},
-                "novelty_fingerprint": fp[:4000],
+                "novelty_added": added[:4000],
             }
         )
         ran: list[bool] = []

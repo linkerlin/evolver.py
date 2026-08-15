@@ -440,25 +440,47 @@ def _novelty_fingerprint(cwd: Path) -> str:
     return "\n".join(parts)
 
 
-def _added_text(text: str) -> str:
-    """The ADDED-content view of a fingerprint: diff ``+`` payload lines plus
-    raw (non-diff) content lines; ``-`` removals and diff metadata dropped.
-
-    Soak round 3: with context lines included, a pure REVERSAL of a small
-    mutation scores ~0.96 vs its original — text similarity alone cannot tell
-    undo from redo. Added-sets can: a reversal's additions are the original's
-    removals, so they never collide."""
+def _added_from_diff(text: str) -> str:
+    """Strictly the ``+`` payload lines of a diff (context lines excluded —
+    they dominate tiny diffs and made reversals score ~0.95, soak round 3)."""
     out: list[str] = []
     for line in text.splitlines():
-        s = line.strip()
-        if not s:
-            continue
-        if s.startswith(("diff --git", "index ", "@@", "new file", "---", "+++")):
-            continue
-        if s.startswith("-"):
-            continue
-        out.append(s[1:].strip() if s.startswith("+") else s)
+        if line.startswith("+") and not line.startswith("+++"):
+            out.append(line[1:].strip())
     return "".join(out).casefold()
+
+
+def _novelty_fingerprint(cwd: Path) -> tuple[str, str]:
+    """Content fingerprint for the novelty gate: ``(full_text, added_text)``.
+
+    full_text: tracked diff (pathspec-filtered to disposable paths) + untracked
+    file contents — a fresh mutation is often entirely untracked, which
+    ``git diff HEAD`` misses (Sprint 23 calibration); workspaces that COMMIT
+    engine state must not have their own event log pollute the diff (soak r2).
+
+    added_text: the ADDED-content view — strict ``+`` payload lines from the
+    diff part, all lines from raw untracked content. Reversals never collide
+    with their originals on added-sets (undo's additions = original's
+    removals), so the gate stops false-positiving undos (soak r3/r4)."""
+    from evolver.gep.git_ops import try_run_cmd
+
+    full_parts: list[str] = []
+    added_parts: list[str] = []
+    changed = [f for f in git_list_changed_files(cwd) if _is_disposable_path(f)]
+    if changed:
+        diff = try_run_cmd(["diff", "HEAD", "--", *changed], cwd=cwd)
+        full_parts.append(diff)
+        added_parts.append(_added_from_diff(diff))
+    for rel in git_list_untracked_files(cwd):
+        if not _is_disposable_path(rel):
+            continue
+        try:
+            raw = (cwd / rel).read_text(encoding="utf-8", errors="replace")
+        except OSError:
+            continue
+        full_parts.append(raw)
+        added_parts.append("".join(ln.strip() for ln in raw.splitlines() if ln.strip()).casefold())
+    return "\n".join(full_parts), "".join(added_parts)
 
 
 def _novelty_duplicate_diff(cwd: Path) -> bool:
@@ -468,21 +490,18 @@ def _novelty_duplicate_diff(cwd: Path) -> bool:
     try:
         from evolver.gep.asset_store import load_capsules, read_all_events
 
-        current = _novelty_fingerprint(cwd)
-        if not current.strip():
+        _full, add_current = _novelty_fingerprint(cwd)
+        if not add_current.strip():
             return False
-        add_current = _added_text(current)
-        if not add_current:
-            return False
-        priors: list[str] = [str(c.get("diff") or "") for c in load_capsules()[-20:]]
-        priors += [str(e.get("diff_snapshot") or "") for e in read_all_events()[-20:]]
-        # Rejected-mutation fingerprints (soak round 3: re-attempting a just-
+        priors_added: list[str] = [
+            _added_from_diff(str(c.get("diff") or "")) for c in load_capsules()[-20:]
+        ]
+        events = read_all_events()[-20:]
+        priors_added += [_added_from_diff(str(e.get("diff_snapshot") or "")) for e in events]
+        # Rejected-mutation added-sets (soak round 3: re-attempting a just-
         # rejected mutation is the live duplicate case under auto-commit).
-        priors += [str(e.get("novelty_fingerprint") or "") for e in read_all_events()[-20:]]
-        for prior in priors:
-            if not prior:
-                continue
-            add_prior = _added_text(prior)
+        priors_added += [str(e.get("novelty_added") or "") for e in events]
+        for add_prior in priors_added:
             if not add_prior:
                 continue
             # ponytail: added-set containment + ratio; swap for embedding
@@ -513,7 +532,7 @@ def _handle_cascade_validation_failure(
     carries a partial-credit score."""
     score = _cascade_score(validation_result["results"])
     failed_blast = _compute_blast_radius()
-    failed_fp = _novelty_fingerprint(cwd)[:4000]
+    failed_fp, failed_added = _novelty_fingerprint(cwd)
     # cwd must be explicit: without it the rollback targets the process cwd
     # (the engine's own repo), not the workspace (Sprint 23 test finding).
     # include_untracked=False + selective disposal: engine state dirs that
@@ -532,7 +551,8 @@ def _handle_cascade_validation_failure(
             "mutation": mutation,
             "blast_radius": failed_blast,
             "outcome": {"status": "failed", "score": score, "error": "validation_failed"},
-            "novelty_fingerprint": failed_fp,
+            "novelty_fingerprint": failed_fp[:4000],
+            "novelty_added": failed_added[:4000],
         }
     )
     record_solidify_failure(last_run, error="validation_failed", score=score)
@@ -573,7 +593,7 @@ def solidify(
     # reject near-duplicate mutations BEFORE paying for the expensive cascade.
     if cascade_mode and is_enabled("enable_novelty_gate") and _novelty_duplicate_diff(cwd):
         failed_blast = _compute_blast_radius()
-        rejected_fp = _novelty_fingerprint(cwd)[:4000]
+        rejected_fp, rejected_added = _novelty_fingerprint(cwd)
         rollback_tracked(cwd=cwd, include_untracked=False)
         rollback_new_untracked_files(_disposable_untracked(cwd), cwd=cwd)
         append_event_jsonl(
@@ -588,7 +608,8 @@ def solidify(
                 "mutation": mutation,
                 "blast_radius": failed_blast,
                 "outcome": {"status": "failed", "score": 0.0, "error": "novelty_duplicate"},
-                "novelty_fingerprint": rejected_fp,
+                "novelty_fingerprint": rejected_fp[:4000],
+                "novelty_added": rejected_added[:4000],
                 **_lineage_fields(),
             }
         )
