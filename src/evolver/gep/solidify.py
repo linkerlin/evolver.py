@@ -393,11 +393,44 @@ def _disposable_untracked(cwd: Path) -> list[str]:
     return [f for f in git_list_untracked_files(cwd) if _is_disposable_path(f)]
 
 
+def _commit_mutation(cwd: Path, label: str) -> bool:
+    """Commit an accepted mutation (cascade mode) so later failure rollbacks
+    cannot destroy prior accepted-but-uncommitted work (soak round-1 bug:
+    one failed solidify disposed every untracked file the loop had ever
+    accepted). Stages exactly the changed+disposable-untracked files."""
+    try:
+        from evolver.gep.git_ops import run_cmd
+
+        targets = [
+            f
+            for f in dict.fromkeys(git_list_changed_files(cwd) + _disposable_untracked(cwd))
+            if f
+        ]
+        if not targets:
+            return False
+        run_cmd(["add", "--", *targets], cwd=cwd)
+        run_cmd(
+            ["-c", "commit.gpgsign=false", "commit", "-m", f"evolver: {label}"],
+            cwd=cwd,
+        )
+        return True
+    except Exception:
+        return False
+
+
 def _novelty_fingerprint(cwd: Path) -> str:
     """Content fingerprint for the novelty gate: tracked diff + untracked
     file contents (a fresh mutation is often entirely untracked, which
-    ``git diff HEAD`` misses — found by Sprint 23 calibration)."""
-    parts = [capture_diff_snapshot(cwd)]
+    ``git diff HEAD`` misses — found by Sprint 23 calibration). Both parts
+    are filtered to disposable paths: workspaces that COMMIT engine state
+    (.evolver/memory) must not have their own event log pollute the diff
+    (soak round-2)."""
+    from evolver.gep.git_ops import try_run_cmd
+
+    parts: list[str] = []
+    changed = [f for f in git_list_changed_files(cwd) if _is_disposable_path(f)]
+    if changed:
+        parts.append(try_run_cmd(["diff", "HEAD", "--", *changed], cwd=cwd))
     for rel in git_list_untracked_files(cwd):
         if not _is_disposable_path(rel):
             continue
@@ -409,16 +442,19 @@ def _novelty_fingerprint(cwd: Path) -> str:
 
 
 def _novelty_duplicate_diff(cwd: Path) -> bool:
-    """True when the working-tree mutation near-duplicates a recent capsule."""
+    """True when the working-tree mutation near-duplicates a recent capsule
+    OR a recent event's diff snapshot (soak round-1: solidify never creates
+    capsules — distill does — so a capsule-only corpus left the gate blind)."""
     try:
-        from evolver.gep.asset_store import load_capsules
+        from evolver.gep.asset_store import load_capsules, read_all_events
 
         current = _novelty_fingerprint(cwd)
         if not current.strip():
             return False
         norm_current = _normalize_change_text(current)
-        for cap in load_capsules()[-20:]:
-            prior = cap.get("diff") or ""
+        priors: list[str] = [str(c.get("diff") or "") for c in load_capsules()[-20:]]
+        priors += [str(e.get("diff_snapshot") or "") for e in read_all_events()[-20:]]
+        for prior in priors:
             if not prior:
                 continue
             if _diff_similarity(current, str(prior)) >= NOVELTY_SIMILARITY_THRESHOLD:
@@ -619,6 +655,11 @@ def solidify(
 
     with contextlib.suppress(Exception):
         post_solidify_hooks(event, last_run)
+
+    # Sprint 23 soak fix: atomic evolution steps — commit accepted mutations
+    # in cascade mode so later failure rollbacks stop at the last acceptance.
+    if cascade_mode:
+        _commit_mutation(cwd, f"{last_run.get('selected_gene_id') or 'mutation'} {event['id']}")
 
     # Update solidify state
     state["last_solidify"] = {
