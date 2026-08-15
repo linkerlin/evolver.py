@@ -440,6 +440,27 @@ def _novelty_fingerprint(cwd: Path) -> str:
     return "\n".join(parts)
 
 
+def _added_text(text: str) -> str:
+    """The ADDED-content view of a fingerprint: diff ``+`` payload lines plus
+    raw (non-diff) content lines; ``-`` removals and diff metadata dropped.
+
+    Soak round 3: with context lines included, a pure REVERSAL of a small
+    mutation scores ~0.96 vs its original — text similarity alone cannot tell
+    undo from redo. Added-sets can: a reversal's additions are the original's
+    removals, so they never collide."""
+    out: list[str] = []
+    for line in text.splitlines():
+        s = line.strip()
+        if not s:
+            continue
+        if s.startswith(("diff --git", "index ", "@@", "new file", "---", "+++")):
+            continue
+        if s.startswith("-"):
+            continue
+        out.append(s[1:].strip() if s.startswith("+") else s)
+    return "".join(out).casefold()
+
+
 def _novelty_duplicate_diff(cwd: Path) -> bool:
     """True when the working-tree mutation near-duplicates a recent capsule
     OR a recent event's diff snapshot (soak round-1: solidify never creates
@@ -450,7 +471,9 @@ def _novelty_duplicate_diff(cwd: Path) -> bool:
         current = _novelty_fingerprint(cwd)
         if not current.strip():
             return False
-        norm_current = _normalize_change_text(current)
+        add_current = _added_text(current)
+        if not add_current:
+            return False
         priors: list[str] = [str(c.get("diff") or "") for c in load_capsules()[-20:]]
         priors += [str(e.get("diff_snapshot") or "") for e in read_all_events()[-20:]]
         # Rejected-mutation fingerprints (soak round 3: re-attempting a just-
@@ -459,17 +482,17 @@ def _novelty_duplicate_diff(cwd: Path) -> bool:
         for prior in priors:
             if not prior:
                 continue
-            if _diff_similarity(current, str(prior)) >= NOVELTY_SIMILARITY_THRESHOLD:
+            add_prior = _added_text(prior)
+            if not add_prior:
+                continue
+            # ponytail: added-set containment + ratio; swap for embedding
+            # containment if paraphrased duplicates ever slip past.
+            if len(add_prior) >= _CONTAINMENT_MIN_CHARS and add_prior in add_current:
                 return True
-            # Containment: an exact re-application adds engine/cache noise
-            # around the change, which dilutes the ratio below threshold
-            # (E2E calibration round 2). A sufficiently large normalized
-            # capsule text appearing verbatim inside the fingerprint is a
-            # duplicate regardless of the noise.
-            # ponytail: substring containment, not alignment — swap for
-            # embedding containment if paraphrased duplicates ever slip past.
-            norm_prior = _normalize_change_text(str(prior))
-            if len(norm_prior) >= _CONTAINMENT_MIN_CHARS and norm_prior in norm_current:
+            if (
+                difflib.SequenceMatcher(None, add_current, add_prior, autojunk=False).ratio()
+                >= NOVELTY_SIMILARITY_THRESHOLD
+            ):
                 return True
     except Exception:
         return False
