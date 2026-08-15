@@ -34,7 +34,8 @@ _BASELINE_FORMAT = "evolver.acceptance_baseline.v0"
 def load_baseline(path: Path) -> float | None:
     """Read the persisted last-known-good T0 pass rate (or None if absent)."""
     payload = load_baseline_payload(path)
-    return payload.get("t0_pass_rate") if payload else None
+    rate = payload.get("t0_pass_rate") if payload else None
+    return float(rate) if isinstance(rate, (int, float)) else None
 
 
 def load_baseline_payload(path: Path) -> dict[str, object] | None:

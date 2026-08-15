@@ -64,7 +64,10 @@ def gate_for_solidify(
     baseline_path = _baseline_path()
     snapshot_dir = _snapshot_dir()
     baseline_payload = load_baseline_payload(baseline_path)
-    baseline = baseline_payload.get("t0_pass_rate") if baseline_payload else None
+    raw_rate = baseline_payload.get("t0_pass_rate") if baseline_payload else None
+    baseline = float(raw_rate) if isinstance(raw_rate, (int, float)) else None
+    raw_snap = baseline_payload.get("t0_snapshot_hash") if baseline_payload else None
+    baseline_snap = raw_snap if isinstance(raw_snap, str) else None
 
     result = run_acceptance_gate(
         cwd=cwd,
@@ -72,9 +75,7 @@ def gate_for_solidify(
         baseline_t0_rate=baseline,
         repeats=ACCEPTANCE_REPEATS,
         epsilon=ACCEPTANCE_DELTA_EPSILON,
-        baseline_t0_snapshot=(
-            baseline_payload.get("t0_snapshot_hash") if baseline_payload else None
-        ),
+        baseline_t0_snapshot=baseline_snap,
     )
 
     if result.accepted:
