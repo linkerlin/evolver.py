@@ -470,7 +470,16 @@ def record_outcome_from_state(
     # TTT predictive outcome block (signal clarity + frontier).
     from evolver.gep.ttt_inspired import compute_predictive_boost
 
-    outcome_signals = list(signals) if signals is not None else current_signals
+    # Attribute the inferred outcome to the ATTEMPT's signal niche — the
+    # current (post-fix) signals are empty on success inference and would
+    # disconnect the outcome from the key where the gene actually ran
+    # (found by Sprint 22 calibration).
+    if isinstance(last_action.get("signals"), list):
+        outcome_signals = [str(s) for s in last_action["signals"]]
+    elif signals is not None:
+        outcome_signals = list(signals)
+    else:
+        outcome_signals = current_signals
     predictive = compute_predictive_boost(
         signals=outcome_signals,
         baseline_observed=None,

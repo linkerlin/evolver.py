@@ -92,3 +92,12 @@ async def test_gap_outcome_inference_marks_persisting_error_failed(
     outcomes = [e for e in read_all(limit=50) if e.get("kind") == "outcome"]
     assert len(outcomes) == 1
     assert outcomes[0]["outcome"]["status"] == "failed"
+    # outcome must attribute to the ATTEMPT's signal niche (calibration fix)
+    attempt_key = compute_attempt_key(["errsig:boom"])
+    assert outcomes[0]["signal"]["key"] == attempt_key
+
+
+def compute_attempt_key(signals: list[str]) -> str:
+    from evolver.gep.memory_graph import compute_signal_key
+
+    return compute_signal_key(signals)
