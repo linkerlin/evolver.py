@@ -9,7 +9,9 @@
   "enable_diagnosis": false,
   "enable_diagnosis_cluster": false,
   "enable_event_history": false,
+  "enable_event_projection": false,
   "enable_explore": false,
+  "enable_failure_events": false,
   "enable_fitness_cascade": false,
   "enable_gap_outcome_inference": false,
   "enable_idle_scheduler": true,
@@ -28,6 +30,7 @@
   "enable_skill_auto_update": false,
   "enable_surface_decouple": false,
   "enable_trace_upload": false,
+  "enable_trigger_budget": false,
   "enable_validator": true,
   "enable_windows_load_guard": false
 }
