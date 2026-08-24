@@ -89,6 +89,10 @@ DEFAULT_FLAGS: dict[str, bool] = {
     # an event): non-cascade validation failures + acceptance-gate rejections
     # append failed EvolutionEvents instead of staying silent.
     "enable_failure_events": False,
+    # Sprint 24.8 material substrate (概念收割 #6 — Node v2 material/*):
+    # collect phase feeds session logs through the watermarked incremental
+    # store with consumer groups instead of whole-file rescans.
+    "enable_material_ingest": False,
     # Proxy-only routes (also readable via ``EVOLVER_FF_*``)
     "enable_skill_auto_update": False,
     "enable_trace_upload": False,

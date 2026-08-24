@@ -274,4 +274,38 @@ async def collect_phase(ctx: dict[str, Any]) -> dict[str, Any]:
     ctx["scan_time_ms"] = int(time.time() * 1000)
     ctx["file_list"] = []
     ctx["session_source_diagnostic"] = diagnose_session_source_empty()
+    _material_ingest_phase(ctx)
     return ctx
+
+
+def _material_ingest_phase(ctx: dict[str, Any]) -> None:
+    """Sprint 24.8 (enable_material_ingest): incremental material ingestion.
+
+    Feeds the known session-log sources through the watermarked substrate
+    (dedup + consumer groups) instead of relying on whole-file rescan;
+    emits a ``material_batch_ready`` event when new records landed so the
+    event log stays the single audit trail. No-op when the flag is off.
+    """
+    from evolver.gep.feature_flags import is_enabled
+
+    if not is_enabled("enable_material_ingest"):
+        return
+    try:
+        from evolver.gep.asset_store import append_event_jsonl
+        from evolver.gep.material import ingest_file
+
+        results = [ingest_file(p, kind="session_log") for p in _find_session_logs()]
+        added = sum(int(r["added"]) for r in results)
+        ctx["material_ingest"] = {"sources": results, "added": added}
+        if added > 0:
+            append_event_jsonl(
+                {
+                    "type": "material_batch_ready",
+                    "id": f"matbatch_{int(time.time() * 1000)}",
+                    "run_id": ctx.get("run_id"),
+                    "timestamp": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+                    "added": added,
+                }
+            )
+    except Exception as exc:  # ingestion must never break a cycle
+        ctx["material_ingest_error"] = str(exc)
