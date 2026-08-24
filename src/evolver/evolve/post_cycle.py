@@ -57,9 +57,16 @@ async def run_post_cycle_hooks(ctx: dict[str, Any]) -> dict[str, Any]:
     if not is_solo_active() and is_enabled("enable_auto_buyer"):
         try:
             from evolver.atp import auto_buyer
+            from evolver.gep.idempotency import once
 
             consent = auto_buyer.get_consent()
-            if consent and consent.get("enabled"):
+            # Sprint 24.5: a retried cycle must not double-fire the
+            # money-touching tick (Node v2 daemon/idempotency.js semantics).
+            if (
+                consent
+                and consent.get("enabled")
+                and once(str(ctx.get("cycle_id", "")), "atp_auto_buyer_tick")
+            ):
                 result = await auto_buyer.run_tick(signals)
                 ctx["atp_auto_buyer"] = result
                 if result.get("placed", 0) > 0:

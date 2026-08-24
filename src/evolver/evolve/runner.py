@@ -72,6 +72,15 @@ def request_shutdown() -> None:
         ev.set()
 
 
+def is_draining() -> bool:
+    """True while shutdown was requested and in-flight cycles are draining.
+
+    Node v2 ``daemon/drain.js`` semantics: stop accepting NEW work
+    (external triggers), let the running cycle finish, then exit.
+    """
+    return _shutdown_requested
+
+
 def _build_initial_context() -> dict[str, Any]:
     return {
         "run_id": f"run_{int(time.time() * 1000)}_{secrets.token_hex(4)}",

@@ -12,6 +12,10 @@ Security model
 5. **Resource limits** (Linux only): ``resource.setrlimit`` for CPU/memory.
 6. **Network isolation** (Linux only): best-effort via ``unshare`` or
    restricted user. Windows falls back to process-level isolation.
+7. **Fail-closed refusal** (Sprint 24.3): with
+   ``EVOLVER_SANDBOX_REQUIRE_ISOLATION=1`` scripts are refused outright
+   unless a network namespace is actually available — mirroring Node v2's
+   "unavailable isolation = refuse" sandbox posture.
 
 Design notes
 ------------
@@ -108,6 +112,44 @@ class SandboxResult:
     stderr: str
     timed_out: bool
     elapsed_ms: float
+    refused: bool = False
+
+
+ENV_REQUIRE_ISOLATION = "EVOLVER_SANDBOX_REQUIRE_ISOLATION"
+
+_isolation_available: bool | None = None
+
+
+def _env_flag(name: str) -> bool:
+    return os.environ.get(name, "").strip().lower() in ("1", "true", "yes")
+
+
+def network_isolation_available() -> bool:
+    """Return whether a network namespace can actually be created here.
+
+    Probed out-of-process (``unshare --net true``) — probing in-process
+    would isolate the engine itself. Non-Linux platforms are always
+    ``False``: Windows has no native netns equivalent we can use from a
+    preexec hook, so isolation is unavailable there by definition.
+    Result is cached for the process lifetime.
+    """
+    global _isolation_available
+    if _isolation_available is not None:
+        return _isolation_available
+    if platform.system() != "Linux":
+        _isolation_available = False
+        return False
+    try:
+        probe = subprocess.run(
+            ["unshare", "--net", "true"],
+            capture_output=True,
+            timeout=10,
+            check=False,
+        )
+        _isolation_available = probe.returncode == 0
+    except (OSError, subprocess.SubprocessError):
+        _isolation_available = False
+    return _isolation_available
 
 
 # ---------------------------------------------------------------------------
@@ -226,7 +268,7 @@ def _try_linux_network_isolation() -> None:
     """Best-effort network namespace isolation (Linux + CAP_SYS_ADMIN)."""
     if platform.system() != "Linux":
         return
-    if os.environ.get("EVOLVER_SANDBOX_NETWORK", "").strip().lower() not in ("1", "true", "yes"):
+    if not _env_flag("EVOLVER_SANDBOX_NETWORK"):
         return
     try:
         import ctypes
@@ -234,9 +276,9 @@ def _try_linux_network_isolation() -> None:
         libc = ctypes.CDLL("libc.so.6", use_errno=True)
         clone_newnet = 0x40000000
         if libc.unshare(clone_newnet) != 0:
-            logger.debug("[Sandbox] unshare(CLONE_NEWNET) failed (privileges required)")
+            logger.warning("[Sandbox] unshare(CLONE_NEWNET) failed (privileges required)")
     except Exception as exc:
-        logger.debug("[Sandbox] network isolation unavailable: %s", exc)
+        logger.warning("[Sandbox] network isolation unavailable: %s", exc)
 
 
 def _linux_child_preexec() -> None:
@@ -276,6 +318,21 @@ def execute_in_sandbox(
     )
     if timeout <= 0:
         timeout = DEFAULT_TIMEOUT
+
+    # Sprint 24.3 (fail-closed, Node v2 verify/sandboxRunner.js posture:
+    # "unavailable isolation = refuse, never run un-isolated"). When
+    # EVOLVER_SANDBOX_REQUIRE_ISOLATION is set, scripts are refused unless a
+    # real network namespace is available — no silent best-effort downgrade.
+    if _env_flag(ENV_REQUIRE_ISOLATION) and not network_isolation_available():
+        logger.warning("[Sandbox] isolation required but unavailable — refusing to execute")
+        return SandboxResult(
+            exit_code=-1,
+            stdout="",
+            stderr="sandbox_isolation_unavailable",
+            timed_out=False,
+            elapsed_ms=0.0,
+            refused=True,
+        )
 
     tmp_dir = Path(tempfile.mkdtemp(prefix="evolver-sandbox-"))
     script_path = tmp_dir / script_filename

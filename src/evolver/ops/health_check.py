@@ -15,6 +15,7 @@ Design notes (Pythonic)
 
 from __future__ import annotations
 
+import json
 import shutil
 import time
 from dataclasses import dataclass, field
@@ -56,6 +57,36 @@ def _default_mount() -> Path:
 # Simple time-based cache for process count (avoids iterating all PIDs every tick).
 _proc_cache: tuple[float, int] | None = None
 _PROC_CACHE_TTL_S: float = 60.0
+
+#: Watchdog thresholds for daemon progress staleness (Sprint 24.5).
+DAEMON_STALL_WARNING_S: float = 300.0
+DAEMON_STALL_CRITICAL_S: float = 1800.0
+
+
+def daemon_stall_seconds(
+    *, now_ms: int | None = None, progress_path: Path | None = None
+) -> float | None:
+    """Seconds since the daemon last wrote cycle_progress, or ``None``.
+
+    ``None`` means "no daemon state at all" (fresh workspace or the daemon
+    never ran) — not a stall.
+    """
+    current_ms = now_ms if now_ms is not None else int(time.time() * 1000)
+    path = progress_path
+    if path is None:
+        from evolver.gep.paths import get_cycle_progress_path
+
+        path = get_cycle_progress_path()
+    try:
+        raw = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return None
+    if not isinstance(raw, dict):
+        return None
+    updated_at = raw.get("updated_at")
+    if not isinstance(updated_at, (int, float)):
+        return None
+    return max(0.0, (current_ms - float(updated_at)) / 1000.0)
 
 
 def _get_process_count() -> int | None:
@@ -249,6 +280,39 @@ def run_health_check(
                 severity="info",
             )
         )
+
+    # 5. Daemon stall watchdog — cycle_progress.updated_at freshness
+    # (Node v2 daemon/watchdog.js lastWriteAt semantics; Sprint 24.5).
+    stall = daemon_stall_seconds()
+    if stall is not None:
+        if stall > DAEMON_STALL_CRITICAL_S:
+            checks.append(
+                CheckResult(
+                    name="daemon_stall",
+                    ok=False,
+                    status=f"no progress write for {stall:.0f}s",
+                    severity="critical",
+                )
+            )
+            critical_errors += 1
+        elif stall > DAEMON_STALL_WARNING_S:
+            checks.append(
+                CheckResult(
+                    name="daemon_stall",
+                    ok=False,
+                    status=f"slow progress ({stall:.0f}s since last write)",
+                    severity="warning",
+                )
+            )
+            warnings += 1
+        else:
+            checks.append(
+                CheckResult(
+                    name="daemon_stall",
+                    ok=True,
+                    status=f"last write {stall:.0f}s ago",
+                )
+            )
 
     # Overall status
     if critical_errors > 0:

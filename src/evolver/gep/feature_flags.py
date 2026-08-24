@@ -78,6 +78,13 @@ DEFAULT_FLAGS: dict[str, bool] = {
     # Sprint 23.3 ATP spawn bridge (P2-11 minimal): print sessions_spawn for
     # picked-up ATP tasks when bridge mode is active.
     "enable_atp_spawn_bridge": False,
+    # Sprint 24.1 event projection (演进方案.md §9 概念收割 #3): operator-bandit
+    # category stats derive from the shared replay projector instead of an
+    # inline scan; ``evolver rebuild-views`` persists derived views.
+    "enable_event_projection": False,
+    # Sprint 24.4 trigger budget (概念收割 — Node v2 trigger/budget.js):
+    # preflight enforces daily cycle caps (EVOLVER_MAX_CYCLES_PER_DAY et al).
+    "enable_trigger_budget": False,
     # Proxy-only routes (also readable via ``EVOLVER_FF_*``)
     "enable_skill_auto_update": False,
     "enable_trace_upload": False,

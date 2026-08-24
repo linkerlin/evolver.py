@@ -218,6 +218,25 @@ async def run_preflight_checks(is_loop: bool = False, is_dry_run: bool = False) 
             reason=f"release window active ({release_eval.reason})",
         )
 
+    # Sprint 24.4 (enable_trigger_budget): daily caps on cycle firing —
+    # Node v2 trigger/budget.js semantics (fire ⟺ budget available).
+    from evolver.gep.feature_flags import is_enabled
+
+    if is_enabled("enable_trigger_budget"):
+        from evolver.gep.trigger_engine import DailyBudget
+
+        budget = DailyBudget()
+        if not budget.can_fire():
+            return PreflightResult(
+                abort=True,
+                reason=(
+                    f"daily budget exhausted "
+                    f"(cycles={budget.snapshot()['cycles']}"
+                    f"/{budget.max_cycles or '∞'})"
+                ),
+            )
+        budget.consume()
+
     return PreflightResult(abort=False)
 
 

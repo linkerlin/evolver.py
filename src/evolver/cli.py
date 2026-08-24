@@ -147,6 +147,10 @@ def _build_parser() -> argparse.ArgumentParser:
     replay_p = sub.add_parser("replay", help="Replay events from SQLite store")
     replay_p.add_argument("--since-id", type=int, default=0, help="Start after this row id")
     replay_p.add_argument("--limit", type=int, default=100, help="Max events to replay")
+    views_p = sub.add_parser(
+        "rebuild-views", help="Rebuild derived event projections (Sprint 24.1)"
+    )
+    views_p.add_argument("--json", action="store_true", help="Print full projection JSON")
     experiment_p = sub.add_parser(
         "experiment", help="Run a controlled evolution experiment (baseline vs evolved)"
     )
@@ -392,6 +396,9 @@ def main(argv: Sequence[str] | None = None) -> int:
         return asyncio.run(_cmd_atp(args))
     if command == "replay":
         return _cmd_replay(args)
+
+    if command == "rebuild-views":
+        return _cmd_rebuild_views(args)
 
     if command == "experiment":
         return _cmd_experiment(args)
@@ -859,6 +866,26 @@ def _cmd_replay(args: argparse.Namespace) -> int:
         ts = evt.get("timestamp", "?")
         gid = evt.get("gene_id", "?")
         print(f"  {eid}  {ts}  {gid}")
+    return 0
+
+
+def _cmd_rebuild_views(args: argparse.Namespace) -> int:
+    """Sprint 24.1: replay the event log into derived projections."""
+    import json as _json
+
+    from evolver.gep.event_projection import rebuild_projections
+
+    views = rebuild_projections()
+    if args.json:
+        print(_json.dumps(views, ensure_ascii=False, indent=2))
+        return 0
+    genes = len(views.get("gene_outcomes") or {})
+    cycles = len(views.get("cycle_timeline") or {})
+    scored = len(views.get("scored_categories") or [])
+    print(
+        f"Rebuilt projections from {views.get('event_count', 0)} event(s): "
+        f"{genes} gene(s), {cycles} cycle(s), {scored} scored category event(s)"
+    )
     return 0
 
 

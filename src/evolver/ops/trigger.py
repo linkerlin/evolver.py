@@ -23,11 +23,23 @@ def _trigger_file_path() -> Path:
     return get_memory_dir() / TRIGGER_FILE_NAME
 
 
+def _draining() -> bool:
+    """Lazy drain check — avoids importing the pipeline at module load."""
+    try:
+        from evolver.evolve.runner import is_draining
+
+        return is_draining()
+    except Exception:
+        return False
+
+
 def check_file_trigger() -> bool:
     """Check if the filesystem trigger file exists.
 
     Returns True if a trigger is present and has not been consumed.
     """
+    if _draining():
+        return False
     path = _trigger_file_path()
     return path.exists()
 
@@ -73,6 +85,8 @@ def create_file_trigger(payload: dict[str, Any] | str | None = None) -> dict[str
 
 def check_http_trigger_allowed() -> bool:
     """Check if enough time has passed since the last HTTP trigger."""
+    if _draining():
+        return False
     return time.time() - _last_trigger_time >= TRIGGER_COOLDOWN_SECONDS
 
 
@@ -82,6 +96,8 @@ def record_http_trigger(source: str = "unknown") -> dict[str, Any]:
     Returns the trigger payload if allowed, or a cooldown rejection.
     """
     global _last_trigger_time
+    if _draining():
+        return {"ok": False, "error": "draining"}
     now = time.time()
     elapsed = now - _last_trigger_time
     if elapsed < TRIGGER_COOLDOWN_SECONDS:
@@ -109,6 +125,8 @@ async def wait_for_trigger(
     """
     start = time.time()
     while True:
+        if _draining():
+            return None
         payload = consume_file_trigger()
         if payload is not None:
             return payload

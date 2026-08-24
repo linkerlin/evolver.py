@@ -87,6 +87,13 @@ OPERATOR_UCB1_C: float = 1.0
 def _category_stats() -> dict[str, dict[str, float]]:
     """Per-category graded-outcome stats from recent EvolutionEvents."""
     try:
+        # Sprint 24.1 (enable_event_projection): derive via the shared replay
+        # projector — same filter/window/shape as the historical inline scan.
+        if is_enabled("enable_event_projection"):
+            from evolver.gep.event_projection import scored_category_window
+
+            return scored_category_window(window=50)
+
         from evolver.gep.asset_store import read_all_events
 
         stats: dict[str, dict[str, float]] = {}
