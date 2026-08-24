@@ -20,6 +20,34 @@ class TestIdempotency:
         assert not idem.once("c1", "tick")
         assert idem.once("c2", "tick")  # different cycle → fires again
 
+    def test_post_cycle_without_identity_ungated(self, temp_workspace: Path) -> None:
+        """No cycle_id/run_id in ctx → tick must still run (no empty key)."""
+        from unittest.mock import AsyncMock
+
+        from evolver.atp import auto_buyer
+        from evolver.evolve.post_cycle import run_post_cycle_hooks
+        from evolver.gep.feature_flags import invalidate_cache, set_flag
+
+        set_flag("enable_auto_buyer", True)
+        invalidate_cache()
+        try:
+            run_tick = AsyncMock(return_value={"placed": 0})
+            get_consent = lambda: {"enabled": True}  # noqa: E731
+            orig_tick, orig_consent = auto_buyer.run_tick, auto_buyer.get_consent
+            auto_buyer.run_tick = run_tick  # type: ignore[method-assign]
+            auto_buyer.get_consent = get_consent  # type: ignore[method-assign]
+            try:
+                import asyncio
+
+                asyncio.run(run_post_cycle_hooks({"signals": ["log_error"]}))
+                assert run_tick.await_count == 1
+            finally:
+                auto_buyer.run_tick = orig_tick  # type: ignore[method-assign]
+                auto_buyer.get_consent = orig_consent  # type: ignore[method-assign]
+        finally:
+            set_flag("enable_auto_buyer", False)
+            invalidate_cache()
+
     def test_ttl_expiry(self) -> None:
         old = 0.0
         idem.mark_done("c1", "op", now=old)
@@ -98,3 +126,37 @@ class TestDrainRefusal:
         finally:
             runner._shutdown_requested = False
         assert isinstance(before, bool)
+
+
+class TestFailureEventParity:
+    """Sprint 24.6 (enable_failure_events): silent rejection paths land events."""
+
+    def test_append_failure_event_flag_gated(self, temp_workspace: Path) -> None:
+        from evolver.gep.asset_store import read_all_events
+        from evolver.gep.feature_flags import invalidate_cache, set_flag
+        from evolver.gep.solidify import _append_failure_event
+
+        last_run: dict[str, object] = {
+            "run_id": "r_fail",
+            "selected_gene_id": "g1",
+            "signals": ["log_error"],
+            "mutation": {"category": "repair"},
+        }
+
+        set_flag("enable_failure_events", False)
+        invalidate_cache()
+        _append_failure_event(
+            last_run, temp_workspace, blast_radius={"files": 1, "lines": 2}, error="x"
+        )
+        assert read_all_events() == []  # flag off → silent (v1.94 parity)
+
+        set_flag("enable_failure_events", True)
+        invalidate_cache()
+        _append_failure_event(
+            last_run, temp_workspace, blast_radius={"files": 1, "lines": 2}, error="y"
+        )
+        events = read_all_events()
+        assert len(events) == 1
+        assert events[0]["outcome"] == {"status": "failed", "score": 0.0, "error": "y"}
+        assert events[0]["gene_id"] == "g1"
+        set_flag("enable_failure_events", False)

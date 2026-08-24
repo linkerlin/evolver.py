@@ -290,14 +290,52 @@ def _apply_acceptance_gate(
     # enforce (gray-scale — measure interception/false-kill rates first).
     if ACCEPTANCE_SHADOW:
         return None
+    failed_blast = _compute_blast_radius()
     rollback_tracked(cwd=cwd, include_untracked=False)
     rollback_new_untracked_files(_disposable_untracked(cwd), cwd=cwd)
     record_solidify_failure(last_run, error="acceptance_gate_rejected")
+    _append_failure_event(
+        last_run,
+        cwd,
+        blast_radius=failed_blast,
+        error="acceptance_gate_rejected",
+    )
     return {
         "ok": False,
         "error": "acceptance_gate_rejected",
         "details": {"acceptance": gate_result.model_dump()},
     }
+
+
+def _append_failure_event(
+    last_run: dict[str, Any],
+    cwd: Path,
+    *,
+    blast_radius: dict[str, int],
+    error: str,
+    score: float = 0.0,
+) -> None:
+    """Sprint 24.6 (enable_failure_events): land failed EvolutionEvents on
+    rejection paths that historically stayed silent (Node v2 emits failure
+    events on every terminal outcome). Flag-off → byte-identical with
+    v1.94.0 parity behavior."""
+    if not is_enabled("enable_failure_events"):
+        return
+    append_event_jsonl(
+        {
+            "type": "EvolutionEvent",
+            "id": f"evt_{int(time.time() * 1000)}_{secrets.token_hex(4)}",
+            "run_id": last_run.get("run_id") or (last_run.get("mutation") or {}).get("id"),
+            "timestamp": time.strftime("%Y-%m-%dT%H:%M:%S.", time.gmtime())
+            + f"{int((time.time() % 1) * 1000):03d}Z",
+            "gene_id": last_run.get("selected_gene_id"),
+            "signals": last_run.get("signals", []),
+            "mutation": last_run.get("mutation", {}),
+            "blast_radius": blast_radius,
+            "outcome": {"status": "failed", "score": score, "error": error},
+            **_lineage_fields(),
+        }
+    )
 
 
 def _compute_blast_radius() -> dict[str, int]:
@@ -620,9 +658,15 @@ def solidify(
                     validation_result=validation_result,
                     validation_report=validation_report,
                 )
+            # Blast radius must be captured BEFORE the rollback (Sprint 23
+            # lesson — after rollback the tree is clean and radius reads 0).
+            failed_blast = _compute_blast_radius()
             rollback_tracked()
             rollback_new_untracked_files(git_list_untracked_files(cwd))
             record_solidify_failure(last_run, error="validation_failed")
+            _append_failure_event(
+                last_run, cwd, blast_radius=failed_blast, error="validation_failed"
+            )
             details: dict[str, Any] = dict(validation_result)
             if validation_report is not None:
                 details["validation_report"] = validation_report

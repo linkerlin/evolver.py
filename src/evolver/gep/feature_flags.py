@@ -85,6 +85,10 @@ DEFAULT_FLAGS: dict[str, bool] = {
     # Sprint 24.4 trigger budget (概念收割 — Node v2 trigger/budget.js):
     # preflight enforces daily cycle caps (EVOLVER_MAX_CYCLES_PER_DAY et al).
     "enable_trigger_budget": False,
+    # Sprint 24.6 failure event parity (Node v2: every terminal outcome lands
+    # an event): non-cascade validation failures + acceptance-gate rejections
+    # append failed EvolutionEvents instead of staying silent.
+    "enable_failure_events": False,
     # Proxy-only routes (also readable via ``EVOLVER_FF_*``)
     "enable_skill_auto_update": False,
     "enable_trace_upload": False,

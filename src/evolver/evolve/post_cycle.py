@@ -62,11 +62,14 @@ async def run_post_cycle_hooks(ctx: dict[str, Any]) -> dict[str, Any]:
             consent = auto_buyer.get_consent()
             # Sprint 24.5: a retried cycle must not double-fire the
             # money-touching tick (Node v2 daemon/idempotency.js semantics).
-            if (
-                consent
-                and consent.get("enabled")
-                and once(str(ctx.get("cycle_id", "")), "atp_auto_buyer_tick")
-            ):
+            # No cycle identity → no safe dedup key → run ungated.
+            dedup_id = str(ctx.get("cycle_id") or ctx.get("run_id") or "")
+            gated = (
+                consent is not None
+                and bool(consent.get("enabled"))
+                and (not dedup_id or once(dedup_id, "atp_auto_buyer_tick"))
+            )
+            if gated:
                 result = await auto_buyer.run_tick(signals)
                 ctx["atp_auto_buyer"] = result
                 if result.get("placed", 0) > 0:

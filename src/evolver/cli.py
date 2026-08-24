@@ -151,6 +151,7 @@ def _build_parser() -> argparse.ArgumentParser:
         "rebuild-views", help="Rebuild derived event projections (Sprint 24.1)"
     )
     views_p.add_argument("--json", action="store_true", help="Print full projection JSON")
+    sub.add_parser("mcp", help="Run the MCP server over stdio (Sprint 24.7)")
     experiment_p = sub.add_parser(
         "experiment", help="Run a controlled evolution experiment (baseline vs evolved)"
     )
@@ -399,6 +400,11 @@ def main(argv: Sequence[str] | None = None) -> int:
 
     if command == "rebuild-views":
         return _cmd_rebuild_views(args)
+
+    if command == "mcp":
+        from evolver.mcp_server import main as mcp_main
+
+        return mcp_main()
 
     if command == "experiment":
         return _cmd_experiment(args)
