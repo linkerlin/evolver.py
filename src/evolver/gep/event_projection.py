@@ -127,9 +127,32 @@ def scored_category_window(window: int = 50) -> dict[str, dict[str, float]]:
     return stats
 
 
+def augment_gene_stats(stats: dict[str, dict[str, float]]) -> dict[str, dict[str, float]]:
+    """Merge replay-derived ``gene_outcomes`` into selector geneStats.
+
+    Niche (memory-graph) tallies keep precedence for genes they know;
+    the projection fills genes unseen in this niche with global evidence
+    so UCB1's exploration term reflects real risk instead of treating
+    globally-tried genes as untested.
+    """
+    from evolver.gep.asset_store import read_all_events
+
+    merged = {gid: dict(row) for gid, row in stats.items()}
+    for gid, row in project_events(read_all_events())["gene_outcomes"].items():
+        if gid in merged:
+            continue
+        merged[gid] = {
+            "attempts": float(row.get("attempts", 0.0)),
+            "successes": float(row.get("successes", 0.0)),
+            "failures": float(row.get("failures", 0.0)),
+        }
+    return merged
+
+
 __all__ = [
     "PROJECTIONS_FILENAME",
     "SCHEMA_VERSION",
+    "augment_gene_stats",
     "load_projections",
     "project_events",
     "projections_path",

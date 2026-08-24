@@ -40,12 +40,23 @@ def run_comparison(
     comparison = compare_metrics(baseline_metrics, evolved_metrics)
     report = format_report(baseline_metrics, evolved_metrics, comparison)
 
+    # Sprint 24.9: statistical thesis verdict (z-test ∧ practical delta ∧ n≥30).
+    from evolver.experiment.stats import evaluate_thesis
+
+    thesis = evaluate_thesis(
+        int(baseline_metrics.get("successes", 0)),
+        int(baseline_metrics.get("total", 0)),
+        int(evolved_metrics.get("successes", 0)),
+        int(evolved_metrics.get("total", 0)),
+    )
+
     return {
         "baseline_results": baseline_results,
         "evolved_results": evolved_results,
         "baseline_metrics": baseline_metrics,
         "evolved_metrics": evolved_metrics,
         "comparison": comparison,
+        "thesis": thesis,
         "report": report,
     }
 

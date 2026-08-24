@@ -368,6 +368,14 @@ def select_gene_and_capsule(ctx: dict[str, Any]) -> dict[str, Any]:
     # Sprint 22.3: bandit sampling unless in review mode (deterministic).
     bandit = is_enabled("enable_bandit_selection") and not bool(ctx.get("IS_REVIEW_MODE"))
 
+    gene_stats: dict[str, dict[str, float]] = memory_advice.get("geneStats") or {}
+    # Sprint 24.9 (enable_event_projection): cold-start genes get global
+    # replay-derived tallies so UCB1 exploration reflects real risk.
+    if is_enabled("enable_event_projection"):
+        from evolver.gep.event_projection import augment_gene_stats
+
+        gene_stats = augment_gene_stats(gene_stats)
+
     selector = select_gene(
         genes,
         signals,
@@ -379,7 +387,7 @@ def select_gene_and_capsule(ctx: dict[str, Any]) -> dict[str, Any]:
             "memoryEvidence": memory_evidence,
             "livingMemoryHints": memory_advice.get("livingMemoryHints") or [],
             "bandit": bandit,
-            "geneStats": memory_advice.get("geneStats") or {},
+            "geneStats": gene_stats,
         },
     )
 
