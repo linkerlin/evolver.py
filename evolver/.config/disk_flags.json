@@ -19,6 +19,7 @@
   "enable_llm_review": true,
   "enable_llm_template": false,
   "enable_local_state_awareness": true,
+  "enable_material_ingest": false,
   "enable_memory_graph": true,
   "enable_niche_topk": false,
   "enable_novelty_gate": false,
