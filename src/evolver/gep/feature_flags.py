@@ -93,6 +93,9 @@ DEFAULT_FLAGS: dict[str, bool] = {
     # collect phase feeds session logs through the watermarked incremental
     # store with consumer groups instead of whole-file rescans.
     "enable_material_ingest": False,
+    # Sprint 24.12 personality v2 (概念收割 #12 — Node v2 personality/*):
+    # five-axis vector + bucketed Laplace stats + natural-selection nudge.
+    "enable_personality_v2": False,
     # Proxy-only routes (also readable via ``EVOLVER_FF_*``)
     "enable_skill_auto_update": False,
     "enable_trace_upload": False,
