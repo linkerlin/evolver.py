@@ -152,6 +152,21 @@ def _build_parser() -> argparse.ArgumentParser:
     )
     views_p.add_argument("--json", action="store_true", help="Print full projection JSON")
     sub.add_parser("mcp", help="Run the MCP server over stdio (Sprint 24.7)")
+    wf_p = sub.add_parser("workflow", help="Durable workflow engine (Sprint 24.10)")
+    wf_sub = wf_p.add_subparsers(dest="workflow_action", required=True)
+    wf_run = wf_sub.add_parser("run", help="Run a workflow spec file")
+    wf_run.add_argument("spec_file", help="Path to workflow JSON spec")
+    wf_run.add_argument("--id", default=None, help="Override workflow id")
+    wf_sub.add_parser("status", help="Show workflow state").add_argument("id")
+    wf_approve = wf_sub.add_parser("approve", help="Approve a waiting workflow")
+    wf_approve.add_argument("id")
+    wf_approve.add_argument("--note", default=None)
+    wf_reject = wf_sub.add_parser("reject", help="Reject a waiting workflow")
+    wf_reject.add_argument("id")
+    wf_reject.add_argument("--note", default=None)
+    wf_sub.add_parser("resume", help="Resume a retry_wait/waiting_agent workflow").add_argument(
+        "id"
+    )
     experiment_p = sub.add_parser(
         "experiment", help="Run a controlled evolution experiment (baseline vs evolved)"
     )
@@ -405,6 +420,9 @@ def main(argv: Sequence[str] | None = None) -> int:
         from evolver.mcp_server import main as mcp_main
 
         return mcp_main()
+
+    if command == "workflow":
+        return _cmd_workflow(args)
 
     if command == "experiment":
         return _cmd_experiment(args)
@@ -893,6 +911,57 @@ def _cmd_rebuild_views(args: argparse.Namespace) -> int:
         f"{genes} gene(s), {cycles} cycle(s), {scored} scored category event(s)"
     )
     return 0
+
+
+def _cmd_workflow(args: argparse.Namespace) -> int:
+    """Sprint 24.10: durable workflow verbs."""
+    import json as _json
+
+    from evolver.gep.workflow import WorkflowEngine
+
+    engine = WorkflowEngine()
+    action = args.workflow_action
+
+    if action == "run":
+        try:
+            spec = _json.loads(Path(args.spec_file).read_text(encoding="utf-8"))
+        except (OSError, _json.JSONDecodeError) as exc:
+            print(f"workflow: cannot read spec: {exc}")
+            return 1
+        if args.id:
+            spec["id"] = args.id
+        state = engine.create(spec)
+        engine.run(state)
+        print(f"workflow {state.id}: {state.status} (step {state.step_index}/{len(spec['steps'])})")
+        if state.error:
+            print(f"  error: {state.error}")
+        return 0 if state.status == "done" else 1
+
+    if action == "status":
+        try:
+            print(_json.dumps(engine.status(args.id), ensure_ascii=False, indent=2))
+        except LookupError as exc:
+            print(f"workflow: {exc}")
+            return 1
+        return 0
+
+    if action == "approve":
+        state = engine.approve(args.id, note=args.note)
+        print(f"workflow {state.id}: {state.status}")
+        return 0
+
+    if action == "reject":
+        state = engine.reject(args.id, note=args.note)
+        print(f"workflow {state.id}: {state.status}")
+        return 0
+
+    if action == "resume":
+        state = engine.resume(args.id)
+        print(f"workflow {state.id}: {state.status}")
+        return 0
+
+    print(f"workflow: unknown action {action}")
+    return 1
 
 
 def _cmd_experiment(args: argparse.Namespace) -> int:
