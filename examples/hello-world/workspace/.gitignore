@@ -1,2 +1,5 @@
 *
 !.gitignore
+
+# evolver: wiki knowledge layer — never rolled back (S27)
+memory/evolution/wiki/

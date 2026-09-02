@@ -224,5 +224,8 @@ __marimo__/
 
 evolver/.config/disk_flags.json
 
+# evolver runtime state (GEP assets etc.)
+.evolver/
+
 # evolver: wiki knowledge layer — never rolled back (S27)
 memory/evolution/wiki/
