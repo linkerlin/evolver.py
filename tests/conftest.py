@@ -2,10 +2,29 @@
 
 from __future__ import annotations
 
+import sys
 import tempfile
 from pathlib import Path
+from typing import Any
 
 import pytest
+
+
+@pytest.fixture(autouse=True)
+def _neutral_fitness_cascade(monkeypatch: pytest.MonkeyPatch) -> None:
+    """S26: the fitness cascade is the DEFAULT solidify validation path.
+
+    Sandboxed test workspaces have no src/tests for ruff/mypy/pytest to
+    inspect, so swap in a workspace-neutral command set globally. Tests that
+    exercise cascade mechanics monkeypatch FITNESS_CASCADE_COMMANDS again;
+    legacy-path tests set enable_fitness_cascade=False explicitly.
+    """
+    from evolver.gep import solidify as solidify_mod
+
+    neutral: list[dict[str, Any]] = [
+        {"command": [sys.executable, "-c", "print('ok')"]},
+    ]
+    monkeypatch.setattr(solidify_mod, "FITNESS_CASCADE_COMMANDS", neutral)
 
 
 @pytest.fixture

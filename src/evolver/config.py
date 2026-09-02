@@ -219,9 +219,11 @@ DIAGNOSIS_MAX_EVENTS: Final = env_int("EVOLVER_DIAGNOSIS_MAX_EVENTS", 20)
 # --- Self-Harness acceptance gate (Sprint A1; opt-in, off by default) ---
 ACCEPTANCE_REPEATS: Final = env_int("EVOLVER_ACCEPTANCE_REPEATS", 2)
 ACCEPTANCE_DELTA_EPSILON: Final = env_float("EVOLVER_ACCEPTANCE_DELTA_EPSILON", 0.0)
-# Sprint 22.5 gray-scale: compute + record gate verdicts but never enforce
-# (interception / false-kill rates measurable before turning the gate on).
-ACCEPTANCE_SHADOW: Final = env_bool("EVOLVER_ACCEPTANCE_SHADOW", False)
+# Sprint 22.5 gray-scale + S26 promotion: compute + record gate verdicts but
+# never enforce during the soak window (interception / false-kill rates are
+# measured on events as shadow markers). Set EVOLVER_ACCEPTANCE_SHADOW=0 to
+# start enforcing (planned after the soak: 演进方案_wikiskill对照版.md §S26.3).
+ACCEPTANCE_SHADOW: Final = env_bool("EVOLVER_ACCEPTANCE_SHADOW", True)
 
 # --- Self-Harness multi-proposer (Sprint C2; 1 = existing single-proposal) ---
 MULTI_PROPOSE_ROUTES: Final = env_int("EVOLVER_MULTI_PROPOSE_ROUTES", 1)
@@ -233,6 +235,10 @@ FITNESS_CASCADE_COMMANDS: Final[list[dict[str, Any]]] = [
     {"command": ["mypy", "src"]},
     {"command": ["pytest", "-m", "not slow", "-q"], "timeout_ms": FITNESS_PYTEST_TIMEOUT_MS},
 ]
+# S26.3 strict-improvement gate (r_best ledger): shadow period records verdicts
+# only; set EVOLVER_FITNESS_GATE_ENFORCE=1 to roll back no_improvement
+# mutations (same gray-scale pattern as EVOLVER_ACCEPTANCE_SHADOW).
+FITNESS_GATE_ENFORCE: Final = env_bool("EVOLVER_FITNESS_GATE_ENFORCE", False)
 
 # --- Self-Harness external LLM templates (Sprint D) ---
 LLM_CALL_DIR: Final = env_str("EVOLVER_LLM_CALL_DIR", "<GEP_ASSETS_DIR>/llm_calls")

@@ -1,0 +1,57 @@
+{
+  "captured_at": "2026-09-01T14:00:26Z",
+  "git_head": "72891eae8fc3742563544ac25f463e561c27df05",
+  "pyproject_version": "1.96.0",
+  "effective_flags": {
+    "enable_llm_review": true,
+    "enable_auto_buyer": false,
+    "enable_validator": true,
+    "enable_recall_inject": true,
+    "enable_reflection": true,
+    "enable_auto_distill": true,
+    "enable_curriculum": false,
+    "enable_explore": false,
+    "enable_idle_scheduler": true,
+    "enable_local_state_awareness": true,
+    "enable_policy_check": true,
+    "enable_secret_sanitize": true,
+    "enable_memory_graph": true,
+    "enable_diagnosis": false,
+    "enable_diagnosis_cluster": false,
+    "enable_acceptance_gate": true,
+    "enable_surface_decouple": false,
+    "enable_constrained_genes": false,
+    "enable_llm_template": false,
+    "enable_event_history": false,
+    "enable_gap_outcome_inference": false,
+    "enable_windows_load_guard": false,
+    "enable_fitness_cascade": true,
+    "enable_bandit_selection": false,
+    "enable_niche_topk": false,
+    "enable_lineage_lessons": false,
+    "enable_novelty_gate": false,
+    "enable_operator_bandit": false,
+    "enable_atp_spawn_bridge": false,
+    "enable_event_projection": false,
+    "enable_trigger_budget": false,
+    "enable_failure_events": true,
+    "enable_material_ingest": false,
+    "enable_personality_v2": false,
+    "enable_skill_auto_update": false,
+    "enable_trace_upload": false
+  },
+  "fitness_ledger": {
+    "baseline": null,
+    "r_best": null,
+    "history": []
+  },
+  "events": {
+    "count": 93,
+    "status_counts": {
+      "None": 93
+    },
+    "measured_scores": [],
+    "score_mean": null,
+    "gep_assets_dir": "C:\\GitHub\\evolver.py\\.evolver\\gep"
+  }
+}

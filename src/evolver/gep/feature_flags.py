@@ -49,7 +49,11 @@ DEFAULT_FLAGS: dict[str, bool] = {
     # Self-Harness enhancement layer (Sprint B1+; opt-in, off by default).
     "enable_diagnosis": False,
     "enable_diagnosis_cluster": False,
-    "enable_acceptance_gate": False,
+    # S26 promotion (演进方案_wikiskill对照版.md §S26.3): the T0 acceptance gate
+    # is now ON by default, paired with ACCEPTANCE_SHADOW=True so verdicts are
+    # measured (shadow markers on events) but never enforced during the soak
+    # window. Enforcement flips on via EVOLVER_ACCEPTANCE_SHADOW=0.
+    "enable_acceptance_gate": True,
     "enable_surface_decouple": False,
     "enable_constrained_genes": False,
     "enable_llm_template": False,
@@ -57,9 +61,13 @@ DEFAULT_FLAGS: dict[str, bool] = {
     "enable_event_history": False,
     "enable_gap_outcome_inference": False,
     "enable_windows_load_guard": False,
-    # Sprint 22.2 quantitative fitness (演进方案.md §13.5 P1-4): engine-owned
-    # validation cascade (ruff → mypy → pytest), outcome score = cascade progress.
-    "enable_fitness_cascade": False,
+    # S26 promotion (演进方案_wikiskill对照版.md §S26.2): quantitative fitness
+    # is now the DEFAULT path — engine-owned validation cascade (ruff → mypy →
+    # pytest), outcome score = cascade progress (see solidify._cascade_score).
+    # Unavailable commands are filtered per-workspace (solidify.
+    # get_fitness_cascade_commands) so non-Python workspaces degrade to the
+    # legacy path instead of failing every cycle.
+    "enable_fitness_cascade": True,
     # Sprint 22.3 bandit selection (演进方案.md §13.5 P1-5): UCB1-sampled parent
     # choice instead of argmax; --review keeps deterministic selection.
     "enable_bandit_selection": False,
@@ -85,10 +93,9 @@ DEFAULT_FLAGS: dict[str, bool] = {
     # Sprint 24.4 trigger budget (概念收割 — Node v2 trigger/budget.js):
     # preflight enforces daily cycle caps (EVOLVER_MAX_CYCLES_PER_DAY et al).
     "enable_trigger_budget": False,
-    # Sprint 24.6 failure event parity (Node v2: every terminal outcome lands
-    # an event): non-cascade validation failures + acceptance-gate rejections
-    # append failed EvolutionEvents instead of staying silent.
-    "enable_failure_events": False,
+    # S26 promotion: terminal failures always land an event — silence is not
+    # an honest outcome (wikiskill honest-negative principle).
+    "enable_failure_events": True,
     # Sprint 24.8 material substrate (概念收割 #6 — Node v2 material/*):
     # collect phase feeds session logs through the watermarked incremental
     # store with consumer groups instead of whole-file rescans.

@@ -1,6 +1,6 @@
 [project]
 name = "evolver"
-version = "1.95.0"
+version = "1.96.0"
 description = "A GEP-powered self-evolution engine for AI agents (Python port of @evomap/evolver)"
 readme = "README.md"
 license = { text = "Apache-2.0" }
@@ -20,9 +20,7 @@ classifiers = [
 ]
 
 dependencies = [
-    "click>=8.1",
     "pydantic>=2.9",
-    "pydantic-settings>=2.5",
     "python-dotenv>=1.0",
     "httpx[http2]>=0.27",
     "fastapi>=0.115",
@@ -30,11 +28,18 @@ dependencies = [
     "cryptography>=43.0",
     "filelock>=3.16",
     "psutil>=6.0",
-    "GitPython>=3.1",
-    "boto3>=1.35",
     "keyring>=25.4",
     "mcp>=2.0.0",
 ]
+
+[project.optional-dependencies]
+# Bedrock SSE relay only (lazy-imported in proxy/router/messages_route.py with
+# a not-installed fallback); install with `evolver[bedrock]`.
+bedrock = ["boto3>=1.35"]
+
+# S25.4 dependency audit (docs/dependency-audit.md): click / pydantic-settings
+# / GitPython removed — zero references across src/tests/scripts; boto3 moved
+# to the optional `bedrock` extra (3 lazy imports in messages_route.py).
 
 [project.scripts]
 evolver = "evolver.cli:main"

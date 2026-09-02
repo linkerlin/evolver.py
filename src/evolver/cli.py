@@ -73,6 +73,11 @@ def _build_parser() -> argparse.ArgumentParser:
     watch_p = sub.add_parser("watch", help="Run the health-watch supervisor")
     watch_p.add_argument("--once", action="store_true", help="Check once and exit")
     sub.add_parser("solidify", help="Apply pending mutation")
+    apply_prop_p = sub.add_parser(
+        "apply-proposal",
+        help="S29: mechanically apply a gene proposal JSON (anchors validated, workspace-safe)",
+    )
+    apply_prop_p.add_argument("proposal_file", help="Path to a GeneProposal JSON file")
     sub.add_parser("review", help="Review pending solidify")
     sr_p = sub.add_parser("self-report", help="Autopoiesis self-report and rule evolution")
     sr_p.add_argument(
@@ -173,6 +178,49 @@ def _build_parser() -> argparse.ArgumentParser:
     experiment_p.add_argument("--tasks", required=True, help="Path to tasks JSON (list of dicts)")
     experiment_p.add_argument("--genes", default=None, help="Path to genes JSON (list of dicts)")
     experiment_p.add_argument("--output", default=None, help="Path to write results JSON")
+    bench_p = sub.add_parser(
+        "bench", help="Benchmark the workspace (S26.1: health tasks + fitness ledger)"
+    )
+    bench_sub = bench_p.add_subparsers(dest="bench_action", required=True)
+    bench_sub.add_parser("list", help="List built-in health benchmark tasks")
+    bench_init = bench_sub.add_parser(
+        "init",
+        help="Write the built-in deterministic task pack (12 tasks) to <dir>/tasks.json",
+    )
+    bench_init.add_argument("dir", nargs="?", default=".", help="Target directory")
+    bench_run = bench_sub.add_parser(
+        "run", help="Run health tasks (or a task pack) and record R into the fitness ledger"
+    )
+    bench_run.add_argument(
+        "--no-record", action="store_true", help="Score only — do not touch the r_best ledger"
+    )
+    bench_run.add_argument("--pack", default=None, help="Path to a tasks.json task pack")
+    bench_run.add_argument(
+        "--split",
+        default="val",
+        choices=["train", "val"],
+        help="Pack split to grade (S26.4: gate ONLY on val)",
+    )
+    bench_prompt_p = bench_sub.add_parser(
+        "prompt", help="Materialize a pack task's sandbox and print the agent prompt"
+    )
+    bench_prompt_p.add_argument("task_id")
+    bench_prompt_p.add_argument("--pack", required=True, help="Path to a tasks.json task pack")
+    bench_grade_p = bench_sub.add_parser(
+        "grade", help="Grade one pack task's deliverable (single score, no ledger write)"
+    )
+    bench_grade_p.add_argument("task_id")
+    bench_grade_p.add_argument("--pack", required=True, help="Path to a tasks.json task pack")
+    bench_run.add_argument(
+        "--output", default=None, help="Write per-task results JSON (for bench compare)"
+    )
+    bench_cmp = bench_sub.add_parser(
+        "compare",
+        help="S30: paired exact-binomial comparison of two run results ('did it help?')",
+    )
+    bench_cmp.add_argument("a", help="Results JSON A (from bench run --output)")
+    bench_cmp.add_argument("b", help="Results JSON B")
+    bench_cmp.add_argument("--alpha", type=float, default=0.05, help="Significance threshold")
     webui_p = sub.add_parser("webui", help="Launch the WebUI dashboard")
     webui_p.add_argument("--host", default="127.0.0.1", help="Bind host")
     webui_p.add_argument(
@@ -386,6 +434,8 @@ def main(argv: Sequence[str] | None = None) -> int:
         return _cmd_watch(args)
     if command == "solidify":
         return _cmd_solidify(args)
+    if command == "apply-proposal":
+        return _cmd_apply_proposal(args)
 
     if command == "self-report":
         return _cmd_self_report(args)
@@ -426,6 +476,9 @@ def main(argv: Sequence[str] | None = None) -> int:
 
     if command == "experiment":
         return _cmd_experiment(args)
+
+    if command == "bench":
+        return _cmd_bench(args)
 
     if command == "sync":
         return asyncio.run(_cmd_sync(args))
@@ -974,6 +1027,109 @@ def _cmd_experiment(args: argparse.Namespace) -> int:
     if args.output:
         experiment_args += ["--output", args.output]
     return experiment_main(experiment_args)
+
+
+def _cmd_apply_proposal(args: argparse.Namespace) -> int:
+    """S29: mechanically apply a gene proposal JSON — anchors validated,
+    workspace-safe, no partial application."""
+    import json as _json
+
+    from evolver.gep.paths import get_workspace_root
+    from evolver.gep.proposal import apply_proposal, parse_proposal
+
+    path = Path(args.proposal_file)
+    if not path.exists():
+        print(f"proposal file not found: {path}")
+        return 1
+    try:
+        proposal = parse_proposal(_json.loads(path.read_text(encoding="utf-8")))
+    except Exception as exc:
+        print(f"invalid proposal: {exc}")
+        return 1
+    try:
+        report = apply_proposal(proposal, get_workspace_root())
+    except ValueError as exc:
+        print(f"proposal rejected: {exc}")
+        return 1
+    if not report["applied"]:
+        print("no_action — a first-class outcome; nothing written, nothing owed.")
+        return 0
+    print(f"applied {report['action']}: {', '.join(report['files_changed'])}")
+    print("next: run 'evolver solidify' to validate and gate this mutation.")
+    return 0
+
+
+def _cmd_bench(args: argparse.Namespace) -> int:
+    """S26.1: benchmark the workspace; feeds the r_best fitness ledger."""
+    from evolver.bench import runner
+    from evolver.bench.runner import grade_pack_task, pack_prompt, run_pack
+
+    if args.bench_action == "list":
+        for spec in runner.HEALTH_TASKS:
+            print(f"{spec['id']}: {' '.join(spec['command'])} (weight={spec.get('weight', 1.0)})")
+        return 0
+
+    if args.bench_action == "init":
+        from evolver.bench.builtin_pack import build_pack, write_pack
+
+        path = write_pack(Path(args.dir) / "tasks.json")
+        tasks = build_pack()
+        splits: dict[str, int] = {}
+        for t in tasks:
+            splits[str(t["split"])] = splits.get(str(t["split"]), 0) + 1
+        print(f"wrote {len(tasks)} tasks to {path} ({splits})")
+        print("next: evolver bench prompt <task-id> --pack <path> | run --pack <path> --split val")
+        return 0
+
+    if args.bench_action == "compare":
+        from evolver.bench.compare import compare_runs
+
+        def _load_results(p: str) -> dict[str, Any]:
+            data = json.loads(Path(p).read_text(encoding="utf-8"))
+            if not isinstance(data, dict) or "per_task" not in data:
+                raise ValueError(f"{p} is not a run result (missing per_task)")
+            return data
+
+        try:
+            verdict = compare_runs(_load_results(args.a), _load_results(args.b), alpha=args.alpha)
+        except (ValueError, OSError, json.JSONDecodeError) as exc:
+            print(f"bench compare failed: {exc}")
+            return 1
+        print(json.dumps(verdict, indent=2, ensure_ascii=False))
+        return 0
+
+    if args.bench_action == "prompt":
+        try:
+            print(pack_prompt(Path(args.pack), args.task_id))
+        except (ValueError, OSError, json.JSONDecodeError) as exc:
+            print(f"bench prompt failed: {exc}")
+            return 1
+        return 0
+
+    if args.bench_action == "grade":
+        try:
+            score = grade_pack_task(Path(args.pack), args.task_id)
+        except (ValueError, OSError, json.JSONDecodeError) as exc:
+            print(f"bench grade failed: {exc}")
+            return 1
+        print(f"{args.task_id}: {score}")
+        return 0
+
+    if args.pack:
+        try:
+            result = run_pack(
+                Path(args.pack),
+                split=args.split,
+                record=not args.no_record,
+                output=Path(args.output) if args.output else None,
+            )
+        except (ValueError, OSError, json.JSONDecodeError) as exc:
+            print(f"bench run failed: {exc}")
+            return 1
+        return 0 if result["score"] is not None and result["score"] == 1.0 else 1
+
+    result = runner.run_health(record=not args.no_record)
+    return 0 if result["score"] is not None and result["score"] == 1.0 else 1
 
 
 def _cmd_asset_log(args: argparse.Namespace) -> int:

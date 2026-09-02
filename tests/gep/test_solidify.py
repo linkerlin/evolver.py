@@ -11,6 +11,7 @@ from typing import Any
 import pytest
 
 from evolver.gep import solidify as solidify_mod
+from evolver.gep.feature_flags import set_flag
 from evolver.gep.paths import get_gep_assets_dir, get_solidify_state_path
 from evolver.gep.solidify import (
     adapt_gene_from_learning,
@@ -105,8 +106,10 @@ def test_success_skip_validation(git_ws: Path) -> None:
     assert "files" in result["blast_radius"]
 
 
-def test_success_empty_validation(git_ws: Path) -> None:
+def test_success_empty_validation(git_ws: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     _ = git_ws
+    # Legacy path (cascade off): mutation.validation is the validation source.
+    set_flag("enable_fitness_cascade", False, persist=False)
     write_state_for_solidify(_last_run(mutation={"id": "m1", "validation": []}))
     assert solidify()["ok"] is True
 
@@ -175,6 +178,8 @@ def test_run_validations_timeout(git_ws: Path, monkeypatch: pytest.MonkeyPatch) 
 
 def test_solidify_validation_failed(git_ws: Path) -> None:
     _ = git_ws
+    # Legacy path (cascade off): mutation.validation drives validation.
+    set_flag("enable_fitness_cascade", False, persist=False)
     write_state_for_solidify(
         _last_run(
             mutation={
@@ -188,8 +193,10 @@ def test_solidify_validation_failed(git_ws: Path) -> None:
     assert result["error"] == "validation_failed"
 
 
-def test_solidify_validation_success(git_ws: Path) -> None:
+def test_solidify_validation_success(git_ws: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     _ = git_ws
+    # Legacy path (cascade off): mutation.validation drives validation.
+    set_flag("enable_fitness_cascade", False, persist=False)
     write_state_for_solidify(
         _last_run(
             mutation={
@@ -359,8 +366,10 @@ def test_write_state_overwrites(git_ws: Path) -> None:
     assert state["last_run"]["run_id"] == "second"
 
 
-def test_multi_validation_ok(git_ws: Path) -> None:
+def test_multi_validation_ok(git_ws: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     _ = git_ws
+    # Legacy path (cascade off): mutation.validation drives validation.
+    set_flag("enable_fitness_cascade", False, persist=False)
     write_state_for_solidify(
         _last_run(
             mutation={
@@ -375,8 +384,10 @@ def test_multi_validation_ok(git_ws: Path) -> None:
     assert solidify()["ok"] is True
 
 
-def test_multi_validation_second_fails(git_ws: Path) -> None:
+def test_multi_validation_second_fails(git_ws: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     _ = git_ws
+    # Legacy path (cascade off): both commands must run (no short-circuit).
+    set_flag("enable_fitness_cascade", False, persist=False)
     write_state_for_solidify(
         _last_run(
             mutation={

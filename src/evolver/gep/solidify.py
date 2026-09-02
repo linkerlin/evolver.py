@@ -8,8 +8,10 @@ from __future__ import annotations
 import contextlib
 import difflib
 import json
+import logging
 import re
 import secrets
+import shutil
 import subprocess
 import time
 from pathlib import Path
@@ -18,6 +20,7 @@ from typing import Any
 from evolver.config import (
     ACCEPTANCE_SHADOW,
     FITNESS_CASCADE_COMMANDS,
+    FITNESS_GATE_ENFORCE,
     VALIDATION_TIMEOUT_MS,
 )
 from evolver.gep.acceptance.solidify_hook import gate_or_none
@@ -29,6 +32,7 @@ from evolver.gep.asset_store import (
 from evolver.gep.cognition import post_solidify_hooks, record_solidify_failure
 from evolver.gep.execution_trace import build_execution_trace
 from evolver.gep.feature_flags import is_enabled
+from evolver.gep.fitness_state import record_measurement
 from evolver.gep.git_ops import (
     capture_diff_snapshot,
     git_list_changed_files,
@@ -43,6 +47,40 @@ from evolver.gep.paths import (
 )
 from evolver.gep.validation_report import build_validation_report
 from evolver.ops.narrative import record_narrative_and_reflection
+
+logger = logging.getLogger(__name__)
+
+
+def _now_iso_ms() -> str:
+    """Timestamp with millisecond precision (shared by events + ledgers)."""
+    return (
+        time.strftime("%Y-%m-%dT%H:%M:%S.", time.gmtime()) + f"{int((time.time() % 1) * 1000):03d}Z"
+    )
+
+
+def _failure_event(
+    last_run: dict[str, Any],
+    mutation: dict[str, Any],
+    blast_radius: dict[str, Any],
+    outcome: dict[str, Any],
+    **extra: Any,
+) -> dict[str, Any]:
+    """Shared skeleton for failed EvolutionEvents (review dedup): every
+    rejection path — cascade, novelty, acceptance, fitness — lands the same
+    auditable shape."""
+    return {
+        "type": "EvolutionEvent",
+        "id": f"evt_{int(time.time() * 1000)}_{secrets.token_hex(4)}",
+        "run_id": last_run.get("run_id") or (last_run.get("mutation") or {}).get("id"),
+        "timestamp": _now_iso_ms(),
+        "gene_id": last_run.get("selected_gene_id"),
+        "signals": last_run.get("signals", []),
+        "mutation": mutation,
+        "blast_radius": blast_radius,
+        "outcome": outcome,
+        **extra,
+        **_lineage_fields(),
+    }
 
 
 def write_state_for_solidify(last_run: dict[str, Any]) -> None:
@@ -278,6 +316,102 @@ def _cascade_score(results: list[dict[str, Any]]) -> float:
     return round(max(0.0, min(1.0, score / total)), 4)
 
 
+def _wiki_rejection(
+    error: str,
+    last_run: dict[str, Any],
+    *,
+    score: float | None = None,
+    extra: dict[str, Any] | None = None,
+) -> None:
+    """S27: one rejected mutation = one wiki evidence entry. Best-effort."""
+    with contextlib.suppress(Exception):
+        from evolver.gep.wiki import append_skill_impact
+
+        metadata: dict[str, Any] = {
+            "gene_id": last_run.get("selected_gene_id"),
+            "signals": last_run.get("signals", []),
+            "error": error,
+        }
+        if score is not None:
+            metadata["score"] = score
+        if extra:
+            metadata.update(extra)
+        append_skill_impact(
+            f"{error}: {last_run.get('selected_gene_id') or 'unknown'}",
+            "Mutation rejected and rolled back. Do not repeat this approach unchanged.",
+            metadata=metadata,
+        )
+
+
+def _wiki_record_outcome(
+    event: dict[str, Any],
+    fitness_verdict: dict[str, Any] | None,
+    last_run: dict[str, Any],
+) -> None:
+    """S27: project one solidify outcome into the wiki knowledge layer."""
+    from evolver.gep.wiki import append_log, append_skill_impact
+
+    gene_id = last_run.get("selected_gene_id") or "unknown"
+    outcome = event.get("outcome") or {}
+    if fitness_verdict is not None and fitness_verdict["verdict"] == "no_improvement":
+        append_skill_impact(
+            f"no_improvement: {gene_id}",
+            "Mutation passed validation but measured no improvement over r_best "
+            "(shadow-rejected). Do not repeat this approach unchanged.",
+            metadata={
+                "event_id": event["id"],
+                "gene_id": gene_id,
+                "score": fitness_verdict["score"],
+                "r_best": fitness_verdict["r_best"],
+            },
+        )
+        return
+    append_log(
+        f"accepted: gene={gene_id} score={outcome.get('score')} "
+        f"run={last_run.get('run_id')} event={event['id']}"
+    )
+
+
+def _reject_no_improvement(
+    last_run: dict[str, Any],
+    mutation: dict[str, Any],
+    cwd: Path,
+    fitness_verdict: dict[str, Any],
+) -> dict[str, Any]:
+    """S26.3 enforcement branch of the strict-improvement fitness gate:
+    rollback the mutation and land a failed EvolutionEvent (same hygiene as
+    the acceptance-gate rejection path)."""
+    failed_blast = _compute_blast_radius()
+    rollback_tracked(cwd=cwd, include_untracked=False)
+    rollback_new_untracked_files(_disposable_untracked(cwd), cwd=cwd)
+    record_solidify_failure(last_run, error="fitness_gate_no_improvement")
+    _wiki_rejection("fitness_gate_no_improvement", last_run, score=fitness_verdict.get("score"))
+    _append_failure_event(
+        last_run,
+        cwd,
+        blast_radius=failed_blast,
+        error="fitness_gate_no_improvement",
+    )
+    append_event_jsonl(
+        _failure_event(
+            last_run,
+            mutation,
+            failed_blast,
+            {
+                "status": "failed",
+                "score": fitness_verdict["score"],
+                "error": "fitness_gate_no_improvement",
+            },
+            fitness_gate=fitness_verdict,
+        )
+    )
+    return {
+        "ok": False,
+        "error": "fitness_gate_no_improvement",
+        "details": {"fitness_gate": fitness_verdict, "blast_radius": failed_blast},
+    }
+
+
 def _apply_acceptance_gate(
     gate_result: Any,
     last_run: dict[str, Any],
@@ -294,6 +428,7 @@ def _apply_acceptance_gate(
     rollback_tracked(cwd=cwd, include_untracked=False)
     rollback_new_untracked_files(_disposable_untracked(cwd), cwd=cwd)
     record_solidify_failure(last_run, error="acceptance_gate_rejected")
+    _wiki_rejection("acceptance_gate_rejected", last_run)
     _append_failure_event(
         last_run,
         cwd,
@@ -322,19 +457,12 @@ def _append_failure_event(
     if not is_enabled("enable_failure_events"):
         return
     append_event_jsonl(
-        {
-            "type": "EvolutionEvent",
-            "id": f"evt_{int(time.time() * 1000)}_{secrets.token_hex(4)}",
-            "run_id": last_run.get("run_id") or (last_run.get("mutation") or {}).get("id"),
-            "timestamp": time.strftime("%Y-%m-%dT%H:%M:%S.", time.gmtime())
-            + f"{int((time.time() % 1) * 1000):03d}Z",
-            "gene_id": last_run.get("selected_gene_id"),
-            "signals": last_run.get("signals", []),
-            "mutation": last_run.get("mutation", {}),
-            "blast_radius": blast_radius,
-            "outcome": {"status": "failed", "score": score, "error": error},
-            **_lineage_fields(),
-        }
+        _failure_event(
+            last_run,
+            last_run.get("mutation", {}),
+            blast_radius,
+            {"status": "failed", "score": score, "error": error},
+        )
     )
 
 
@@ -355,8 +483,21 @@ def _compute_blast_radius() -> dict[str, int]:
 
 
 def get_fitness_cascade_commands() -> list[dict[str, Any]]:
-    """Engine-owned fitness cascade (deep copy; never trusts mutation input)."""
-    return [{**spec, "command": list(spec["command"])} for spec in FITNESS_CASCADE_COMMANDS]
+    """Engine-owned fitness cascade (deep copy; never trusts mutation input).
+
+    S26 promotion: commands whose executable is missing from PATH are skipped
+    with a warning so non-Python workspaces degrade to the legacy validation
+    path (mutation.validation) instead of failing every cycle. An empty return
+    means no cascade stage is runnable here.
+    """
+    runnable: list[dict[str, Any]] = []
+    for spec in FITNESS_CASCADE_COMMANDS:
+        argv = list(spec["command"])
+        if argv and shutil.which(argv[0]) is None:
+            logger.warning("fitness cascade skipped: %r not found on PATH", argv[0])
+            continue
+        runnable.append({**spec, "command": argv})
+    return runnable
 
 
 def _lineage_fields() -> dict[str, Any]:
@@ -555,22 +696,31 @@ def _handle_cascade_validation_failure(
     rollback_tracked(cwd=cwd, include_untracked=False)
     rollback_new_untracked_files(_disposable_untracked(cwd), cwd=cwd)
     append_event_jsonl(
-        {
-            "type": "EvolutionEvent",
-            "id": f"evt_{int(time.time() * 1000)}_{secrets.token_hex(4)}",
-            "run_id": last_run.get("run_id") or (last_run.get("mutation") or {}).get("id"),
-            "timestamp": time.strftime("%Y-%m-%dT%H:%M:%S.", time.gmtime())
-            + f"{int((time.time() % 1) * 1000):03d}Z",
-            "gene_id": last_run.get("selected_gene_id"),
-            "signals": last_run.get("signals", []),
-            "mutation": mutation,
-            "blast_radius": failed_blast,
-            "outcome": {"status": "failed", "score": score, "error": "validation_failed"},
-            "novelty_fingerprint": failed_fp[:4000],
-            "novelty_added": failed_added[:4000],
-        }
+        _failure_event(
+            last_run,
+            mutation,
+            failed_blast,
+            {"status": "failed", "score": score, "error": "validation_failed"},
+            novelty_fingerprint=failed_fp[:4000],
+            novelty_added=failed_added[:4000],
+        )
     )
     record_solidify_failure(last_run, error="validation_failed", score=score)
+    _wiki_rejection("validation_failed", last_run, score=score)
+    # S28.1: failed runs leave the same immutable evidence trail.
+    with contextlib.suppress(Exception):
+        from evolver.gep.evidence import save_evidence
+
+        save_evidence(
+            str(last_run.get("run_id") or "unknown"),
+            f"failed_{int(time.time() * 1000)}",
+            {
+                "error": "validation_failed",
+                "score": score,
+                "validation_result": validation_result,
+                "validation_report": validation_report,
+            },
+        )
     details = dict(validation_result)
     details["score"] = score
     if validation_report is not None:
@@ -611,22 +761,21 @@ def solidify(
         rejected_fp, rejected_added = _novelty_fingerprint(cwd)
         rollback_tracked(cwd=cwd, include_untracked=False)
         rollback_new_untracked_files(_disposable_untracked(cwd), cwd=cwd)
+        _wiki_rejection(
+            "novelty_duplicate",
+            last_run,
+            score=0.0,
+            extra={"fingerprint": rejected_fp[:200]},
+        )
         append_event_jsonl(
-            {
-                "type": "EvolutionEvent",
-                "id": f"evt_{int(time.time() * 1000)}_{secrets.token_hex(4)}",
-                "run_id": last_run.get("run_id") or (last_run.get("mutation") or {}).get("id"),
-                "timestamp": time.strftime("%Y-%m-%dT%H:%M:%S.", time.gmtime())
-                + f"{int((time.time() % 1) * 1000):03d}Z",
-                "gene_id": last_run.get("selected_gene_id"),
-                "signals": last_run.get("signals", []),
-                "mutation": mutation,
-                "blast_radius": failed_blast,
-                "outcome": {"status": "failed", "score": 0.0, "error": "novelty_duplicate"},
-                "novelty_fingerprint": rejected_fp[:4000],
-                "novelty_added": rejected_added[:4000],
-                **_lineage_fields(),
-            }
+            _failure_event(
+                last_run,
+                mutation,
+                failed_blast,
+                {"status": "failed", "score": 0.0, "error": "novelty_duplicate"},
+                novelty_fingerprint=rejected_fp[:4000],
+                novelty_added=rejected_added[:4000],
+            )
         )
         record_solidify_failure(last_run, error="novelty_duplicate", score=0.0)
         return {
@@ -687,6 +836,22 @@ def solidify(
     blast_radius = _compute_blast_radius()
     diff_snapshot = capture_diff_snapshot(cwd)
 
+    # S26.3 strict-improvement gate (wikiskill R_val > R_best): compare the
+    # measured score against the fitness ledger. Shadow period: verdict is
+    # recorded on the event; enforcement via EVOLVER_FITNESS_GATE_ENFORCE=1.
+    outcome_score: float | None = (
+        _cascade_score(validation_result["results"]) if validation_result else None
+    )
+    fitness_verdict = record_measurement(
+        outcome_score, source=f"solidify:{last_run.get('run_id') or 'unknown'}"
+    )
+    if (
+        fitness_verdict is not None
+        and fitness_verdict["verdict"] == "no_improvement"
+        and FITNESS_GATE_ENFORCE
+    ):
+        return _reject_no_improvement(last_run, mutation, cwd, fitness_verdict)
+
     # Build execution trace from validation results
     trace: list[dict[str, Any]] = []
     if validation_result:
@@ -698,17 +863,25 @@ def solidify(
         "type": "EvolutionEvent",
         "id": f"evt_{int(time.time() * 1000)}_{secrets.token_hex(4)}",
         "run_id": last_run.get("run_id") or last_run.get("mutation", {}).get("id"),
-        "timestamp": time.strftime("%Y-%m-%dT%H:%M:%S.", time.gmtime())
-        + f"{int((time.time() % 1) * 1000):03d}Z",
+        "timestamp": _now_iso_ms(),
         "gene_id": last_run.get("selected_gene_id"),
         "signals": last_run.get("signals", []),
         "mutation": mutation,
         "blast_radius": blast_radius,
         "diff_snapshot": diff_snapshot[:2000],
-        "outcome": {"status": "success", "score": 1.0},
+        # S26 honest score: a MEASURED cascade result (1.0 = all stages green);
+        # an unvalidated success claims nothing (score=None + marker) so the
+        # ledger distinguishes "tested good" from "never tested".
+        "outcome": (
+            {"status": "success", "score": outcome_score}
+            if validation_result
+            else {"status": "success", "score": None, "unvalidated": True}
+        ),
         "execution_trace": trace,
         **_lineage_fields(),
     }
+    if fitness_verdict is not None:
+        event["fitness_gate"] = fitness_verdict
     if validation_report is not None:
         event["validation_report"] = validation_report
     if gate_result is not None:
@@ -718,6 +891,28 @@ def solidify(
             payload["would_accept"] = False
         event["acceptance_result"] = payload
     append_event_jsonl(event)
+
+    # S27 wiki layer: evidence never rolls back. Improved/baseline → decision
+    # log; shadow-rejected (no_improvement) → skill-impact record so future
+    # mutations do not repeat it.
+    with contextlib.suppress(Exception):
+        _wiki_record_outcome(event, fitness_verdict, last_run)
+
+    # S28.1 immutable evidence: full scene snapshot, written once (a second
+    # write of the same run raises — evidence is immutable by architecture).
+    with contextlib.suppress(Exception):
+        from evolver.gep.evidence import save_evidence
+
+        save_evidence(
+            str(event.get("run_id") or event["id"]),
+            event["id"],
+            {
+                "event": event,
+                "validation_result": validation_result,
+                "fitness_verdict": fitness_verdict,
+                "gate": gate_result.model_dump() if gate_result else None,
+            },
+        )
 
     # Generate narrative and reflection
     with contextlib.suppress(Exception):

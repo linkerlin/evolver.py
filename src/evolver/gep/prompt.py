@@ -71,6 +71,30 @@ def _compact_or_passthrough(value: str) -> str:
     return compact_preview_for_prompt(value)
 
 
+def _wiki_impact_block(limit: int = 12, chars: int = 1500) -> str:
+    """S27: rejected-mutation memory is MAIN-PATH — every GEP prompt carries
+    the wiki's recent rejection headings so the same approach is never
+    re-proposed. Empty when the wiki has no entries yet."""
+    try:
+        from evolver.gep.wiki import wiki_dir
+
+        text = (wiki_dir() / "skill-impact.md").read_text(encoding="utf-8", errors="replace")
+    except Exception:
+        return ""
+    headings = [ln.lstrip("# ").strip() for ln in text.splitlines() if ln.startswith("## ")]
+    if not headings:
+        return ""
+    recent = list(reversed(headings[-limit:]))
+    block = "\n".join(
+        [
+            "## Wiki Impact — REJECTED mutations (do NOT repeat these approaches)",
+            "",
+        ]
+        + [f"- {h}" for h in recent]
+    )
+    return block[:chars]
+
+
 def build_gep_prompt(
     *,
     now_iso: str,
@@ -179,6 +203,7 @@ def build_gep_prompt(
         "## Failed Capsules",
         json.dumps(failed_capsules, ensure_ascii=False) if failed_capsules else "[]",
         "",
+        _wiki_impact_block(),
         "## Hub Lessons",
         json.dumps(hub_lessons, ensure_ascii=False) if hub_lessons else "[]",
         "",

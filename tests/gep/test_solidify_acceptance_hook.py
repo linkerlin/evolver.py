@@ -141,9 +141,12 @@ class TestFlagOff:
 
 
 class TestGateReject:
+    """Enforcement path — shadow mode (S26 default) must be off here."""
+
     def test_reject_returns_error(self, git_ws: Path, monkeypatch: pytest.MonkeyPatch) -> None:
         _ = git_ws
         monkeypatch.setenv("EVOLVER_FF_ENABLE_ACCEPTANCE_GATE", "1")
+        monkeypatch.setattr(solidify_mod, "ACCEPTANCE_SHADOW", False)
         _patch_gate(monkeypatch, _rejected())
         write_state_for_solidify(_last_run())
         result = solidify(skip_validation=True)
@@ -155,6 +158,7 @@ class TestGateReject:
         self, git_ws: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         monkeypatch.setenv("EVOLVER_FF_ENABLE_ACCEPTANCE_GATE", "1")
+        monkeypatch.setattr(solidify_mod, "ACCEPTANCE_SHADOW", False)
         _patch_gate(monkeypatch, _rejected())
         patched = _uncommitted_change(git_ws)
         write_state_for_solidify(_last_run())

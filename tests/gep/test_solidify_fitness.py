@@ -124,7 +124,15 @@ class TestParsePytestRate:
 
 
 class TestFitnessCascadeCommands:
-    def test_engine_owned_three_stages(self) -> None:
+    def test_engine_owned_three_stages(
+        self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+    ) -> None:
+        # Restore the real engine-owned commands (conftest swaps in a neutral
+        # set so sandboxed workspaces never invoke host tooling).
+        from evolver.config import FITNESS_CASCADE_COMMANDS as REAL_COMMANDS
+
+        monkeypatch.setattr(solidify, "FITNESS_CASCADE_COMMANDS", REAL_COMMANDS)
+        monkeypatch.setattr(solidify.shutil, "which", lambda _: "/usr/bin/fake")
         cmds = solidify.get_fitness_cascade_commands()
         assert len(cmds) == 3
         assert cmds[0]["command"][0] == "ruff"
@@ -257,6 +265,9 @@ class TestSolidifyFlagIntegration:
     def test_flag_off_keeps_mutation_validation(
         self, git_ws: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
+        from evolver.gep.feature_flags import set_flag
+
+        set_flag("enable_fitness_cascade", False, persist=False)
         self._prepare(git_ws)
         captured: dict[str, Any] = {}
 

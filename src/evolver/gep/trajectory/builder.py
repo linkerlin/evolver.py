@@ -20,7 +20,7 @@ from __future__ import annotations
 import json
 import re
 from dataclasses import dataclass, field
-from typing import Any
+from typing import Any, Literal
 
 SCHEMA: str = "evomap.coding_trajectory.v1"
 
@@ -162,6 +162,13 @@ class Trajectory:
     client_source: str | None = None
     session_model: str | None = None
     system_prompt: str | None = None
+    # S28.2 launch-failure honesty: a trajectory with zero tool calls is NOT
+    # behavioral evidence — the agent never started. Derived in __post_init__.
+    activity: Literal["launch_failure", "active"] = "active"
+
+    def __post_init__(self) -> None:
+        if self.stats.tool_call_count == 0:
+            self.activity = "launch_failure"
 
 
 # ---------------------------------------------------------------------------

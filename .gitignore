@@ -221,3 +221,8 @@ __marimo__/
 # 本地私有规划文档（保留本地，不入库）
 演进方案.md
 设计方案.md
+
+evolver/.config/disk_flags.json
+
+# evolver: wiki knowledge layer — never rolled back (S27)
+memory/evolution/wiki/
