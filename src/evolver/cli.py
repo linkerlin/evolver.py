@@ -79,6 +79,15 @@ def _build_parser() -> argparse.ArgumentParser:
     )
     apply_prop_p.add_argument("proposal_file", help="Path to a GeneProposal JSON file")
     sub.add_parser("review", help="Review pending solidify")
+    report_p = sub.add_parser(
+        "report",
+        help="S27.4: per-cycle verdict report (negative results as-is) + patterns projection",
+    )
+    report_p.add_argument("--output", default=None, help="Write markdown to file instead of stdout")
+    report_p.add_argument("--limit", type=int, default=500, help="Max events to include")
+    report_p.add_argument(
+        "--no-project", action="store_true", help="Skip the wiki patterns projection"
+    )
     sr_p = sub.add_parser("self-report", help="Autopoiesis self-report and rule evolution")
     sr_p.add_argument(
         "--capture",
@@ -440,6 +449,9 @@ def main(argv: Sequence[str] | None = None) -> int:
     if command == "self-report":
         return _cmd_self_report(args)
 
+    if command == "report":
+        return _cmd_report(args)
+
     if command == "fetch":
         return asyncio.run(_cmd_fetch(args))
 
@@ -710,6 +722,32 @@ async def _cmd_run(_args: argparse.Namespace) -> int:
     return 0
 
 
+def _cmd_report(args: argparse.Namespace) -> int:
+    """S27.4: honest run report — verdicts, r_best ledger, negatives as-is.
+    Also refreshes the wiki patterns projection (S27.2) unless --no-project."""
+    from evolver.gep.report import build_report
+
+    if not args.no_project:
+        try:
+            from evolver.gep.wiki_projection import project_patterns
+
+            pages = project_patterns()
+            print(f"patterns projected: {', '.join(p.name for p in pages)}")
+        except Exception as exc:
+            print(f"patterns projection skipped: {exc}", file=sys.stderr)
+    markdown = build_report(limit=args.limit)
+    if args.output:
+        from pathlib import Path
+
+        out = Path(args.output)
+        out.parent.mkdir(parents=True, exist_ok=True)
+        out.write_text(markdown, encoding="utf-8", newline="\n")
+        print(f"report written: {out}")
+    else:
+        print(markdown, end="")
+    return 0
+
+
 def _cmd_trajectory(args: argparse.Namespace) -> int:
     """Export proxy traces or session logs into coding trajectories (G10.1).
 
@@ -725,9 +763,22 @@ def _cmd_trajectory(args: argparse.Namespace) -> int:
         build_trajectories,
         read_trace_rows,
         read_trace_rows_detailed,
+        trajectory_to_dict,
         write_trajectories_to_path,
     )
     from evolver.gep.trajectory.sources import build_trajectory_from_session_log
+
+    def _queue_launch_failure_signal(trajectories: list[Any]) -> None:
+        """S28.2: exported launch failures queue a pending signal — the next
+        cycle's signals phase consumes it (couldn't-start ≠ didn't-work)."""
+        try:
+            from evolver.gep.asset_store import append_pending_signals
+            from evolver.gep.signals import count_launch_failures
+
+            if count_launch_failures([trajectory_to_dict(t) for t in trajectories]):
+                append_pending_signals(["launch_failure_detected"])
+        except Exception:
+            pass
 
     if not args.input:
         print("trajectory: --input <path> is required", file=sys.stderr)
@@ -761,6 +812,7 @@ def _cmd_trajectory(args: argparse.Namespace) -> int:
         except Exception as exc:
             print(f"trajectory export failed: {exc}", file=sys.stderr)
             return 1
+        _queue_launch_failure_signal(session_trajectories)
         print(f"Wrote {len(session_trajectories)} session trajectory(ies) → {output_path}")
         return 0
 
@@ -807,6 +859,7 @@ def _cmd_trajectory(args: argparse.Namespace) -> int:
             stats = {"total_rows": len(rows), "encrypted_rows": 0, "decrypt_failures": 0}
         trajectories = build_trajectories(rows)
         write_trajectories_to_path(output_path, trajectories)
+        _queue_launch_failure_signal(trajectories)
     except Exception as exc:
         print(f"trajectory export failed: {exc}", file=sys.stderr)
         return 1

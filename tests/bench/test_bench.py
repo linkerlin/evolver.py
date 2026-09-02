@@ -199,6 +199,17 @@ def test_run_health_improvement_updates_rbest(
     assert load_domain("bench:health")["r_best"] == 1.0
 
 
+def test_pytest_fast_timeout_matches_cascade() -> None:
+    """Regression: the health pytest-fast ceiling must equal the solidify
+    fitness cascade's — a tighter bench timeout falsely fails a green repo
+    (observed 2026-09-02: 300s bench vs ~310s real suite → permanent R=0.5)."""
+    from evolver.bench.runner import HEALTH_TASKS
+    from evolver.config import FITNESS_PYTEST_TIMEOUT_MS
+
+    spec = next(t for t in HEALTH_TASKS if t["id"] == "health-pytest-fast")
+    assert float(spec["timeout_s"]) * 1000.0 == float(FITNESS_PYTEST_TIMEOUT_MS)
+
+
 def test_pack_roundtrip_from_json(tmp_path: Path) -> None:
     """A wikiskill-format tasks.json imports cleanly (format compatibility)."""
     pack = [_valid_task()]

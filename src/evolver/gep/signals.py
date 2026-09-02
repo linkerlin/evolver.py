@@ -35,6 +35,9 @@ OPPORTUNITY_SIGNALS = [
     "hub_search_miss_with_problem",
     "plateau_pivot_required",
     "plateau_pivot_suggested",
+    # S28.2: a zero-tool-call session is a launch failure, not behavioral
+    # evidence — distinct from "did nothing useful" (wikiskill Run-4 lesson).
+    "launch_failure_detected",
 ]
 
 
@@ -46,6 +49,18 @@ def has_opportunity_signal(signals: list[str]) -> bool:
         if any(str(s).startswith(name + ":") for s in lst):
             return True
     return False
+
+
+def count_launch_failures(rows: list[dict[str, Any]] | None) -> int:
+    """S28.2: count launch-failure rows in exported trajectory JSONL.
+
+    A zero-tool-call session (``activity == "launch_failure"``, classified in
+    :mod:`evolver.gep.trajectory.builder`) is harness trouble ("couldn't
+    start"), not agent behavior ("didn't work") — the signal layer must keep
+    the two apart."""
+    if not isinstance(rows, list):
+        return 0
+    return sum(1 for r in rows if isinstance(r, dict) and r.get("activity") == "launch_failure")
 
 
 def analyze_recent_history(recent_events: list[dict[str, Any]] | None) -> dict[str, Any]:

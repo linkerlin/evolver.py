@@ -8,6 +8,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.97.0] — 2026-09-02
+
+### Added — handover items closed (演进方案_wikiskill对照版.md §8 移交余项)
+- **S27.2 patterns projection**: new `gep/wiki_projection.py` — regenerates `wiki/patterns/{friction.md, preferred-genes.md}` as deterministic human-readable projections of machine-layer state (LESSONS_LEARNED friction points, memory_graph `preferred_by_signal`), rewrites `wiki/index.md`, audit-commits to the wiki repo. Pages carry no timestamps (git log is the provenance) so projections are byte-idempotent. Trigger: `evolver report`.
+- **S27.4 run report**: new `gep/report.py` + `evolver report [--output] [--limit] [--no-project]` — per-cycle verdict counts (success / failed / unvalidated / fitness-gate verdicts / acceptance rejections), the r_best ledger per measurement domain, wiki layer counts, and a **negative-results section rendered as-is** (most recent first; empty window says so instead of claiming success). Runs the patterns projection first unless `--no-project`.
+- **S28.2 launch-failure signalization**: `launch_failure_detected` joins `OPPORTUNITY_SIGNALS` + new `signals.count_launch_failures(rows)`; `evolver trajectory` export counts launch failures in the exported rows and queues `launch_failure_detected` via the existing pending-signals pipe — the next cycle's signals phase consumes it automatically ("couldn't start" ≠ "didn't work", wikiskill Run-4 lesson, now wired end-to-end).
+
+### Fixed
+- **bench pytest-fast false failure (审阅勘误 #7)**: the health task's hardcoded 300s timeout sat BELOW the real not-slow suite duration (~310s) → `TimeoutExpired` → permanent R=0.5 on a green repo. The bench timeout now reuses the cascade's `FITNESS_PYTEST_TIMEOUT_MS` (600s, env-overridable) — one source of truth for the same suite; regression test pins bench ceiling == cascade ceiling. Post-fix `evolver bench run` measures R=1.0.
+
 ## [1.96.0] — 2026-09-01
 
 ### Changed — Sprint 26: quantitative fitness promoted to DEFAULT path (演进方案_wikiskill对照版.md §S26; mirrors the wikiskill gating loop)

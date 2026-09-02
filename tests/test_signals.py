@@ -11,6 +11,25 @@ def test_has_opportunity_signal_detects_base_names() -> None:
     assert sig.has_opportunity_signal(["log_error"]) is False
 
 
+def test_launch_failure_is_opportunity_signal() -> None:
+    """S28.2: couldn't-start is an actionable signal, distinct from didn't-work."""
+    assert "launch_failure_detected" in sig.OPPORTUNITY_SIGNALS
+    assert sig.has_opportunity_signal(["launch_failure_detected"]) is True
+
+
+def test_count_launch_failures() -> None:
+    rows = [
+        {"activity": "launch_failure"},
+        {"activity": "active"},
+        {"activity": "launch_failure"},
+        {},
+        "not-a-dict",
+    ]
+    assert sig.count_launch_failures(rows) == 2
+    assert sig.count_launch_failures([]) == 0
+    assert sig.count_launch_failures(None) == 0
+
+
 def test_analyze_recent_history_empty() -> None:
     h = sig.analyze_recent_history(None)
     assert h["suppressedSignals"] == set()

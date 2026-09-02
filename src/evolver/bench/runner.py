@@ -22,6 +22,7 @@ from typing import Any
 from evolver.bench.prompts import inference_prompt
 from evolver.bench.scoring import grade
 from evolver.bench.tasks import materialize, validate_tasks
+from evolver.config import FITNESS_PYTEST_TIMEOUT_MS
 from evolver.gep.fitness_state import record_measurement
 from evolver.gep.paths import get_workspace_root
 
@@ -34,7 +35,9 @@ HEALTH_TASKS: list[dict[str, Any]] = [
         "id": "health-pytest-fast",
         "command": ["pytest", "-x", "-q", "-m", "not slow"],
         "weight": 2.0,
-        "timeout_s": HEALTH_TASK_TIMEOUT_S,
+        # Same suite, same ceiling as the solidify fitness cascade — a bench
+        # timeout tighter than the cascade's would falsely fail a green repo.
+        "timeout_s": FITNESS_PYTEST_TIMEOUT_MS / 1000.0,
     },
 ]
 

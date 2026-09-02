@@ -447,8 +447,10 @@ evolver.py 的变异由外部 agent 直接作用于代码库，边界只有 `con
 
 | 余项 | 说明 | 触发条件 |
 |---|---|---|
-| S28.2 启动失败信号化 | `tool_call_count` 已在 trajectory 层（`builder.py:141`），缺 trajectory→signals 管道 | 蒸馏管道接入信号层时 |
-| S26.5 worktree 评估隔离 | 验收门在干净 worktree 跑；影子期非阻塞 | 验收门转执法（sook 期满）前 |
+| ~~S27.2 patterns 投影~~ | **已交付（1.97.0）**：`gep/wiki_projection.py`，确定性幂等投影，`evolver report` 触发 | — |
+| ~~S27.4 `evolver report`~~ | **已交付（1.97.0）**：`gep/report.py` + CLI `report [--output] [--limit] [--no-project]`，负面结果原样呈现 | — |
+| ~~S28.2 启动失败信号化~~ | **已交付（1.97.0）**：`launch_failure_detected` 信号 + `count_launch_failures`；trajectory 导出经 pending-signals 管道自动入下周期信号 | — |
+| S26.5 worktree 评估隔离 | 验收门在干净 worktree 跑；影子期非阻塞 | 验收门转执法（soak 期满）前 |
 | S30.4–30.7 瘦身余项 | env 合并 / flag 废弃期 / fastapi·uvicorn·mcp·keyring 移 extras / 存储二选一 | 依赖审计文档已给路线 |
 | S30.2 transfer | 跨工作区迁移已有 `scripts/a2a_export.py`/`a2a_ingest.py` 覆盖；`gep2skill` 反向待生态需求 | 出现真实多工作区用户 |
 | 发布决策（S30.3） | PyPI OIDC + mkdocs | 引擎带新门控跑出首批 soak 数据后 |
@@ -469,3 +471,4 @@ evolver.py 的变异由外部 agent 直接作用于代码库，边界只有 `con
 5. **交付缩水声明**：S26.1 内置基准实际为 3 个 health 任务（非"对标 22 任务"）；`bench import` 由 `run --pack` 承担；评分器自洽测试仅锁 `exact`。S27.2 patterns 投影与 S27.4 `evolver report` 未实施。S27.3 谱系字段在 `enable_lineage_lessons` 默认 off 时不生效（此为 flag 纪律，非缺陷）。
    **→ 后续补齐（同日）**：`bench/builtin_pack.py` + `evolver bench init` 提供确定性 12 任务内置包（五任务族含生成时陷阱断言，两次生成逐字节一致），四评分器自洽测试全量锁定（exact/contains/json_field/code_stdout）；`load_pack` 统一接受 wrapped 与裸列表格式。
 6. **已知权衡（记录不改）**：evidence 不可变性由 `suppress` 包裹（wiki 故障不得阻断 solidify 的取舍）；`bench run` 的 0.999 → exit 1 为故意严格；conftest 哑级联意味着真 ruff/mypy/pytest 默认路径只在 CI 全量跑中覆盖。
+7. **bench pytest-fast 超时误判（2026-09-02 独立审计发现，已修复）**：`HEALTH_TASK_TIMEOUT_S=300s` 低于本机 not-slow 全量真实时长（~310s）→ `TimeoutExpired` → 永久误判 fail（R 恒 0.5）。这正是验收标准 1 要防的**假测量**——score 非 1.0 但原因是测量面而非仓库。修复：bench 复用 cascade 之 `FITNESS_PYTEST_TIMEOUT_MS`（600s，env 可覆盖），单一真相源；回归测试锁定两处超时相等。修复后 `bench run` 实测 R=1.0。
