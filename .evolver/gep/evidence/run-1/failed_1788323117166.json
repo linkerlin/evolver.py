@@ -1,0 +1,17 @@
+{
+  "error": "validation_failed",
+  "score": 0.98,
+  "validation_result": {
+    "ok": false,
+    "results": [
+      {
+        "ok": false,
+        "stdout": "2 failed, 98 passed",
+        "stderr": ""
+      }
+    ],
+    "started_at": 0.0,
+    "finished_at": 1.0
+  },
+  "validation_report": null
+}
