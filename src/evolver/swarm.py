@@ -223,6 +223,7 @@ def _feedback_stability(rows: list[dict[str, Any]], window: int = 10) -> dict[st
 def swarm_status() -> dict[str, Any]:
     """Summarize engine state for swarm agents (cheap, no cycle side effects)."""
     from evolver import __version__
+    from evolver.gep.adaptive import feedback_mutation_bias
     from evolver.gep.asset_store import load_capsules, load_genes
     from evolver.gep.bridge import determine_bridge_enabled
     from evolver.gep.feedback import load_recent_feedback
@@ -260,6 +261,7 @@ def swarm_status() -> dict[str, Any]:
             "recent_count": len(recent_feedback),
             "last": recent_feedback[-1] if recent_feedback else None,
             "stability": _feedback_stability(recent_feedback),
+            "mutation_bias": feedback_mutation_bias(recent_feedback),
         },
         "hitl": {
             "mode": "on" if hitl_mode_enabled() else "off",

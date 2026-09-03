@@ -23,13 +23,25 @@ from evolver.gep.strategy import resolve_strategy
 
 def compute_adaptive_strategy_policy(ctx: dict[str, Any]) -> dict[str, Any]:
     strategy = resolve_strategy({"signals": ctx.get("signals", [])})
-    return {
+    policy = {
         "policy": strategy.name,
         "repair": strategy.repair,
         "optimize": strategy.optimize,
         "innovate": strategy.innovate,
         "force_innovation": ctx.get("IS_RANDOM_DRIFT", False),
     }
+    # EvoX adaptive-mutation-rate harvest: the unified feedback channel shifts
+    # the weights (degraded streak → repair bias; converged plateau → novelty).
+    # Neutral no-op without a feedback journal (CLI/daemon users unaffected).
+    from evolver.config import ADAPTIVE_MUTATION_ENABLED
+
+    if ADAPTIVE_MUTATION_ENABLED:
+        with contextlib.suppress(Exception):
+            from evolver.gep.adaptive import apply_adaptive_bias, feedback_mutation_bias
+            from evolver.gep.feedback import load_recent_feedback
+
+            policy = apply_adaptive_bias(policy, feedback_mutation_bias(load_recent_feedback(10)))
+    return policy
 
 
 async def select_phase(ctx: dict[str, Any]) -> dict[str, Any]:

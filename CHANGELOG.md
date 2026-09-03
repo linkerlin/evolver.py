@@ -8,6 +8,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.106.0] — 2026-09-04
+
+### Added — feedback-adaptive mutation bias（EvoX 自适应变异率收割）
+- `gep/adaptive.py`: 统一评估反馈 E 通道（v1.99）现在直接调制策略权重——
+  降级连击（≥3 连续 degraded）→ repair 偏置；收敛平台（stddev < 0.01 且
+  均值 ≥ 阈值，EvoX AFlow 收敛判据）→ novelty 枢转；混合/样本不足保持
+  中性。权重重归一化并 clamp，verdict 随 `policy["adaptive"]` 进入 GEP
+  提示词的 strategy_policy 行与周期事件。`compute_adaptive_strategy_policy`
+  接线；`swarm_status` 暴露 `feedback.mutation_bias`。反馈日志为空即 no-op
+  （CLI/守护用户不受影响）。`EVOLVER_ADAPTIVE_MUTATION`（默认 on）与
+  `EVOLVER_ADAPTIVE_MUTATION_SHIFT`（默认 0.2）可调。
+
 ## [1.105.0] — 2026-09-04
 
 ### Added — full-coverage swarm E2E（全覆盖 E2E + 真实 LLM 进环）

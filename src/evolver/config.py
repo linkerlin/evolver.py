@@ -298,6 +298,11 @@ SUPERVISION_AUTO_PAUSE_STREAK: Final = env_int("EVOLVER_SUPERVISION_AUTO_PAUSE_S
 # replacing the defaults (project .agents/.claude skills > user home skills >
 # builtin). Order IS the priority.
 SKILL_ROOTS_OVERRIDE: Final = env_str("EVOLVER_SKILL_ROOTS", "")
+# EvoX harvest (adaptive mutation rate): the unified feedback channel shifts
+# strategy weights — degraded streak → repair bias, converged plateau →
+# exploration pivot. Neutral no-op with fewer than 3 feedback entries.
+ADAPTIVE_MUTATION_ENABLED: Final = env_bool("EVOLVER_ADAPTIVE_MUTATION", True)
+ADAPTIVE_MUTATION_SHIFT: Final = env_float("EVOLVER_ADAPTIVE_MUTATION_SHIFT", 0.2)
 
 # --- Ops ---
 MAX_SILENCE_MS: Final = env_int("EVOLVER_MAX_SILENCE_MS", 30 * 60 * 1_000)

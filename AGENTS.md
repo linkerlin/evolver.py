@@ -62,6 +62,8 @@ gep/                GEP（基因组进化协议）核心
   distill.py        从 LLM 文本输出中提取 Gene/Capsule
   feedback.py       统一评估反馈 E（EvoX 概念收割）：primary_score/metrics/
                     textual_gradient 三分离，日志 + repair-bias 信号注入
+  adaptive.py       反馈驱动变异偏置（EvoX 自适应变异率收割）：降级连击→
+                    repair 权重，收敛平台→novelty 枢转，混合样本中性
   hitl.py           HITL 审批门（EvoX HITLManager 概念收割）：高危操作人类
                     批准，按 subject 幂等，TTL 超时 fail-safe 拒绝，全程审计
   supervision.py    HOTL 人在环上监督：running/paused 状态机 + veto 模式
@@ -338,6 +340,8 @@ instrument prompt 第三章（Hooks 集成）指导宿主择轨。
 | `EVOLVER_HITL_TTL_MS` | `1800000` | HITL 待决请求 TTL——超时 fail-safe 拒绝 |
 | `EVOLVER_SUPERVISION_AUTO_PAUSE_STREAK` | `3` | HOTL 绊线——连续 N 次降级反馈自动暂停（`0` 关闭） |
 | `EVOLVER_SKILL_ROOTS` | （默认三级根） | 技能根目录覆盖（os.pathsep 分隔，顺序即优先级） |
+| `EVOLVER_ADAPTIVE_MUTATION` | `true` | 评估反馈驱动之策略权重自适应（false 关闭） |
+| `EVOLVER_ADAPTIVE_MUTATION_SHIFT` | `0.2` | 自适应权重偏移幅度（归一化前） |
 
 ## 坑阱篇
 
