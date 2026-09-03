@@ -123,6 +123,19 @@ uv run evolver setup-hooks --platform auto --project-dir /path/to/workspace
 
 MCP-only 宿主（无文件 hooks 能力）改用**进程内桥**：在会话开始/结束、以及观察到错误输出时调用 `swarm_hook_event` 工具（`event=session_start|session_end|signal_detect`，`payload.content` 携带文本）；检测到的信号（`log_error` / `perf_bottleneck` / …）直接注入下一进化周期的基因选择。也可经 `swarm_hooks` 工具（`action=status|install|uninstall`）由宿主自助安装文件钩子。
 
+### MCP Resources 与工具注解
+
+除工具外，server 暴露四个只读资源（宿主可订阅/免工具往返读取）：
+
+| URI | 内容 |
+|---|---|
+| `evolver://status` | 实时引擎/蜂群状态（JSON，含 HITL/HOTL/反馈摘要） |
+| `evolver://instrument-prompt` | 当前渲染的接管提示词 |
+| `evolver://dispatch/last` | 最近一次 GEP 变异提示词（`last_prompt.md`） |
+| `evolver://events/recent` | 最近进化周期时间线（JSON） |
+
+工具带 MCP 规范注解：`swarm_status` / `swarm_approvals` / `asset_search` 等标记 `readOnlyHint`（宿主计划模式可安全跳过确认）；`swarm_solidify` 标记 `destructiveHint`（宿主可要求用户确认）。
+
 > WebUI / Proxy 需要 server extras：`uv sync --extra server`（核心进化引擎与 MCP server 无 fastapi 依赖）。
 
 ## Prerequisites

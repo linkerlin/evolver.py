@@ -70,8 +70,9 @@ def test_repair_safe_fetch(git_repo: Path, monkeypatch: pytest.MonkeyPatch) -> N
 def test_repair_hard_reset(git_repo: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     # Add a remote pointing to itself so fetch/reset can work
     run_cmd(["remote", "add", "origin", str(git_repo)], cwd=git_repo)
-    # Create a second branch to reset to
-    run_cmd(["checkout", "-b", "main"], cwd=git_repo)
+    # Create a second branch to reset to (-B is idempotent: repos initialised
+    # with init.defaultBranch=main already sit on main).
+    run_cmd(["checkout", "-B", "main"], cwd=git_repo)
     (git_repo / "new.txt").write_text("new\n", encoding="utf-8")
     run_cmd(["add", "new.txt"], cwd=git_repo)
     run_cmd(["commit", "-m", "second"], cwd=git_repo)

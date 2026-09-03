@@ -168,7 +168,9 @@ def test_runtime_paths_find_workspace(temp_workspace: Path) -> None:
 
     subprocess.run(["git", "init"], cwd=temp_workspace, capture_output=True, check=False)
     result = find_workspace_root(temp_workspace)
-    assert result == temp_workspace
+    # macOS tmpdirs live behind a /var → /private/var symlink; the finder
+    # resolves, so compare resolved-to-resolved.
+    assert result == temp_workspace.resolve()
 
 
 def test_memory_filtering_empty(temp_workspace: Path) -> None:

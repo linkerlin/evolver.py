@@ -165,7 +165,9 @@ def build_server() -> Any:
         "→ swarm_solidify → swarm_feedback (evaluation signal E) → swarm_report "
         "(heartbeat). Hook-capable hosts: bootstrap signal capture via "
         "`swarm_hooks` (setup-hooks) or report lifecycle events through the "
-        "`swarm_hook_event` bridge."
+        "`swarm_hook_event` bridge. Read-only state surfaces (status / "
+        "instrument prompt / last dispatch prompt / recent events) are also "
+        "exposed as MCP resources under evolver://*."
     )
     if SWARM_AUTO_HIJACK:
         swarm_directive = (
@@ -381,34 +383,92 @@ def build_server() -> Any:
 
         return str(swarm_boot(agent_name)["instrument_prompt"])
 
-    register = server.tool()
-    for fn in (
-        tool_asset_search,
-        tool_asset_get,
-        tool_mailbox_send,
-        tool_mailbox_poll,
-        tool_mailbox_ack,
-        tool_rebuild_views,
-        tool_cycle_timeline,
-    ):
-        register(fn)
+    # Resources (read-only state surfaces — hosts can subscribe/read these
+    # without tool round-trips; dicts are auto-serialized to JSON).
+    def resource_status() -> dict[str, Any]:
+        from evolver.swarm import swarm_status
 
-    swarm_tools: list[tuple[str, Callable[..., Any]]] = [
-        ("swarm_boot", tool_swarm_boot),
-        ("swarm_tick", tool_swarm_tick),
-        ("swarm_distill", tool_swarm_distill),
-        ("swarm_solidify", tool_swarm_solidify),
-        ("swarm_feedback", tool_swarm_feedback),
-        ("swarm_report", tool_swarm_report),
-        ("swarm_status", tool_swarm_status),
-        ("swarm_approvals", tool_swarm_approvals),
-        ("swarm_approval_resolve", tool_swarm_approval_resolve),
-        ("swarm_supervise", tool_swarm_supervise),
-        ("swarm_hooks", tool_swarm_hooks),
-        ("swarm_hook_event", tool_swarm_hook_event),
+        return swarm_status()
+
+    def resource_instrument_prompt() -> str:
+        from evolver.swarm import swarm_boot
+
+        return str(swarm_boot("resource-reader")["instrument_prompt"])
+
+    def resource_dispatch_last() -> str:
+        from evolver.gep.paths import get_evolution_dir
+
+        artifact = get_evolution_dir() / "last_prompt.md"
+        if artifact.exists():
+            return artifact.read_text(encoding="utf-8")
+        return "(no dispatch prompt artifact yet)"
+
+    def resource_events_recent() -> list[dict[str, Any]]:
+        return cycle_timeline(10)
+
+    server.resource(
+        "evolver://status", name="status", description="Live swarm/engine status (JSON)"
+    )(resource_status)
+    server.resource(
+        "evolver://instrument-prompt",
+        name="instrument-prompt",
+        description="The swarm takeover instrument prompt (current render)",
+    )(resource_instrument_prompt)
+    server.resource(
+        "evolver://dispatch/last",
+        name="dispatch-last",
+        description="Last GEP dispatch prompt artifact (last_prompt.md)",
+    )(resource_dispatch_last)
+    server.resource(
+        "evolver://events/recent",
+        name="events-recent",
+        description="Recent evolution cycle timeline (JSON)",
+    )(resource_events_recent)
+
+    # Tool annotations (MCP spec hints: hosts may surface confirmations or
+    # skip read-only tools in plan mode).
+    from mcp.types import ToolAnnotations
+
+    read_only = ToolAnnotations(read_only_hint=True)
+    destructive = ToolAnnotations(destructive_hint=True)
+
+    classic_tools: list[tuple[str, ToolAnnotations | None]] = [
+        ("tool_asset_search", read_only),
+        ("tool_asset_get", read_only),
+        ("tool_mailbox_send", None),
+        ("tool_mailbox_poll", read_only),
+        ("tool_mailbox_ack", None),
+        ("tool_rebuild_views", None),
+        ("tool_cycle_timeline", read_only),
     ]
-    for name, fn in swarm_tools:
-        server.tool(name=name)(fn)
+    classic_fns = {
+        "tool_asset_search": tool_asset_search,
+        "tool_asset_get": tool_asset_get,
+        "tool_mailbox_send": tool_mailbox_send,
+        "tool_mailbox_poll": tool_mailbox_poll,
+        "tool_mailbox_ack": tool_mailbox_ack,
+        "tool_rebuild_views": tool_rebuild_views,
+        "tool_cycle_timeline": tool_cycle_timeline,
+    }
+    for name, ann in classic_tools:
+        server.tool(name=name, annotations=ann)(classic_fns[name])
+
+    swarm_tools: list[tuple[str, Callable[..., Any], ToolAnnotations | None]] = [
+        ("swarm_boot", tool_swarm_boot, None),
+        ("swarm_tick", tool_swarm_tick, None),
+        ("swarm_distill", tool_swarm_distill, None),
+        ("swarm_solidify", tool_swarm_solidify, destructive),
+        ("swarm_feedback", tool_swarm_feedback, None),
+        ("swarm_report", tool_swarm_report, None),
+        ("swarm_status", tool_swarm_status, read_only),
+        ("swarm_approvals", tool_swarm_approvals, read_only),
+        ("swarm_approval_resolve", tool_swarm_approval_resolve, None),
+        ("swarm_supervise", tool_swarm_supervise, None),
+        ("swarm_hooks", tool_swarm_hooks, None),
+        ("swarm_hook_event", tool_swarm_hook_event, None),
+    ]
+    for name, fn, ann in swarm_tools:
+        server.tool(name=name, annotations=ann)(fn)
 
     server.prompt(name="evolver_swarm", title="Evolver Swarm Takeover")(prompt_evolver_swarm)
 

@@ -209,6 +209,16 @@ def _env_flag_value(name: str) -> bool | None:
     key = f"{FLAG_PREFIX}{name.upper()}"
     val = os.environ.get(key)
     if val is None:
+        # Case-insensitive fallback: env lookups are case-insensitive on
+        # Windows, and users/tests commonly write EVOLVER_FF_enable_xxx —
+        # without this the lowercase spelling silently falls through to
+        # disk/default on POSIX (seen as test_features failures on macOS).
+        wanted = key.upper()
+        for env_key, env_val in os.environ.items():
+            if env_key.upper() == wanted:
+                val = env_val
+                break
+    if val is None:
         return None
     return val.strip().lower() in ("1", "true", "yes", "on")
 

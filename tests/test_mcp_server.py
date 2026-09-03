@@ -172,3 +172,83 @@ class TestServerBuild:
         text = result.messages[0].content.text
         assert "EVOLVER SWARM" in text
         assert "swarm_tick" in text
+
+
+class TestResources:
+    def test_resources_registered_and_readable(
+        self, temp_workspace: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        import asyncio
+        import json
+
+        monkeypatch.setenv("EVOLVER_REPO_ROOT", str(temp_workspace))
+        server = build_server()
+
+        uris = {str(r.uri) for r in asyncio.run(server.list_resources())}
+        assert {
+            "evolver://status",
+            "evolver://instrument-prompt",
+            "evolver://dispatch/last",
+            "evolver://events/recent",
+        } <= uris
+
+        contents = asyncio.run(server.read_resource("evolver://status"))
+        first = next(iter(contents))
+        # In-process model exposes .content (serialized as `text` over the wire).
+        data = json.loads(first.content)
+        assert data["ok"] is True
+        assert data["version"] == "1.103.0"
+
+        prompt_contents = asyncio.run(server.read_resource("evolver://instrument-prompt"))
+        assert "EVOLVER SWARM" in next(iter(prompt_contents)).content
+
+
+class TestInstructions:
+    def test_default_instructions_advertise_swarm(self) -> None:
+        server = build_server()
+        assert "SWARM EVOLUTION" in (server.instructions or "")
+
+    def test_auto_hijack_instructions_take_over(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setattr("evolver.config.SWARM_AUTO_HIJACK", True)
+        server = build_server()
+        instructions = server.instructions or ""
+        assert "TAKEOVER ACTIVE" in instructions
+        assert "SWARM EVOLUTION" in instructions
+
+
+class TestCallToolInProcess:
+    def test_supervise_flow_through_call_tool(
+        self, temp_workspace: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        import asyncio
+        import json
+
+        monkeypatch.setenv("EVOLVER_REPO_ROOT", str(temp_workspace))
+        server = build_server()
+
+        paused = asyncio.run(
+            server.call_tool("swarm_supervise", {"action": "pause", "reason": "t"})
+        )
+        data = json.loads(paused.content[0].text)
+        assert data["state"] == "paused"
+
+        resumed = asyncio.run(server.call_tool("swarm_supervise", {"action": "resume"}))
+        data = json.loads(resumed.content[0].text)
+        assert data["state"] == "running"
+
+    def test_hook_event_through_call_tool(
+        self, temp_workspace: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        import asyncio
+        import json
+
+        monkeypatch.setenv("EVOLVER_REPO_ROOT", str(temp_workspace))
+        server = build_server()
+        result = asyncio.run(
+            server.call_tool(
+                "swarm_hook_event",
+                {"event": "signal_detect", "payload": {"content": "request timeout"}},
+            )
+        )
+        data = json.loads(result.content[0].text)
+        assert "perf_bottleneck" in data["detected_signals"]

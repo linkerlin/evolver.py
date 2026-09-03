@@ -1,6 +1,6 @@
 [project]
 name = "evolver"
-version = "1.102.0"
+version = "1.103.0"
 description = "A GEP-powered self-evolution engine for AI agents (Python port of @evomap/evolver)"
 readme = "README.md"
 license = { text = "Apache-2.0" }
@@ -67,6 +67,8 @@ dev = [
     # Server stack for proxy/webui tests (S30: also a project extra `server`).
     "fastapi>=0.115",
     "uvicorn[standard]>=0.32",
+    # Bedrock SSE relay tests mock the client but need the module present.
+    "boto3>=1.35",
     "pytest>=8.3",
     "pytest-asyncio>=0.24",
     "pytest-cov>=6.0",

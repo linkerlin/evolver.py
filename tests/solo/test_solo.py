@@ -182,6 +182,9 @@ def _solo_env(tmp: Path) -> dict[str, str]:
             "EVOLVER_ATP_AUTOBUY": "on",  # solo must cut it
             "EVOLVER_MAX_CYCLES_PER_PROCESS": "1",
             "EVOLVER_IDLE_FETCH_INTERVAL_MS": "1",
+            # The max-cycles handoff spawns a replacement; point it at a
+            # harmless no-op so no orphan loop chain survives the test.
+            "EVOLVER_LOOP_COMMAND": f"{sys.executable} -c pass",
         }
     )
     return env
@@ -222,12 +225,15 @@ def test_solo_cli_routes_into_loop_and_cuts_services(tmp_path: Path) -> None:
     assert "[ValidatorDaemon] Started" not in combined
     assert "[ATP-AutoBuyer] Started" not in combined
     assert "ATP auto-spend is ON" not in combined
-    # Clean exit, no uncaught tracebacks. On Windows the loop deliberately
-    # exits 1 at the max-cycles handoff so an external supervisor can respawn
-    # (runner.py windows_default_skip) — that message is the clean path.
-    if (
-        os.name == "nt"
-        and "Windows default: exit 1 so external supervisor can respawn." in combined
+    # Clean exit, no uncaught tracebacks. The loop deliberately exits 1 at a
+    # max-cycles handoff (replacement spawned on POSIX, windows_default_skip
+    # on Windows) so a supervisor can respawn — both are the clean path.
+    if any(
+        msg in combined
+        for msg in (
+            "Windows default: exit 1 so external supervisor can respawn.",
+            "Replacement spawned; exiting for handoff (exit 1).",
+        )
     ):
         assert proc.returncode == 1, combined
     else:

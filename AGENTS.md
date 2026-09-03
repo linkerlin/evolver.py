@@ -47,7 +47,9 @@ canary.py           Fork-canary：验证 CLI 加载不出崩溃
 swarm.py            蜂群进化核心：instrument prompt（宿主接管协议）+ 闭环工具
                     （boot/tick/distill/solidify/report/status），stdout 全捕获
 mcp_server.py       MCP stdio server（薄工具面）：asset/mailbox/timeline 工具 +
-                    swarm 工具 + `evolver_swarm` prompt（mcp>=2.0 之 MCPServer）
+                    swarm 工具 + `evolver_swarm` prompt（mcp>=2.0 之 MCPServer）+
+                    四只读资源（evolver://status 等）+ 工具注解（readOnly/
+                    destructive hint）；协议 E2E 测试见 tests/test_mcp_protocol.py
 gep/                GEP（基因组进化协议）核心
   schemas/          Pydantic 模型：Gene、Capsule、Task、Protocol
   asset_store.py    JSON/JSONL 持久化，叠加语义（生产级）

@@ -109,7 +109,9 @@ def test_start_spawns_process(
     call = popen_calls[0]
     assert call["args"] == [sys.executable, "-m", "evolver", "--loop"]
     assert call["stdin"] is subprocess.DEVNULL
-    assert call["cwd"] == str(temp_workspace)
+    # macOS tmpdirs live behind a /var → /private/var symlink; the launcher
+    # resolves the workspace before spawning, so compare resolved paths.
+    assert call["cwd"] == str(temp_workspace.resolve())
 
 
 # ---------------------------------------------------------------------------
