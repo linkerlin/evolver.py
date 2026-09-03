@@ -1,0 +1,11 @@
+{
+  "mcpServers": {
+    "evolver": {
+      "command": "/absolute/path/to/evolver.py/.venv/bin/python",
+      "args": ["-m", "evolver.mcp_server"],
+      "env": {
+        "EVOLVER_SWARM_AUTO_HIJACK": "0"
+      }
+    }
+  }
+}

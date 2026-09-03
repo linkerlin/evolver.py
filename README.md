@@ -39,6 +39,14 @@ uv run evolver webui
 uv run evolver proxy
 ```
 
+**让宿主 Agent 加入蜂群（v1.98+ 的旗舰能力）**——引擎经 MCP stdio 接管宿主为进化执行器，一条命令体验完整闭环：
+
+```bash
+uv run python examples/swarm-quickstart/demo_swarm_loop.py   # 或加 --llm 用 DeepSeek 真执行
+```
+
+详见 [MCP Swarm Evolution](#mcp-swarm-evolution蜂群进化) 与 [examples/swarm-quickstart/](examples/swarm-quickstart/)。
+
 ### uvx (one-shot / no project install)
 
 When evolver is published (or you want tool isolation without `uv sync`):
@@ -161,9 +169,15 @@ uv run evolver skills list              # 查看库中技能基因
 
 ```
 src/evolver/
-├── cli.py              # CLI entrypoint (886 lines)
+├── cli.py              # CLI entrypoint
 ├── config.py           # Environment variables + thresholds
 ├── canary.py           # Fork-canary: verify CLI loads without crash
+├── swarm.py            # Swarm core: takeover instrument prompt + loop tools
+│                       #   (tick/distill/solidify/feedback/report/status/
+│                       #    supervise/hooks/hook_event/skills), stdout-captured
+├── mcp_server.py       # MCP stdio server: swarm + asset/mailbox tools,
+│                       #   evolver_swarm prompt, evolver://* resources,
+│                       #   tool annotations (mcp>=2.0 MCPServer)
 ├── evolve/
 │   ├── runner.py       # Cycle orchestration (single + daemon loop)
 │   ├── guards.py       # Preflight checks (load, RSS, cooldown)
@@ -183,8 +197,12 @@ src/evolver/
 │   ├── solidify.py     # Apply gene → validate → persist → publish
 │   ├── selector.py     # Signal matching + epigenetic bias
 │   ├── signals.py      # Signal collection and classification
+│   ├── feedback.py     # Unified evaluation signal E (EvoX harvest)
+│   ├── hitl.py         # HITL approval gate (fail-safe to REJECT)
+│   ├── supervision.py  # HOTL overlay (pause/veto/directive + tripwire)
+│   ├── skill_assets.py # SKILL.md bridge (project > user > builtin)
 │   ├── validator/      # Sandbox executor, reporter, stake bootstrap
-│   └── ...             # 55+ modules
+│   └── ...             # 60+ modules
 ├── proxy/              # Local HTTP proxy (CLI default 127.0.0.1:8081; routes under /v1/a2a)
 │   ├── server/routes.py    # FastAPI route matrix (task/ATP/extensions)
 │   ├── router/             # LLM routing, features, SSE streaming
@@ -211,7 +229,8 @@ src/evolver/
     ├── client/           # Inline JS/CSS (SSE, bootstrap, i18n)
     └── observer/         # Data aggregation modules
 
-tests/                  # 245+ test files, 2900+ tests (pytest)
+tests/                  # 280+ test files, 3400+ tests (pytest; incl. MCP
+                        #   protocol E2E + live-LLM loop E2E under tests/e2e/)
 scripts/                # 17 CLI helper scripts (see Scripts section)
 assets/gep/             # Seed gene library
 memory/                 # Runtime data (graph JSONL, reviews JSONL)
@@ -244,24 +263,25 @@ memory/                 # Runtime data (graph JSONL, reviews JSONL)
 
 ## Implementation Status
 
-> **Overall** (2026-08-11, Sprint 20): tracking Node **v1.94.0** behavioral parity.
-> Package version **1.94.0** (Node evolver v1.94.0 parity baseline). Remaining depth gaps: [演进方案.md](演进方案.md).
-> Sprint 20: v1.94.0 parity — sandbox hardening, publish validation gate, Claude context gene family + seed upgrade, feedbackEnvelope, 12 context-bloat signals, ssePlannedClose, solidify helpers; lint/format/mypy gates green.
+> **Overall** (2026-09-04): package version **1.105.0**. The MCP swarm stack
+> (v1.98–v1.105: takeover loop, evaluation feedback E, HITL/HOTL safety,
+> hooks bridge, skill bridge, protocol + live-LLM E2E) is complete and green
+> (**3400+ tests passing**). Node-parity baseline v1.94.0 retained; remaining
+> depth gaps: [演进方案.md](演进方案.md).
 
 | Subsystem | Status | Notes |
 |---|---|---|
 | **GEP Data Layer** | ~90% | seed genes 11×sha256; solidify direct tests + learning helpers |
 | **GEP Cognition** | ~80% | recall/reflection/distill; explore/curriculum flag-gated |
 | **Evolution Pipeline** | ~90% | 7 phases + Autopoiesis + hard timeout |
+| **MCP Swarm** | ~95% | takeover loop + E feedback + HITL/HOTL + hooks/skill bridges; protocol E2E + live-LLM E2E green |
 | **Proxy Infrastructure** | ~85% | multi-provider, token reuse, path CLI flags, port **8081** |
 | **ATP Marketplace** | ~65% | local settlement; Hub commercial E2E pending |
-| **IDE Adapters** | ~80% | runtime hooks + py_compile syntax guard |
+| **IDE Adapters** | ~85% | runtime hooks + py_compile guard + MCP in-process bridge |
 | **Ops / Solo** | ~85% | lifecycle, force-update, --solo |
 | **WebUI** | ~70% | SSR dashboard + GitHub observer |
 | **Validator** | ~50% | sandbox framework; prod network isolation pending |
-| **Docs / Release** | ~90% | CHANGELOG + version **1.94.0**; multi-OS CI advisory |
-
-**Next (Sprint 21):** a2a heartbeat state machine, event_delivery daemon E2E, conversationDistiller meta gate, v2.0.x evaluation.
+| **Docs / Release** | ~90% | CHANGELOG + version **1.105.0**; multi-OS CI advisory |
 
 See [演进方案.md](演进方案.md) for the live gap roadmap.
 
@@ -269,6 +289,7 @@ See [演进方案.md](演进方案.md) for the live gap roadmap.
 
 | Example | Description |
 |---|---|
+| [`examples/swarm-quickstart/`](examples/swarm-quickstart/) | **蜂群进化全闭环**——MCP 接管、tick→执行→distill→solidify→feedback、HITL/HOTL 运维（支持 `--llm` 由 DeepSeek 真实执行） |
 | [`examples/hello-world/`](examples/hello-world/) | Run a single evolution cycle in an isolated workspace |
 | [`examples/daemon-loop/`](examples/daemon-loop/) | Continuous daemon, lifecycle management, start/stop/status/log |
 | [`examples/proxy-basics/`](examples/proxy-basics/) | A2A Proxy, proxy-token, curl API examples, LLM relay |
@@ -396,6 +417,13 @@ Evolver operates with filesystem and network access. Guardrails are enforced at 
 - `.env` files and credentials are never staged or committed by git-commit genes
 - Session transcripts are redacted before WebUI display
 
+### Swarm Safety: HITL + HOTL (v1.100–v1.101)
+The autonomy spectrum is enforced by two orthogonal gates over the MCP swarm loop:
+
+- **HITL (human-in-the-loop)** — per-decision blocking: `swarm_solidify(skip_validation=true)` is high-risk and passes `gep/hitl.py` (`EVOLVER_HITL_MODE=on` blocks until `evolver hitl approve`; TTL expiry fails safe to REJECT; approvals are idempotent per subject — a rejected run cannot re-request; mode `off` still journals every decision for audit)
+- **HOTL (human-on-the-loop)** — supervisory overlay: `gep/supervision.py` pause/resume (tick refuses new cycles), veto substring patterns (ticked gene → dispatch prompt withheld; solidify subject → blocked — defense in depth), steering directives (injected as next-cycle signals), and a tripwire that auto-pauses after N consecutive degraded feedback reports
+- All supervision/approval actions are journaled (`supervision_events.jsonl`, `hitl_approvals.jsonl`)
+
 ## Anti-Examples (Things That Won't Work)
 
 | Don't | Why |
@@ -431,6 +459,7 @@ A2A_HUB_URL=https://your-hub.example.com uv run evolver proxy
 
 ## Documentation
 
+- [`CHANGELOG.md`](CHANGELOG.md) — Release history (v1.98–v1.105 swarm arc)
 - [`设计方案.md`](设计方案.md) — Comprehensive design document (Chinese, ~1500 lines)
 - [`TODO.md`](TODO.md) — Detailed gap analysis and roadmap
 - [`AGENTS.md`](AGENTS.md) — Agent integration guide, coding standards, pitfalls

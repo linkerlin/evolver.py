@@ -8,6 +8,68 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.105.0] — 2026-09-04
+
+### Added — full-coverage swarm E2E（全覆盖 E2E + 真实 LLM 进环）
+- **Tier A（始终运行）**: `tests/e2e/test_swarm_full_e2e.py` 经真实 stdio 子进程走遍整个 MCP 表面——全部 swarm/经典工具、四只 `evolver://*` 资源、`evolver_swarm` prompt、auto-hijack 指令变体、HITL 自动批准 + HOTL pause/direct/veto 线上流。
+- **Tier B（`-m llm`，需 `DEEPSEEK_API_KEY`）**: **deepseek-v4-flash 真实扮演宿主执行器**——tick → LLM 执行真实 GEP dispatch 提示词 → distill → feedback → 二次 tick。LLM 客户端只存在于测试 harness，引擎保持零 LLM 依赖。
+
+### Fixed
+- MCP 工具结果必须优先读 `structuredContent`（规范要求顶层为对象，SDK 将非 dict 返回包为 `{"result": ...}`；`content[].text` 对 list 只含首元素）——已文档化并应用于全部 MCP 测试客户端。
+
+## [1.104.0] — 2026-09-04
+
+### Added — skill ecosystem bridge（技能生态桥，EvoX SkillRegistry 概念收割）
+- `gep/skill_assets.py`: 多根优先发现（工作区 `.agents`/`.claude` skills > 用户 `~/.agents`/`~/.zcode`/`~/.claude` skills > 内置）+ 同名遮蔽；同步为 `gene_distilled_s2g-*` 基因入库，使宿主生态技能参与信号匹配。CLI `evolver skills list|scan|sync`；MCP `swarm_skills`；`EVOLVER_SKILL_ROOTS` 覆盖根（顺序即优先级）。
+
+### Fixed
+- 技能基因原用 skill2gep 本地哈希公式，被资产库内容哈希校验静默丢弃——同步时改用权威公式重算 `asset_id`。
+
+## [1.103.0] — 2026-09-04
+
+### Added — MCP surface completion + protocol E2E
+- MCP resources: `evolver://status` / `evolver://instrument-prompt` / `evolver://dispatch/last` / `evolver://events/recent`。
+- 工具注解: readOnlyHint（只读工具）/ destructiveHint（`swarm_solidify`）。
+- `tests/test_mcp_protocol.py`: 真实子进程 stdio JSON-RPC 协议 E2E。
+
+### Fixed — 测试套件首次全绿（3377 通过）
+- `feature_flags`: 源码级大小写不敏感 env 回退（POSIX 上小写 `EVOLVER_FF_enable_xxx` 曾被静默忽略）。
+- Bedrock 流测试: dev 组补 boto3。Solo CLI 测试: 接受 POSIX max-cycles 交接退出码；替代进程指向 no-op 杜绝孤儿重生链。macOS `/var → /private/var` 符号链接断言改比较 resolve 路径。self-repair 测试: `git checkout -B`（defaultBranch=main 下幂等）。
+
+## [1.102.0] — 2026-09-04
+
+### Added — hooks integration for MCP hosts（双轨）
+- `swarm_hooks`（status/install/uninstall，包装 setup-hooks）供支持文件钩子的宿主；`swarm_hook_event` 进程内桥（session_start/session_end/signal_detect → 共享信号检测器 → pending_signals）供 MCP-only 宿主。instrument prompt 第三章（Hooks 集成）指导择轨。README 增 MCP 配置指南（ZCode / Claude Code / Cursor）。
+
+## [1.101.0] — 2026-09-04
+
+### Added — HOTL human-on-the-loop supervision（人在环上监督层）
+- `gep/supervision.py`: running/paused 状态机（优雅排水）；veto 子串模式（tick 命中扣发提示词 + solidify 阻断，纵深防御）；directive 转向指令注入下轮信号；降级连击绊线自动暂停（`EVOLVER_SUPERVISION_AUTO_PAUSE_STREAK`）。CLI `evolver supervise`；MCP `swarm_supervise`。与 HITL 正交互补，补全自治光谱。
+
+## [1.100.0] — 2026-09-04
+
+### Added — HITL fail-safe approval gate（EvoX HITLManager 概念收割）
+- `gep/hitl.py`: `swarm_solidify(skip_validation=true)` 过审批门——`EVOLVER_HITL_MODE=on` 阻塞待 `evolver hitl approve`，TTL 超时 fail-safe 拒绝，按 subject 幂等（杜绝 approval-shopping），off 模式仍全程审计。CLI `evolver hitl list|approve|reject`；MCP `swarm_approvals`/`swarm_approval_resolve`。
+- 反馈稳定性观察面（EvoX 双收敛判据）: `swarm_status` 报告近期反馈分数 stddev。
+
+## [1.99.0] — 2026-09-04
+
+### Added — unified evaluation feedback E（统一评估信号，EvoX 概念收割）
+- `gep/feedback.py`: `swarm_feedback` 上报 `primary_score`/`metrics`/`textual_gradient` 三分离；降级报告注入 `swarm_feedback:degraded` + 梯度信号键走 pending_signals 通道（与 autopoiesis 摩擦同路）驱动下轮修复偏置；全量记 `feedback.jsonl`。
+
+## [1.98.0] — 2026-09-03
+
+### Added — swarm evolution via MCP host-agent takeover（蜂群宿主接管，关闭"半开环执行断层"）
+- 引擎不自建 LLM API 调度：经 stdio MCP 连入的宿主 Agent 即执行器。注入方案概念收割自 nanoclaw.go（instructions + boot 工具）并叠加正式 MCP prompt 作为显式 instrument。
+- `evolver.swarm`: 接管提示词 + 传输无关闭环工具（boot/tick/distill/solidify/report/status）；引擎 stdout 全捕获（stdio MCP 独占 stdout）；`swarm_state.json` tick 台账；preflight abort / user-lock 冲突优雅返回 stop_and_report。
+- `evolver.mcp_server`: `evolver_swarm` prompt + swarm 工具面；`EVOLVER_SWARM_AUTO_HIJACK=1` 无人值守接管。dispatch 将组好的 GEP 提示词存入 ctx 供进程内调用方。
+
+### Changed — S30 dependency layering（依赖分层治理）
+- fastapi/uvicorn 移入可选 `evolver[server]` extra；server 命令缺依赖快速失败并提示安装；新增依赖分层守护测试。
+
+### Fixed
+- 会话级 `EVOLVE_LOAD_MAX` 屏蔽环境负载，根治全周期测试的环境性抖动。
+
 ## [1.97.0] — 2026-09-02
 
 ### Added — handover items closed (演进方案_wikiskill对照版.md §8 移交余项)

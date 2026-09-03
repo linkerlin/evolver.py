@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "evolver": {
+      "command": "uv",
+      "args": ["--project", "/absolute/path/to/evolver.py", "run", "evolver", "mcp"]
+    }
+  }
+}
