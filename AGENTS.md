@@ -18,6 +18,7 @@
 | 启动 WebUI | `uv run evolver webui [--port=8080]`（需 `--extra server`） |
 | 启动本地代理 | `uv run evolver proxy [--port=8081]`（需 `--extra server`） |
 | 启动 MCP 服务 | `uv run evolver mcp`（stdio；蜂群进化入口） |
+| HITL 审批门 | `uv run evolver hitl list\|approve\|reject` |
 | 守护进程生命周期 | `uv run evolver start` / `stop` / `restart` / `status` / `log` |
 | 健康检查 | `uv run evolver check` / `watch` |
 | Recipe Hub | `uv run evolver recipe list|show|apply|…` |
@@ -57,6 +58,8 @@ gep/                GEP（基因组进化协议）核心
   distill.py        从 LLM 文本输出中提取 Gene/Capsule
   feedback.py       统一评估反馈 E（EvoX 概念收割）：primary_score/metrics/
                     textual_gradient 三分离，日志 + repair-bias 信号注入
+  hitl.py           HITL 审批门（EvoX HITLManager 概念收割）：高危操作人类
+                    批准，按 subject 幂等，TTL 超时 fail-safe 拒绝，全程审计
   fetch.py          从 Hub 下载并安装资源
   git_ops.py        Git diff/回滚/状态辅助函数
   instance_lock.py  基于 FileLock 之单实例守护（守护循环）
@@ -174,6 +177,12 @@ swarm_tick → 宿主执行 GEP 变异提示词 → swarm_distill → swarm_soli
 `feedback.jsonl`；低分或失败注入 `swarm_feedback:degraded` 信号键——与
 autopoiesis 摩擦信号同走 `pending_signals` → 下周期选择与提示词之通路。
 
+HITL 审批门（EvoX HITLManager 概念收割）：`swarm_solidify(skip_validation=true)`
+属高危，经 `gep/hitl.py` 审批——`EVOLVER_HITL_MODE=on` 时阻塞待人类批准
+（`evolver hitl approve` 或 `swarm_approval_resolve` 转达），TTL 超时
+fail-safe 拒绝；按 subject（含 run_id）幂等，被拒之 subject 不得重试申请；
+mode=off 时自动批准但全程记审计日志。
+
 要紧者：stdio MCP 下 stdout 为 JSON-RPC 通道，`swarm.py` 全量捕获引擎
 `print()`；`swarm_tick` 遇 user-lock 冲突或 preflight abort 时优雅返回
 `stop_and_report`，不得视为故障重试。
@@ -199,6 +208,7 @@ autopoiesis 摩擦信号同走 `pending_signals` → 下周期选择与提示词
 - `autopoiesis_preflight_abort.json`——上次 preflight abort 快照（成功周期后清除）
 - `swarm_state.json`——蜂群 tick 计数与上次 tick 摘要（不含 prompt 全文）
 - `feedback.jsonl`——统一评估反馈日志（EvoX EvaluationFeedback 契约）
+- `hitl_approvals.json` + `hitl_approvals.jsonl`——HITL 审批状态与审计日志
 - `memory_graph_state.json`——`preferred_by_signal`、living_memory 摩擦同步元数据
 - `innovation_log.jsonl`——创新尝试 ROI 追踪
 
@@ -291,6 +301,8 @@ autopoiesis 摩擦信号同走 `pending_signals` → 下周期选择与提示词
 | `EVOLVER_SWARM_AUTO_HIJACK` | `false` | 置 `1` 时 MCP instructions 直接注入接管指令（无人值守蜂群模式） |
 | `EVOLVER_SWARM_TICK_LOG_MAX_CHARS` | `8000` | `swarm_tick` 返回之 `engine_log` 尾部截断预算（dispatch prompt 不截断） |
 | `EVOLVER_FEEDBACK_DEGRADED_THRESHOLD` | `0.5` | 蜂群反馈降级阈值——低于此分或 `success=false` 注入 repair-bias 信号 |
+| `EVOLVER_HITL_MODE` | `off` | HITL 审批门——`on` 时高危 solidify 需人类批准（off 仍记审计） |
+| `EVOLVER_HITL_TTL_MS` | `1800000` | HITL 待决请求 TTL——超时 fail-safe 拒绝 |
 
 ## 坑阱篇
 

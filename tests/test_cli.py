@@ -46,6 +46,30 @@ def test_cli_solidify_without_state_fails(
     assert "no_pending_run" in captured.err
 
 
+def test_cli_hitl_list_approve_flow(
+    isolated_evolver_env: Path,
+    capsys: pytest.CaptureFixture[str],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """EvoX concept harvest: `evolver hitl list/approve/reject` (v1.100.0)."""
+    monkeypatch.setattr("evolver.config.HITL_MODE", "on")
+    from evolver.gep.hitl import request_approval
+
+    assert main(["hitl", "list"]) == 0
+    assert "No pending HITL approvals." in capsys.readouterr().out
+
+    req = request_approval(subject="cli_test:s1", risk_reason="demo risk")
+    assert main(["hitl", "list"]) == 0
+    assert req["request_id"] in capsys.readouterr().out
+
+    assert main(["hitl", "approve", "--id", req["request_id"], "--note", "ok"]) == 0
+    assert "approved" in capsys.readouterr().out
+
+    # Already decided — second resolution fails cleanly.
+    assert main(["hitl", "reject", "--id", req["request_id"]]) == 1
+    assert "not_pending" in capsys.readouterr().err
+
+
 def test_cli_solidify_after_run_in_git_repo(
     isolated_evolver_env: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:

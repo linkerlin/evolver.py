@@ -166,6 +166,16 @@ def _build_parser() -> argparse.ArgumentParser:
     )
     views_p.add_argument("--json", action="store_true", help="Print full projection JSON")
     sub.add_parser("mcp", help="Run the MCP server over stdio (Sprint 24.7)")
+
+    hitl_p = sub.add_parser("hitl", help="HITL approval gate (list/approve/reject)")
+    hitl_sub = hitl_p.add_subparsers(dest="hitl_action")
+    hitl_sub.add_parser("list", help="List pending approval requests")
+    hitl_approve = hitl_sub.add_parser("approve", help="Approve a pending request")
+    hitl_approve.add_argument("--id", required=True, help="Request id (hitl_...)")
+    hitl_approve.add_argument("--note", default="", help="Decision note")
+    hitl_reject = hitl_sub.add_parser("reject", help="Reject a pending request")
+    hitl_reject.add_argument("--id", required=True, help="Request id (hitl_...)")
+    hitl_reject.add_argument("--note", default="", help="Decision note")
     wf_p = sub.add_parser("workflow", help="Durable workflow engine (Sprint 24.10)")
     wf_sub = wf_p.add_subparsers(dest="workflow_action", required=True)
     wf_run = wf_sub.add_parser("run", help="Run a workflow spec file")
@@ -483,6 +493,9 @@ def main(argv: Sequence[str] | None = None) -> int:
 
         return mcp_main()
 
+    if command == "hitl":
+        return _cmd_hitl(args)
+
     if command == "workflow":
         return _cmd_workflow(args)
 
@@ -633,6 +646,41 @@ def _cmd_solidify(_args: argparse.Namespace) -> int:
         f"Solidify failed: {result.get('error')} details={result.get('details')}", file=sys.stderr
     )
     return 1
+
+
+def _cmd_hitl(args: argparse.Namespace) -> int:
+    """HITL approval gate: list / approve / reject (EvoX concept harvest)."""
+    from evolver.gep.hitl import list_pending, resolve_approval
+
+    action = getattr(args, "hitl_action", None) or "list"
+    if action == "list":
+        pending = list_pending()
+        if not pending:
+            print("No pending HITL approvals.")
+            return 0
+        for req in pending:
+            print(
+                f"{req['id']}  subject={req['subject']}  expires_at={req['expires_at']}\n"
+                f"  risk: {req['risk_reason']}\n"
+                f"  requested_by={req['requested_by']}  detail={req['detail'] or '-'}"
+            )
+        return 0
+
+    if action in ("approve", "reject"):
+        result = resolve_approval(
+            args.id,
+            approve=(action == "approve"),
+            decided_by="human",
+            note=getattr(args, "note", "") or "",
+        )
+        if not result.get("ok"):
+            print(f"HITL {action} failed: {result.get('error')}", file=sys.stderr)
+            return 1
+        print(f"HITL {action}d: {result.get('request_id')} ({result.get('subject')})")
+        return 0
+
+    print(f"Unknown hitl action: {action}", file=sys.stderr)
+    return 2
 
 
 def _cmd_self_report(args: argparse.Namespace) -> int:

@@ -55,6 +55,7 @@ class TestInstrumentPrompt:
             "swarm_report",
             "终止条件",
             "安全边界",
+            "HITL",
             f"instrument v{SWARM_PROTOCOL_VERSION}",
         ):
             assert needle in prompt, f"missing section: {needle}"
@@ -73,7 +74,7 @@ class TestBootAndStatus:
         assert result["ok"] is True
         assert result["agent_name"] == "zcode-1"
         assert "EVOLVER SWARM" in result["instrument_prompt"]
-        assert result["state"]["version"] == "1.99.0"
+        assert result["state"]["version"] == "1.100.0"
         assert result["next_action"] == "swarm_tick"
 
         from evolver.proxy.mailbox.store import MailboxStore
@@ -193,3 +194,56 @@ class TestFeedbackChannel:
         result = swarm_feedback(primary_score=5.0)
         assert result["ok"] is False
         assert "invalid_feedback" in result["error"]
+
+    def test_status_reports_feedback_stability(self, isolated_swarm_env: Path) -> None:
+        for _ in range(4):
+            swarm_feedback(primary_score=0.8)
+        stability = swarm_status()["feedback"]["stability"]
+        assert stability is not None
+        assert stability["n"] == 4
+        assert stability["stddev"] == 0.0
+        assert stability["converged"] is True
+
+
+class TestHitlGate:
+    def test_mode_off_auto_approves_with_audit(self, isolated_swarm_env: Path) -> None:
+        result = swarm_solidify(skip_validation=True, agent_name="tester")
+        # Gate passed (auto-approved) — the engine itself then reports the
+        # fresh workspace has no pending run.
+        assert result.get("error") == "no_pending_run"
+        journal = isolated_swarm_env / "evolution" / "hitl_approvals.jsonl"
+        assert journal.exists() and "auto_approved" in journal.read_text(encoding="utf-8")
+
+    def test_mode_on_blocks_until_approved(
+        self, isolated_swarm_env: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setattr("evolver.config.HITL_MODE", "on")
+        blocked = swarm_solidify(skip_validation=True, agent_name="tester")
+        assert blocked["ok"] is False
+        assert blocked["error"] == "hitl_pending"
+        assert blocked["next_action"] == "await_human_approval"
+
+        from evolver.gep.hitl import resolve_approval
+
+        request_id = blocked["approval"]["request_id"]
+        assert resolve_approval(request_id, approve=True, decided_by="human")["ok"]
+
+        passed = swarm_solidify(skip_validation=True, agent_name="tester")
+        assert passed.get("error") == "no_pending_run"
+
+    def test_mode_on_rejected_blocks(
+        self, isolated_swarm_env: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setattr("evolver.config.HITL_MODE", "on")
+        blocked = swarm_solidify(skip_validation=True)
+        from evolver.gep.hitl import resolve_approval
+
+        resolve_approval(blocked["approval"]["request_id"], approve=False)
+        again = swarm_solidify(skip_validation=True)
+        assert again["error"] == "hitl_rejected"
+        assert again["next_action"] == "swarm_tick"
+
+    def test_status_exposes_hitl_state(self, isolated_swarm_env: Path) -> None:
+        status = swarm_status()
+        assert status["hitl"]["mode"] in ("on", "off")
+        assert isinstance(status["hitl"]["pending"], int)

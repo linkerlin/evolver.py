@@ -285,6 +285,11 @@ SWARM_TICK_LOG_MAX_CHARS: Final = env_int("EVOLVER_SWARM_TICK_LOG_MAX_CHARS", 8_
 # EvoX concept harvest: a swarm feedback report below this primary_score (or
 # with success=false) is "degraded" and injects repair-bias signals.
 SWARM_FEEDBACK_DEGRADED_THRESHOLD: Final = env_float("EVOLVER_FEEDBACK_DEGRADED_THRESHOLD", 0.5)
+# EvoX concept harvest (HITLManager): "off" auto-approves high-risk requests
+# (decision still journaled for audit); "on" requires explicit human approval;
+# pending requests past the TTL fail-safe to REJECT.
+HITL_MODE: Final = env_str("EVOLVER_HITL_MODE", "off")
+HITL_TTL_MS: Final = env_positive_int("EVOLVER_HITL_TTL_MS", 30 * 60 * 1_000)
 
 # --- Ops ---
 MAX_SILENCE_MS: Final = env_int("EVOLVER_MAX_SILENCE_MS", 30 * 60 * 1_000)

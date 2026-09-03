@@ -236,11 +236,31 @@ def build_server() -> Any:
 
         return swarm_distill(response_text, dry_run=dry_run)
 
-    def tool_swarm_solidify(skip_validation: bool = False) -> dict[str, Any]:
-        """Run the solidify gate: validations, acceptance gate, commit/rollback."""
+    def tool_swarm_solidify(
+        skip_validation: bool = False, agent_name: str = "host-agent"
+    ) -> dict[str, Any]:
+        """Run the solidify gate: validations, acceptance gate, commit/rollback.
+
+        skip_validation=True is high-risk: it passes the HITL approval gate
+        (blocked → await_human_approval; timeout fails safe to reject).
+        """
         from evolver.swarm import swarm_solidify
 
-        return swarm_solidify(skip_validation=skip_validation)
+        return swarm_solidify(skip_validation=skip_validation, agent_name=agent_name)
+
+    def tool_swarm_approvals() -> dict[str, Any]:
+        """List pending HITL approval requests awaiting a human decision."""
+        from evolver.gep.hitl import list_pending, list_recent
+
+        return {"pending": list_pending(), "recent": list_recent(limit=10)}
+
+    def tool_swarm_approval_resolve(
+        request_id: str, approve: bool, note: str = ""
+    ) -> dict[str, Any]:
+        """Relay a HUMAN decision on a pending HITL request (ask the user first)."""
+        from evolver.gep.hitl import resolve_approval
+
+        return resolve_approval(request_id, approve=approve, decided_by="human-via-host", note=note)
 
     def tool_swarm_report(
         category: str | None = None,
@@ -318,6 +338,8 @@ def build_server() -> Any:
         ("swarm_feedback", tool_swarm_feedback),
         ("swarm_report", tool_swarm_report),
         ("swarm_status", tool_swarm_status),
+        ("swarm_approvals", tool_swarm_approvals),
+        ("swarm_approval_resolve", tool_swarm_approval_resolve),
     ]
     for name, fn in swarm_tools:
         server.tool(name=name)(fn)

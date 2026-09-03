@@ -153,7 +153,10 @@ solidify 验证门真实落盘或回滚。
 ## 三、安全边界（不可逾越）
 
 - 仅在 {workspace} 内改动；禁止 `git push --force`、禁止改写已发布历史。
-- 禁止绕过 solidify 验证门；`skip_validation` 仅当提示词显式要求时使用。
+- 禁止绕过 solidify 验证门；`skip_validation` 仅当提示词显式要求时使用，
+  且需过 HITL 审批门——`EVOLVER_HITL_MODE=on` 时须人类批准
+  （`evolver hitl approve` 或经你转达人类决定），超时未决自动拒绝
+  （fail-safe）；同一 run 被拒后不得重试申请。
 - 禁止手工改写 `.evolver/` 资产存储——内容哈希校验会令其失效。
 - 禁止伪造执行结果：未真实执行过的变异不得出现在 distill 提交里，
   `swarm_feedback` 的评分亦不得虚报。
@@ -180,17 +183,38 @@ solidify 验证门真实落盘或回滚。
 # ---------------------------------------------------------------------------
 
 
+def _feedback_stability(rows: list[dict[str, Any]], window: int = 10) -> dict[str, Any] | None:
+    """EvoX dual-convergence observation surface: score stddev (<0.01 counts as
+    converged) over the last ``window`` feedback reports. Observation only —
+    enforcement stays with the signal-history modulation (plateau detection)."""
+    scores = [
+        float(r["primary_score"]) for r in rows if isinstance(r.get("primary_score"), int | float)
+    ][-window:]
+    if len(scores) < 3:
+        return None
+    mean = sum(scores) / len(scores)
+    variance = sum((s - mean) ** 2 for s in scores) / len(scores)
+    stddev = variance**0.5
+    return {
+        "n": len(scores),
+        "mean": round(mean, 4),
+        "stddev": round(stddev, 4),
+        "converged": stddev < 0.01,
+    }
+
+
 def swarm_status() -> dict[str, Any]:
     """Summarize engine state for swarm agents (cheap, no cycle side effects)."""
     from evolver import __version__
     from evolver.gep.asset_store import load_capsules, load_genes
     from evolver.gep.bridge import determine_bridge_enabled
     from evolver.gep.feedback import load_recent_feedback
+    from evolver.gep.hitl import hitl_mode_enabled, list_pending
     from evolver.gep.paths import get_repo_root, get_solidify_state_path, get_workspace_root
 
     prompt_artifact = get_solidify_state_path().parent / "last_prompt.md"
     swarm_state = _load_swarm_state()
-    recent_feedback = load_recent_feedback(5)
+    recent_feedback = load_recent_feedback(10)
     mailbox: dict[str, int] = {}
     try:
         store = _mailbox_store()
@@ -217,6 +241,11 @@ def swarm_status() -> dict[str, Any]:
         "feedback": {
             "recent_count": len(recent_feedback),
             "last": recent_feedback[-1] if recent_feedback else None,
+            "stability": _feedback_stability(recent_feedback),
+        },
+        "hitl": {
+            "mode": "on" if hitl_mode_enabled() else "off",
+            "pending": len(list_pending()),
         },
         "mailbox_pending": mailbox,
     }
@@ -363,10 +392,48 @@ def swarm_distill(response_text: str, dry_run: bool = False) -> dict[str, Any]:
     }
 
 
-def swarm_solidify(skip_validation: bool = False) -> dict[str, Any]:
-    """Run the solidify gate (validations + acceptance gate + commit/rollback)."""
+def _pending_solidify_run_id() -> str:
+    """Best-effort run_id of the pending solidify state (gates HITL subjects)."""
+    import json as _json
+
+    from evolver.gep.paths import get_solidify_state_path
+
+    try:
+        data = _json.loads(get_solidify_state_path().read_text(encoding="utf-8"))
+        return str((data.get("last_run") or {}).get("run_id") or "unknown")
+    except Exception:
+        return "unknown"
+
+
+def swarm_solidify(skip_validation: bool = False, agent_name: str = "host-agent") -> dict[str, Any]:
+    """Run the solidify gate (validations + acceptance gate + commit/rollback).
+
+    High-risk calls (``skip_validation=True``) pass through the HITL approval
+    gate first (EvoX concept harvest): ``EVOLVER_HITL_MODE=on`` blocks until a
+    human approves / fail-safe rejects on timeout; mode ``off`` auto-approves
+    but journals the decision for audit.
+    """
     from evolver.config import SWARM_TICK_LOG_MAX_CHARS
+    from evolver.gep import hitl
     from evolver.gep.solidify import solidify
+
+    approval: dict[str, Any] | None = None
+    if skip_validation:
+        subject = f"solidify_skip_validation:{_pending_solidify_run_id()}"
+        approval = hitl.request_approval(
+            subject=subject,
+            risk_reason="swarm_solidify with skip_validation=True bypasses the validation cascade",
+            requested_by=agent_name,
+        )
+        if approval.get("status") != "approved":
+            return {
+                "ok": False,
+                "error": f"hitl_{approval.get('status', 'pending')}",
+                "approval": approval,
+                "next_action": (
+                    "await_human_approval" if approval.get("status") == "pending" else "swarm_tick"
+                ),
+            }
 
     with _capture_stdout() as capture:
         try:
@@ -381,6 +448,8 @@ def swarm_solidify(skip_validation: bool = False) -> dict[str, Any]:
         result = dict(result)
         result.setdefault("ok", False)
         result["engine_log"] = _tail(capture.getvalue(), SWARM_TICK_LOG_MAX_CHARS)
+        if approval is not None:
+            result["hitl_approval"] = approval
     return result
 
 
