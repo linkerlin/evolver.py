@@ -147,6 +147,7 @@ class TestServerBuild:
             "swarm_tick",
             "swarm_distill",
             "swarm_solidify",
+            "swarm_feedback",
             "swarm_report",
             "swarm_status",
         } <= names

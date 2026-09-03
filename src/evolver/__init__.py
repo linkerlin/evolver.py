@@ -1,4 +1,4 @@
 """evolver — Python port of the EvoMap self-evolution engine."""
 
-__version__ = "1.98.0"
+__version__ = "1.99.0"
 __all__ = ["__version__"]

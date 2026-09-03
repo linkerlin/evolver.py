@@ -55,6 +55,8 @@ gep/                GEP（基因组进化协议）核心
   content_hash.py   SHA-256 内容寻址资源 ID
   crypto.py         本地密钥管理
   distill.py        从 LLM 文本输出中提取 Gene/Capsule
+  feedback.py       统一评估反馈 E（EvoX 概念收割）：primary_score/metrics/
+                    textual_gradient 三分离，日志 + repair-bias 信号注入
   fetch.py          从 Hub 下载并安装资源
   git_ops.py        Git diff/回滚/状态辅助函数
   instance_lock.py  基于 FileLock 之单实例守护（守护循环）
@@ -162,9 +164,15 @@ server instructions + `swarm_boot` 工具（nanoclaw.go 模式，覆盖不渲染
 
 ```
 swarm_tick → 宿主执行 GEP 变异提示词 → swarm_distill → swarm_solidify
-     ↑                                                          │
-     └──────────── swarm_report（心跳）+ mailbox（多节点协调）◀────┘
+     ↑                        ↓                                            │
+     └── swarm_feedback（评估信号 E，低分注入 repair-bias）◀────────────────┘
+     └──────────── swarm_report（心跳）+ mailbox（多节点协调）◀──────────────┘
 ```
+
+统一评估反馈（EvoX 概念收割）：`swarm_feedback` 上报 `primary_score`（0-1）/
+`metrics`（多维诊断）/`textual_gradient`（自然语言方向信号），全量记入
+`feedback.jsonl`；低分或失败注入 `swarm_feedback:degraded` 信号键——与
+autopoiesis 摩擦信号同走 `pending_signals` → 下周期选择与提示词之通路。
 
 要紧者：stdio MCP 下 stdout 为 JSON-RPC 通道，`swarm.py` 全量捕获引擎
 `print()`；`swarm_tick` 遇 user-lock 冲突或 preflight abort 时优雅返回
@@ -190,6 +198,7 @@ swarm_tick → 宿主执行 GEP 变异提示词 → swarm_distill → swarm_soli
 - `autopoiesis_state.json`——跨周期 Hub 降级标志
 - `autopoiesis_preflight_abort.json`——上次 preflight abort 快照（成功周期后清除）
 - `swarm_state.json`——蜂群 tick 计数与上次 tick 摘要（不含 prompt 全文）
+- `feedback.jsonl`——统一评估反馈日志（EvoX EvaluationFeedback 契约）
 - `memory_graph_state.json`——`preferred_by_signal`、living_memory 摩擦同步元数据
 - `innovation_log.jsonl`——创新尝试 ROI 追踪
 
@@ -281,6 +290,7 @@ swarm_tick → 宿主执行 GEP 变异提示词 → swarm_distill → swarm_soli
 | `A2A_NODE_SECRET_VERSION` | （无） | 节点密钥版本号——Hub 轮换密钥时递增，客户端据此检测陈旧 secret |
 | `EVOLVER_SWARM_AUTO_HIJACK` | `false` | 置 `1` 时 MCP instructions 直接注入接管指令（无人值守蜂群模式） |
 | `EVOLVER_SWARM_TICK_LOG_MAX_CHARS` | `8000` | `swarm_tick` 返回之 `engine_log` 尾部截断预算（dispatch prompt 不截断） |
+| `EVOLVER_FEEDBACK_DEGRADED_THRESHOLD` | `0.5` | 蜂群反馈降级阈值——低于此分或 `success=false` 注入 repair-bias 信号 |
 
 ## 坑阱篇
 

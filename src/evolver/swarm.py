@@ -38,7 +38,7 @@ import re
 import time
 from collections.abc import Iterator
 from pathlib import Path
-from typing import Any, Final
+from typing import Any, Final, Literal
 
 SWARM_PROTOCOL_VERSION: Final = "1"
 
@@ -143,15 +143,20 @@ solidify 验证门真实落盘或回滚。
 4. `swarm_solidify` — 触发验证门（pytest/ruff/mypy 级联 + 验收门）并固化。
    失败时阅读返回的 `failure_mode`；repair bias 已自动注入下一轮选择，
    直接回到步骤 1 即可。
-5. 心跳：每 3 轮或遇到显著摩擦时调用 `swarm_report` 捕获教训（写入活记忆）。
-6. 回到步骤 1。多节点协作经 `mailbox_poll` / `mailbox_send`。
+5. `swarm_feedback` — 每轮执行后诚实上报统一评估信号 E：
+   `primary_score`（0-1）、`metrics`（可选多维诊断）、`textual_gradient`
+   （自然语言方向——什么有效/什么没用）。低分或失败会自动注入下轮
+   repair-bias 信号；评分必须反映真实执行效果。
+6. 心跳：每 3 轮或遇到显著摩擦时调用 `swarm_report` 捕获教训（写入活记忆）。
+7. 回到步骤 1。多节点协作经 `mailbox_poll` / `mailbox_send`。
 
 ## 三、安全边界（不可逾越）
 
 - 仅在 {workspace} 内改动；禁止 `git push --force`、禁止改写已发布历史。
 - 禁止绕过 solidify 验证门；`skip_validation` 仅当提示词显式要求时使用。
 - 禁止手工改写 `.evolver/` 资产存储——内容哈希校验会令其失效。
-- 禁止伪造执行结果：未真实执行过的变异不得出现在 distill 提交里。
+- 禁止伪造执行结果：未真实执行过的变异不得出现在 distill 提交里，
+  `swarm_feedback` 的评分亦不得虚报。
 - preflight abort / 预算守卫是引擎稳态的一部分，视为正常信号而非故障。
 
 ## 四、终止条件（满足其一即停止并汇报）
@@ -180,10 +185,12 @@ def swarm_status() -> dict[str, Any]:
     from evolver import __version__
     from evolver.gep.asset_store import load_capsules, load_genes
     from evolver.gep.bridge import determine_bridge_enabled
+    from evolver.gep.feedback import load_recent_feedback
     from evolver.gep.paths import get_repo_root, get_solidify_state_path, get_workspace_root
 
     prompt_artifact = get_solidify_state_path().parent / "last_prompt.md"
     swarm_state = _load_swarm_state()
+    recent_feedback = load_recent_feedback(5)
     mailbox: dict[str, int] = {}
     try:
         store = _mailbox_store()
@@ -207,6 +214,10 @@ def swarm_status() -> dict[str, Any]:
         "last_prompt_artifact": str(prompt_artifact) if prompt_artifact.exists() else None,
         "tick_count": int(swarm_state.get("ticks") or 0),
         "last_tick": swarm_state.get("last_tick"),
+        "feedback": {
+            "recent_count": len(recent_feedback),
+            "last": recent_feedback[-1] if recent_feedback else None,
+        },
         "mailbox_pending": mailbox,
     }
 
@@ -404,11 +415,50 @@ def swarm_report(
     }
 
 
+def swarm_feedback(
+    primary_score: float,
+    textual_gradient: str = "",
+    metrics: dict[str, float] | None = None,
+    success: bool = True,
+    error_message: str | None = None,
+    eval_mode: Literal["train", "validation", "test"] = "validation",
+    sample_count: int = 0,
+    agent_name: str = "host-agent",
+    run_id: str | None = None,
+    cycle_id: str | None = None,
+) -> dict[str, Any]:
+    """Report a unified evaluation signal E (EvoX concept harvest) into the loop.
+
+    Degraded reports (low ``primary_score`` or ``success=false``) inject
+    repair-bias signals for the next cycle; the natural-language
+    ``textual_gradient`` rides along as a direction hint.
+    """
+    from evolver.gep.feedback import EvaluationFeedback, record_feedback
+
+    try:
+        fb = EvaluationFeedback(
+            primary_score=primary_score,
+            textual_gradient=textual_gradient,
+            metrics=metrics or {},
+            success=success,
+            error_message=error_message,
+            eval_mode=eval_mode,
+            sample_count=sample_count,
+            agent_name=agent_name,
+            run_id=run_id,
+            cycle_id=cycle_id,
+        )
+    except Exception as exc:
+        return {"ok": False, "error": f"invalid_feedback: {exc}"}
+    return record_feedback(fb)
+
+
 __all__ = [
     "SWARM_PROTOCOL_VERSION",
     "build_instrument_prompt",
     "swarm_boot",
     "swarm_distill",
+    "swarm_feedback",
     "swarm_report",
     "swarm_solidify",
     "swarm_status",

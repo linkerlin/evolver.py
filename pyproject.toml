@@ -1,6 +1,6 @@
 [project]
 name = "evolver"
-version = "1.98.0"
+version = "1.99.0"
 description = "A GEP-powered self-evolution engine for AI agents (Python port of @evomap/evolver)"
 readme = "README.md"
 license = { text = "Apache-2.0" }

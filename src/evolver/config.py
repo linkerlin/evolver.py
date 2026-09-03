@@ -282,6 +282,9 @@ SWARM_AUTO_HIJACK: Final = env_bool("EVOLVER_SWARM_AUTO_HIJACK", False)
 # swarm_tick returns the engine's stdout as `engine_log` (tail-truncated to
 # this budget); the dispatch prompt itself is returned untruncated.
 SWARM_TICK_LOG_MAX_CHARS: Final = env_int("EVOLVER_SWARM_TICK_LOG_MAX_CHARS", 8_000)
+# EvoX concept harvest: a swarm feedback report below this primary_score (or
+# with success=false) is "degraded" and injects repair-bias signals.
+SWARM_FEEDBACK_DEGRADED_THRESHOLD: Final = env_float("EVOLVER_FEEDBACK_DEGRADED_THRESHOLD", 0.5)
 
 # --- Ops ---
 MAX_SILENCE_MS: Final = env_int("EVOLVER_MAX_SILENCE_MS", 30 * 60 * 1_000)

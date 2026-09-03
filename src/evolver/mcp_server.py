@@ -18,7 +18,7 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 
 from evolver.proxy.mailbox.store import MailboxStore
 
@@ -162,7 +162,8 @@ def build_server() -> Any:
         "worker. To hand this session over, invoke the `evolver_swarm` prompt "
         "or call the `swarm_boot` tool, then follow the injected protocol: "
         "swarm_tick → execute the returned GEP mutation prompt → swarm_distill "
-        "→ swarm_solidify → swarm_report (heartbeat)."
+        "→ swarm_solidify → swarm_feedback (evaluation signal E) → swarm_report "
+        "(heartbeat)."
     )
     if SWARM_AUTO_HIJACK:
         swarm_directive = (
@@ -263,6 +264,34 @@ def build_server() -> Any:
 
         return swarm_status()
 
+    def tool_swarm_feedback(
+        primary_score: float,
+        textual_gradient: str = "",
+        metrics: dict[str, float] | None = None,
+        success: bool = True,
+        error_message: str | None = None,
+        eval_mode: Literal["train", "validation", "test"] = "validation",
+        sample_count: int = 0,
+        agent_name: str = "host-agent",
+        run_id: str | None = None,
+        cycle_id: str | None = None,
+    ) -> dict[str, Any]:
+        """Report unified evaluation feedback E (score/metrics/gradient)."""
+        from evolver.swarm import swarm_feedback
+
+        return swarm_feedback(
+            primary_score=primary_score,
+            textual_gradient=textual_gradient,
+            metrics=metrics,
+            success=success,
+            error_message=error_message,
+            eval_mode=eval_mode,
+            sample_count=sample_count,
+            agent_name=agent_name,
+            run_id=run_id,
+            cycle_id=cycle_id,
+        )
+
     def prompt_evolver_swarm(agent_name: str = "host-agent") -> str:
         """Instrument prompt: inject the swarm-evolution takeover protocol."""
         from evolver.swarm import swarm_boot
@@ -286,6 +315,7 @@ def build_server() -> Any:
         ("swarm_tick", tool_swarm_tick),
         ("swarm_distill", tool_swarm_distill),
         ("swarm_solidify", tool_swarm_solidify),
+        ("swarm_feedback", tool_swarm_feedback),
         ("swarm_report", tool_swarm_report),
         ("swarm_status", tool_swarm_status),
     ]

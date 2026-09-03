@@ -17,6 +17,7 @@ from evolver.swarm import (
     build_instrument_prompt,
     swarm_boot,
     swarm_distill,
+    swarm_feedback,
     swarm_report,
     swarm_solidify,
     swarm_status,
@@ -50,6 +51,7 @@ class TestInstrumentPrompt:
             "swarm_tick",
             "swarm_distill",
             "swarm_solidify",
+            "swarm_feedback",
             "swarm_report",
             "终止条件",
             "安全边界",
@@ -71,7 +73,7 @@ class TestBootAndStatus:
         assert result["ok"] is True
         assert result["agent_name"] == "zcode-1"
         assert "EVOLVER SWARM" in result["instrument_prompt"]
-        assert result["state"]["version"] == "1.98.0"
+        assert result["state"]["version"] == "1.99.0"
         assert result["next_action"] == "swarm_tick"
 
         from evolver.proxy.mailbox.store import MailboxStore
@@ -158,3 +160,36 @@ class TestDistillSolidifyReport:
         result = swarm_report(category="friction", description="demo", resolution="none")
         assert result["ok"] is True
         assert isinstance(result["report"], dict)
+
+
+class TestFeedbackChannel:
+    def test_feedback_records_and_injects_repair_bias(self, isolated_swarm_env: Path) -> None:
+        from evolver.gep.asset_store import consume_pending_signals
+
+        result = swarm_feedback(
+            primary_score=0.2,
+            textual_gradient="修复未生效，锚点仍然失配",
+            agent_name="tester",
+        )
+        assert result["ok"] is True
+        assert result["degraded"] is True
+
+        pending = consume_pending_signals()
+        assert "swarm_feedback:degraded" in pending
+        assert any(s.startswith("swarm_feedback:gradient:") for s in pending)
+
+        status = swarm_status()
+        assert status["feedback"]["recent_count"] == 1
+        assert status["feedback"]["last"]["primary_score"] == 0.2
+
+    def test_feedback_ok_path_no_repair_bias(self, isolated_swarm_env: Path) -> None:
+        from evolver.gep.asset_store import consume_pending_signals
+
+        result = swarm_feedback(primary_score=0.95, textual_gradient="顺利")
+        assert result["degraded"] is False
+        assert consume_pending_signals() == ["swarm_feedback:ok"]
+
+    def test_feedback_invalid_score_rejected(self, isolated_swarm_env: Path) -> None:
+        result = swarm_feedback(primary_score=5.0)
+        assert result["ok"] is False
+        assert "invalid_feedback" in result["error"]
