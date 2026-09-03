@@ -67,8 +67,15 @@ class _McpClient:
         return json.loads(line)  # stdout must contain ONLY JSON-RPC frames
 
     def call_tool(self, name: str, args: dict) -> dict:
-        res = self.request("tools/call", {"name": name, "arguments": args})
-        return json.loads(res["result"]["content"][0]["text"])
+        result = self.request("tools/call", {"name": name, "arguments": args})["result"]
+        structured = result.get("structuredContent")
+        if structured is not None:
+            # SDK wraps non-dict returns as {"result": ...} (spec requires
+            # a top-level object).
+            if isinstance(structured, dict) and set(structured) == {"result"}:
+                return structured["result"]
+            return structured
+        return json.loads(result["content"][0]["text"])
 
     def close(self) -> None:
         if self.proc.stdin:
@@ -145,7 +152,7 @@ class TestProtocol:
             "contents"
         ][0]["text"]
         status = json.loads(status_text)
-        assert status["ok"] is True and status["version"] == "1.104.0"
+        assert status["ok"] is True and status["version"] == "1.105.0"
 
         prompt_text = client.request("resources/read", {"uri": "evolver://instrument-prompt"})[
             "result"

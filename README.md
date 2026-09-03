@@ -285,6 +285,16 @@ See [演进方案.md](演进方案.md) for the live gap roadmap.
 # Run all tests
 uv run pytest tests/ -q
 
+# Full-coverage swarm E2E (stdio MCP, every tool/resource/prompt + HITL/HOTL flows)
+uv run pytest tests/e2e/ -q
+
+# Live-LLM loop E2E — DeepSeek (deepseek-v4-flash) plays the host executor:
+# tick → LLM executes the GEP dispatch prompt → distill → feedback → second tick.
+# Requires DEEPSEEK_API_KEY in the environment (skips otherwise).
+DEEPSEEK_API_KEY=sk-... uv run pytest tests/e2e/ -m llm -q
+# Optional: DEEPSEEK_BASE_URL (default https://api.deepseek.com), DEEPSEEK_MODEL
+# (default deepseek-v4-flash)
+
 # Run with coverage
 uv run pytest tests/ --cov=evolver --cov-report=term-missing
 

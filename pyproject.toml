@@ -1,6 +1,6 @@
 [project]
 name = "evolver"
-version = "1.104.0"
+version = "1.105.0"
 description = "A GEP-powered self-evolution engine for AI agents (Python port of @evomap/evolver)"
 readme = "README.md"
 license = { text = "Apache-2.0" }
@@ -183,6 +183,7 @@ addopts = "-ra --strict-markers"
 markers = [
     "slow: marks tests as slow (deselect with '-m \"not slow\"')",
     "integration: marks tests as integration tests",
+    "llm: requires DEEPSEEK_API_KEY — live DeepSeek loop e2e (also marked slow)",
 ]
 
 [tool.coverage.run]

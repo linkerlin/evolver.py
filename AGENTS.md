@@ -276,6 +276,13 @@ instrument prompt 第三章（Hooks 集成）指导宿主择轨。
 - `pytest` 配 `pytest-asyncio` 之 `"auto"` 模式（无需 `@pytest.mark.asyncio`）
 - `respx` 用于 mock `httpx` 调用
 - `freezegun` 用于时间相关测试
+- `tests/e2e/test_swarm_full_e2e.py` 全覆盖 E2E：Tier A 无 LLM 走遍全部
+  工具/资源/prompt/双指令模式；Tier B（`-m llm`，需 `DEEPSEEK_API_KEY`）
+  由 DeepSeek（deepseek-v4-flash）真实扮演宿主执行器跑通闭环——LLM 客户端
+  只存在于测试 harness，引擎本身仍无 LLM 依赖
+- MCP 客户端读工具结果须优先 `structuredContent`（规范要求顶层为对象，
+  SDK 将非 dict 返回包成 `{"result": ...}`；`content[].text` 对 list 只含
+  首元素）——见 tests/e2e 的 `_McpClient.call`
 - 测试文件与源码一一对应：`test_<module>.py` 测试 `evolver.<module>`
 - `conftest.py` 中之 `temp_workspace` fixture 隔离所有路径环境变量
 - `test_cli.py` 中之 `isolated_evolver_env` fixture 加 `EVOLVER_NO_PARENT_GIT=1`
