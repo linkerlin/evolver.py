@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import sys
 import tempfile
+from collections.abc import Iterator
 from pathlib import Path
 from typing import Any
 
@@ -25,6 +26,17 @@ def _neutral_fitness_cascade(monkeypatch: pytest.MonkeyPatch) -> None:
         {"command": [sys.executable, "-c", "print('ok')"]},
     ]
     monkeypatch.setattr(solidify_mod, "FITNESS_CASCADE_COMMANDS", neutral)
+
+
+@pytest.fixture(autouse=True, scope="session")
+def _shield_ambient_load() -> Iterator[None]:
+    """Full-cycle tests (run/cli/integration) must not preflight-abort on
+    ambient host load. test_guards.py pins EVOLVE_LOAD_MAX=0.01 itself to
+    cover the load-abort path deterministically."""
+    mp = pytest.MonkeyPatch()
+    mp.setenv("EVOLVE_LOAD_MAX", "999")
+    yield
+    mp.undo()
 
 
 @pytest.fixture

@@ -15,8 +15,9 @@
 | 蒸馏 LLM 响应 | `uv run evolver distill --response-file=<path>` |
 | 从 Hub 获取技能 | `uv run evolver fetch <query>` |
 | 同步资源 | `uv run evolver sync [--scope=...]` |
-| 启动 WebUI | `uv run evolver webui [--port=8080]` |
-| 启动本地代理 | `uv run evolver proxy [--port=8081]` |
+| 启动 WebUI | `uv run evolver webui [--port=8080]`（需 `--extra server`） |
+| 启动本地代理 | `uv run evolver proxy [--port=8081]`（需 `--extra server`） |
+| 启动 MCP 服务 | `uv run evolver mcp`（stdio；蜂群进化入口） |
 | 守护进程生命周期 | `uv run evolver start` / `stop` / `restart` / `status` / `log` |
 | 健康检查 | `uv run evolver check` / `watch` |
 | Recipe Hub | `uv run evolver recipe list|show|apply|…` |
@@ -41,6 +42,10 @@
 cli.py              CLI 入口（argparse）、.env 加载、命令分发
 config.py           全部运行时阈值/超时、环境变量覆盖
 canary.py           Fork-canary：验证 CLI 加载不出崩溃
+swarm.py            蜂群进化核心：instrument prompt（宿主接管协议）+ 闭环工具
+                    （boot/tick/distill/solidify/report/status），stdout 全捕获
+mcp_server.py       MCP stdio server（薄工具面）：asset/mailbox/timeline 工具 +
+                    swarm 工具 + `evolver_swarm` prompt（mcp>=2.0 之 MCPServer）
 gep/                GEP（基因组进化协议）核心
   schemas/          Pydantic 模型：Gene、Capsule、Task、Protocol
   asset_store.py    JSON/JSONL 持久化，叠加语义（生产级）
@@ -148,6 +153,23 @@ atp/                Agent 交易协议市场
 
 上下文为一纯 `dict[str, Any]`，贯穿各流水线阶段。
 
+### 蜂群进化（MCP 宿主接管）
+
+「半开环执行断层」之解：引擎不自建 LLM API 调度，宿主 Agent（经 `evolver mcp`，
+stdio）即执行器。注入双通道：MCP prompt `evolver_swarm`（正式 instrument）与
+server instructions + `swarm_boot` 工具（nanoclaw.go 模式，覆盖不渲染 prompt
+之宿主；`EVOLVER_SWARM_AUTO_HIJACK=1` 时 instructions 直接注入接管指令）。
+
+```
+swarm_tick → 宿主执行 GEP 变异提示词 → swarm_distill → swarm_solidify
+     ↑                                                          │
+     └──────────── swarm_report（心跳）+ mailbox（多节点协调）◀────┘
+```
+
+要紧者：stdio MCP 下 stdout 为 JSON-RPC 通道，`swarm.py` 全量捕获引擎
+`print()`；`swarm_tick` 遇 user-lock 冲突或 preflight abort 时优雅返回
+`stop_and_report`，不得视为故障重试。
+
 ### GEP 资源存储
 
 位于 `<GEP_ASSETS_DIR>`（默认 `<workspace>/.evolver/gep/`）：
@@ -167,6 +189,7 @@ atp/                Agent 交易协议市场
 - `autopoiesis.jsonl`——AutopoiesisTick 追加日志
 - `autopoiesis_state.json`——跨周期 Hub 降级标志
 - `autopoiesis_preflight_abort.json`——上次 preflight abort 快照（成功周期后清除）
+- `swarm_state.json`——蜂群 tick 计数与上次 tick 摘要（不含 prompt 全文）
 - `memory_graph_state.json`——`preferred_by_signal`、living_memory 摩擦同步元数据
 - `innovation_log.jsonl`——创新尝试 ROI 追踪
 
@@ -256,6 +279,8 @@ atp/                Agent 交易协议市场
 | `EVOLVER_OUTCOME_REPORT` | `off` | 结果上报模式——向 Hub 上报复用结果以获归因 (P4-a Slice B) |
 | `EVOLVER_FORCE_UPDATE_RETRY_COOLDOWN_MS` | `300000` (5min) | Hub 推送强制更新的最小间隔冷却 |
 | `A2A_NODE_SECRET_VERSION` | （无） | 节点密钥版本号——Hub 轮换密钥时递增，客户端据此检测陈旧 secret |
+| `EVOLVER_SWARM_AUTO_HIJACK` | `false` | 置 `1` 时 MCP instructions 直接注入接管指令（无人值守蜂群模式） |
+| `EVOLVER_SWARM_TICK_LOG_MAX_CHARS` | `8000` | `swarm_tick` 返回之 `engine_log` 尾部截断预算（dispatch prompt 不截断） |
 
 ## 坑阱篇
 

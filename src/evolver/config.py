@@ -274,6 +274,15 @@ PACKAGE_DESC_CACHE_TTL_MS: Final = 6 * 60 * 60 * 1_000
 MEMORY_GRAPH_READ_LIMIT: Final = 1_000
 NARRATIVE_SUMMARY_MAX_CHARS: Final = 3_000
 
+# --- Swarm (MCP host-agent takeover; see evolver.swarm) ---
+# Auto-hijack: prepend the full takeover directive into the MCP server
+# instructions so unattended hosts boot straight into the swarm protocol.
+# Default false — plain instructions merely advertise `evolver_swarm`.
+SWARM_AUTO_HIJACK: Final = env_bool("EVOLVER_SWARM_AUTO_HIJACK", False)
+# swarm_tick returns the engine's stdout as `engine_log` (tail-truncated to
+# this budget); the dispatch prompt itself is returned untruncated.
+SWARM_TICK_LOG_MAX_CHARS: Final = env_int("EVOLVER_SWARM_TICK_LOG_MAX_CHARS", 8_000)
+
 # --- Ops ---
 MAX_SILENCE_MS: Final = env_int("EVOLVER_MAX_SILENCE_MS", 30 * 60 * 1_000)
 CLEANUP_MAX_AGE_MS: Final = env_int("EVOLVER_CLEANUP_MAX_AGE_MS", 24 * 60 * 60 * 1_000)

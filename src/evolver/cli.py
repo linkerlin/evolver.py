@@ -897,6 +897,7 @@ async def _cmd_loop(args: argparse.Namespace) -> int:
 
 def _cmd_webui(args: argparse.Namespace) -> int:
     """Launch the FastAPI WebUI dashboard."""
+    _require_server_extra()
     import uvicorn
 
     from evolver.config import resolve_webui_port
@@ -1402,7 +1403,20 @@ def _cmd_setup_hooks(args: argparse.Namespace) -> int:
     return 0
 
 
+def _require_server_extra() -> None:
+    """Fail fast when the optional server stack is missing (S30 layering)."""
+    try:
+        import fastapi  # noqa: F401
+        import uvicorn  # noqa: F401
+    except ImportError:
+        raise SystemExit(
+            "server extras not installed — this command needs the FastAPI stack. "
+            "Run `uv sync --extra server` (or `pip install 'evolver[server]'`)."
+        ) from None
+
+
 def _cmd_webui_token(args: argparse.Namespace) -> int:
+    _require_server_extra()
     from evolver.ops.auth_middleware import create_token, load_auth_db, revoke_token
 
     if args.revoke:
@@ -1480,6 +1494,7 @@ def _cmd_logout(_args: argparse.Namespace) -> int:
 
 def _cmd_proxy(args: argparse.Namespace) -> int:
     """Launch the A2A proxy server."""
+    _require_server_extra()
     import uvicorn
 
     from evolver.cli_options import prepare_proxy_cli_environment

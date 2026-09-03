@@ -341,11 +341,10 @@ wheels = [
 
 [[package]]
 name = "evolver"
-version = "1.97.0"
+version = "1.98.0"
 source = { editable = "." }
 dependencies = [
     { name = "cryptography" },
-    { name = "fastapi" },
     { name = "filelock" },
     { name = "httpx", extra = ["http2"] },
     { name = "keyring" },
@@ -353,16 +352,20 @@ dependencies = [
     { name = "psutil" },
     { name = "pydantic" },
     { name = "python-dotenv" },
-    { name = "uvicorn", extra = ["standard"] },
 ]
 
 [package.optional-dependencies]
 bedrock = [
     { name = "boto3" },
 ]
+server = [
+    { name = "fastapi" },
+    { name = "uvicorn", extra = ["standard"] },
+]
 
 [package.dev-dependencies]
 dev = [
+    { name = "fastapi" },
     { name = "freezegun" },
     { name = "mypy" },
     { name = "pytest" },
@@ -371,13 +374,14 @@ dev = [
     { name = "pytest-timeout" },
     { name = "respx" },
     { name = "ruff" },
+    { name = "uvicorn", extra = ["standard"] },
 ]
 
 [package.metadata]
 requires-dist = [
     { name = "boto3", marker = "extra == 'bedrock'", specifier = ">=1.35" },
     { name = "cryptography", specifier = ">=43.0" },
-    { name = "fastapi", specifier = ">=0.115" },
+    { name = "fastapi", marker = "extra == 'server'", specifier = ">=0.115" },
     { name = "filelock", specifier = ">=3.16" },
     { name = "httpx", extras = ["http2"], specifier = ">=0.27" },
     { name = "keyring", specifier = ">=25.4" },
@@ -385,12 +389,13 @@ requires-dist = [
     { name = "psutil", specifier = ">=6.0" },
     { name = "pydantic", specifier = ">=2.9" },
     { name = "python-dotenv", specifier = ">=1.0" },
-    { name = "uvicorn", extras = ["standard"], specifier = ">=0.32" },
+    { name = "uvicorn", extras = ["standard"], marker = "extra == 'server'", specifier = ">=0.32" },
 ]
-provides-extras = ["bedrock"]
+provides-extras = ["bedrock", "server"]
 
 [package.metadata.requires-dev]
 dev = [
+    { name = "fastapi", specifier = ">=0.115" },
     { name = "freezegun", specifier = ">=1.5" },
     { name = "mypy", specifier = ">=1.13" },
     { name = "pytest", specifier = ">=8.3" },
@@ -399,6 +404,7 @@ dev = [
     { name = "pytest-timeout", specifier = ">=2.4.0" },
     { name = "respx", specifier = ">=0.21" },
     { name = "ruff", specifier = ">=0.7" },
+    { name = "uvicorn", extras = ["standard"], specifier = ">=0.32" },
 ]
 
 [[package]]

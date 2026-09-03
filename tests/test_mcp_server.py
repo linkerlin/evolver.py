@@ -135,3 +135,34 @@ class TestServerBuild:
             "tool_cycle_timeline",
         }
         assert expected <= names
+
+    def test_build_server_registers_swarm_tools(self) -> None:
+        import asyncio
+
+        server = build_server()
+        tools = asyncio.run(server.list_tools())
+        names = {t.name for t in tools}
+        assert {
+            "swarm_boot",
+            "swarm_tick",
+            "swarm_distill",
+            "swarm_solidify",
+            "swarm_report",
+            "swarm_status",
+        } <= names
+
+    def test_evolver_swarm_prompt_registered_and_rendered(
+        self, temp_workspace: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        import asyncio
+
+        monkeypatch.setenv("EVOLVER_REPO_ROOT", str(temp_workspace))
+        server = build_server()
+
+        prompts = asyncio.run(server.list_prompts())
+        assert "evolver_swarm" in {p.name for p in prompts}
+
+        result = asyncio.run(server.get_prompt("evolver_swarm"))
+        text = result.messages[0].content.text
+        assert "EVOLVER SWARM" in text
+        assert "swarm_tick" in text

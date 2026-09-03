@@ -260,6 +260,10 @@ async def dispatch_phase(ctx: dict[str, Any]) -> dict[str, Any]:
         initial_user_prompt=ctx.get("initial_user_prompt"),
     )
 
+    # Expose the assembled prompt to in-process callers (MCP swarm_tick) so the
+    # host-agent executor can consume it structurally instead of parsing stdout.
+    ctx["dispatch_prompt"] = prompt
+
     if ctx.get("bridge_enabled"):
         write_prompt_artifact(prompt)
         spawn = render_sessions_spawn_call(

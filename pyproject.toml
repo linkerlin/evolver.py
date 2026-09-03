@@ -1,6 +1,6 @@
 [project]
 name = "evolver"
-version = "1.97.0"
+version = "1.98.0"
 description = "A GEP-powered self-evolution engine for AI agents (Python port of @evomap/evolver)"
 readme = "README.md"
 license = { text = "Apache-2.0" }
@@ -23,8 +23,6 @@ dependencies = [
     "pydantic>=2.9",
     "python-dotenv>=1.0",
     "httpx[http2]>=0.27",
-    "fastapi>=0.115",
-    "uvicorn[standard]>=0.32",
     "cryptography>=43.0",
     "filelock>=3.16",
     "psutil>=6.0",
@@ -36,6 +34,15 @@ dependencies = [
 # Bedrock SSE relay only (lazy-imported in proxy/router/messages_route.py with
 # a not-installed fallback); install with `evolver[bedrock]`.
 bedrock = ["boto3>=1.35"]
+
+# S30 dependency layering (系统评估报告「依赖偏重」): webui/proxy server stack
+# split from the core evolution engine. fastapi is server-only; plain uvicorn
+# already arrives transitively via mcp>=2.0 (stdio transport needs no extras).
+# Install with `evolver[server]`.
+server = [
+    "fastapi>=0.115",
+    "uvicorn[standard]>=0.32",
+]
 
 # S25.4 dependency audit (docs/dependency-audit.md): click / pydantic-settings
 # / GitPython removed — zero references across src/tests/scripts; boto3 moved
@@ -57,6 +64,9 @@ packages = ["src/evolver"]
 
 [dependency-groups]
 dev = [
+    # Server stack for proxy/webui tests (S30: also a project extra `server`).
+    "fastapi>=0.115",
+    "uvicorn[standard]>=0.32",
     "pytest>=8.3",
     "pytest-asyncio>=0.24",
     "pytest-cov>=6.0",
