@@ -8,6 +8,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.108.0] — 2026-09-04
+
+### Added — dogfood round-1：蜂群在真实仓库完成首轮自主进化
+- 首次以宿主执行器身份跑通全闭环：`swarm_hook_event`（真实错误信号）→
+  `swarm_tick`（真实 21KB GEP dispatch，选中 gene_gep_repair_from_errors，
+  信号聚焦活记忆摩擦点 f001 hub_offline）→ 最小忠实变异 → `swarm_distill`
+  （新基因 gene_hub_fetch_resilience 入库）→ `swarm_solidify`（引擎提交
+  cb1c1d4）→ `swarm_feedback`。
+- 变异本体：Hub `fetch_tasks` 增加一次指数退避重试（f001「retry with hub
+  fetch resilience」）——`EVOLVER_HUB_FETCH_RETRIES`（默认 1）/
+  `EVOLVER_HUB_FETCH_RETRY_BACKOFF_MS`（500ms）；三个新测试钉住
+  重试后成功/禁用回退/失败透传。
+
+### Fixed — dogfood round-1 暴露的两个引擎缺陷
+- **运行时状态混入变异提交**：守护实时写的 memory/、.evolver/、
+  evolver/.config/ 文件被 `_commit_mutation` 一起提交、把爆炸半径从 3 文件
+  虚增至 42——新增 `_is_runtime_state` 过滤（提交目标与爆炸半径一致排除）。
+- **裸 venv python 下级联全跳过**：PATH 无 ruff/mypy/pytest → 全部 stage
+  skip → unvalidated success（本轮未积累 gated run 的直接原因）——
+  `get_fitness_cascade_commands` 回退解析 `<sys.executable 目录>/工具`，
+  子进程级测试复现真实场景（清洗 PATH 后三阶段全部解析为绝对路径）。
+
 ## [1.107.0] — 2026-09-04
 
 ### Added — acceptance-gate soak report（验收门 soak 报告与转正判定）

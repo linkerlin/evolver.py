@@ -13,6 +13,7 @@ import re
 import secrets
 import shutil
 import subprocess
+import sys
 import time
 from pathlib import Path
 from typing import Any
@@ -466,10 +467,23 @@ def _append_failure_event(
     )
 
 
+def _is_runtime_state(rel: str) -> bool:
+    """True for engine runtime-state paths (memory/, .evolver/, .config/...).
+
+    Dogfood round-1 finding (v1.107.0): daemon-churned runtime files were
+    committed with the mutation and inflated blast radius (42 files for a
+    3-file change). Runtime state is the daemon's own write domain — it never
+    belongs to a mutation commit or diff snapshot.
+    """
+    norm = rel.replace("\\", "/")
+    head = norm.split("/", 1)[0]
+    return head in _FINGERPRINT_EXCLUDED_DIRS or norm.startswith("evolver/.config/")
+
+
 def _compute_blast_radius() -> dict[str, int]:
     cwd = get_workspace_root()
-    changed = git_list_changed_files(cwd)
-    untracked = git_list_untracked_files(cwd)
+    changed = [f for f in git_list_changed_files(cwd) if not _is_runtime_state(f)]
+    untracked = [f for f in git_list_untracked_files(cwd) if not _is_runtime_state(f)]
     files = len(set(changed + untracked))
     lines = 0
     for rel in changed + untracked:
@@ -489,13 +503,22 @@ def get_fitness_cascade_commands() -> list[dict[str, Any]]:
     with a warning so non-Python workspaces degrade to the legacy validation
     path (mutation.validation) instead of failing every cycle. An empty return
     means no cascade stage is runnable here.
+
+    Dogfood round-1 finding (v1.107.0): when evolver runs under a bare venv
+    python (no activated environment), ruff/mypy/pytest live next to the
+    interpreter — fall back to ``<sys.executable>'s dir`` before skipping.
     """
+    bin_dir = Path(sys.executable).parent
     runnable: list[dict[str, Any]] = []
     for spec in FITNESS_CASCADE_COMMANDS:
         argv = list(spec["command"])
         if argv and shutil.which(argv[0]) is None:
-            logger.warning("fitness cascade skipped: %r not found on PATH", argv[0])
-            continue
+            local = bin_dir / argv[0]
+            if local.is_file():
+                argv = [str(local), *argv[1:]]
+            else:
+                logger.warning("fitness cascade skipped: %r not found on PATH", argv[0])
+                continue
         runnable.append({**spec, "command": argv})
     return runnable
 
@@ -577,12 +600,16 @@ def _commit_mutation(cwd: Path, label: str) -> bool:
     """Commit an accepted mutation (cascade mode) so later failure rollbacks
     cannot destroy prior accepted-but-uncommitted work (soak round-1 bug:
     one failed solidify disposed every untracked file the loop had ever
-    accepted). Stages exactly the changed+disposable-untracked files."""
+    accepted). Stages exactly the changed+disposable-untracked files;
+    runtime-state paths (memory/, .evolver/, ...) are never staged — they are
+    the daemon's write domain, not part of a mutation."""
     try:
         from evolver.gep.git_ops import run_cmd
 
         targets = [
-            f for f in dict.fromkeys(git_list_changed_files(cwd) + _disposable_untracked(cwd)) if f
+            f
+            for f in dict.fromkeys(git_list_changed_files(cwd) + _disposable_untracked(cwd))
+            if f and not _is_runtime_state(f)
         ]
         if not targets:
             return False
