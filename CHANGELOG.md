@@ -8,6 +8,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.107.0] — 2026-09-04
+
+### Added — acceptance-gate soak report（验收门 soak 报告与转正判定）
+- `evolver gate-report [--json]`：聚合 shadow 事件为 interception/false-kill
+  指标（既有 `summarize_acceptance` 增加时间窗），并给出**转正判定**
+  （`gate_soak_recommendation`）：collecting（样本 < `EVOLVER_GATE_SOAK_MIN_RUNS`，
+  默认 20）/ ready（interception 落 [0.05, 0.5] 且 false_kill ≤ 0.1）/
+  over_intercepting / under_intercepting / false_kill_high。转正开关
+  （`EVOLVER_ACCEPTANCE_SHADOW=0`）仍由人类决定——报告只回答"数据是否支持"。
+- 真实复盘（本仓库）：gated_runs = 0——守护周期从未走到被验收门打分的
+  solidify，soak 样本为零，verdict = collecting；转正前需先积累真实
+  gated runs（如经蜂群跑若干轮真实变异）。
+
 ## [1.106.0] — 2026-09-04
 
 ### Added — feedback-adaptive mutation bias（EvoX 自适应变异率收割）

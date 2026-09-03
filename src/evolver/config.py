@@ -303,6 +303,12 @@ SKILL_ROOTS_OVERRIDE: Final = env_str("EVOLVER_SKILL_ROOTS", "")
 # exploration pivot. Neutral no-op with fewer than 3 feedback entries.
 ADAPTIVE_MUTATION_ENABLED: Final = env_bool("EVOLVER_ADAPTIVE_MUTATION", True)
 ADAPTIVE_MUTATION_SHIFT: Final = env_float("EVOLVER_ADAPTIVE_MUTATION_SHIFT", 0.2)
+# Acceptance-gate soak promotion criteria (evolver gate-report readiness
+# verdicts; the actual switch stays a human decision — EVOLVER_ACCEPTANCE_SHADOW=0).
+GATE_SOAK_MIN_RUNS: Final = env_int("EVOLVER_GATE_SOAK_MIN_RUNS", 20)
+GATE_SOAK_MAX_FALSE_KILL: Final = env_float("EVOLVER_GATE_SOAK_MAX_FALSE_KILL", 0.1)
+GATE_SOAK_INTERCEPT_MIN: Final = env_float("EVOLVER_GATE_SOAK_INTERCEPT_MIN", 0.05)
+GATE_SOAK_INTERCEPT_MAX: Final = env_float("EVOLVER_GATE_SOAK_INTERCEPT_MAX", 0.5)
 
 # --- Ops ---
 MAX_SILENCE_MS: Final = env_int("EVOLVER_MAX_SILENCE_MS", 30 * 60 * 1_000)

@@ -197,7 +197,7 @@ class TestResources:
         # In-process model exposes .content (serialized as `text` over the wire).
         data = json.loads(first.content)
         assert data["ok"] is True
-        assert data["version"] == "1.106.0"
+        assert data["version"] == "1.107.0"
 
         prompt_contents = asyncio.run(server.read_resource("evolver://instrument-prompt"))
         assert "EVOLVER SWARM" in next(iter(prompt_contents)).content

@@ -119,6 +119,7 @@ class TestSummarizeAcceptance:
             "interception_rate": 0.0,
             "validation_disagreements": 0,
             "false_kill_risk": None,
+            "window": {"first": None, "last": None},
         }
 
     def test_metrics(self) -> None:

@@ -21,6 +21,7 @@
 | HITL 审批门 | `uv run evolver hitl list\|approve\|reject` |
 | HOTL 监督 | `uv run evolver supervise status\|pause\|resume\|direct\|veto\|unveto` |
 | 技能生态桥 | `uv run evolver skills list\|scan\|sync [--dry-run]` |
+| 验收门 soak 报告 | `uv run evolver gate-report [--json]` |
 | 守护进程生命周期 | `uv run evolver start` / `stop` / `restart` / `status` / `log` |
 | 健康检查 | `uv run evolver check` / `watch` |
 | Recipe Hub | `uv run evolver recipe list|show|apply|…` |
@@ -342,6 +343,9 @@ instrument prompt 第三章（Hooks 集成）指导宿主择轨。
 | `EVOLVER_SKILL_ROOTS` | （默认三级根） | 技能根目录覆盖（os.pathsep 分隔，顺序即优先级） |
 | `EVOLVER_ADAPTIVE_MUTATION` | `true` | 评估反馈驱动之策略权重自适应（false 关闭） |
 | `EVOLVER_ADAPTIVE_MUTATION_SHIFT` | `0.2` | 自适应权重偏移幅度（归一化前） |
+| `EVOLVER_GATE_SOAK_MIN_RUNS` | `20` | 验收门转正判定之最小 gated 样本数 |
+| `EVOLVER_GATE_SOAK_MAX_FALSE_KILL` | `0.1` | 转正判定之 false-kill 上限 |
+| `EVOLVER_GATE_SOAK_INTERCEPT_MIN`/`_MAX` | `0.05`/`0.5` | 转正判定之拦截率区间 |
 
 ## 坑阱篇
 

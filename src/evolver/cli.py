@@ -88,6 +88,12 @@ def _build_parser() -> argparse.ArgumentParser:
     report_p.add_argument(
         "--no-project", action="store_true", help="Skip the wiki patterns projection"
     )
+    gate_p = sub.add_parser(
+        "gate-report",
+        help="Acceptance-gate soak report: shadow metrics + promotion verdict",
+    )
+    gate_p.add_argument("--json", action="store_true", help="Output raw JSON")
+    gate_p.add_argument("--limit", type=int, default=5000, help="Max events to scan")
     sr_p = sub.add_parser("self-report", help="Autopoiesis self-report and rule evolution")
     sr_p.add_argument(
         "--capture",
@@ -487,6 +493,9 @@ def main(argv: Sequence[str] | None = None) -> int:
     if command == "report":
         return _cmd_report(args)
 
+    if command == "gate-report":
+        return _cmd_gate_report(args)
+
     if command == "fetch":
         return asyncio.run(_cmd_fetch(args))
 
@@ -856,6 +865,40 @@ async def _cmd_run(_args: argparse.Namespace) -> int:
     except Exception as exc:
         print(f"Evolution failed: {exc}", file=sys.stderr)
         return 1
+    return 0
+
+
+def _cmd_gate_report(args: argparse.Namespace) -> int:
+    """Acceptance-gate soak report: shadow metrics + promotion verdict."""
+    from evolver.gep.acceptance.report import (
+        gate_soak_recommendation,
+        summarize_acceptance,
+    )
+    from evolver.gep.asset_store import read_all_events
+
+    metrics = summarize_acceptance(read_all_events()[-max(1, args.limit) :])
+    recommendation = gate_soak_recommendation(metrics)
+
+    if args.json:
+        print(
+            json.dumps(
+                {"metrics": metrics, "recommendation": recommendation}, ensure_ascii=False, indent=2
+            )
+        )
+        return 0
+
+    window = metrics["window"]
+    print("Acceptance-gate soak report (shadow mode)")
+    print(f"  gated_runs            : {metrics['gated_runs']}")
+    print(f"  shadow_rejected       : {metrics['shadow_rejected']}")
+    print(f"  interception_rate     : {metrics['interception_rate']}")
+    print(f"  validation_disagreements: {metrics['validation_disagreements']}")
+    print(f"  false_kill_risk       : {metrics['false_kill_risk']}")
+    print(f"  window                : {window['first'] or '-'} .. {window['last'] or '-'}")
+    print(f"  verdict               : {recommendation['verdict']}")
+    for reason in recommendation["reasons"]:
+        print(f"    - {reason}")
+    print(f"  enforce               : {recommendation['enforce_hint']}")
     return 0
 
 
