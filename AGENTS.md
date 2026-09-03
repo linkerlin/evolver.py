@@ -19,6 +19,7 @@
 | 启动本地代理 | `uv run evolver proxy [--port=8081]`（需 `--extra server`） |
 | 启动 MCP 服务 | `uv run evolver mcp`（stdio；蜂群进化入口） |
 | HITL 审批门 | `uv run evolver hitl list\|approve\|reject` |
+| HOTL 监督 | `uv run evolver supervise status\|pause\|resume\|direct\|veto\|unveto` |
 | 守护进程生命周期 | `uv run evolver start` / `stop` / `restart` / `status` / `log` |
 | 健康检查 | `uv run evolver check` / `watch` |
 | Recipe Hub | `uv run evolver recipe list|show|apply|…` |
@@ -60,6 +61,8 @@ gep/                GEP（基因组进化协议）核心
                     textual_gradient 三分离，日志 + repair-bias 信号注入
   hitl.py           HITL 审批门（EvoX HITLManager 概念收割）：高危操作人类
                     批准，按 subject 幂等，TTL 超时 fail-safe 拒绝，全程审计
+  supervision.py    HOTL 人在环上监督：running/paused 状态机 + veto 模式
+                    否决 + directive 转向信号 + 降级连击绊线自动暂停
   fetch.py          从 Hub 下载并安装资源
   git_ops.py        Git diff/回滚/状态辅助函数
   instance_lock.py  基于 FileLock 之单实例守护（守护循环）
@@ -183,6 +186,14 @@ HITL 审批门（EvoX HITLManager 概念收割）：`swarm_solidify(skip_validat
 fail-safe 拒绝；按 subject（含 run_id）幂等，被拒之 subject 不得重试申请；
 mode=off 时自动批准但全程记审计日志。
 
+HOTL 人在环上监督（`gep/supervision.py`，与 HITL 正交）：HITL 决定「某个
+高危动作可否执行」，HOTL 决定「循环是否运行」。`paused` 时 `swarm_tick`
+拒绝新周期（优雅排水）；`veto` 子串模式命中选中基因则扣发 dispatch 提示词、
+命中 solidify subject 则阻断固化（纵深防御）；`directive` 转向指令经
+`supervision:directive:` 信号注入下周期选择；绊线——连续
+`EVOLVER_SUPERVISION_AUTO_PAUSE_STREAK` 次降级反馈自动暂停（人不在场之保险丝）。
+监督入口：CLI `evolver supervise` 与 MCP `swarm_supervise`（宿主转达人类决定）。
+
 要紧者：stdio MCP 下 stdout 为 JSON-RPC 通道，`swarm.py` 全量捕获引擎
 `print()`；`swarm_tick` 遇 user-lock 冲突或 preflight abort 时优雅返回
 `stop_and_report`，不得视为故障重试。
@@ -209,6 +220,7 @@ mode=off 时自动批准但全程记审计日志。
 - `swarm_state.json`——蜂群 tick 计数与上次 tick 摘要（不含 prompt 全文）
 - `feedback.jsonl`——统一评估反馈日志（EvoX EvaluationFeedback 契约）
 - `hitl_approvals.json` + `hitl_approvals.jsonl`——HITL 审批状态与审计日志
+- `swarm_supervision.json` + `supervision_events.jsonl`——HOTL 监督状态与审计日志
 - `memory_graph_state.json`——`preferred_by_signal`、living_memory 摩擦同步元数据
 - `innovation_log.jsonl`——创新尝试 ROI 追踪
 
@@ -303,6 +315,7 @@ mode=off 时自动批准但全程记审计日志。
 | `EVOLVER_FEEDBACK_DEGRADED_THRESHOLD` | `0.5` | 蜂群反馈降级阈值——低于此分或 `success=false` 注入 repair-bias 信号 |
 | `EVOLVER_HITL_MODE` | `off` | HITL 审批门——`on` 时高危 solidify 需人类批准（off 仍记审计） |
 | `EVOLVER_HITL_TTL_MS` | `1800000` | HITL 待决请求 TTL——超时 fail-safe 拒绝 |
+| `EVOLVER_SUPERVISION_AUTO_PAUSE_STREAK` | `3` | HOTL 绊线——连续 N 次降级反馈自动暂停（`0` 关闭） |
 
 ## 坑阱篇
 

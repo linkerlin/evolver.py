@@ -290,6 +290,10 @@ SWARM_FEEDBACK_DEGRADED_THRESHOLD: Final = env_float("EVOLVER_FEEDBACK_DEGRADED_
 # pending requests past the TTL fail-safe to REJECT.
 HITL_MODE: Final = env_str("EVOLVER_HITL_MODE", "off")
 HITL_TTL_MS: Final = env_positive_int("EVOLVER_HITL_TTL_MS", 30 * 60 * 1_000)
+# HOTL (human-on-the-loop) tripwire: auto-pause supervision after this many
+# consecutive degraded feedback reports (0 disables). Human resumes via
+# `evolver supervise resume` / the swarm_supervise tool.
+SUPERVISION_AUTO_PAUSE_STREAK: Final = env_int("EVOLVER_SUPERVISION_AUTO_PAUSE_STREAK", 3)
 
 # --- Ops ---
 MAX_SILENCE_MS: Final = env_int("EVOLVER_MAX_SILENCE_MS", 30 * 60 * 1_000)

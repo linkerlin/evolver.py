@@ -176,6 +176,24 @@ def _build_parser() -> argparse.ArgumentParser:
     hitl_reject = hitl_sub.add_parser("reject", help="Reject a pending request")
     hitl_reject.add_argument("--id", required=True, help="Request id (hitl_...)")
     hitl_reject.add_argument("--note", default="", help="Decision note")
+
+    sup_p = sub.add_parser(
+        "supervise", help="HOTL supervision (status/pause/resume/direct/veto/unveto)"
+    )
+    sup_sub = sup_p.add_subparsers(dest="supervise_action")
+    sup_sub.add_parser("status", help="Show supervision state")
+    sup_pause = sup_sub.add_parser("pause", help="Pause the swarm loop")
+    sup_pause.add_argument("--reason", default="", help="Why (shown to agents)")
+    sup_sub.add_parser("resume", help="Resume the swarm loop")
+    sup_direct = sup_sub.add_parser("direct", help="Inject a steering directive")
+    sup_direct.add_argument("text", help="Directive text (natural language)")
+    sup_veto = sup_sub.add_parser(
+        "veto", help="Veto a substring pattern (gene id / run id / subject)"
+    )
+    sup_veto.add_argument("pattern", help="Substring pattern to block")
+    sup_veto.add_argument("--note", default="", help="Why")
+    sup_unveto = sup_sub.add_parser("unveto", help="Remove a veto by id")
+    sup_unveto.add_argument("veto-id", help="Veto id (veto_...)")
     wf_p = sub.add_parser("workflow", help="Durable workflow engine (Sprint 24.10)")
     wf_sub = wf_p.add_subparsers(dest="workflow_action", required=True)
     wf_run = wf_sub.add_parser("run", help="Run a workflow spec file")
@@ -496,6 +514,9 @@ def main(argv: Sequence[str] | None = None) -> int:
     if command == "hitl":
         return _cmd_hitl(args)
 
+    if command == "supervise":
+        return _cmd_supervise(args)
+
     if command == "workflow":
         return _cmd_workflow(args)
 
@@ -681,6 +702,29 @@ def _cmd_hitl(args: argparse.Namespace) -> int:
 
     print(f"Unknown hitl action: {action}", file=sys.stderr)
     return 2
+
+
+def _cmd_supervise(args: argparse.Namespace) -> int:
+    """HOTL supervision: status/pause/resume/direct/veto/unveto (v1.101.0)."""
+    from evolver.swarm import swarm_supervise
+
+    action = getattr(args, "supervise_action", None) or "status"
+    kwargs: dict[str, str] = {"by": "human-cli"}
+    if action == "pause":
+        kwargs["reason"] = getattr(args, "reason", "") or ""
+    elif action == "direct":
+        kwargs["text"] = getattr(args, "text", "") or ""
+    elif action == "veto":
+        kwargs["pattern"] = getattr(args, "pattern", "") or ""
+    elif action == "unveto":
+        kwargs["veto_id"] = getattr(args, "veto_id", "") or ""
+
+    result = swarm_supervise(action, **kwargs)  # type: ignore[arg-type]
+    if not result.get("ok"):
+        print(f"Supervise {action} failed: {result.get('error')}", file=sys.stderr)
+        return 1
+    print(json.dumps(result, ensure_ascii=False, indent=2, default=str))
+    return 0
 
 
 def _cmd_self_report(args: argparse.Namespace) -> int:

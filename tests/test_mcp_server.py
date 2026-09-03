@@ -152,6 +152,7 @@ class TestServerBuild:
             "swarm_status",
             "swarm_approvals",
             "swarm_approval_resolve",
+            "swarm_supervise",
         } <= names
 
     def test_evolver_swarm_prompt_registered_and_rendered(

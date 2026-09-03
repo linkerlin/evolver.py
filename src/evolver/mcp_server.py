@@ -284,6 +284,31 @@ def build_server() -> Any:
 
         return swarm_status()
 
+    def tool_swarm_supervise(
+        action: Literal["status", "pause", "resume", "direct", "veto", "unveto"],
+        text: str | None = None,
+        pattern: str | None = None,
+        veto_id: str | None = None,
+        reason: str = "",
+        by: str = "human-via-host",
+    ) -> dict[str, Any]:
+        """HOTL supervision (relay a HUMAN decision — ask the user first).
+
+        pause/resume the loop, veto a substring pattern, or inject a steering
+        directive. tick refuses cycles while paused; vetoed genes have their
+        dispatch prompt withheld.
+        """
+        from evolver.swarm import swarm_supervise
+
+        return swarm_supervise(
+            action,
+            text=text,
+            pattern=pattern,
+            veto_id=veto_id,
+            reason=reason,
+            by=by,
+        )
+
     def tool_swarm_feedback(
         primary_score: float,
         textual_gradient: str = "",
@@ -340,6 +365,7 @@ def build_server() -> Any:
         ("swarm_status", tool_swarm_status),
         ("swarm_approvals", tool_swarm_approvals),
         ("swarm_approval_resolve", tool_swarm_approval_resolve),
+        ("swarm_supervise", tool_swarm_supervise),
     ]
     for name, fn in swarm_tools:
         server.tool(name=name)(fn)

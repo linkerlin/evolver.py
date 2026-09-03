@@ -70,6 +70,25 @@ def test_cli_hitl_list_approve_flow(
     assert "not_pending" in capsys.readouterr().err
 
 
+def test_cli_supervise_flow(isolated_evolver_env: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    """HOTL supervision via CLI (v1.101.0): status/pause/direct/resume."""
+    assert main(["supervise", "status"]) == 0
+    assert '"state": "running"' in capsys.readouterr().out
+
+    assert main(["supervise", "pause", "--reason", "hold"]) == 0
+    assert '"state": "paused"' in capsys.readouterr().out
+
+    assert main(["supervise", "direct", "优先稳定测试"]) == 0
+    assert "directive_id" in capsys.readouterr().out
+
+    from evolver.gep.asset_store import consume_pending_signals
+
+    assert any(s.startswith("supervision:directive:") for s in consume_pending_signals())
+
+    assert main(["supervise", "resume"]) == 0
+    assert '"state": "running"' in capsys.readouterr().out
+
+
 def test_cli_solidify_after_run_in_git_repo(
     isolated_evolver_env: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:

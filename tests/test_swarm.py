@@ -74,7 +74,7 @@ class TestBootAndStatus:
         assert result["ok"] is True
         assert result["agent_name"] == "zcode-1"
         assert "EVOLVER SWARM" in result["instrument_prompt"]
-        assert result["state"]["version"] == "1.100.0"
+        assert result["state"]["version"] == "1.101.0"
         assert result["next_action"] == "swarm_tick"
 
         from evolver.proxy.mailbox.store import MailboxStore
@@ -247,3 +247,67 @@ class TestHitlGate:
         status = swarm_status()
         assert status["hitl"]["mode"] in ("on", "off")
         assert isinstance(status["hitl"]["pending"], int)
+
+
+class TestSupervision:
+    async def test_paused_tick_refuses_cycle(self, isolated_swarm_env: Path) -> None:
+        from evolver.gep.supervision import set_state
+
+        set_state(True, by="human", reason="hold on")
+        result = await swarm_tick(agent_name="tester")
+        assert result["ok"] is True
+        assert result["paused"] is True
+        assert result["next_action"] == "await_supervisor_resume"
+        # No cycle ran: no run_id, no engine log.
+        assert result.get("run_id") is None
+
+    async def test_resume_allows_tick_again(self, isolated_swarm_env: Path) -> None:
+        from evolver.gep.supervision import set_state
+
+        set_state(True, by="human")
+        set_state(False, by="human")
+        result = await swarm_tick()
+        assert result.get("paused") is not True
+        assert result["run_id"]
+
+    async def test_veto_withholds_dispatch_prompt(
+        self,
+        isolated_swarm_env: Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        fake_veto = {"id": "veto_x", "pattern": "*", "by": "t", "at": "", "note": ""}
+        monkeypatch.setattr("evolver.gep.supervision.check_veto", lambda *a: dict(fake_veto))
+        result = await swarm_tick()
+        assert result["dispatch_reason"] == "supervision_veto"
+        assert result["dispatch_prompt"] is None
+        assert result["next_action"] == "swarm_tick"
+
+    def test_solidify_veto_blocks(self, isolated_swarm_env: Path) -> None:
+        from evolver.gep.supervision import add_veto
+
+        add_veto("solidify:", by="human", note="freeze mutations")
+        result = swarm_solidify()
+        assert result["ok"] is False
+        assert result["error"] == "supervision_veto"
+        assert result["next_action"] == "swarm_tick"
+
+    def test_supervise_wrapper_roundtrip(self, isolated_swarm_env: Path) -> None:
+        from evolver.swarm import swarm_supervise
+
+        assert swarm_supervise("status")["supervision"]["state"] == "running"
+        paused = swarm_supervise("pause", reason="check")
+        assert paused["state"] == "paused"
+        directive = swarm_supervise("direct", text="优先修复 flaky 测试")
+        assert directive["ok"] is True
+        veto = swarm_supervise("veto", pattern="gene_bad")
+        assert veto["ok"] is True
+        unveto = swarm_supervise("unveto", veto_id=veto["veto_id"])
+        assert unveto["ok"] is True
+        resumed = swarm_supervise("resume")
+        assert resumed["state"] == "running"
+        assert swarm_supervise("sideways")["ok"] is False
+
+    def test_status_exposes_supervision(self, isolated_swarm_env: Path) -> None:
+        status = swarm_status()
+        assert status["supervision"]["state"] == "running"
+        assert "directives" in status["supervision"]
