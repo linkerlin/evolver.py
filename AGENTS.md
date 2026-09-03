@@ -20,6 +20,7 @@
 | 启动 MCP 服务 | `uv run evolver mcp`（stdio；蜂群进化入口） |
 | HITL 审批门 | `uv run evolver hitl list\|approve\|reject` |
 | HOTL 监督 | `uv run evolver supervise status\|pause\|resume\|direct\|veto\|unveto` |
+| 技能生态桥 | `uv run evolver skills list\|scan\|sync [--dry-run]` |
 | 守护进程生命周期 | `uv run evolver start` / `stop` / `restart` / `status` / `log` |
 | 健康检查 | `uv run evolver check` / `watch` |
 | Recipe Hub | `uv run evolver recipe list|show|apply|…` |
@@ -65,6 +66,9 @@ gep/                GEP（基因组进化协议）核心
                     批准，按 subject 幂等，TTL 超时 fail-safe 拒绝，全程审计
   supervision.py    HOTL 人在环上监督：running/paused 状态机 + veto 模式
                     否决 + directive 转向信号 + 降级连击绊线自动暂停
+  skill_assets.py   技能生态桥（EvoX SkillRegistry 概念收割）：多根优先发现
+                    （project > user > builtin，同名遮蔽）+ 同步入库；转换
+                    复用 skill2gep 层（基因 id 前缀 gene_distilled_s2g-）
   fetch.py          从 Hub 下载并安装资源
   git_ops.py        Git diff/回滚/状态辅助函数
   instance_lock.py  基于 FileLock 之单实例守护（守护循环）
@@ -326,6 +330,7 @@ instrument prompt 第三章（Hooks 集成）指导宿主择轨。
 | `EVOLVER_HITL_MODE` | `off` | HITL 审批门——`on` 时高危 solidify 需人类批准（off 仍记审计） |
 | `EVOLVER_HITL_TTL_MS` | `1800000` | HITL 待决请求 TTL——超时 fail-safe 拒绝 |
 | `EVOLVER_SUPERVISION_AUTO_PAUSE_STREAK` | `3` | HOTL 绊线——连续 N 次降级反馈自动暂停（`0` 关闭） |
+| `EVOLVER_SKILL_ROOTS` | （默认三级根） | 技能根目录覆盖（os.pathsep 分隔，顺序即优先级） |
 
 ## 坑阱篇
 

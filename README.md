@@ -136,6 +136,19 @@ MCP-only 宿主（无文件 hooks 能力）改用**进程内桥**：在会话开
 
 工具带 MCP 规范注解：`swarm_status` / `swarm_approvals` / `asset_search` 等标记 `readOnlyHint`（宿主计划模式可安全跳过确认）；`swarm_solidify` 标记 `destructiveHint`（宿主可要求用户确认）。
 
+### 技能生态桥（SKILL.md → 技能基因）
+
+把宿主生态的技能文件接入进化引擎（EvoX SkillRegistry 模式：**project > user > builtin 三级优先、同名遮蔽**）。发现根目录：工作区 `.agents/skills` 与 `.claude/skills` > 用户 `~/.agents/skills`、`~/.zcode/skills`、`~/.claude/skills` > 引擎内置（可用 `EVOLVER_SKILL_ROOTS` 覆盖，顺序即优先级）。
+
+```bash
+uv run evolver skills scan              # 预览发现（含优先级与遮蔽）
+uv run evolver skills sync --dry-run    # 预览将安装的技能基因
+uv run evolver skills sync              # 转换并入 GEP 资产库（gene_distilled_s2g-*）
+uv run evolver skills list              # 查看库中技能基因
+```
+
+同步后，技能以基因身份参与信号匹配与选择——例如一个「修复 ImportError」技能会在信号命中时被选入 GEP 提示词。宿主也可经 MCP `swarm_skills` 工具（`scan|list|sync`）自助操作。
+
 > WebUI / Proxy 需要 server extras：`uv sync --extra server`（核心进化引擎与 MCP server 无 fastapi 依赖）。
 
 ## Prerequisites

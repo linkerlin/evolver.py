@@ -145,7 +145,7 @@ class TestProtocol:
             "contents"
         ][0]["text"]
         status = json.loads(status_text)
-        assert status["ok"] is True and status["version"] == "1.103.0"
+        assert status["ok"] is True and status["version"] == "1.104.0"
 
         prompt_text = client.request("resources/read", {"uri": "evolver://instrument-prompt"})[
             "result"

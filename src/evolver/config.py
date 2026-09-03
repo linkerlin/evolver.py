@@ -294,6 +294,10 @@ HITL_TTL_MS: Final = env_positive_int("EVOLVER_HITL_TTL_MS", 30 * 60 * 1_000)
 # consecutive degraded feedback reports (0 disables). Human resumes via
 # `evolver supervise resume` / the swarm_supervise tool.
 SUPERVISION_AUTO_PAUSE_STREAK: Final = env_int("EVOLVER_SUPERVISION_AUTO_PAUSE_STREAK", 3)
+# Skill asset bridge (gep/skill_assets.py): os.pathsep-separated skill roots
+# replacing the defaults (project .agents/.claude skills > user home skills >
+# builtin). Order IS the priority.
+SKILL_ROOTS_OVERRIDE: Final = env_str("EVOLVER_SKILL_ROOTS", "")
 
 # --- Ops ---
 MAX_SILENCE_MS: Final = env_int("EVOLVER_MAX_SILENCE_MS", 30 * 60 * 1_000)

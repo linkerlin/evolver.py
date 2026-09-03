@@ -194,6 +194,13 @@ def _build_parser() -> argparse.ArgumentParser:
     sup_veto.add_argument("--note", default="", help="Why")
     sup_unveto = sup_sub.add_parser("unveto", help="Remove a veto by id")
     sup_unveto.add_argument("veto-id", help="Veto id (veto_...)")
+
+    skills_p = sub.add_parser("skills", help="Skill ecosystem bridge (list/scan/sync)")
+    skills_sub = skills_p.add_subparsers(dest="skills_action")
+    skills_sub.add_parser("list", help="List skill-derived genes in the store")
+    skills_sub.add_parser("scan", help="Scan skill roots (project > user > builtin)")
+    skills_sync = skills_sub.add_parser("sync", help="Sync discovered skills into the GEP store")
+    skills_sync.add_argument("--dry-run", action="store_true", help="Preview without writing")
     wf_p = sub.add_parser("workflow", help="Durable workflow engine (Sprint 24.10)")
     wf_sub = wf_p.add_subparsers(dest="workflow_action", required=True)
     wf_run = wf_sub.add_parser("run", help="Run a workflow spec file")
@@ -517,6 +524,9 @@ def main(argv: Sequence[str] | None = None) -> int:
     if command == "supervise":
         return _cmd_supervise(args)
 
+    if command == "skills":
+        return _cmd_skills(args)
+
     if command == "workflow":
         return _cmd_workflow(args)
 
@@ -725,6 +735,41 @@ def _cmd_supervise(args: argparse.Namespace) -> int:
         return 1
     print(json.dumps(result, ensure_ascii=False, indent=2, default=str))
     return 0
+
+
+def _cmd_skills(args: argparse.Namespace) -> int:
+    """Skill ecosystem bridge: list/scan/sync (EvoX SkillRegistry harvest)."""
+    from evolver.swarm import swarm_skills
+
+    action = getattr(args, "skills_action", None) or "list"
+    result = swarm_skills(action, dry_run=getattr(args, "dry_run", False))  # type: ignore[arg-type]
+    if not result.get("ok"):
+        print(f"Skills {action} failed: {result.get('error')}", file=sys.stderr)
+        return 1
+    if action == "list":
+        genes = result.get("genes", [])
+        if not genes:
+            print("No skill-derived genes in the store (run `evolver skills sync`).")
+            return 0
+        for gene in genes:
+            print(f"{gene['id']}  [{gene.get('category') or '-'}]  {gene['skill_name']}")
+        return 0
+    if action == "scan":
+        skills = result.get("skills", [])
+        if not skills:
+            print("No skills discovered (checked project > user > builtin roots).")
+            return 0
+        for skill in skills:
+            print(f"[{skill['level']}]  {skill['name']}  ->  {skill['path']}")
+        return 0
+    # sync
+    print(f"Skills sync: discovered={result.get('discovered', 0)} dry_run={result.get('dry_run')}")
+    for item in result.get("installed", []):
+        action_label = item.get("action", "installed")
+        print(f"  {action_label.upper()}  {item['name']}  ({item['level']})  as {item['id']}")
+    for err in result.get("errors", []):
+        print(f"  ERROR  {err}")
+    return 0 if result.get("ok") else 1
 
 
 def _cmd_self_report(args: argparse.Namespace) -> int:

@@ -708,6 +708,27 @@ def swarm_hooks(
     return {"ok": False, "error": f"unknown_action:{action}"}
 
 
+def swarm_skills(
+    action: Literal["scan", "list", "sync"],
+    dry_run: bool = False,
+) -> dict[str, Any]:
+    """Skill ecosystem bridge (EvoX SkillRegistry concept harvest).
+
+    ``scan`` discovers host skills (project > user > builtin, same-name
+    shadowing); ``list`` shows skill-derived genes already in the store;
+    ``sync`` converts + installs them so skills participate in selection.
+    """
+    from evolver.gep import skill_assets
+
+    if action == "scan":
+        return {"ok": True, "skills": skill_assets.discover_skills()}
+    if action == "list":
+        return {"ok": True, "genes": skill_assets.list_skill_genes()}
+    if action == "sync":
+        return skill_assets.sync_skills(dry_run=dry_run)
+    return {"ok": False, "error": f"unknown_action:{action}"}
+
+
 __all__ = [
     "SWARM_PROTOCOL_VERSION",
     "build_instrument_prompt",
@@ -717,6 +738,7 @@ __all__ = [
     "swarm_hook_event",
     "swarm_hooks",
     "swarm_report",
+    "swarm_skills",
     "swarm_solidify",
     "swarm_status",
     "swarm_supervise",

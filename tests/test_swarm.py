@@ -79,7 +79,7 @@ class TestBootAndStatus:
         assert result["ok"] is True
         assert result["agent_name"] == "zcode-1"
         assert "EVOLVER SWARM" in result["instrument_prompt"]
-        assert result["state"]["version"] == "1.103.0"
+        assert result["state"]["version"] == "1.104.0"
         assert result["next_action"] == "swarm_tick"
 
         from evolver.proxy.mailbox.store import MailboxStore

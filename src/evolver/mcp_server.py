@@ -377,6 +377,16 @@ def build_server() -> Any:
             cycle_id=cycle_id,
         )
 
+    def tool_swarm_skills(
+        action: Literal["scan", "list", "sync"],
+        dry_run: bool = False,
+    ) -> dict[str, Any]:
+        """Skill ecosystem bridge: scan host skill roots (project > user >
+        builtin), list synced skill genes, or sync skills into the store."""
+        from evolver.swarm import swarm_skills
+
+        return swarm_skills(action=action, dry_run=dry_run)
+
     def prompt_evolver_swarm(agent_name: str = "host-agent") -> str:
         """Instrument prompt: inject the swarm-evolution takeover protocol."""
         from evolver.swarm import swarm_boot
@@ -466,6 +476,7 @@ def build_server() -> Any:
         ("swarm_supervise", tool_swarm_supervise, None),
         ("swarm_hooks", tool_swarm_hooks, None),
         ("swarm_hook_event", tool_swarm_hook_event, None),
+        ("swarm_skills", tool_swarm_skills, None),
     ]
     for name, fn, ann in swarm_tools:
         server.tool(name=name, annotations=ann)(fn)
