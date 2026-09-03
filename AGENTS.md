@@ -194,6 +194,13 @@ HOTL 人在环上监督（`gep/supervision.py`，与 HITL 正交）：HITL 决�
 `EVOLVER_SUPERVISION_AUTO_PAUSE_STREAK` 次降级反馈自动暂停（人不在场之保险丝）。
 监督入口：CLI `evolver supervise` 与 MCP `swarm_supervise`（宿主转达人类决定）。
 
+Hooks 双轨（v1.102.0）：宿主支持文件 hooks 者，经 `evolver setup-hooks` 或 MCP
+`swarm_hooks`（status/install/uninstall，包装 `adapters.setup_hooks.install_hooks`）
+安装——session 边界信号自动采集进记忆；MCP-only 宿主改用进程内桥
+`swarm_hook_event`（session_start/session_end/signal_detect，payload.content
+过共享信号检测器，检出标签直入 `pending_signals`；事件记 `hook_events.jsonl`）。
+instrument prompt 第三章（Hooks 集成）指导宿主择轨。
+
 要紧者：stdio MCP 下 stdout 为 JSON-RPC 通道，`swarm.py` 全量捕获引擎
 `print()`；`swarm_tick` 遇 user-lock 冲突或 preflight abort 时优雅返回
 `stop_and_report`，不得视为故障重试。
@@ -221,6 +228,7 @@ HOTL 人在环上监督（`gep/supervision.py`，与 HITL 正交）：HITL 决�
 - `feedback.jsonl`——统一评估反馈日志（EvoX EvaluationFeedback 契约）
 - `hitl_approvals.json` + `hitl_approvals.jsonl`——HITL 审批状态与审计日志
 - `swarm_supervision.json` + `supervision_events.jsonl`——HOTL 监督状态与审计日志
+- `hook_events.jsonl`——MCP 宿主经 `swarm_hook_event` 上报的会话/信号事件
 - `memory_graph_state.json`——`preferred_by_signal`、living_memory 摩擦同步元数据
 - `innovation_log.jsonl`——创新尝试 ROI 追踪
 

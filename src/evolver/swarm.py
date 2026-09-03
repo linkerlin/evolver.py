@@ -152,7 +152,18 @@ solidify 验证门真实落盘或回滚。
 6. 心跳：每 3 轮或遇到显著摩擦时调用 `swarm_report` 捕获教训（写入活记忆）。
 7. 回到步骤 1。多节点协作经 `mailbox_poll` / `mailbox_send`。
 
-## 三、安全边界（不可逾越）
+## 三、Hooks 集成（信号自动采集）
+
+- 若宿主支持 hooks（ZCode / Claude Code / Cursor / Codex / Kiro / OpenCode）：
+  建议用户执行 `evolver setup-hooks --platform <platform> --project-dir {workspace}`
+  （或调用 `swarm_hooks` 工具 `action=install`，可先 `action=status` 预览）——
+  session 边界与工具输出中的错误信号将自动采集进进化记忆。
+- 若宿主未装或不支持文件 hooks：会话开始与结束时、以及捕获到错误输出时，
+  调用 `swarm_hook_event`（`event=session_start/session_end/signal_detect`，
+  `payload` 携带 `content` 文本）——检测到的信号（如 `log_error`、
+  `perf_bottleneck`）直接注入下一周期的基因选择。
+
+## 四、安全边界（不可逾越）
 
 - 仅在 {workspace} 内改动；禁止 `git push --force`、禁止改写已发布历史。
 - 禁止绕过 solidify 验证门；`skip_validation` 仅当提示词显式要求时使用，
@@ -168,13 +179,13 @@ solidify 验证门真实落盘或回滚。
   `swarm_feedback` 的评分亦不得虚报。
 - preflight abort / 预算守卫是引擎稳态的一部分，视为正常信号而非故障。
 
-## 四、终止条件（满足其一即停止并汇报）
+## 五、终止条件（满足其一即停止并汇报）
 
 - 用户显式要求停止；
 - 连续 3 次 solidify 失败且 `failure_mode` 相同（先 `swarm_report` 再停止）；
 - `swarm_tick` 返回 `preflight_aborted=true`。
 
-## 五、当前引擎状态
+## 六、当前引擎状态
 
 - engine version: {state.get("version", "?")} | protocol: v{SWARM_PROTOCOL_VERSION}
 - tick_count: {tick_count} | genes: {genes_n} | capsules: {capsules_n}
@@ -601,12 +612,110 @@ def swarm_supervise(
     return {"ok": False, "error": f"unknown_action:{action}"}
 
 
+_HOOK_EVENTS: Final = ("session_start", "session_end", "signal_detect")
+
+
+def swarm_hook_event(
+    event: str,
+    payload: dict[str, Any] | None = None,
+    source: str = "host-agent",
+) -> dict[str, Any]:
+    """In-process hook bridge for MCP-only hosts (no file hooks needed).
+
+    Mirrors the adapter runtime scripts (adapters/scripts/signal_detect.py):
+    the payload's content is run through the shared signal detector, and
+    detected tags go straight into ``pending_signals`` — the same channel
+    autopoiesis friction and feedback gradients use — so the next cycle's
+    selection sees them. Hosts with file hooks installed do not need this;
+    the scripts already feed memory collection.
+    """
+    import contextlib
+    import datetime as _dt
+
+    from evolver.adapters.scripts.signal_detect import _extract_content, detect_signals
+    from evolver.gep.asset_store import append_pending_signals
+    from evolver.gep.paths import get_evolution_dir
+
+    if event not in _HOOK_EVENTS:
+        return {
+            "ok": False,
+            "error": f"unknown_event:{event}",
+            "supported": list(_HOOK_EVENTS),
+        }
+    content, file_path = _extract_content(payload or {})
+    signals = detect_signals(content)
+    if signals:
+        append_pending_signals(signals)
+    entry = {
+        "event": event,
+        "source": source,
+        "signals": signals,
+        "file_path": file_path or None,
+        "at": _dt.datetime.now(_dt.UTC).isoformat(),
+    }
+    with contextlib.suppress(OSError):
+        journal = get_evolution_dir() / "hook_events.jsonl"
+        journal.parent.mkdir(parents=True, exist_ok=True)
+        journal.open("a", encoding="utf-8").write(json.dumps(entry, ensure_ascii=False) + "\n")
+    return {
+        "ok": True,
+        "event": event,
+        "source": source,
+        "detected_signals": signals,
+        "injected": signals,
+        "file_path": file_path or None,
+        "note": "" if signals else "no signals detected — nothing injected",
+    }
+
+
+def swarm_hooks(
+    action: Literal["status", "install", "uninstall"] = "status",
+    platform: str = "auto",
+    project_dir: str | None = None,
+    force: bool = False,
+    dry_run: bool = False,
+) -> dict[str, Any]:
+    """Manage IDE/agent hooks from the swarm surface.
+
+    Thin wrapper over ``adapters.setup_hooks.install_hooks`` so a host agent
+    can bootstrap its own file hooks over MCP (``status`` previews via
+    dry-run). Platforms: cursor / claude-code / codex / kiro / opencode /
+    vscode / generic / auto.
+    """
+    from evolver.adapters.hook_adapter import detect_platform
+    from evolver.adapters.setup_hooks import install_hooks
+    from evolver.gep.paths import get_workspace_root
+
+    target = project_dir or str(get_workspace_root())
+    if action == "status":
+        result = install_hooks(platform=platform, project_dir=target, dry_run=True)
+        return {
+            "ok": bool(result.get("ok", True)),
+            "action": "status",
+            "detected_platform": detect_platform(target),
+            "requested_platform": platform,
+            "project_dir": target,
+            "preview": result.get("messages", []),
+        }
+    if action == "install":
+        result = install_hooks(platform=platform, project_dir=target, force=force, dry_run=dry_run)
+        return {**result, "action": "install"}
+    if action == "uninstall":
+        result = install_hooks(
+            platform=platform, project_dir=target, uninstall=True, dry_run=dry_run
+        )
+        return {**result, "action": "uninstall"}
+    return {"ok": False, "error": f"unknown_action:{action}"}
+
+
 __all__ = [
     "SWARM_PROTOCOL_VERSION",
     "build_instrument_prompt",
     "swarm_boot",
     "swarm_distill",
     "swarm_feedback",
+    "swarm_hook_event",
+    "swarm_hooks",
     "swarm_report",
     "swarm_solidify",
     "swarm_status",

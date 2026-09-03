@@ -18,6 +18,8 @@ from evolver.swarm import (
     swarm_boot,
     swarm_distill,
     swarm_feedback,
+    swarm_hook_event,
+    swarm_hooks,
     swarm_report,
     swarm_solidify,
     swarm_status,
@@ -53,9 +55,12 @@ class TestInstrumentPrompt:
             "swarm_solidify",
             "swarm_feedback",
             "swarm_report",
+            "swarm_hook_event",
+            "swarm_hooks",
             "终止条件",
             "安全边界",
             "HITL",
+            "Hooks",
             f"instrument v{SWARM_PROTOCOL_VERSION}",
         ):
             assert needle in prompt, f"missing section: {needle}"
@@ -74,7 +79,7 @@ class TestBootAndStatus:
         assert result["ok"] is True
         assert result["agent_name"] == "zcode-1"
         assert "EVOLVER SWARM" in result["instrument_prompt"]
-        assert result["state"]["version"] == "1.101.0"
+        assert result["state"]["version"] == "1.102.0"
         assert result["next_action"] == "swarm_tick"
 
         from evolver.proxy.mailbox.store import MailboxStore
@@ -311,3 +316,50 @@ class TestSupervision:
         status = swarm_status()
         assert status["supervision"]["state"] == "running"
         assert "directives" in status["supervision"]
+
+
+class TestHooksSurface:
+    def test_hook_event_detects_and_injects_signals(self, isolated_swarm_env: Path) -> None:
+        from evolver.gep.asset_store import consume_pending_signals
+
+        result = swarm_hook_event(
+            "signal_detect",
+            payload={"content": "request timeout after 30s and retry exhausted"},
+        )
+        assert result["ok"] is True
+        assert "perf_bottleneck" in result["detected_signals"]
+        assert "perf_bottleneck" in consume_pending_signals()
+
+        journal = isolated_swarm_env / "evolution" / "hook_events.jsonl"
+        assert journal.exists() and "signal_detect" in journal.read_text(encoding="utf-8")
+
+    def test_hook_event_session_start_without_signals(self, isolated_swarm_env: Path) -> None:
+        result = swarm_hook_event("session_start", payload={"content": "hello world"})
+        assert result["ok"] is True
+        assert result["detected_signals"] == []
+        assert "nothing injected" in result["note"]
+
+    def test_hook_event_multilingual_error_detected(self, isolated_swarm_env: Path) -> None:
+        from evolver.gep.asset_store import consume_pending_signals
+
+        result = swarm_hook_event("session_end", payload={"content": "部署失败：构建异常退出"})
+        assert "log_error" in result["detected_signals"]
+        assert "log_error" in consume_pending_signals()
+
+    def test_hook_event_unknown_rejected(self, isolated_swarm_env: Path) -> None:
+        result = swarm_hook_event("pre_tool_use")
+        assert result["ok"] is False
+        assert "unknown_event" in result["error"]
+
+    def test_hooks_status_and_install_dry_run(self, isolated_swarm_env: Path) -> None:
+        status = swarm_hooks("status", platform="generic", project_dir=str(isolated_swarm_env))
+        assert status["ok"] is True
+        assert status["requested_platform"] == "generic"
+        assert isinstance(status["preview"], list)
+
+        install = swarm_hooks(
+            "install", platform="generic", project_dir=str(isolated_swarm_env), dry_run=True
+        )
+        assert install["ok"] is True
+
+        assert swarm_hooks("reinstall")["ok"] is False

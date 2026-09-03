@@ -67,6 +67,64 @@ Daemon respawn, lifecycle `start`, and IDE hooks resolve how to re-invoke evolve
 
 Supervisors can override the full argv with `EVOLVER_LOOP_COMMAND` (space-separated).
 
+## MCP Swarm Evolution（蜂群进化）
+
+evolver 通过 stdio MCP server 把**宿主 Agent 变成 GEP 变异提示词的执行器**——引擎不自建 LLM API 调度，连接进来的宿主（ZCode / Claude Code / Cursor / …）即执行器（v1.98.0+）。
+
+### 宿主接入配置
+
+启动命令二选一：`uv run evolver mcp`（项目内）或 `<venv>/bin/python -m evolver.mcp_server`（绝对路径，推荐给宿主配置）。
+
+**ZCode**（工作区/用户级 settings 的 `mcpServers`）：
+
+```json
+{
+  "mcpServers": {
+    "evolver": {
+      "command": "/absolute/path/to/evolver.py/.venv/bin/python",
+      "args": ["-m", "evolver.mcp_server"],
+      "env": {
+        "EVOLVER_SWARM_AUTO_HIJACK": "0"
+      }
+    }
+  }
+}
+```
+
+**Claude Code**（项目根 `.mcp.json`）与 **Cursor**（`.cursor/mcp.json`）同构：
+
+```json
+{
+  "mcpServers": {
+    "evolver": {
+      "command": "uv",
+      "args": ["--project", "/absolute/path/to/evolver.py", "run", "evolver", "mcp"]
+    }
+  }
+}
+```
+
+> 常用环境变量：`EVOLVER_SWARM_AUTO_HIJACK=1`（instructions 直接注入接管指令，无人值守模式）；`EVOLVER_HITL_MODE=on`（高危 solidify 需人类批准）；`EVOLVER_SUPERVISION_AUTO_PAUSE_STREAK`（连续降级反馈自动暂停，默认 3）。
+
+### 接管与闭环
+
+- **注入双通道**：MCP prompt `evolver_swarm`（正式 instrument，宿主经 prompts 渲染）+ `swarm_boot` 工具（覆盖不渲染 prompt 的宿主）
+- **闭环协议**：`swarm_tick`（取 GEP 变异提示词）→ 宿主用自己的编辑工具执行变异 → `swarm_distill`（蒸馏 Gene/Capsule）→ `swarm_solidify`（验证门 + 固化）→ `swarm_feedback`（统一评估信号 E，低分自动注入 repair-bias）→ 循环
+- **安全双闸**：HITL 审批门（`evolver hitl list|approve|reject`，超时 fail-safe 拒绝）+ HOTL 监督（`evolver supervise status|pause|resume|direct|veto|unveto`，人在环上随时刹车/否决/转向）
+
+### Hooks 集成（信号自动采集）
+
+宿主支持 hooks 时安装文件钩子，session 边界与工具输出中的错误信号自动进入进化记忆：
+
+```bash
+uv run evolver setup-hooks --platform auto --project-dir /path/to/workspace
+# 平台：cursor | claude-code | codex | kiro | opencode | vscode | generic | auto
+```
+
+MCP-only 宿主（无文件 hooks 能力）改用**进程内桥**：在会话开始/结束、以及观察到错误输出时调用 `swarm_hook_event` 工具（`event=session_start|session_end|signal_detect`，`payload.content` 携带文本）；检测到的信号（`log_error` / `perf_bottleneck` / …）直接注入下一进化周期的基因选择。也可经 `swarm_hooks` 工具（`action=status|install|uninstall`）由宿主自助安装文件钩子。
+
+> WebUI / Proxy 需要 server extras：`uv sync --extra server`（核心进化引擎与 MCP server 无 fastapi 依赖）。
+
 ## Prerequisites
 
 - **[Python](https://python.org/)** >= 3.12

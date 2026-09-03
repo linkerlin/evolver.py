@@ -163,7 +163,9 @@ def build_server() -> Any:
         "or call the `swarm_boot` tool, then follow the injected protocol: "
         "swarm_tick → execute the returned GEP mutation prompt → swarm_distill "
         "→ swarm_solidify → swarm_feedback (evaluation signal E) → swarm_report "
-        "(heartbeat)."
+        "(heartbeat). Hook-capable hosts: bootstrap signal capture via "
+        "`swarm_hooks` (setup-hooks) or report lifecycle events through the "
+        "`swarm_hook_event` bridge."
     )
     if SWARM_AUTO_HIJACK:
         swarm_directive = (
@@ -309,6 +311,42 @@ def build_server() -> Any:
             by=by,
         )
 
+    def tool_swarm_hooks(
+        action: Literal["status", "install", "uninstall"] = "status",
+        platform: str = "auto",
+        project_dir: str | None = None,
+        force: bool = False,
+        dry_run: bool = False,
+    ) -> dict[str, Any]:
+        """Manage IDE/agent file hooks (cursor/claude-code/codex/kiro/opencode...).
+
+        action=status previews what setup-hooks would write for the platform.
+        """
+        from evolver.swarm import swarm_hooks
+
+        return swarm_hooks(
+            action=action,
+            platform=platform,
+            project_dir=project_dir,
+            force=force,
+            dry_run=dry_run,
+        )
+
+    def tool_swarm_hook_event(
+        event: Literal["session_start", "session_end", "signal_detect"],
+        payload: dict[str, Any] | None = None,
+        source: str = "host-agent",
+    ) -> dict[str, Any]:
+        """In-process hook bridge (for hosts without file hooks).
+
+        Call at session boundaries and when error output is observed; the
+        payload's `content` text is scanned and detected signals are injected
+        into the next cycle's selection.
+        """
+        from evolver.swarm import swarm_hook_event
+
+        return swarm_hook_event(event, payload=payload, source=source)
+
     def tool_swarm_feedback(
         primary_score: float,
         textual_gradient: str = "",
@@ -366,6 +404,8 @@ def build_server() -> Any:
         ("swarm_approvals", tool_swarm_approvals),
         ("swarm_approval_resolve", tool_swarm_approval_resolve),
         ("swarm_supervise", tool_swarm_supervise),
+        ("swarm_hooks", tool_swarm_hooks),
+        ("swarm_hook_event", tool_swarm_hook_event),
     ]
     for name, fn in swarm_tools:
         server.tool(name=name)(fn)
