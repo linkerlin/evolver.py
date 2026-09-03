@@ -84,6 +84,10 @@ EVENT_POLL_TIMEOUT_MS: Final = env_positive_int("EVOLVER_EVENT_POLL_TIMEOUT_MS",
 HTTP_TRANSPORT_TIMEOUT_MS: Final = env_positive_int("EVOLVER_HTTP_TRANSPORT_TIMEOUT_MS", 15_000)
 SECRET_CACHE_TTL_MS: Final = env_positive_int("EVOLVER_SECRET_CACHE_TTL_MS", 60_000)
 HUB_SEARCH_TIMEOUT_MS: Final = env_positive_int("EVOLVER_HUB_SEARCH_TIMEOUT_MS", 8_000)
+# Hub fetch resilience (living-memory friction f001 hub_offline): one short
+# exponential-backoff retry before a cycle degrades to offline/idle.
+HUB_FETCH_RETRIES: Final = env_int("EVOLVER_HUB_FETCH_RETRIES", 1)
+HUB_FETCH_RETRY_BACKOFF_MS: Final = env_positive_int("EVOLVER_HUB_FETCH_RETRY_BACKOFF_MS", 500)
 
 PUBLIC_DEFAULT_HUB_URL: Final = "https://evomap.ai"
 DEFAULT_PROXY_PORT: Final = 8081

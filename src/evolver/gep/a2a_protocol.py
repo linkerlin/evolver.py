@@ -364,7 +364,11 @@ async def fetch_tasks(
     """Fetch open tasks from the Hub.
 
     Returns a dict with ``tasks`` (list[dict[str, Any]]) and metadata.
+    Living-memory friction f001 (hub_offline): retry with short exponential
+    backoff before a cycle degrades to offline/idle.
     """
+    from evolver.config import HUB_FETCH_RETRIES, HUB_FETCH_RETRY_BACKOFF_MS
+
     hub = get_hub_url()
     if not hub:
         return {"ok": False, "error": "no_hub_url", "tasks": []}
@@ -375,14 +379,23 @@ async def fetch_tasks(
     }
     if signals:
         payload["signals"] = signals
-    try:
-        result = await _http_post(f"{hub}/v1/a2a/tasks", payload, timeout_ms=HUB_SEARCH_TIMEOUT_MS)
-        tasks = result.get("tasks", [])
-        if not isinstance(tasks, list):
-            tasks = []
-        return {"ok": True, "tasks": tasks, "hub_response": result}
-    except Exception as exc:
-        return {"ok": False, "error": str(exc), "tasks": []}
+
+    attempts = max(0, HUB_FETCH_RETRIES) + 1
+    last_error: Exception | None = None
+    for attempt in range(attempts):
+        if attempt:
+            await asyncio.sleep((HUB_FETCH_RETRY_BACKOFF_MS / 1000.0) * (3 ** (attempt - 1)))
+        try:
+            result = await _http_post(
+                f"{hub}/v1/a2a/tasks", payload, timeout_ms=HUB_SEARCH_TIMEOUT_MS
+            )
+            tasks = result.get("tasks", [])
+            if not isinstance(tasks, list):
+                tasks = []
+            return {"ok": True, "tasks": tasks, "hub_response": result}
+        except Exception as exc:
+            last_error = exc
+    return {"ok": False, "error": str(last_error), "tasks": []}
 
 
 async def submit_task_result(

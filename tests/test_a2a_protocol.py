@@ -66,10 +66,45 @@ async def test_fetch_tasks_success(monkeypatch: pytest.MonkeyPatch) -> None:
 async def test_fetch_tasks_network_error(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("A2A_HUB_URL", "https://mock.hub")
     monkeypatch.setenv("A2A_NODE_ID", "node_123")
+    monkeypatch.setattr("evolver.config.HUB_FETCH_RETRY_BACKOFF_MS", 1)
     respx.post("https://mock.hub/v1/a2a/tasks").mock(side_effect=ConnectionError("nope"))
     result = await a2a.fetch_tasks()
     assert result["ok"] is False
     assert "nope" in result["error"]
+
+
+@respx.mock
+async def test_fetch_tasks_retries_once_then_succeeds(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Living-memory friction f001 (hub_offline): one transient failure must
+    not degrade the cycle to offline."""
+    monkeypatch.setenv("A2A_HUB_URL", "https://mock.hub")
+    monkeypatch.setenv("A2A_NODE_ID", "node_123")
+    monkeypatch.setattr("evolver.config.HUB_FETCH_RETRY_BACKOFF_MS", 1)
+    route = respx.post("https://mock.hub/v1/a2a/tasks").mock(
+        side_effect=[
+            Response(500, json={"error": "boom"}),
+            Response(200, json={"tasks": [{"task_id": "t9"}]}),
+        ]
+    )
+    result = await a2a.fetch_tasks()
+    assert result["ok"] is True
+    assert result["tasks"][0]["task_id"] == "t9"
+    assert route.call_count == 2
+
+
+@respx.mock
+async def test_fetch_tasks_no_retry_when_disabled(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("A2A_HUB_URL", "https://mock.hub")
+    monkeypatch.setenv("A2A_NODE_ID", "node_123")
+    monkeypatch.setattr("evolver.config.HUB_FETCH_RETRIES", 0)
+    route = respx.post("https://mock.hub/v1/a2a/tasks").mock(side_effect=ConnectionError("nope"))
+    result = await a2a.fetch_tasks()
+    assert result["ok"] is False
+    assert route.call_count == 1
 
 
 @respx.mock

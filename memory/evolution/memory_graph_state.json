@@ -1,15 +1,33 @@
 {
   "last_action": {
-    "gene_id": "gene_gep_innovate_from_opportunity",
-    "action_id": "act_1784388614912_d562776d",
-    "outcome_recorded": false,
-    "ts": "2026-07-18T15:30:14.912Z"
+    "gene_id": "gene_gep_repair_from_errors",
+    "action_id": "act_1788469544250_a5d095fd",
+    "outcome_recorded": true,
+    "ts": "2026-09-03T21:05:44.250Z",
+    "created_at": "2026-09-03T21:05:44.250Z",
+    "signal_key": "6004dfa009975fff0aec9826015b9b7a",
+    "signals": [
+      "stable_success_plateau",
+      "autopoiesis:hub_offline_guard",
+      "perf_bottleneck",
+      "log_error",
+      "learning_signal:platform_warning:info",
+      "living_memory_risk:hub_offline"
+    ],
+    "had_error": true
   },
   "sync": {
     "living_memory_friction": {
       "fp2": 1781242175.8485305,
       "fp_enrich_1": 1781242175.9018757,
       "f001": 1784388568.8052785
+    }
+  },
+  "preferred_by_signal": {
+    "6004dfa009975fff0aec9826015b9b7a": {
+      "gene_id": "gene_gep_repair_from_errors",
+      "source": "solidify_success",
+      "ts": "2026-09-03T21:07:42.011Z"
     }
   }
 }
