@@ -334,6 +334,14 @@ class WorkflowEngine:
         if state.status != ST_WAITING_AGENT:
             raise WorkflowPermanentError(f"not waiting for agent: {state.status}")
         state.variables["_agent_result"] = result
+        # Conventional failure contract: a dict result carrying ``ok: False``
+        # fails the run (dogfood round: CLI --fail / swarm complete relied on
+        # it but the engine used to advance regardless).
+        if isinstance(result, dict) and result.get("ok") is False:
+            state.status = ST_FAILED
+            state.error = f"agent step {state.step_index} reported failure"
+            self._save(state, event={"event": "agent_failed"})
+            return state
         state.status = ST_RUNNING
         state.step_index += 1
         state.attempts = 0

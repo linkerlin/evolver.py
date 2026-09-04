@@ -8,6 +8,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added — 最近一周 API 表面补测（v1.98–v1.111，25 个新用例）
+- **`tests/test_recent_api_surface.py`**：覆盖审计驱动（`--cov` 找冷分支），
+  补齐六块——
+  - `default_cascade_runner` **真实子进程执行路径**（此前只测空命令分支）：
+    全过/失败上报 stderr/二进制缺失 OSError→-1/超时 TimeoutExpired→-1/
+    gate 步骤端到端；
+  - `WorkflowEngine` 边界动词：reject 于终态、cancel 于终态幂等、
+    resume 于 waiting_agent 复停、load 缺失 LookupError、load_spec 非映射拒绝；
+  - `swarm_skills` scan/list/未知动作；`swarm_workflow_act` cancel/resume/
+    未知动作/**失败任务错误面**；`swarm_workflow_status` awaiting 分支；
+    spec 文件损坏 workflow_error；
+  - `hitl` TTL 过期后**重复申请**的惰性过期+fail-safe 拒绝（防审批购物）
+    与 `list_recent`；`feedback.load_recent_feedback` 冷日志与持久读取；
+  - CLI 新动词：`skills scan/list`、`gate-report --json`、`workflow templates`。
+- 模块覆盖率：workflow 88%→**94%**、swarm 82%→**89%**（hitl/feedback 补边界）。
+
+### Fixed — 伴随补测发现的引擎语义缺口
+- **`complete_agent` 无视失败契约**：结果为 `{"ok": False}` 时工作流照常推进
+  ——CLI `--fail` 与 `swarm_workflow_act complete` 的失败语义形同虚设。现
+  dict 结果携带 `ok: False` 即失败该 run（WAL 记 `agent_failed`），与
+  approval/gate 的失败语义对齐。
+
 ### Docs — 全量文档对齐 v1.111.0 实现现状
 - **README.md**：实现状态段 1.105.0→1.111.0（补 v1.106–v1.111 弧线：自适应变异、
   验收门 soak、dogfood 五轮、工作流引擎；新增工作流引擎/验收门两行）；
