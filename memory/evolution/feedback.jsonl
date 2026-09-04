@@ -1,0 +1,1 @@
+{"type":"EvaluationFeedback","id":"fb_6f1e1f33f5c1","agent_name":"zcode-dogfood","run_id":null,"cycle_id":null,"primary_score":0.9,"metrics":{},"textual_gradient":"hub fetch resilience added; transient hub failures no longer idle the cycle","eval_mode":"validation","sample_count":0,"success":true,"error_message":null,"metadata":{},"timestamp":"2026-09-03T21:07:42.195752+00:00"}

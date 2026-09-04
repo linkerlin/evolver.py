@@ -1,0 +1,17 @@
+{
+  "ticks": 6,
+  "updated": "2026-09-03T21:05:45.246222+00:00",
+  "last_tick": {
+    "run_id": "run_1788469541349_80f67c89",
+    "cycle_id": "86e2cbc20464709d",
+    "agent_name": "zcode-dogfood",
+    "preflight_aborted": false,
+    "abort_reason": null,
+    "dispatch_reason": "dispatched",
+    "selected_gene": {
+      "id": "gene_gep_repair_from_errors",
+      "name": null
+    },
+    "next_action": "execute_prompt"
+  }
+}

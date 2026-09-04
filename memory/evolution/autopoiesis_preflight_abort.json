@@ -1,0 +1,31 @@
+{
+  "timestamp": 1788469879.5296378,
+  "reason": "test abort",
+  "report": {
+    "timestamp": "2026-09-03T21:11:19.529505+00:00",
+    "system_state": {
+      "rules_version": "1.0.0",
+      "evolution_dir_exists": true,
+      "living_memory_exists": true,
+      "solidify_pending": false,
+      "genes_count": 19,
+      "capsules_count": 0,
+      "events_count": 14,
+      "last_run_id": "r1"
+    },
+    "friction_summary": {
+      "total": 1,
+      "by_category": {
+        "preflight_abort": 1
+      },
+      "auto_encoded": 0
+    },
+    "evolution": {
+      "rules_version": "1.0.0",
+      "autopoiesis_enabled": true,
+      "evolution_count": 1,
+      "new_rules_this_run": 0
+    },
+    "recommendations": []
+  }
+}

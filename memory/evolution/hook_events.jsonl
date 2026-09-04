@@ -1,0 +1,4 @@
+{"event": "signal_detect", "source": "zcode-dogfood", "signals": ["perf_bottleneck", "log_error"], "file_path": null, "at": "2026-09-03T21:03:27.750987+00:00"}
+{"event": "signal_detect", "source": "zcode-dogfood", "signals": ["perf_bottleneck", "log_error"], "file_path": null, "at": "2026-09-03T21:03:57.738080+00:00"}
+{"event": "signal_detect", "source": "zcode-dogfood", "signals": ["perf_bottleneck", "log_error"], "file_path": null, "at": "2026-09-03T21:05:24.479393+00:00"}
+{"event": "signal_detect", "source": "zcode-dogfood", "signals": ["perf_bottleneck", "log_error"], "file_path": null, "at": "2026-09-03T21:05:41.211123+00:00"}
