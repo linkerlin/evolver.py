@@ -71,6 +71,7 @@ async def select_phase(ctx: dict[str, Any]) -> dict[str, Any]:
             "signals": signals,
             "memoryAdvice": memory_advice,
             "driftEnabled": drift_enabled,
+            "recentEvents": recent_events,
         }
     )
 

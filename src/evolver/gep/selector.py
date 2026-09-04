@@ -10,7 +10,7 @@ import random
 import re
 from typing import Any
 
-from evolver.config import GENE_EPIGENETIC_HARD_BOOST
+from evolver.config import APPLIED_GENE_COOLDOWN_PENALTY, GENE_EPIGENETIC_HARD_BOOST
 from evolver.gep.env_fingerprint import capture_env_fingerprint, env_fingerprint_key
 from evolver.gep.feature_flags import is_enabled
 from evolver.gep.memory_bridge import living_memory_score_adjustment
@@ -176,6 +176,7 @@ def select_gene(
     living_memory_hints = list(options.get("livingMemoryHints") or [])
     bandit = bool(options.get("bandit", False))
     gene_stats = options.get("geneStats") or {}
+    applied_cooldown: set[str] = set(options.get("appliedCooldownIds") or [])
 
     drift_intensity = compute_drift_intensity(
         drift_enabled=drift_enabled,
@@ -200,6 +201,8 @@ def select_gene(
                 signals=signals,
             )
         if score > 0:
+            if gid in applied_cooldown:
+                score *= APPLIED_GENE_COOLDOWN_PENALTY
             candidates.append({"gene": gene, "score": score})
 
     # Apply preferred gene multiplier (single anchor + top-k niche elites)
@@ -354,6 +357,51 @@ def select_capsule(capsules: list[dict[str, Any]], signals: list[str]) -> dict[s
     return best
 
 
+def _applied_cooldown_ids(recent_events: list[Any]) -> set[str]:
+    """Genes whose mutation solidified successfully in the recent event tail.
+
+    Dogfood round-5: ticks kept re-dispatching genes already landed rounds ago
+    (same signals still in the corpus, same gene still the best match) — a
+    wasted cycle each time. Penalties (not bans) keep a sole matching gene
+    selectable while letting fresher candidates win ties. The window counts
+    only outcome-bearing mutation events, so bookkeeping noise (hook echoes,
+    leaked test stubs) cannot dilute it.
+    """
+    from evolver.config import APPLIED_GENE_COOLDOWN_EVENTS
+
+    applied = [
+        e
+        for e in recent_events
+        if isinstance(e, dict)
+        and (e.get("mutation") or {}).get("gene_id")
+        and isinstance(e.get("outcome") or None, dict)
+    ]
+    return {
+        str((e.get("mutation") or {}).get("gene_id"))
+        for e in applied[-APPLIED_GENE_COOLDOWN_EVENTS:]
+        if (e.get("outcome") or {}).get("status") == "success"
+    }
+
+
+def _recent_events_for_cooldown(ctx: dict[str, Any]) -> list[Any]:
+    """Event tail for the cooldown — independent of enable_event_history.
+
+    That flag gates signal-history modulation (saturation/dedup), which the
+    cooldown must not depend on: with it off (the default) the pipeline never
+    loads recent_events, and the cooldown would silently never fire.
+    """
+    raw = ctx.get("recentEvents")
+    if isinstance(raw, list) and raw:
+        return raw
+    import contextlib
+
+    from evolver.gep.asset_store import read_all_events
+
+    with contextlib.suppress(Exception):
+        return read_all_events()[-50:]
+    return []
+
+
 def select_gene_and_capsule(ctx: dict[str, Any]) -> dict[str, Any]:
     genes = ctx.get("genes") or []
     capsules = ctx.get("capsules") or []
@@ -376,6 +424,8 @@ def select_gene_and_capsule(ctx: dict[str, Any]) -> dict[str, Any]:
 
         gene_stats = augment_gene_stats(gene_stats)
 
+    cooldown_ids = _applied_cooldown_ids(_recent_events_for_cooldown(ctx))
+
     selector = select_gene(
         genes,
         signals,
@@ -388,6 +438,7 @@ def select_gene_and_capsule(ctx: dict[str, Any]) -> dict[str, Any]:
             "livingMemoryHints": memory_advice.get("livingMemoryHints") or [],
             "bandit": bandit,
             "geneStats": gene_stats,
+            "appliedCooldownIds": cooldown_ids,
         },
     )
 

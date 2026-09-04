@@ -341,7 +341,7 @@ wheels = [
 
 [[package]]
 name = "evolver"
-version = "1.110.0"
+version = "1.110.1"
 source = { editable = "." }
 dependencies = [
     { name = "cryptography" },
