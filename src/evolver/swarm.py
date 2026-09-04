@@ -420,15 +420,34 @@ def _record_tick(result: dict[str, Any]) -> None:
         _save_swarm_state(state)
 
 
+_DISTILL_FORMAT_HINT: Final = (
+    "no GEP assets extracted: submit the dispatch prompt's required ```json asset "
+    'blocks, e.g. {"type": "Gene", "id": "gene_<slug>", "category": '
+    '"repair|optimize|innovate|explore", "summary": "...", "signals_match": [...], '
+    '"strategy": [...], "validation": [...]}; free-text summaries are not distilled'
+)
+
+
 def swarm_distill(response_text: str, dry_run: bool = False) -> dict[str, Any]:
-    """Distill the host agent's work output into Gene/Capsule candidates."""
+    """Distill the host agent's work output into Gene/Capsule candidates.
+
+    Dogfood round-4: a response that yields zero assets used to return silently
+    (genes=0, errors=[]) — the host had no way to self-correct the format. The
+    result now carries a ``hint`` with the expected asset-block shape so one
+    round-trip fixes the submission.
+    """
     from evolver.gep.distill import distill_text, install_distilled
 
     if not response_text.strip():
         return {"ok": False, "error": "empty_response", "next_action": "execute_prompt"}
     distilled = distill_text(response_text)
     install = install_distilled(distilled, dry_run=dry_run)
-    return {
+    extracted = (
+        len(distilled.get("genes", []))
+        + len(distilled.get("capsules", []))
+        + len(distilled.get("mutations", []))
+    )
+    result: dict[str, Any] = {
         "ok": bool(install.get("ok")),
         "genes": len(distilled.get("genes", [])),
         "capsules": len(distilled.get("capsules", [])),
@@ -438,6 +457,10 @@ def swarm_distill(response_text: str, dry_run: bool = False) -> dict[str, Any]:
         "dry_run": dry_run,
         "next_action": "swarm_solidify",
     }
+    if extracted == 0:
+        result["hint"] = _DISTILL_FORMAT_HINT
+        result["next_action"] = "resubmit_with_asset_blocks"
+    return result
 
 
 def _pending_solidify_run_id() -> str:

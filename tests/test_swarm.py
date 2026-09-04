@@ -157,6 +157,38 @@ class TestDistillSolidifyReport:
         assert result["ok"] is False
         assert result["error"] == "empty_response"
 
+    def test_distill_zero_assets_returns_format_hint(self, isolated_swarm_env: Path) -> None:
+        # Dogfood round-4: free-text responses used to return genes=0 silently.
+        result = swarm_distill("Fixed the retry logic, all tests pass.")
+        assert result["genes"] == 0
+        assert "```json" in result["hint"]
+        assert "innovate" in result["hint"]
+        assert result["next_action"] == "resubmit_with_asset_blocks"
+
+    def test_distill_valid_gene_has_no_hint(self, isolated_swarm_env: Path) -> None:
+        response = (
+            "```json\n"
+            '{"type": "Gene", "id": "gene_hint_ok", "category": "repair", '
+            '"summary": "x", "signals_match": ["ImportError"]}\n'
+            "```\n"
+        )
+        result = swarm_distill(response)
+        assert result["genes"] == 1
+        assert "hint" not in result
+        assert result["next_action"] == "swarm_solidify"
+
+    def test_distill_bad_category_hint_plus_errors(self, isolated_swarm_env: Path) -> None:
+        response = (
+            "```json\n"
+            '{"type": "Gene", "id": "gene_bad_cat", "category": "innovation", '
+            '"summary": "x", "signals_match": ["ImportError"]}\n'
+            "```\n"
+        )
+        result = swarm_distill(response)
+        assert result["genes"] == 0
+        assert result["hint"]
+        assert result["errors"]  # validation failure is surfaced, not swallowed
+
     def test_solidify_without_pending_run(self, isolated_swarm_env: Path) -> None:
         result = swarm_solidify()
         assert result["ok"] is False
