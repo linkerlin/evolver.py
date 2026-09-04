@@ -39,6 +39,55 @@ uv run evolver webui
 uv run evolver proxy
 ```
 
+**让宿主 Agent 加入蜂群（v1.98+ 的旗舰能力）**——引擎经 MCP stdio 接管宿主为进化执行器，一条命令体验完整闭环：
+
+```bash
+uv run evolver mcp    # stdio；宿主配置见下方「MCP 蜂群进化」章节
+```
+
+详见 [MCP 蜂群进化](#mcp-蜂群进化) 与 [examples/swarm-quickstart/](examples/swarm-quickstart/)。
+
+## MCP 蜂群进化（v1.98+ 旗舰能力）
+
+引擎不自建 LLM 调度——宿主 Agent（ZCode / Claude Code / Cursor 等）经 `evolver mcp`（stdio）连接后，由 `evolver_swarm` prompt / `swarm_boot` 工具注入接管协议，**宿主自身成为 GEP 变异提示词的执行器**：
+
+```
+swarm_tick → 宿主执行 GEP 变异提示词 → swarm_distill → swarm_solidify
+     ↑                        ↓
+     └── swarm_feedback（评估信号 E，低分注入 repair-bias）◀─┘
+```
+
+工具面（18 个）：`swarm_boot/tick/distill/solidify/feedback/report/status`、HITL 审批（`approvals/approval_resolve`）、HOTL 监督（`supervise`）、Hooks 双轨（`hooks/hook_event`）、技能桥（`skills`）、**工作流三工具（`workflow_run/act/status`，v1.110+）**。另有 `evolver://status` 等四个只读资源与 MCP 规范注解（readOnly/destructive hint）。
+
+安全双门与信号闭环：
+- **HITL**（`EVOLVER_HITL_MODE=on`）：高危 solidify 阻塞待人类批准，TTL 超时 fail-safe 拒绝，按 subject 幂等
+- **HOTL**（`evolver supervise`）：pause/resume 优雅排水、veto 基因否决（tick 扣发 + solidify 阻断两道纵深）、directive 转向信号、降级连击绊线自动暂停
+- **统一评估反馈 E**：`primary_score`/`metrics`/`textual_gradient` 三分离，低分自动注入 repair-bias；反馈驱动自适应变异偏置（降级连击→repair、收敛平台→novelty）
+- **验收门 soak**（`evolver gate-report`）：shadow 模式积累拦截率/false-kill 指标，转正判定 `ready` 需 ≥20 个 gated run，硬执法切换始终留人类决策
+
+## 进化工作流（EvoX 收割：协作即数据，v1.110+）
+
+一整段协作表达为一份 **YAML 工作流**（可 diff → 可进化）：`agent` 步骤声明 `role`/`instruction` 等宿主执行器认领，`gate` 步骤引擎侧直跑验证级联（ruff→mypy→pytest），`approval` 步骤落人类审批门——全程 WAL 持久化、断点续跑：
+
+```bash
+uv run evolver workflow templates                  # 捆绑模板：repair / innovate
+uv run evolver workflow run --template repair      # 启动修复回路（也可给 YAML 文件）
+uv run evolver workflow awaiting <id>              # 宿主执行器/审批者当前待办
+uv run evolver workflow complete <id> --result '{"ok": true}'
+uv run evolver workflow approve <id>               # 审批放行
+```
+
+MCP 侧：`swarm_workflow_run` / `swarm_workflow_act` / `swarm_workflow_status`。
+
+## 技能生态桥（SKILL.md → 技能基因，v1.104+）
+
+把宿主生态的技能文件接入进化引擎（project > user > builtin 三级优先、同名遮蔽）：
+
+```bash
+uv run evolver skills scan              # 预览发现（含优先级与遮蔽）
+uv run evolver skills sync              # 转换并入 GEP 资产库（gene_distilled_s2g-*）
+```
+
 ## 前置要求
 
 - **[Python](https://python.org/)** >= 3.12
@@ -124,6 +173,16 @@ memory/                 # 运行时数据（graph JSONL、reviews JSONL）
 | `A2A_HUB_URL` | `https://evomap.ai` | Hub URL |
 | `A2A_NODE_ID` | 自动生成 | 节点身份 |
 | `GITHUB_TOKEN` | — | GitHub API 令牌 |
+| `EVOLVER_HITL_MODE` | `off` | HITL 审批门——`on` 时高危 solidify 需人类批准（off 仍记审计） |
+| `EVOLVER_HITL_TTL_MS` | `1800000` | HITL 待决请求 TTL——超时 fail-safe 拒绝 |
+| `EVOLVER_SUPERVISION_AUTO_PAUSE_STREAK` | `3` | HOTL 绊线——连续 N 次降级反馈自动暂停（`0` 关闭） |
+| `EVOLVER_FEEDBACK_DEGRADED_THRESHOLD` | `0.5` | 蜂群反馈降级阈值——低于此分注入 repair-bias |
+| `EVOLVER_ADAPTIVE_MUTATION` | `true` | 反馈驱动之变异类别权重自适应 |
+| `EVOLVER_SKILL_ROOTS` | 三级默认根 | 技能根目录覆盖（os.pathsep 分隔，顺序即优先级） |
+| `EVOLVER_GATE_SOAK_MIN_RUNS` | `20` | 验收门转正判定之最小 gated 样本数 |
+| `EVOLVER_APPLIED_GENE_COOLDOWN_EVENTS` | `5` | 已应用基因冷却窗口——近期成功固化者选择打分惩罚 |
+| `EVOLVER_APPLIED_GENE_COOLDOWN_PENALTY` | `0.25` | 冷却惩罚乘数（非禁选：唯一匹配仍可选） |
+| `EVOLVER_SWARM_AUTO_HIJACK` | `false` | 置 `1` 时 MCP instructions 直接注入接管指令 |
 | `EVOLVER_FF_ENABLE_RECALL_INJECT` | `true` | 向 GEP 提示词注入已验证回忆 |
 | `EVOLVER_FF_ENABLE_REFLECTION` | `true` | 固化后调优 personality |
 | `EVOLVER_FF_ENABLE_EXPLORE` | `false` | AST 代码库探索信号 |
@@ -132,28 +191,31 @@ memory/                 # 运行时数据（graph JSONL、reviews JSONL）
 
 ## 实现状态
 
-> **总体评估**（2026-06-11）：**1250+ 测试通过**，**mypy strict 清零**。核心循环含 Autopoiesis + memory_bridge；ATP CLI 参数与 Proxy 端口统一为主要缺口。
+> **总体评估**（2026-09-05）：包版本 **1.111.0**。MCP 蜂群栈（v1.98–v1.111：接管闭环、评估反馈 E、HITL/HOTL 安全、Hooks 桥、技能桥、自适应变异、验收门 soak、YAML 工作流引擎）完整且全绿（**3455 测试通过**、mypy strict 0 错误）。五轮 dogfood 已在本仓库真实跑通全闭环——验收门积累 gated_runs=4（verdict 诚实停在 collecting，需 ≥20）。
 
 | 子系统 | 状态 | 说明 |
 |---|---|---|
-| **GEP 数据层** | ~90% | `asset_store`、schemas、`solidify`、`sanitize`、`crypto` 生产级 |
-| **GEP 高级认知** | ~75% | `cognition.py` 接线回忆/反思/蒸馏；探索/课程由 feature flag 控制 |
-| **进化流水线** | ~90% | 7 阶段 + preflight + post_cycle；Autopoiesis 与 memory_bridge 已接线 |
+| **GEP 数据层** | ~90% | 种子基因 11×sha256；solidify 直测 + 学习助手 |
+| **GEP 高级认知** | ~80% | 回忆/反思/蒸馏；探索/课程由 feature flag 控制 |
+| **进化流水线** | ~90% | 7 阶段 + Autopoiesis + 硬超时；已应用基因冷却（v1.111） |
+| **MCP 蜂群** | ~97% | 接管闭环 + E 反馈 + HITL/HOTL + Hooks/技能桥 + 工作流工具；五轮 dogfood 实测 |
+| **工作流引擎** | ~90% | WAL 持久化步骤（script/foreach/if/agent/approval/gate）；YAML + 角色 + 模板（v1.110） |
+| **验收门** | ~85% | shadow soak + gate-report 判定；执法开关留人类 |
 | **Proxy 基础设施** | ~85% | 路由前缀 `/v1/a2a`；默认端口 8081；SSE LLM 中继 |
-| **ATP 市场** | ~55% | 本地结算 + Proxy ATP 路由；CLI `buy`/`orders` 参数不完整 |
-| **IDE 适配器** | ~65% | 4 个 IDE 模块 + 脚本；`setup-hooks` 仅 4 平台 |
-| **Ops 运维** | ~75% | `lifecycle`、`health_check`、`skills_monitor`、`innovation`、`trigger` |
-| **WebUI** | ~65% | Observer API、SSE 客户端、实时仪表盘；非完整 SPA |
+| **ATP 市场** | ~65% | 本地结算；Hub 商业 E2E 待补 |
+| **IDE 适配器** | ~85% | 运行时 hooks + py_compile 守卫 + MCP 进程内桥 |
+| **Ops 运维** | ~85% | lifecycle、force-update、--solo |
+| **WebUI** | ~70% | SSR 仪表盘 + GitHub observer |
 | **验证者** | ~50% | 沙箱框架存在；生产级网络隔离待完善 |
-| **Scripts** | 100% | `scripts/` 17/17 工具脚本已实现 |
-| **测试覆盖** | ~79% | 129 个文件 vs Node.js 参考 ~164 个 |
+| **文档/发布** | ~90% | CHANGELOG + 版本 **1.111.0**；多 OS CI 提示 |
 
-详细差距分析见 [`设计方案.md`](设计方案.md) 和 [`TODO.md`](TODO.md)。
+详细差距分析见 [`演进方案_wikiskill对照版.md`](演进方案_wikiskill对照版.md)（单一真相源）与 [`TODO.md`](TODO.md)。
 
 ## 示例
 
 | 示例 | 说明 |
 |---|---|
+| [`examples/swarm-quickstart/`](examples/swarm-quickstart/) | **蜂群进化全闭环**——MCP 接管、tick→执行→distill→solidify→feedback、HITL/HOTL 运维（支持 `--llm` 由 DeepSeek 真实执行） |
 | [`examples/hello-world/`](examples/hello-world/) | 在隔离工作区运行单次进化周期 |
 | [`examples/daemon-loop/`](examples/daemon-loop/) | 持续守护进程、生命周期管理、启停/状态/日志 |
 | [`examples/proxy-basics/`](examples/proxy-basics/) | A2A 代理、代理令牌、curl API 示例、LLM 中继 |

@@ -14,10 +14,22 @@
 
 | Example | What You'll Learn | Time |
 |---------|------------------|------|
+| [swarm-quickstart](swarm-quickstart/) | **Swarm evolution full loop** — MCP host takeover, tick→execute→distill→solidify→feedback, HITL/HOTL ops (supports `--llm` with DeepSeek as the real executor) | 20 min |
 | [proxy-basics](proxy-basics/) | Start A2A Proxy, mint tokens, curl API calls, LLM relay | 15 min |
 | [ide-hooks](ide-hooks/) | Install session hooks for Cursor/Claude Code/OpenCode/Codex/Kiro | 10 min |
 | [solo-mode](solo-mode/) | Fully offline mode, no Hub, local-only evolution | 5 min |
 | [self-report](self-report/) | Read autopoiesis reports, lessons learned, friction rules | 10 min |
+
+## Evolution Workflows (DAG-style, v1.110+)
+
+No example directory needed — the bundled templates ARE the walkthrough:
+
+```bash
+uv run evolver workflow templates                  # repair / innovate
+uv run evolver workflow run --template repair      # mutator node → cascade gate → publish approval
+uv run evolver workflow run --template innovate    # innovator node → tolerant gate → keep/drop approval
+uv run evolver workflow awaiting <id>              # what the host executor / approver should do now
+```
 
 ## Asset Lifecycle
 
@@ -67,6 +79,12 @@ uv run evolver solidify           # Apply pending gene
 uv run evolver start              # Start background daemon
 uv run evolver status             # Daemon status
 uv run evolver stop               # Stop daemon
+uv run evolver mcp                # MCP stdio server (swarm host entry)
+uv run evolver workflow run --template repair   # Durable workflow (YAML/template)
+uv run evolver gate-report        # Acceptance-gate soak report
+uv run evolver hitl list          # HITL approval queue
+uv run evolver supervise status   # HOTL supervision state
+uv run evolver skills scan        # Skill ecosystem bridge (SKILL.md → genes)
 uv run evolver proxy              # Start A2A proxy
 uv run evolver proxy-token        # Mint proxy token
 uv run evolver webui              # Start dashboard

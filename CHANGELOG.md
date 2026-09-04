@@ -8,6 +8,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Docs — 全量文档对齐 v1.111.0 实现现状
+- **README.md**：实现状态段 1.105.0→1.111.0（补 v1.106–v1.111 弧线：自适应变异、
+  验收门 soak、dogfood 五轮、工作流引擎；新增工作流引擎/验收门两行）；
+  环境变量表补 17 个 v1.99+ 变量（HITL/HOTL/反馈/技能/门/冷却/Hub 重试/
+  AUTO_HIJACK）；测试计数 3400+→3455+。
+- **README.zh.md**：新增「MCP 蜂群进化」「进化工作流」「技能生态桥」三章节
+  （原零覆盖）；实现状态自 2026-06-11（1250+ 测试）重写至 v1.111.0；
+  环境变量表/示例表同步。
+- **README.ja-JP.md / README.ko-KR.md**：主機能补蜂群/工作流条目；实现状态
+  1.94.0→1.111.0；示例表补 swarm-quickstart；环境变量表补新变量。
+- **examples/README.md**：Core Workflows 补 swarm-quickstart；新增「Evolution
+  Workflows」小节（模板即教程）；命令速查补 mcp/workflow/gate-report/
+  hitl/supervise/skills。
+- **docs/env-registry.md**：`scripts/env_inventory.py` 再生成（234→252 变量）。
+- **TODO.md**：指针刷新（1.94.0/3002 测试 → 1.111.0/3455 测试 + dogfood
+  gated_runs=4 + EvoX 收割完毕）。
+- **断链修复**：`演进方案.md` 已于 c195b82 删除但 12 处引用残留——统一改指
+  尚存之 `演进方案_wikiskill对照版.md`（README×4 语言、TODO、
+  SELF_HARNESS_CHECKPOINT）。
+
 ## [1.111.0] — 2026-09-04
 
 ### Added — dogfood round-5：已应用基因冷却（选择器效率，gated_runs 3→4）

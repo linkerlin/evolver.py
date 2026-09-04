@@ -15,16 +15,25 @@ uv run evolver --loop       # デーモンループ
 uv run evolver --review     # レビューモード
 uv run evolver webui        # WebUI ダッシュボード
 uv run evolver proxy        # ローカル A2A プロキシ
+uv run evolver mcp          # MCP stdio サーバー（群進化ホスト接続点）
 ```
 
 ## 主な機能
 
 - **GEP プロトコル** — 監査可能な進化資産（Gene / Capsule / Event）
 - **7 段階進化パイプライン** — collect → signals → hub → enrich → autopoiesis → select → dispatch
+- **MCP 群進化（v1.98+ の旗艦機能）** — ホスト Agent を stdio で接続し GEP 変異プロンプトの実行器として乗っ取る（`evolver mcp` + `evolver_swarm` プロンプト）。HITL 承認ゲート / HOTL 監督 / Hooks 双方向ブリッジ / スキルブリッジ / 統一評価フィードバック E（低スコアは自動 repair-bias 注入）/ 適応的変異バイアス / 検収ゲート soak レポート
+- **進化ワークフロー（v1.110+、EvoX 収穫）** — コラボレーション全体を **YAML ワークフロー** として表現（diff 可能 → 進化可能資産）。`agent` ステップは role/instruction を宣言しホスト実行器が担当、`gate` ステップは検証カスケード（ruff→mypy→pytest）をエンジン側で実行、`approval` ステップは人間承認ゲート。WAL で永続化・再開可能。バンドルテンプレート：`repair` / `innovate`
 - **マルチプロバイダプロキシ** — Anthropic / Bedrock / Gemini / Vertex / Ollama / OpenAI（9 ルート）
 - **ATP マーケットプレース** — 15 の CLI サブコマンド（buy / sell / settle / dispute）
 - **IDE 統合** — Cursor / Claude Code / Codex / Kiro / opencode のランタイムフック
 - **Autopoiesis** — SelfReport + ホメオスタシス + 自己修復（Python オリジナル機能）
+
+```bash
+uv run evolver workflow templates               # repair / innovate テンプレート一覧
+uv run evolver workflow run --template repair   # 修復ループ起動（YAML ファイルも可）
+uv run evolver workflow awaiting <id>           # ホスト実行器 / 承認者の現在の担当
+```
 
 ## インストール
 
@@ -82,6 +91,7 @@ OPENCLAW_WORKSPACE=/path/to/project    # ワークスペースルート
 
 | 例 | 説明 |
 |---|---|
+| [`examples/swarm-quickstart/`](examples/swarm-quickstart/) | **群進化フルループ** — MCP 接管、tick→実行→distill→solidify→feedback、HITL/HOTL 運用（`--llm` で DeepSeek が実行器） |
 | [`examples/hello-world/`](examples/hello-world/) | 1 回の進化サイクル |
 | [`examples/daemon-loop/`](examples/daemon-loop/) | デーモンループとライフサイクル管理 |
 | [`examples/proxy-basics/`](examples/proxy-basics/) | プロキシ設定と curl API 例 |
@@ -130,7 +140,7 @@ uv run mypy src                            # 型チェック（strict）
 - [AGENTS.md](AGENTS.md) — AI エージェント向け参照
 - [设计方案.md](设计方案.md) — 設計書（中文）
 - [TODO.md](TODO.md) — ギャップ分析とロードマップ
-- [演进方案.md](演进方案.md) — v1.89.11 対追跡計画（中文）
+- [演进方案_wikiskill对照版.md](演进方案_wikiskill对照版.md) — v1.89.11 対追跡計画（中文）
 
 ## ライセンス
 
@@ -138,21 +148,23 @@ Apache-2.0 — 詳細は [LICENSE](LICENSE) を参照してください。
 
 ## 実装ステータス
 
-> **2026-08-11（Sprint 20–21 完了）**: Node 版 **v1.94.0** との行動等価を宣言。
-> パッケージバージョン **1.94.0**。残りの深さギャップは [演进方案.md](演进方案.md)（中国語）参照。
+> **2026-09-05**: パッケージバージョン **1.111.0**。MCP 群進化スタック（v1.98–v1.111：接管ループ、評価フィードバック E、HITL/HOTL、Hooks / スキルブリッジ、適応的変異、検収ゲート soak、YAML ワークフローエンジン）が完了し全緑（**3455 テスト合格**、mypy strict 0 エラー）。本リポジトリ自身で 5 ラウンドの dogfood を実走——検収ゲート gated_runs=4。残りの深さギャップは [演进方案_wikiskill对照版.md](演进方案_wikiskill对照版.md)（中国語）参照。
 
 | サブシステム | 状態 | 備考 |
 |---|---|---|
-| GEP データ層 | ~90% | シード遺伝子 11+6（Claude コンテキストファミリー）; solidify 直接テスト + 学習ヘルパー |
+| GEP データ層 | ~90% | シード遺伝子 11×sha256; solidify 直接テスト + 学習ヘルパー |
 | GEP 認知 | ~80% | recall/reflection/distill; explore/curriculum フラグ制御 |
-| 進化パイプライン | ~90% | 7 フェーズ + Autopoiesis + ハードタイムアウト |
+| 進化パイプライン | ~90% | 7 フェーズ + Autopoiesis + ハードタイムアウト; 適用済み遺伝子クールダウン（v1.111） |
+| MCP 群進化 | ~97% | 接管ループ + E フィードバック + HITL/HOTL + Hooks/スキル/ワークフローツール; dogfood 5 ラウンド |
+| ワークフローエンジン | ~90% | WAL 永続ステップ（script/foreach/if/agent/approval/gate）; YAML + ロール + テンプレート（v1.110） |
+| 検収ゲート | ~85% | shadow soak + gate-report 判定; 強制執行スイッチは人間の決定権 |
 | プロキシ基盤 | ~85% | マルチプロバイダ、トークン再利用、パス CLI フラグ、ポート **8081** |
 | ATP マーケット | ~65% | ローカル決済; Hub 商用 E2E は保留 |
-| IDE アダプタ | ~80% | ランタイムフック + py_compile 構文ガード |
+| IDE アダプタ | ~85% | ランタイムフック + py_compile 構文ガード + MCP インプロセスブリッジ |
 | Ops / Solo | ~85% | ライフサイクル、force-update、--solo |
 | WebUI | ~70% | SSR ダッシュボード + GitHub observer |
 | Validator | ~50% | サンドボックス基盤; 本番ネットワーク分離は保留 |
-| ドキュメント / リリース | ~90% | CHANGELOG + バージョン **1.94.0**; マルチ OS CI |
+| ドキュメント / リリース | ~90% | CHANGELOG + バージョン **1.111.0**; マルチ OS CI |
 
 ## 主要な環境変数
 
@@ -169,3 +181,8 @@ Apache-2.0 — 詳細は [LICENSE](LICENSE) を参照してください。
 | `EVOLVER_PROXY_PORT` | `8081` | プロキシポート |
 | `EVOLVER_NO_PARENT_GIT` | （なし） | `.git` 走査を無効化 |
 | `EVOLVER_ROLLBACK_MODE` | `stash` | ロールバック戦略 |
+| `EVOLVER_HITL_MODE` | `off` | HITL 承認ゲート（`on` で高危険 solidify は人間承認待ち） |
+| `EVOLVER_SUPERVISION_AUTO_PAUSE_STREAK` | `3` | HOTL トリップワイヤー — N 回連続劣化で自動一時停止 |
+| `EVOLVER_FEEDBACK_DEGRADED_THRESHOLD` | `0.5` | 群進化フィードバック劣化閾値（下回ると repair-bias 注入） |
+| `EVOLVER_APPLIED_GENE_COOLDOWN_EVENTS` | `5` | 適用済み遺伝子クールダウン窓（選択スコアペナルティ） |
+| `EVOLVER_GATE_SOAK_MIN_RUNS` | `20` | 検収ゲート昇格判定の最小サンプル数 |

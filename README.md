@@ -243,7 +243,7 @@ src/evolver/
     ├── client/           # Inline JS/CSS (SSE, bootstrap, i18n)
     └── observer/         # Data aggregation modules
 
-tests/                  # 280+ test files, 3400+ tests (pytest; incl. MCP
+tests/                  # 280+ test files, 3455+ tests (pytest; incl. MCP
                         #   protocol E2E + live-LLM loop E2E under tests/e2e/)
 scripts/                # 17 CLI helper scripts (see Scripts section)
 assets/gep/             # Seed gene library
@@ -269,6 +269,21 @@ memory/                 # Runtime data (graph JSONL, reviews JSONL)
 | `A2A_HUB_URL` | `https://evomap.ai` | Hub URL |
 | `A2A_NODE_ID` | auto-generated | Node identity |
 | `GITHUB_TOKEN` | — | GitHub API token |
+| `EVOLVER_HITL_MODE` | `off` | HITL approval gate — `on` blocks high-risk solidify pending human approval (off still audits) |
+| `EVOLVER_HITL_TTL_MS` | `1800000` | HITL pending-request TTL — expiry fail-safes to REJECT |
+| `EVOLVER_SUPERVISION_AUTO_PAUSE_STREAK` | `3` | HOTL tripwire — auto-pause after N consecutive degraded feedbacks (`0` disables) |
+| `EVOLVER_FEEDBACK_DEGRADED_THRESHOLD` | `0.5` | Swarm feedback degraded threshold — below it (or `success=false`) injects repair-bias |
+| `EVOLVER_ADAPTIVE_MUTATION` | `true` | Feedback-driven adaptive mutation-category weights (degraded→repair, plateau→novelty) |
+| `EVOLVER_ADAPTIVE_MUTATION_SHIFT` | `0.2` | Adaptive weight shift magnitude (pre-normalization) |
+| `EVOLVER_SKILL_ROOTS` | 3-level roots | Skill root override (os.pathsep-separated; order = priority) |
+| `EVOLVER_GATE_SOAK_MIN_RUNS` | `20` | Acceptance-gate promotion minimum gated samples |
+| `EVOLVER_GATE_SOAK_MAX_FALSE_KILL` | `0.1` | False-kill ceiling for promotion verdict `ready` |
+| `EVOLVER_GATE_SOAK_INTERCEPT_MIN` / `_MAX` | `0.05`/`0.5` | Interception-rate band for promotion |
+| `EVOLVER_APPLIED_GENE_COOLDOWN_EVENTS` | `5` | Applied-gene cooldown window — recent successful solidifies score-penalized in selection |
+| `EVOLVER_APPLIED_GENE_COOLDOWN_PENALTY` | `0.25` | Cooldown score multiplier (not a ban — sole matches stay selectable) |
+| `EVOLVER_HUB_FETCH_RETRIES` | `1` | Hub fetch retry count (exponential backoff; living-memory f001) |
+| `EVOLVER_HUB_FETCH_RETRY_BACKOFF_MS` | `500` | Hub fetch retry backoff base |
+| `EVOLVER_SWARM_AUTO_HIJACK` | `false` | `1` injects takeover instructions directly into MCP server instructions |
 | `EVOLVER_FF_ENABLE_RECALL_INJECT` | `true` | Inject verified recall hints into GEP prompt |
 | `EVOLVER_FF_ENABLE_REFLECTION` | `true` | Tune personality after solidify |
 | `EVOLVER_FF_ENABLE_EXPLORE` | `false` | AST-based codebase exploration signals |
@@ -277,27 +292,32 @@ memory/                 # Runtime data (graph JSONL, reviews JSONL)
 
 ## Implementation Status
 
-> **Overall** (2026-09-04): package version **1.105.0**. The MCP swarm stack
-> (v1.98–v1.105: takeover loop, evaluation feedback E, HITL/HOTL safety,
-> hooks bridge, skill bridge, protocol + live-LLM E2E) is complete and green
-> (**3400+ tests passing**). Node-parity baseline v1.94.0 retained; remaining
-> depth gaps: [演进方案.md](演进方案.md).
+> **Overall** (2026-09-05): package version **1.111.0**. The MCP swarm stack
+> (v1.98–v1.111: takeover loop, evaluation feedback E, HITL/HOTL safety,
+> hooks bridge, skill bridge, feedback-adaptive mutation, acceptance-gate
+> soak, YAML workflow engine with role nodes + cascade gates) is complete and
+> green (**3455 tests passing**, mypy strict 0 errors). Five dogfood rounds
+> ran the full loop on this repo itself — 4 gated runs accumulated on the
+> acceptance gate (verdict honestly `collecting`, needs ≥20). Node-parity
+> baseline v1.94.0 retained; remaining depth gaps: [演进方案_wikiskill对照版.md](演进方案_wikiskill对照版.md).
 
 | Subsystem | Status | Notes |
 |---|---|---|
 | **GEP Data Layer** | ~90% | seed genes 11×sha256; solidify direct tests + learning helpers |
 | **GEP Cognition** | ~80% | recall/reflection/distill; explore/curriculum flag-gated |
-| **Evolution Pipeline** | ~90% | 7 phases + Autopoiesis + hard timeout |
-| **MCP Swarm** | ~95% | takeover loop + E feedback + HITL/HOTL + hooks/skill bridges; protocol E2E + live-LLM E2E green |
+| **Evolution Pipeline** | ~90% | 7 phases + Autopoiesis + hard timeout; applied-gene cooldown (v1.111) |
+| **MCP Swarm** | ~97% | takeover loop + E feedback + HITL/HOTL + hooks/skill bridges + workflow tools (run/act/status); 5 dogfood rounds live |
+| **Workflow Engine** | ~90% | WAL durable steps (script/foreach/if/agent/approval/gate); YAML specs + roles + templates (v1.110) |
+| **Acceptance Gate** | ~85% | shadow-mode soak + gate-report verdicts; enforcement switch stays human |
 | **Proxy Infrastructure** | ~85% | multi-provider, token reuse, path CLI flags, port **8081** |
 | **ATP Marketplace** | ~65% | local settlement; Hub commercial E2E pending |
 | **IDE Adapters** | ~85% | runtime hooks + py_compile guard + MCP in-process bridge |
 | **Ops / Solo** | ~85% | lifecycle, force-update, --solo |
 | **WebUI** | ~70% | SSR dashboard + GitHub observer |
 | **Validator** | ~50% | sandbox framework; prod network isolation pending |
-| **Docs / Release** | ~90% | CHANGELOG + version **1.105.0**; multi-OS CI advisory |
+| **Docs / Release** | ~90% | CHANGELOG + version **1.111.0**; multi-OS CI advisory |
 
-See [演进方案.md](演进方案.md) for the live gap roadmap.
+See [演进方案_wikiskill对照版.md](演进方案_wikiskill对照版.md) for the live gap roadmap.
 
 ## Examples
 

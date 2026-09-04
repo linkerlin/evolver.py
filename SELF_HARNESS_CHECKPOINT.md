@@ -87,7 +87,7 @@ tests/gep/test_solidify_acceptance_hook.py
 
 **B2**（跨用例因果聚类）→ C2（多提议者）→ C3（AST 合并）→ A2（surface 解耦）→ C1（闭集钩子）→ D（LLM 模板）
 
-B2 要点（见 SelfHarness演进方案.md §4 Sprint B2）：
+B2 要点（见 SelfHarness演进方案_wikiskill对照版.md §4 Sprint B2）：
 - `gep/diagnosis/clusters.py`：`CausalSignature`（terminal_cause/criticality/agent_mechanism 三元组）+ `build_causal_clusters` + 排序（CRITICALITY_RANK）
 - `memory_graph` 存 `causal` 条目；`candidates._failed_capsule_candidates` 升级（B1 开启时用因果签名）
 - prompt 注入因果簇简报段
