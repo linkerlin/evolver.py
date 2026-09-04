@@ -61,6 +61,18 @@ def env_str(key: str, fallback: str) -> str:
     return v if v is not None and v != "" else fallback
 
 
+def parse_hitl_mode(raw: str | None, *, default: str = "off") -> str:
+    """Normalize HITL mode. Unknown values fail-closed to ``on``."""
+    if raw is None or str(raw).strip() == "":
+        return default
+    s = str(raw).strip().lower()
+    if s in ("on", "true", "1", "yes"):
+        return "on"
+    if s in ("off", "false", "0", "no"):
+        return "off"
+    return "on"
+
+
 def env_bool(key: str, fallback: bool) -> bool:
     v = os.environ.get(key)
     if v is None:
@@ -293,8 +305,9 @@ SWARM_TICK_LOG_MAX_CHARS: Final = env_int("EVOLVER_SWARM_TICK_LOG_MAX_CHARS", 8_
 SWARM_FEEDBACK_DEGRADED_THRESHOLD: Final = env_float("EVOLVER_FEEDBACK_DEGRADED_THRESHOLD", 0.5)
 # EvoX concept harvest (HITLManager): "off" auto-approves high-risk requests
 # (decision still journaled for audit); "on" requires explicit human approval;
-# pending requests past the TTL fail-safe to REJECT.
-HITL_MODE: Final = env_str("EVOLVER_HITL_MODE", "off")
+# pending requests past the TTL fail-safe to REJECT. Unknown values fail-closed
+# to "on". ``SWARM_AUTO_HIJACK`` also forces the gate on (see hitl_mode_enabled).
+HITL_MODE: Final = parse_hitl_mode(os.environ.get("EVOLVER_HITL_MODE"), default="off")
 HITL_TTL_MS: Final = env_positive_int("EVOLVER_HITL_TTL_MS", 30 * 60 * 1_000)
 # HOTL (human-on-the-loop) tripwire: auto-pause supervision after this many
 # consecutive degraded feedback reports (0 disables). Human resumes via
@@ -437,6 +450,8 @@ __all__ = [
     "HEARTBEAT_INTERVAL_MS",
     "HEARTBEAT_TIMEOUT_MS",
     "HELLO_TIMEOUT_MS",
+    "HITL_MODE",
+    "HITL_TTL_MS",
     "HTTP_TRANSPORT_TIMEOUT_MS",
     "HUB_SEARCH_TIMEOUT_MS",
     "IDLE_FETCH_INTERVAL_MS",
@@ -472,8 +487,13 @@ __all__ = [
     "SELF_PR_TIMEOUT_MS",
     "SESSION_ARCHIVE_KEEP",
     "SESSION_ARCHIVE_TRIGGER",
+    "SKILL_ROOTS_OVERRIDE",
     "SOLIDIFY_MAX_RETRIES",
     "SOLIDIFY_RETRY_INTERVAL_MS",
+    "SUPERVISION_AUTO_PAUSE_STREAK",
+    "SWARM_AUTO_HIJACK",
+    "SWARM_FEEDBACK_DEGRADED_THRESHOLD",
+    "SWARM_TICK_LOG_MAX_CHARS",
     "TARGET_BYTES",
     "VALIDATION_TIMEOUT_MS",
     "VALIDATOR_BATCH_TIMEOUT_MS",
@@ -493,6 +513,7 @@ __all__ = [
     "env_str",
     "hub_allow_insecure",
     "outcome_report_mode",
+    "parse_hitl_mode",
     "proxy_base_url",
     "proxy_local_url",
     "resolve_hub_base",

@@ -19,6 +19,7 @@ Priority (highest wins; a same-name skill at a lower level is shadowed):
 from __future__ import annotations
 
 import logging
+import os
 from pathlib import Path
 from typing import Any, Final
 
@@ -41,7 +42,9 @@ def skill_roots() -> list[tuple[str, Path]]:
     override = SKILL_ROOTS_OVERRIDE.strip()
     if override:
         return [
-            ("override", Path(part).expanduser()) for part in override.split(":") if part.strip()
+            ("override", Path(part).expanduser())
+            for part in override.split(os.pathsep)
+            if part.strip()
         ]
 
     workspace = get_workspace_root()

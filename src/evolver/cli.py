@@ -94,6 +94,16 @@ def _build_parser() -> argparse.ArgumentParser:
     )
     gate_p.add_argument("--json", action="store_true", help="Output raw JSON")
     gate_p.add_argument("--limit", type=int, default=5000, help="Max events to scan")
+    soak_p = sub.add_parser(
+        "soak",
+        help="Keep evolution runtime off the git tree (setup / exports / status)",
+    )
+    soak_sub = soak_p.add_subparsers(dest="soak_action")
+    soak_sub.add_parser("setup", help="Create $EVOLVER_HOME/evolver.py-soak and write env.sh")
+    soak_sub.add_parser("exports", help="Print shell exports for the soak dirs")
+    soak_status = soak_sub.add_parser("status", help="Paths + gate-report for the active env")
+    soak_status.add_argument("--json", action="store_true", help="Output raw JSON")
+    soak_status.add_argument("--limit", type=int, default=5000, help="Max events to scan")
     sr_p = sub.add_parser("self-report", help="Autopoiesis self-report and rule evolution")
     sr_p.add_argument(
         "--capture",
@@ -511,6 +521,9 @@ def main(argv: Sequence[str] | None = None) -> int:
     if command == "gate-report":
         return _cmd_gate_report(args)
 
+    if command == "soak":
+        return _cmd_soak(args)
+
     if command == "fetch":
         return asyncio.run(_cmd_fetch(args))
 
@@ -750,6 +763,7 @@ def _cmd_supervise(args: argparse.Namespace) -> int:
         kwargs["text"] = getattr(args, "text", "") or ""
     elif action == "veto":
         kwargs["pattern"] = getattr(args, "pattern", "") or ""
+        kwargs["note"] = getattr(args, "note", "") or ""
     elif action == "unveto":
         kwargs["veto_id"] = getattr(args, "veto_id", "") or ""
 
@@ -890,17 +904,33 @@ def _cmd_gate_report(args: argparse.Namespace) -> int:
         summarize_acceptance,
     )
     from evolver.gep.asset_store import read_all_events
+    from evolver.ops.soak_env import evolution_dir_inside_repo
 
     metrics = summarize_acceptance(read_all_events()[-max(1, args.limit) :])
     recommendation = gate_soak_recommendation(metrics)
+    inside = evolution_dir_inside_repo()
 
     if args.json:
         print(
             json.dumps(
-                {"metrics": metrics, "recommendation": recommendation}, ensure_ascii=False, indent=2
+                {
+                    "metrics": metrics,
+                    "recommendation": recommendation,
+                    "inside_repo": inside,
+                },
+                ensure_ascii=False,
+                indent=2,
             )
         )
         return 0
+
+    if inside:
+        print(
+            "warning: EVOLUTION_DIR is inside the git work tree. "
+            "Runtime files are gitignored; for soak use `evolver soak setup` "
+            "and source the generated env.sh.",
+            file=sys.stderr,
+        )
 
     window = metrics["window"]
     print("Acceptance-gate soak report (shadow mode)")
@@ -915,6 +945,48 @@ def _cmd_gate_report(args: argparse.Namespace) -> int:
         print(f"    - {reason}")
     print(f"  enforce               : {recommendation['enforce_hint']}")
     return 0
+
+
+def _cmd_soak(args: argparse.Namespace) -> int:
+    """Soak layout: setup / exports / status (演进方案.md §10)."""
+    from evolver.ops import soak_env
+
+    action = getattr(args, "soak_action", None) or "status"
+    if action == "setup":
+        result = soak_env.setup()
+        print(f"soak root     : {result['root']}")
+        print(f"EVOLUTION_DIR : {result['evolution_dir']}")
+        print(f"GEP_ASSETS_DIR: {result['gep_assets_dir']}")
+        print(f"env.sh        : {result['env_sh']}")
+        if result["copied_lessons"]:
+            print("copied LESSONS_LEARNED.md into soak evolution dir")
+        print("source the env.sh before `evolver mcp` / `evolver gate-report`")
+        return 0
+    if action == "exports":
+        print(soak_env.exports_shell(), end="")
+        return 0
+    if action == "status":
+        result = soak_env.status(event_limit=getattr(args, "limit", 5000))
+        if getattr(args, "json", False):
+            print(json.dumps(result, ensure_ascii=False, indent=2, default=str))
+            return 0
+        print(f"EVOLUTION_DIR : {result['evolution_dir']}")
+        print(f"GEP_ASSETS_DIR: {result['gep_assets_dir']}")
+        print(f"inside_repo   : {result['inside_repo']}")
+        print(f"soak_root     : {result['soak_root']}")
+        metrics = result["metrics"]
+        rec = result["recommendation"]
+        print(f"gated_runs    : {metrics['gated_runs']}")
+        print(f"verdict       : {rec['verdict']}")
+        if result["inside_repo"]:
+            print(
+                "warning: active EVOLUTION_DIR is inside the git work tree; "
+                "run `evolver soak setup` and source env.sh.",
+                file=sys.stderr,
+            )
+        return 0
+    print(f"Unknown soak action: {action}", file=sys.stderr)
+    return 2
 
 
 def _cmd_report(args: argparse.Namespace) -> int:
@@ -1533,6 +1605,10 @@ def _cmd_distill(args: argparse.Namespace) -> int:
     print(
         f"Extracted: {len(genes)} gene(s), {len(capsules)} capsule(s), {len(mutations)} mutation(s)"
     )
+    if not genes and not capsules and not mutations:
+        from evolver.gep.distill import DISTILL_FORMAT_HINT
+
+        print(f"HINT: {DISTILL_FORMAT_HINT}", file=sys.stderr)
 
     install = install_distilled(result, dry_run=args.dry_run)
     for item in install.get("installed", []):

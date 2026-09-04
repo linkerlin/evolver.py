@@ -148,7 +148,7 @@ Apache-2.0 — 자세한 내용은 [LICENSE](LICENSE)를 참조하세요.
 
 ## 구현 상태
 
-> **2026-09-05**: 패키지 버전 **1.111.0**. MCP 군집 진화 스택(v1.98–v1.111: 인수 루프, 평가 피드백 E, HITL/HOTL, Hooks/스킬 브리지, 적응적 변이, 인수 게이트 soak, YAML 워크플로 엔진) 완료 및 전면 그린(**3455 테스트 통과**, mypy strict 0 오류). 이 저장소 자체에서 5라운드 dogfood 실주행 — 인수 게이트 gated_runs=4. 잔여 깊이 격차는 [演进方案_wikiskill对照版.md](演进方案_wikiskill对照版.md)(중국어) 참조.
+> **2026-09-05**: 패키지 버전 **1.112.0**. MCP 군집 진화 스택(v1.98–v1.111: 인수 루프, 평가 피드백 E, HITL/HOTL, Hooks/스킬 브리지, 적응적 변이, 인수 게이트 soak, YAML 워크플로 엔진) 완료 및 전면 그린(**3455 테스트 통과**, mypy strict 0 오류). 이 저장소 자체에서 5라운드 dogfood 실주행 — 인수 게이트 gated_runs=4. 잔여 깊이 격차는 [演进方案_wikiskill对照版.md](演进方案_wikiskill对照版.md)(중국어) 참조.
 
 | 하위 시스템 | 상태 | 비고 |
 |---|---|---|
@@ -164,7 +164,7 @@ Apache-2.0 — 자세한 내용은 [LICENSE](LICENSE)를 참조하세요.
 | Ops / Solo | ~85% | 라이프사이클, force-update, --solo |
 | WebUI | ~70% | SSR 대시보드 + GitHub observer |
 | Validator | ~50% | 샌드박스 기반; 프로덕션 네트워크 격리 보류 |
-| 문서 / 릴리스 | ~90% | CHANGELOG + 버전 **1.111.0**; 멀티 OS CI |
+| 문서 / 릴리스 | ~90% | CHANGELOG + 버전 **1.112.0**; 멀티 OS CI |
 
 ## 주요 환경 변수
 

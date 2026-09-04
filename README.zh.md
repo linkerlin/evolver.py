@@ -191,7 +191,7 @@ memory/                 # 运行时数据（graph JSONL、reviews JSONL）
 
 ## 实现状态
 
-> **总体评估**（2026-09-05）：包版本 **1.111.0**。MCP 蜂群栈（v1.98–v1.111：接管闭环、评估反馈 E、HITL/HOTL 安全、Hooks 桥、技能桥、自适应变异、验收门 soak、YAML 工作流引擎）完整且全绿（**3455 测试通过**、mypy strict 0 错误）。五轮 dogfood 已在本仓库真实跑通全闭环——验收门积累 gated_runs=4（verdict 诚实停在 collecting，需 ≥20）。
+> **总体评估**（2026-09-05）：包版本 **1.112.0**。MCP 蜂群栈（v1.98–v1.111）之后的稳定化（HITL/HOTL 互锁、机械 repair、落地基因谱系、运行态出仓）见 [演进方案.md](演进方案.md)。五轮 dogfood 已跑通；验收门 gated_runs=4，verdict 诚实停在 collecting（需 ≥20）。
 
 | 子系统 | 状态 | 说明 |
 |---|---|---|
@@ -207,7 +207,7 @@ memory/                 # 运行时数据（graph JSONL、reviews JSONL）
 | **Ops 运维** | ~85% | lifecycle、force-update、--solo |
 | **WebUI** | ~70% | SSR 仪表盘 + GitHub observer |
 | **验证者** | ~50% | 沙箱框架存在；生产级网络隔离待完善 |
-| **文档/发布** | ~90% | CHANGELOG + 版本 **1.111.0**；多 OS CI 提示 |
+| **文档/发布** | ~90% | CHANGELOG + 版本 **1.112.0**；多 OS CI 提示 |
 
 详细差距分析见 [`演进方案_wikiskill对照版.md`](演进方案_wikiskill对照版.md)（单一真相源）与 [`TODO.md`](TODO.md)。
 

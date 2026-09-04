@@ -95,6 +95,28 @@ def write_state_for_solidify(last_run: dict[str, Any]) -> None:
     tmp.replace(path)
 
 
+def record_landed_gene_ids(ids: list[str]) -> None:
+    """Persist distilled gene ids onto the pending solidify run (lineage)."""
+    state = _read_solidify_state() or {}
+    last_run = dict(state.get("last_run") or {})
+    last_run["landed_gene_ids"] = [str(i) for i in ids if i]
+    write_state_for_solidify(last_run)
+
+
+def _annotate_mutation_lineage(
+    last_run: dict[str, Any], mutation: dict[str, Any]
+) -> dict[str, Any]:
+    out = dict(mutation or {})
+    selected = last_run.get("selected_gene_id")
+    if selected and not out.get("gene_id"):
+        out["gene_id"] = selected
+    landed = [str(x) for x in (last_run.get("landed_gene_ids") or []) if x]
+    if landed:
+        out["landed_gene_id"] = landed[0]
+        out["landed_gene_ids"] = landed
+    return out
+
+
 def _read_solidify_state() -> dict[str, Any] | None:
     path = get_solidify_state_path()
     return read_json_if_exists(path)
@@ -768,10 +790,48 @@ def solidify(
     last_run = state["last_run"]
     cwd = get_workspace_root()
 
+    from evolver.gep import supervision as supervision_mod
+
+    if supervision_mod.is_paused():
+        return {"ok": False, "error": "supervision_paused"}
+    gene_id = str(last_run.get("selected_gene_id") or "")
+    landed_head = ""
+    raw_landed = last_run.get("landed_gene_ids") or []
+    if isinstance(raw_landed, list) and raw_landed:
+        landed_head = str(raw_landed[0])
+    veto = supervision_mod.check_veto(
+        f"solidify:{last_run.get('run_id') or ''}",
+        str(last_run.get("run_id") or ""),
+        gene_id,
+        landed_head,
+    )
+    if veto is not None:
+        return {"ok": False, "error": "supervision_veto", "veto": veto}
+
+    if skip_validation:
+        run_id = last_run.get("run_id") or (last_run.get("mutation") or {}).get("id")
+        if not run_id or str(run_id) == "unknown":
+            return {"ok": False, "error": "skip_validation_requires_pending_run"}
+        from evolver.gep import hitl as hitl_mod
+
+        approval = hitl_mod.request_approval(
+            subject=f"solidify_skip_validation:{run_id}",
+            risk_reason="solidify(skip_validation=True) bypasses the validation cascade",
+            requested_by="solidify",
+        )
+        if approval.get("status") != "approved":
+            return {
+                "ok": False,
+                "error": f"hitl_{approval.get('status', 'pending')}",
+                "approval": approval,
+            }
+
     if not is_git_repo(cwd):
         return {"ok": False, "error": "not_a_git_repo"}
 
-    mutation = mutation_override or last_run.get("mutation", {})
+    mutation = _annotate_mutation_lineage(
+        last_run, mutation_override or last_run.get("mutation", {})
+    )
     # Sprint 22.2 (enable_fitness_cascade): the validation set is engine-owned
     # (config FITNESS_CASCADE_COMMANDS). mutation.validation comes from
     # external LLM output (distill) and is never executed in this mode.
@@ -813,50 +873,53 @@ def solidify(
 
     validation_result: dict[str, Any] | None = None
     validation_report: dict[str, Any] | None = None
-    if not skip_validation and validation_commands:
-        validation_result = _run_validations(validation_commands, cwd, cascade=cascade_mode)
-        try:
-            validation_report = build_validation_report(
-                gene_id=last_run.get("selected_gene_id"),
-                commands=[r.get("command", "") for r in validation_result["results"]],
-                results=validation_result["results"],
-                started_at=validation_result.get("started_at"),
-                finished_at=validation_result.get("finished_at"),
-            )
-        except Exception:
-            validation_report = None
-        if not validation_result["ok"]:
-            if cascade_mode:
-                return _handle_cascade_validation_failure(
-                    last_run=last_run,
-                    mutation=mutation,
-                    cwd=cwd,
-                    validation_result=validation_result,
-                    validation_report=validation_report,
-                )
-            # Blast radius must be captured BEFORE the rollback (Sprint 23
-            # lesson — after rollback the tree is clean and radius reads 0).
-            failed_blast = _compute_blast_radius()
-            rollback_tracked()
-            rollback_new_untracked_files(git_list_untracked_files(cwd))
-            record_solidify_failure(last_run, error="validation_failed")
-            _append_failure_event(
-                last_run, cwd, blast_radius=failed_blast, error="validation_failed"
-            )
-            details: dict[str, Any] = dict(validation_result)
-            if validation_report is not None:
-                details["validation_report"] = validation_report
-            return {
-                "ok": False,
-                "error": "validation_failed",
-                "details": details,
-            }
+    from evolver.gep.eval_worktree import isolated_eval_cwd
 
-    # Self-Harness A1: empirical acceptance gate (opt-in via
-    # EVOLVER_FF_ENABLE_ACCEPTANCE_GATE). Runs after quick validation, before
-    # the event is recorded. Reject → rollback + record failure (same path as
-    # validation failure). Returns None when the gate is disabled or errored.
-    gate_result = gate_or_none(last_run, cwd)
+    with isolated_eval_cwd(cwd) as (eval_cwd, eval_meta):
+        if not skip_validation and validation_commands:
+            validation_result = _run_validations(
+                validation_commands, eval_cwd, cascade=cascade_mode
+            )
+            try:
+                validation_report = build_validation_report(
+                    gene_id=last_run.get("selected_gene_id"),
+                    commands=[r.get("command", "") for r in validation_result["results"]],
+                    results=validation_result["results"],
+                    started_at=validation_result.get("started_at"),
+                    finished_at=validation_result.get("finished_at"),
+                )
+            except Exception:
+                validation_report = None
+            if not validation_result["ok"]:
+                if cascade_mode:
+                    return _handle_cascade_validation_failure(
+                        last_run=last_run,
+                        mutation=mutation,
+                        cwd=cwd,
+                        validation_result=validation_result,
+                        validation_report=validation_report,
+                    )
+                # Blast radius must be captured BEFORE the rollback (Sprint 23
+                # lesson — after rollback the tree is clean and radius reads 0).
+                failed_blast = _compute_blast_radius()
+                rollback_tracked()
+                rollback_new_untracked_files(git_list_untracked_files(cwd))
+                record_solidify_failure(last_run, error="validation_failed")
+                _append_failure_event(
+                    last_run, cwd, blast_radius=failed_blast, error="validation_failed"
+                )
+                details: dict[str, Any] = dict(validation_result)
+                if validation_report is not None:
+                    details["validation_report"] = validation_report
+                return {
+                    "ok": False,
+                    "error": "validation_failed",
+                    "details": details,
+                }
+
+        # Self-Harness A1: empirical acceptance gate. S26.5 runs it in the
+        # isolated eval tree when the flag is on (fallback = live cwd).
+        gate_result = gate_or_none(last_run, eval_cwd)
     if (rejected := _apply_acceptance_gate(gate_result, last_run, cwd)) is not None:
         return rejected
 
@@ -917,6 +980,8 @@ def solidify(
             payload["shadow"] = True
             payload["would_accept"] = False
         event["acceptance_result"] = payload
+    if eval_meta.get("reason") not in ("flag_off", "skipped"):
+        event["eval_workspace"] = eval_meta
     append_event_jsonl(event)
 
     # S27 wiki layer: evidence never rolls back. Improved/baseline → decision
@@ -951,7 +1016,13 @@ def solidify(
     # Sprint 23 soak fix: atomic evolution steps — commit accepted mutations
     # in cascade mode so later failure rollbacks stop at the last acceptance.
     if cascade_mode:
-        _commit_mutation(cwd, f"{last_run.get('selected_gene_id') or 'mutation'} {event['id']}")
+        landed_ids = last_run.get("landed_gene_ids") or []
+        label = (
+            (landed_ids[0] if isinstance(landed_ids, list) and landed_ids else None)
+            or last_run.get("selected_gene_id")
+            or "mutation"
+        )
+        _commit_mutation(cwd, f"{label} {event['id']}")
 
     # Update solidify state
     state["last_solidify"] = {
@@ -970,6 +1041,7 @@ __all__ = [
     "adapt_gene_from_learning",
     "build_soft_failure_learning_signals",
     "classify_failure_mode",
+    "record_landed_gene_ids",
     "solidify",
     "write_state_for_solidify",
 ]

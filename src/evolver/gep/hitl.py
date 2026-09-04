@@ -14,9 +14,12 @@ must carry a human approval. Semantics:
   re-requesting); a fresh attempt needs a fresh subject (e.g. new run_id).
 - ``EVOLVER_HITL_MODE=off`` auto-approves but still journals the decision
   (audit trail); ``on`` requires ``resolve_approval`` (CLI ``evolver hitl
-  approve/reject`` or the MCP relay tool).
+  approve/reject`` or the MCP relay tool). Unknown mode values fail-closed
+  to ``on``. ``EVOLVER_SWARM_AUTO_HIJACK=1`` also forces the gate on.
 - A pending request past its TTL is marked ``expired`` and evaluates to
   REJECT — silence never authorizes.
+- A corrupt or unreadable state file fail-closes: new requests are rejected
+  (no empty-store reset that would revive a previously denied subject).
 """
 
 from __future__ import annotations
@@ -30,6 +33,10 @@ from typing import Any, Final, Literal
 from pydantic import BaseModel, ConfigDict
 
 APPROVAL_STATUSES: Final = ("pending", "approved", "rejected", "expired")
+
+
+class HitlStoreError(RuntimeError):
+    """HITL state file unreadable — callers must fail-closed."""
 
 
 class ApprovalRequest(BaseModel):
@@ -76,7 +83,7 @@ def hitl_journal_path() -> Path:
     return get_evolution_dir() / "hitl_approvals.jsonl"
 
 
-def _load_requests() -> list[ApprovalRequest]:
+def _load_requests_unlocked() -> list[ApprovalRequest]:
     path = hitl_state_path()
     if not path.exists():
         return []
@@ -84,15 +91,32 @@ def _load_requests() -> list[ApprovalRequest]:
         data = json.loads(path.read_text(encoding="utf-8"))
         rows = data.get("requests", []) if isinstance(data, dict) else []
         return [ApprovalRequest.model_validate(r) for r in rows]
-    except Exception:
-        return []
+    except Exception as exc:
+        raise HitlStoreError(str(exc)) from exc
 
 
-def _save_requests(requests: list[ApprovalRequest]) -> None:
+def _save_requests_unlocked(requests: list[ApprovalRequest]) -> None:
     from evolver.gep.asset_store import atomic_write_json
 
     payload = {"requests": [r.model_dump() for r in requests]}
     atomic_write_json(hitl_state_path(), payload)
+
+
+def _with_hitl_lock() -> Any:
+    from evolver.gep.asset_store import with_file_lock
+
+    return with_file_lock(target_path=hitl_state_path())
+
+
+def _load_requests() -> list[ApprovalRequest]:
+    """Locked load; missing file → empty, corrupt file → HitlStoreError."""
+    with _with_hitl_lock():
+        return _load_requests_unlocked()
+
+
+def _save_requests(requests: list[ApprovalRequest]) -> None:
+    with _with_hitl_lock():
+        _save_requests_unlocked(requests)
 
 
 def _journal(entry: dict[str, Any]) -> None:
@@ -103,9 +127,9 @@ def _journal(entry: dict[str, Any]) -> None:
 
 
 def hitl_mode_enabled() -> bool:
-    from evolver.config import HITL_MODE
+    from evolver.config import HITL_MODE, SWARM_AUTO_HIJACK
 
-    return HITL_MODE == "on"
+    return HITL_MODE == "on" or bool(SWARM_AUTO_HIJACK)
 
 
 def _latest_for_subject(requests: list[ApprovalRequest], subject: str) -> ApprovalRequest | None:
@@ -130,60 +154,74 @@ def request_approval(
     """Ask the gate for *subject*; idempotent per subject (see module doc)."""
     from evolver.config import HITL_TTL_MS
 
-    requests = _load_requests()
-    existing = _latest_for_subject(requests, subject)
-    if existing is not None:
-        if _effective_status(existing) == "expired" and existing.status == "pending":
-            existing.status = "expired"
-            _save_requests(requests)
-            _journal({"event": "expired", "id": existing.id, "subject": subject})
-        # pending → still awaiting; approved → stands; rejected/expired →
-        # fail-safe stays closed until the subject changes.
-        mapped = {"approved": "approved", "pending": "pending"}.get(existing.status, "rejected")
-        return {
-            "status": mapped,
-            "request_id": existing.id,
-            "subject": subject,
-            "risk_reason": existing.risk_reason,
-            "decided_by": existing.decided_by,
-            "note": existing.note,
-            "reused": True,
-        }
+    try:
+        with _with_hitl_lock():
+            requests = _load_requests_unlocked()
+            existing = _latest_for_subject(requests, subject)
+            if existing is not None:
+                if _effective_status(existing) == "expired" and existing.status == "pending":
+                    existing.status = "expired"
+                    _save_requests_unlocked(requests)
+                    _journal({"event": "expired", "id": existing.id, "subject": subject})
+                # pending → still awaiting; approved → stands; rejected/expired →
+                # fail-safe stays closed until the subject changes.
+                mapped = {"approved": "approved", "pending": "pending"}.get(
+                    existing.status, "rejected"
+                )
+                return {
+                    "status": mapped,
+                    "request_id": existing.id,
+                    "subject": subject,
+                    "risk_reason": existing.risk_reason,
+                    "decided_by": existing.decided_by,
+                    "note": existing.note,
+                    "reused": True,
+                }
 
-    now = datetime.datetime.now(datetime.UTC)
-    ttl = ttl_ms if ttl_ms is not None else HITL_TTL_MS
-    req = ApprovalRequest(
-        id=f"hitl_{secrets.token_hex(6)}",
-        subject=subject,
-        risk_reason=risk_reason,
-        detail=detail,
-        requested_by=requested_by,
-        created_at=now.isoformat(),
-        ttl_ms=ttl,
-        expires_at=(now + datetime.timedelta(milliseconds=ttl)).isoformat(),
-        status="approved" if not hitl_mode_enabled() else "pending",
-        decided_at=now.isoformat() if not hitl_mode_enabled() else None,
-        decided_by="auto:hitl-off" if not hitl_mode_enabled() else None,
-        note="auto-approved (EVOLVER_HITL_MODE=off)" if not hitl_mode_enabled() else "",
-    )
-    requests.append(req)
-    _save_requests(requests)
-    _journal(
-        {
-            "event": "requested",
-            "id": req.id,
+            now = datetime.datetime.now(datetime.UTC)
+            ttl = ttl_ms if ttl_ms is not None else HITL_TTL_MS
+            auto = not hitl_mode_enabled()
+            req = ApprovalRequest(
+                id=f"hitl_{secrets.token_hex(6)}",
+                subject=subject,
+                risk_reason=risk_reason,
+                detail=detail,
+                requested_by=requested_by,
+                created_at=now.isoformat(),
+                ttl_ms=ttl,
+                expires_at=(now + datetime.timedelta(milliseconds=ttl)).isoformat(),
+                status="approved" if auto else "pending",
+                decided_at=now.isoformat() if auto else None,
+                decided_by="auto:hitl-off" if auto else None,
+                note="auto-approved (EVOLVER_HITL_MODE=off)" if auto else "",
+            )
+            requests.append(req)
+            _save_requests_unlocked(requests)
+            _journal(
+                {
+                    "event": "requested",
+                    "id": req.id,
+                    "subject": subject,
+                    "risk_reason": risk_reason,
+                    "auto_approved": auto,
+                }
+            )
+            return {
+                "status": req.status,
+                "request_id": req.id,
+                "subject": subject,
+                "risk_reason": risk_reason,
+                "reused": False,
+            }
+    except HitlStoreError:
+        _journal({"event": "store_corrupt", "subject": subject})
+        return {
+            "status": "rejected",
+            "error": "hitl_store_corrupt",
             "subject": subject,
             "risk_reason": risk_reason,
-            "auto_approved": not hitl_mode_enabled(),
+            "reused": False,
         }
-    )
-    return {
-        "status": req.status,
-        "request_id": req.id,
-        "subject": subject,
-        "risk_reason": risk_reason,
-        "reused": False,
-    }
 
 
 def resolve_approval(
@@ -193,69 +231,106 @@ def resolve_approval(
     note: str = "",
 ) -> dict[str, Any]:
     """Record a human (or host-relayed) decision on a pending request."""
-    requests = _load_requests()
-    req = next((r for r in requests if r.id == request_id), None)
-    if req is None:
-        return {"ok": False, "error": "request_not_found", "request_id": request_id}
-    if req.status != "pending":
-        return {"ok": False, "error": f"not_pending:{req.status}", "request_id": request_id}
-    if _effective_status(req) == "expired":
-        req.status = "expired"
-        _save_requests(requests)
-        _journal({"event": "expired", "id": req.id, "subject": req.subject})
-        return {"ok": False, "error": "expired", "request_id": request_id}
+    try:
+        with _with_hitl_lock():
+            requests = _load_requests_unlocked()
+            req = next((r for r in requests if r.id == request_id), None)
+            if req is None:
+                return {"ok": False, "error": "request_not_found", "request_id": request_id}
+            if req.status != "pending":
+                return {"ok": False, "error": f"not_pending:{req.status}", "request_id": request_id}
+            if _effective_status(req) == "expired":
+                req.status = "expired"
+                _save_requests_unlocked(requests)
+                _journal({"event": "expired", "id": req.id, "subject": req.subject})
+                return {"ok": False, "error": "expired", "request_id": request_id}
 
-    req.status = "approved" if approve else "rejected"
-    req.decided_at = _now_iso()
-    req.decided_by = decided_by
-    req.note = note
-    _save_requests(requests)
-    _journal(
-        {
-            "event": req.status,
-            "id": req.id,
-            "subject": req.subject,
-            "decided_by": decided_by,
-            "note": note,
-        }
-    )
-    return {"ok": True, "status": req.status, "request_id": request_id, "subject": req.subject}
+            req.status = "approved" if approve else "rejected"
+            req.decided_at = _now_iso()
+            req.decided_by = decided_by
+            req.note = note
+            _save_requests_unlocked(requests)
+            _journal(
+                {
+                    "event": req.status,
+                    "id": req.id,
+                    "subject": req.subject,
+                    "decided_by": decided_by,
+                    "note": note,
+                }
+            )
+            return {
+                "ok": True,
+                "status": req.status,
+                "request_id": request_id,
+                "subject": req.subject,
+            }
+    except HitlStoreError:
+        return {"ok": False, "error": "hitl_store_corrupt", "request_id": request_id}
 
 
 def evaluate_gate(subject: str) -> dict[str, Any]:
     """Effective gate verdict for *subject* (expired ⇒ rejected, fail-safe)."""
-    requests = _load_requests()
-    req = _latest_for_subject(requests, subject)
-    if req is None:
-        return {"status": "no_request", "subject": subject}
-    effective = _effective_status(req)
-    if effective == "expired" and req.status == "pending":
-        req.status = "expired"
-        _save_requests(requests)
-        _journal({"event": "expired", "id": req.id, "subject": subject})
-        effective = "expired"
-    status = "rejected" if effective in ("expired", "rejected") else effective
-    return {
-        "status": status,
-        "request_id": req.id,
-        "subject": subject,
-        "decided_by": req.decided_by,
-        "note": req.note,
-        "reason": f"source_status={effective}" if effective in ("expired", "rejected") else "",
-    }
+    try:
+        with _with_hitl_lock():
+            requests = _load_requests_unlocked()
+            req = _latest_for_subject(requests, subject)
+            if req is None:
+                return {"status": "no_request", "subject": subject}
+            effective = _effective_status(req)
+            if effective == "expired" and req.status == "pending":
+                req.status = "expired"
+                _save_requests_unlocked(requests)
+                _journal({"event": "expired", "id": req.id, "subject": subject})
+                effective = "expired"
+            status = "rejected" if effective in ("expired", "rejected") else effective
+            return {
+                "status": status,
+                "request_id": req.id,
+                "subject": subject,
+                "decided_by": req.decided_by,
+                "note": req.note,
+                "reason": (
+                    f"source_status={effective}" if effective in ("expired", "rejected") else ""
+                ),
+            }
+    except HitlStoreError:
+        return {"status": "rejected", "subject": subject, "error": "hitl_store_corrupt"}
 
 
 def list_pending() -> list[dict[str, Any]]:
-    return [r.model_dump() for r in _load_requests() if r.status == "pending"]
+    """Pending requests; TTL-expired rows are lazily marked expired."""
+    try:
+        with _with_hitl_lock():
+            requests = _load_requests_unlocked()
+            dirty = False
+            pending: list[dict[str, Any]] = []
+            for req in requests:
+                if req.status == "pending" and _effective_status(req) == "expired":
+                    req.status = "expired"
+                    dirty = True
+                    _journal({"event": "expired", "id": req.id, "subject": req.subject})
+                elif req.status == "pending":
+                    pending.append(req.model_dump())
+            if dirty:
+                _save_requests_unlocked(requests)
+            return pending
+    except HitlStoreError:
+        return []
 
 
 def list_recent(limit: int = 20) -> list[dict[str, Any]]:
-    return [r.model_dump() for r in _load_requests()[-max(1, limit) :]]
+    try:
+        rows = _load_requests()
+    except HitlStoreError:
+        return []
+    return [r.model_dump() for r in rows[-max(1, limit) :]]
 
 
 __all__ = [
     "APPROVAL_STATUSES",
     "ApprovalRequest",
+    "HitlStoreError",
     "evaluate_gate",
     "hitl_journal_path",
     "hitl_mode_enabled",

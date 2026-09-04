@@ -99,6 +99,13 @@ def _build_initial_context() -> dict[str, Any]:
 async def _run_single_cycle(*, is_loop: bool = False) -> dict[str, Any]:
     """Execute one full evolution cycle and return the final context."""
     ctx = _build_initial_context()
+    from evolver.gep import supervision as supervision_mod
+
+    supervision_mod.auto_pause_check()
+    if supervision_mod.is_paused():
+        ctx["supervision_paused"] = True
+        print("Supervision paused; skipping cycle.")
+        return ctx
     preflight = await guards.run_preflight_checks(is_loop=is_loop)
     if preflight.abort:
         print(f"Preflight abort: {preflight.reason}")
@@ -124,6 +131,17 @@ async def _run_single_cycle(*, is_loop: bool = False) -> dict[str, Any]:
     ctx = await enrich_phase(ctx)
     ctx = await autopoiesis_phase(ctx)
     ctx = await select_phase(ctx)
+    gene = ctx.get("selected_gene") or {}
+    veto = supervision_mod.check_veto(
+        str(gene.get("id") or "") if isinstance(gene, dict) else "",
+        str(gene.get("name") or "") if isinstance(gene, dict) else "",
+        str(ctx.get("run_id") or ""),
+    )
+    if veto is not None:
+        ctx["supervision_veto"] = veto
+        ctx["dispatch_prompt"] = ""
+        print("Supervision veto; withholding dispatch.")
+        return ctx
     ctx = await dispatch_phase(ctx)
     ctx = await dispatch_multi_propose_phase(ctx)  # Self-Harness C2; no-op unless ROUTES>1
     ctx = await run_post_cycle_hooks(ctx)

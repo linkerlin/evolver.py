@@ -369,18 +369,28 @@ def _applied_cooldown_ids(recent_events: list[Any]) -> set[str]:
     """
     from evolver.config import APPLIED_GENE_COOLDOWN_EVENTS
 
+    def _ids(event: dict[str, Any]) -> set[str]:
+        mut = event.get("mutation") or {}
+        found: set[str] = set()
+        for key in ("gene_id", "landed_gene_id"):
+            val = mut.get(key)
+            if val:
+                found.add(str(val))
+        extra = mut.get("landed_gene_ids")
+        if isinstance(extra, list):
+            found.update(str(v) for v in extra if v)
+        return found
+
     applied = [
         e
         for e in recent_events
-        if isinstance(e, dict)
-        and (e.get("mutation") or {}).get("gene_id")
-        and isinstance(e.get("outcome") or None, dict)
+        if isinstance(e, dict) and _ids(e) and isinstance(e.get("outcome") or None, dict)
     ]
-    return {
-        str((e.get("mutation") or {}).get("gene_id"))
-        for e in applied[-APPLIED_GENE_COOLDOWN_EVENTS:]
-        if (e.get("outcome") or {}).get("status") == "success"
-    }
+    cooled: set[str] = set()
+    for event in applied[-APPLIED_GENE_COOLDOWN_EVENTS:]:
+        if (event.get("outcome") or {}).get("status") == "success":
+            cooled.update(_ids(event))
+    return cooled
 
 
 def _recent_events_for_cooldown(ctx: dict[str, Any]) -> list[Any]:

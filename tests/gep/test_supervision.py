@@ -79,6 +79,36 @@ class TestVetoes:
     def test_empty_pattern_rejected(self, temp_workspace: Path) -> None:
         assert add_veto("  ")["ok"] is False
 
+    def test_generic_pattern_rejected(self, temp_workspace: Path) -> None:
+        assert add_veto("*")["ok"] is False
+        assert add_veto("gene_")["ok"] is False
+        assert add_veto("ab")["ok"] is False
+
+
+class TestFailClosedStore:
+    def test_corrupt_store_pauses(self, temp_workspace: Path) -> None:
+        from evolver.gep.supervision import is_paused, supervision_state_path
+
+        path = supervision_state_path()
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text("{not-json", encoding="utf-8")
+        assert is_paused() is True
+
+
+class TestTripwireSkipsBadRows:
+    def test_garbage_row_does_not_reset_streak(self, temp_workspace: Path) -> None:
+        from evolver.gep.feedback import EvaluationFeedback, record_feedback
+        from evolver.gep.supervision import auto_pause_check, is_paused
+
+        for _ in range(3):
+            record_feedback(EvaluationFeedback(primary_score=0.1, success=False, agent_name="t"))
+        journal = temp_workspace / "memory" / "evolution" / "feedback.jsonl"
+        # Trailing non-feedback JSON must be skipped, not break the streak.
+        extra = '{"type":"nope"}\n'
+        journal.write_text(journal.read_text(encoding="utf-8") + extra, encoding="utf-8")
+        auto_pause_check()
+        assert is_paused() is True
+
 
 class TestTripwire:
     def test_streak_auto_pauses(

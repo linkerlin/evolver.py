@@ -9,8 +9,8 @@ evolving" (except for the tripwire below).
 
 Surfaces:
 
-- state machine ``running``/``paused`` — ``swarm_tick`` refuses to run a new
-  cycle while paused (graceful drain; a cycle in flight completes);
+- state machine ``running``/``paused`` — ``_run_single_cycle`` (CLI, daemon,
+  and ``swarm_tick``) refuses to run a new cycle while paused;
 - tripwire — ``EVOLVER_SUPERVISION_AUTO_PAUSE_STREAK`` consecutive degraded
   feedback reports flip the state to ``paused`` (fuse for an absent human);
 - vetoes — substring patterns (gene id, run id, subject); checked at tick
@@ -39,6 +39,9 @@ DIRECTIVE_SIGNAL_PREFIX: Final = "supervision:directive:"
 _DIRECTIVE_SIGNAL_MAX_CHARS: Final = 120
 _DIRECTIVE_KEEP: Final = 20
 _VETO_KEEP: Final = 50
+_VETO_MIN_CHARS: Final = 4
+_VETO_TOO_GENERIC: Final = frozenset({"gene", "run", "gene_", "run_"})
+_FAIL_CLOSED_BY: Final = "auto:corrupt_store"
 
 
 class Directive(BaseModel):
@@ -102,9 +105,19 @@ def get_supervision() -> SupervisionState:
     if not path.exists():
         return SupervisionState(updated_at=_now_iso())
     try:
-        return SupervisionState.model_validate(json.loads(path.read_text(encoding="utf-8")))
+        from evolver.gep.asset_store import with_file_lock
+
+        with with_file_lock(target_path=path):
+            return SupervisionState.model_validate(json.loads(path.read_text(encoding="utf-8")))
     except Exception:
-        return SupervisionState(updated_at=_now_iso())
+        # Fail-closed: a corrupt store must not unpause or drop vetoes.
+        return SupervisionState(
+            state="paused",
+            paused_by=_FAIL_CLOSED_BY,
+            paused_at=_now_iso(),
+            pause_reason="swarm_supervision.json unreadable — fail-closed",
+            updated_at=_now_iso(),
+        )
 
 
 def _save(state: SupervisionState) -> None:
@@ -159,6 +172,9 @@ def add_veto(pattern: str, *, by: str = "human", note: str = "") -> dict[str, An
     pattern = pattern.strip()
     if not pattern:
         return {"ok": False, "error": "empty_pattern"}
+    folded = pattern.casefold()
+    if len(pattern) < _VETO_MIN_CHARS or folded in _VETO_TOO_GENERIC:
+        return {"ok": False, "error": "pattern_too_generic", "pattern": pattern}
     veto = Veto(id=f"veto_{secrets.token_hex(5)}", pattern=pattern, by=by, at=_now_iso(), note=note)
     state = get_supervision()
     state.vetoes.append(veto)
@@ -204,7 +220,7 @@ def auto_pause_check() -> dict[str, Any]:
         try:
             fb = EvaluationFeedback.model_validate(row)
         except Exception:
-            break
+            continue
         if fb.is_degraded():
             streak += 1
         else:

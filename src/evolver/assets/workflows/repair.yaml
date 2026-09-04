@@ -22,4 +22,6 @@ steps:
     description: Validation cascade (ruff → mypy → pytest)
   - kind: approval
     risk_reason: distill + solidify the repaired genome into the asset store
-    description: Engine will run swarm_distill + swarm_solidify after approval
+    description: >-
+      After approval the host must call swarm_distill then swarm_solidify.
+      The engine does not publish automatically.

@@ -54,6 +54,11 @@ DEFAULT_FLAGS: dict[str, bool] = {
     # measured (shadow markers on events) but never enforced during the soak
     # window. Enforcement flips on via EVOLVER_ACCEPTANCE_SHADOW=0.
     "enable_acceptance_gate": True,
+    # S26.5: run cascade + acceptance gate in a clean git worktree (HEAD +
+    # non-runtime mutation overlay). Off by default so unit tests stay fast;
+    # soak/dogfood sets EVOLVER_FF_ENABLE_EVAL_WORKTREE=1. Failure falls back
+    # to the live cwd (shadow, non-blocking).
+    "enable_eval_worktree": False,
     "enable_surface_decouple": False,
     "enable_constrained_genes": False,
     "enable_llm_template": False,

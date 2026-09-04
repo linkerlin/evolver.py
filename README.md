@@ -292,7 +292,7 @@ memory/                 # Runtime data (graph JSONL, reviews JSONL)
 
 ## Implementation Status
 
-> **Overall** (2026-09-05): package version **1.111.0**. The MCP swarm stack
+> **Overall** (2026-09-05): package version **1.112.0**. The MCP swarm stack
 > (v1.98–v1.111: takeover loop, evaluation feedback E, HITL/HOTL safety,
 > hooks bridge, skill bridge, feedback-adaptive mutation, acceptance-gate
 > soak, YAML workflow engine with role nodes + cascade gates) is complete and
@@ -315,7 +315,7 @@ memory/                 # Runtime data (graph JSONL, reviews JSONL)
 | **Ops / Solo** | ~85% | lifecycle, force-update, --solo |
 | **WebUI** | ~70% | SSR dashboard + GitHub observer |
 | **Validator** | ~50% | sandbox framework; prod network isolation pending |
-| **Docs / Release** | ~90% | CHANGELOG + version **1.111.0**; multi-OS CI advisory |
+| **Docs / Release** | ~90% | CHANGELOG + version **1.112.0**; multi-OS CI advisory |
 
 See [演进方案_wikiskill对照版.md](演进方案_wikiskill对照版.md) for the live gap roadmap.
 
@@ -497,7 +497,8 @@ A2A_HUB_URL=https://your-hub.example.com uv run evolver proxy
 - [`演进方案_wikiskill对照版.md`](演进方案_wikiskill对照版.md) — Audit vs wikiskill + live gap roadmap (Chinese)
 - [`TODO.md`](TODO.md) — Roadmap pointers (frozen; details in the audit doc)
 - [`AGENTS.md`](AGENTS.md) — Agent integration guide, coding standards, pitfalls
-- [`DEBUG.md`](DEBUG.md) — Debugging playbook: every bug fixed during dogfood, with root causes and transferable lessons
+- [`DEBUG.md`](DEBUG.md) — Debugging playbook: dogfood + v1.112 interlock bugs, with root causes and transferable lessons
+- [`演进方案.md`](演进方案.md) — Current-stage charter (swarm interlock stabilization, Chinese)
 - [`CONTRIBUTING.md`](CONTRIBUTING.md) — Contribution guidelines
 - [`SKILL.md`](SKILL.md) — Skill usage reference
 

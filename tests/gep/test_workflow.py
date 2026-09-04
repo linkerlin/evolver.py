@@ -188,6 +188,21 @@ class TestRetryAndAgent:
         assert state.status == ST_DONE
         assert state.variables["_agent_result"] == {"ok": True}
 
+    def test_nested_agent_in_foreach_parks(self, temp_workspace: Path) -> None:
+        engine = _engine(temp_workspace)
+        state = engine.create(
+            _spec(
+                {
+                    "kind": "foreach",
+                    "items": ["a", "b"],
+                    "steps": [{"kind": "agent", "role": "mutator", "instruction": "do"}],
+                }
+            )
+        )
+        engine.run(state)
+        assert state.status == ST_WAITING_AGENT
+        assert engine.awaiting_agent("wf1")["waiting"] is True
+
 
 class TestPersistence:
     def test_crash_resume_from_checkpoint(self, temp_workspace: Path) -> None:

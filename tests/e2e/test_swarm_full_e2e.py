@@ -54,6 +54,7 @@ def _workspace_env(ws: Path) -> dict[str, str]:
             "A2A_HUB_URL": "http://127.0.0.1:9",
             "EVOLVE_LOAD_MAX": "999",
             "EVOLVER_SKILL_ROOTS": str(ws / "skill-roots"),
+            "EVOLVER_HOME": str(ws / ".evomap"),
         }
     )
     return env

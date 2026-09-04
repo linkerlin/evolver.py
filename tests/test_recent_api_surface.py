@@ -78,6 +78,19 @@ class TestDefaultCascadeRunner:
         assert verdict["stages"][1]["returncode"] != 0
         assert verdict["stages"][1]["stderr_tail"]  # stderr captured for the host
 
+    def test_stdout_diagnostics_are_captured(
+        self, monkeypatch: pytest.MonkeyPatch, temp_workspace: Path
+    ) -> None:
+        stdout_fail = [
+            sys.executable,
+            "-c",
+            "import sys; sys.stdout.write('RUF005 boom'); sys.exit(1)",
+        ]
+        _stub_specs(monkeypatch, [stdout_fail])
+        verdict = wf.default_cascade_runner()
+        assert verdict["overall_ok"] is False
+        assert "RUF005" in verdict["stages"][0]["stderr_tail"]
+
     def test_missing_binary_is_oserror_not_crash(
         self, monkeypatch: pytest.MonkeyPatch, temp_workspace: Path
     ) -> None:

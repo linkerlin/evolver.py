@@ -8,8 +8,41 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added — soak 外置运行态入口
+- **`evolver soak setup|exports|status`**（`ops/soak_env.py`）：在
+  `$EVOLVER_HOME/evolver.py-soak/` 建进化目录并写出 `env.sh`，避免 soak
+  写回产品仓 `memory/`。`gate-report` 在 `EVOLUTION_DIR` 仍位于 git 工作树内
+  时警告（JSON 带 `inside_repo`）。
+
+### Added — S26.5 评估隔离（影子，默认关）
+- **`gep/eval_worktree.py`**：`git worktree add --detach` 自 HEAD，只 overlay
+  非运行态工作树文件，级联与验收门在该副本上跑；失败回退 live cwd（不挡 soak）。
+  `EVOLVER_FF_ENABLE_EVAL_WORKTREE=1` 打开。事件可带 `eval_workspace` 元数据。
+
+## [1.112.0] — 2026-09-05
+
+### Changed — 蜂群闭环稳定化（演进方案.md）
+
+HITL/HOTL 从包装变成互锁；反馈降级机械地强制 repair；固化谱系同时记剧本基因与落地基因；工作流 gate 记下 stdout；运行态踢出产品 git。一天 13 个 minor 的节奏在此刹车。验收门仍 `collecting`（4/20），不转正。
+
+- **HITL**：`parse_hitl_mode`（`ON`/`true`/`1` → on；未知 → on）；`AUTO_HIJACK` 强制开门；`solidify(skip_validation=True)` 自身过审批；无 pending `run_id` 拒绝 skip（消灭 `…:unknown` 粘性键）；状态文件加锁，损坏 fail-closed 拒绝；`list_pending` 惰性过期 TTL。
+- **HOTL**：`_run_single_cycle` 尊重 pause；select 之后、dispatch 之前按基因 id 否决（不再先 `print(prompt)` 再扣发）；solidify 按基因 id 再挡；`swarm_tick` 取实例锁；监督 JSON 损坏视为暂停；绊线跳过坏行；过短/过泛 veto 模式拒绝；CLI `supervise veto --note` 真正传入。
+- **MCP**：`AUTO_HIJACK` 下拒绝 host 转达的 approve / resume / unveto；`approval_resolve` / `supervise` / `workflow_act` 标 destructiveHint；`evolver://instrument-prompt` 只渲染文本，不 `swarm_boot`。
+- **反馈**：`swarm_feedback:degraded` 或自适应 `repair_bias` → `autopoiesis_repair_bias` / `force_category=repair`（与 autopoiesis 摩擦同路）。
+- **谱系**：distill 把落地 gene id 写入 solidify state；事件带 `landed_gene_id`；提交说明与冷却窗口罚落地基因。
+- **工作流 gate**：合并 stdout+stderr 尾、`cwd=workspace`、尊重 `timeout_ms`；嵌套 `agent`/`approval` 传播 park；repair/innovate 模板写真话（批准 ≠ 自动 solidify）。
+- **卫生**：gitignore `memory/` 运行文件与 `evolver/.config/`（保留 `LESSONS_LEARNED.md`）；CHANGELOG 只留一个 Unreleased；`check_changelog.py` 拒绝多个。
+- **杂项**：`EVOLVER_SKILL_ROOTS` 按 `os.pathsep` 分割；CLI distill 零资产给出 hint。
+
+### Upgrade notes
+- **`EVOLVER_HITL_MODE` 未知取值现 fail-closed 为 `on`**。`ON`/`true`/`1`/`yes` 打开；
+  `off`/`false`/`0`/`no` 关闭。若曾设 `disabled`、`ENABLED` 或其它非枚举串，升级后
+  会开始拦截 `skip_validation`——本意关闭请显式写成 `off`。
+- round-1~5 历史事件只有剧本 `gene_id`，冷却窗口对旧事件会失效一轮，属预期，
+  不必回填。新固化同时记 `landed_gene_id`。
+
 ### Docs — DEBUG.md 修复经验簿
-- 新增 **`DEBUG.md`**：dogfood 五轮与补测会话真实修复之 11 个 bug 全录
+- 新增 **`DEBUG.md`**：dogfood 五轮、补测与 v1.112 审阅之 13 个 bug 全录
   （症状/根因/修复/可迁移经验四段式）+ 方法论沉淀（覆盖审计先行、实证
   闭环、静默降级头号嫌疑、真仓即试验场）；AGENTS.md 坑阱篇置顶链接。
 - 顺手修复 README.md 文档区残留断链（`设计方案.md` 已于 c195b82 删除）
@@ -360,7 +393,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Notes
 - Depth gaps (a2a protocol surface, solidify contract breadth, observer polish) remain tracked in `演进方案.md`.
 
-## [Unreleased] — Sprint 10: v1.89.14 → v1.90.0 catch-up
+## [archived] Sprint 10: v1.89.14 → v1.90.0 catch-up
 
 ### Gap 1: Trajectory export — foundation + decryption + session sources (G10.1, partial)
 - `gep/trajectory/` (new package): ports the core of `trajectoryExport.test.js`.
@@ -486,7 +519,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Codex/Claude/generic sources — Cursor/Gemini/Kimi vendor sources deferred;
   G10.3 cliContracts / G10.4 recipe pending).
 
-## [Unreleased] — Sprint 9: v1.89.14 parity (7 gaps closed)
+## [archived] Sprint 9: v1.89.14 parity (7 gaps closed)
 
 ### Gap 1: Inert Gene Ban (#562)
 - `gep/memory_graph.py`: `stable_no_error`/`heuristic_delta`/`predictive` outcomes
@@ -535,7 +568,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Tests**: 1573 → **1609** (+36 new tests, 0 regressions)
 - **Baseline**: tracking v1.89.11 → **v1.89.14** parity on lifecycle + GEP selection
 
-## [Unreleased] — Sprint 0-8 catch-up against evolver v1.89.11
+## [archived] Sprint 0-8 catch-up against evolver v1.89.11
 
 ### Sprint 0: Engineering baseline
 - Fixed `gep/sanitize.py` `import json` position bug (was at file bottom, caused NameError).

@@ -180,25 +180,36 @@ def default_cascade_runner() -> dict[str, Any]:
         return {"overall_ok": False, "stages": [], "failed_stages": ["no-runnable-cascade"]}
     stages: list[dict[str, Any]] = []
     failed: list[str] = []
+    from evolver.gep.paths import get_workspace_root
+
+    cwd = get_workspace_root()
     for spec in specs:
+        timeout_s: float = float(GATE_TIMEOUT_S)
+        raw_ms = spec.get("timeout_ms")
+        if isinstance(raw_ms, int | float) and raw_ms > 0:
+            timeout_s = float(raw_ms) / 1000.0
         try:
             proc = subprocess.run(  # engine-owned commands, never spec input
                 list(spec["command"]),
                 capture_output=True,
                 text=True,
-                timeout=GATE_TIMEOUT_S,
+                timeout=timeout_s,
                 check=False,
+                cwd=str(cwd),
             )
+            tail = ((proc.stdout or "") + (proc.stderr or ""))[-2000:]
             entry = {
                 "stage": spec.get("stage", spec["command"][0]),
                 "returncode": proc.returncode,
-                "stderr_tail": (proc.stderr or "")[-500:],
+                "stderr_tail": tail,
+                "stdout_tail": (proc.stdout or "")[-2000:],
             }
         except (OSError, subprocess.TimeoutExpired) as exc:
             entry = {
                 "stage": spec.get("stage", spec["command"][0]),
                 "returncode": -1,
                 "stderr_tail": str(exc),
+                "stdout_tail": "",
             }
         stages.append(entry)
         if entry["returncode"] != 0:
@@ -450,7 +461,8 @@ class WorkflowEngine:
             if not isinstance(items, list):
                 raise WorkflowPermanentError("foreach.items must be a list or variable name")
             for item in items:
-                self._run_substeps(state, step.get("steps", []), item)
+                if self._run_substeps(state, step.get("steps", []), item):
+                    return True
         elif kind == "if":
             pred = step.get("predicate")
             if pred not in self.predicates:
@@ -458,7 +470,8 @@ class WorkflowEngine:
             args = step.get("args", {})
             _validate_args(args)
             branch = "then" if self.predicates[pred](**args) else "else"
-            self._run_substeps(state, step.get(branch, []), None)
+            if self._run_substeps(state, step.get(branch, []), None):
+                return True
         elif kind == "approval":
             state.status = ST_WAITING_APPROVAL
             self._save(
@@ -493,13 +506,16 @@ class WorkflowEngine:
             raise WorkflowPermanentError(f"unknown step kind: {kind}")
         return False
 
-    def _run_substeps(self, state: WorkflowState, steps: list[dict[str, Any]], item: Any) -> None:
+    def _run_substeps(self, state: WorkflowState, steps: list[dict[str, Any]], item: Any) -> bool:
+        """Run nested steps; True if a child parked (waiting_agent/approval)."""
         if state.depth + 1 >= MAX_DEPTH:
             raise WorkflowPermanentError("max depth exceeded")
         state.depth += 1
         try:
-            for sub in steps:
-                self._execute_step(state, sub)
+            if item is not None:
+                state.variables["_item"] = item
+            # any() short-circuits: a parked child (waiting_agent/approval) stops the loop.
+            return any(self._execute_step(state, sub) for sub in steps)
         finally:
             state.depth -= 1
 

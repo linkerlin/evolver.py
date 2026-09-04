@@ -46,9 +46,17 @@ def compute_adaptive_strategy_policy(ctx: dict[str, Any]) -> dict[str, Any]:
 
 async def select_phase(ctx: dict[str, Any]) -> dict[str, Any]:
     policy = compute_adaptive_strategy_policy(ctx)
+    signals = list(ctx.get("signals", []))
+    from evolver.gep.feedback import FEEDBACK_SIGNAL_DEGRADED
+
+    adaptive_mode = ""
+    adaptive = policy.get("adaptive")
+    if isinstance(adaptive, dict):
+        adaptive_mode = str(adaptive.get("mode") or "")
+    if FEEDBACK_SIGNAL_DEGRADED in {str(s) for s in signals} or adaptive_mode == "repair_bias":
+        ctx["autopoiesis_repair_bias"] = True
     if ctx.get("autopoiesis_repair_bias"):
         policy = {**policy, "repair": True, "optimize": False, "innovate": False}
-    signals = list(ctx.get("signals", []))
     genes = ctx.get("genes", [])
     capsules = ctx.get("capsules", [])
     memory_advice = ctx.get("memory_advice") or {}

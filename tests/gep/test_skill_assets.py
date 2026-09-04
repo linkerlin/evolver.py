@@ -6,6 +6,7 @@ same-name shadowing; conversion delegated to the existing skill2gep layer.
 
 from __future__ import annotations
 
+import os
 from pathlib import Path
 
 import pytest
@@ -63,7 +64,7 @@ def skill_env(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     # from the machine's real user-level skill directories.
     monkeypatch.setattr(
         "evolver.config.SKILL_ROOTS_OVERRIDE",
-        f"{project / '.agents' / 'skills'}:{user}",
+        os.pathsep.join([str(project / ".agents" / "skills"), str(user)]),
     )
     return tmp_path
 

@@ -219,13 +219,19 @@ __marimo__/
 .streamlit/secrets.toml
 
 # 本地私有规划文档（保留本地，不入库）
-演进方案.md
 设计方案.md
 
-evolver/.config/disk_flags.json
+evolver/.config/
 
 # evolver runtime state (GEP assets etc.)
 .evolver/
+
+# Dogfood / daemon evolution runtime (演进方案.md §5.6). Keep the living-memory
+# organ tracked; everything else under memory/ is node-local.
+memory/evolution/*
+!memory/evolution/LESSONS_LEARNED.md
+memory/*.jsonl
+memory/*.json
 
 # evolver: wiki knowledge layer — never rolled back (S27)
 memory/evolution/wiki/

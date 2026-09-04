@@ -8,12 +8,19 @@ from __future__ import annotations
 import json
 import re
 from pathlib import Path
-from typing import Any
+from typing import Any, Final
 
 from evolver.gep.asset_store import append_capsule, upsert_gene
 from evolver.gep.content_hash import compute_asset_id
 from evolver.gep.schemas.capsule import Capsule
 from evolver.gep.schemas.gene import Gene
+
+DISTILL_FORMAT_HINT: Final = (
+    "no GEP assets extracted: submit the dispatch prompt's required ```json asset "
+    'blocks, e.g. {"type": "Gene", "id": "gene_<slug>", "category": '
+    '"repair|optimize|innovate|explore", "summary": "...", "signals_match": [...], '
+    '"strategy": [...], "validation": [...]}; free-text summaries are not distilled'
+)
 
 
 def _extract_json_blocks(text: str) -> list[dict[str, Any]]:

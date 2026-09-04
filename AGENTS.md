@@ -23,6 +23,8 @@
 | 技能生态桥 | `uv run evolver skills list\|scan\|sync [--dry-run]` |
 | 进化工作流 | `uv run evolver workflow run\|templates\|awaiting\|approve\|complete\|…` |
 | 验收门 soak 报告 | `uv run evolver gate-report [--json]` |
+| Soak 外置运行态 | `uv run evolver soak setup\|exports\|status`（`$EVOLVER_HOME/evolver.py-soak`，勿提交 `memory/`） |
+| 评估隔离 worktree | `EVOLVER_FF_ENABLE_EVAL_WORKTREE=1`（S26.5；失败回退 live cwd） |
 | 守护进程生命周期 | `uv run evolver start` / `stop` / `restart` / `status` / `log` |
 | 健康检查 | `uv run evolver check` / `watch` |
 | Recipe Hub | `uv run evolver recipe list|show|apply|…` |
@@ -343,7 +345,7 @@ instrument prompt 第三章（Hooks 集成）指导宿主择轨。
 | `EVOLVER_SWARM_AUTO_HIJACK` | `false` | 置 `1` 时 MCP instructions 直接注入接管指令（无人值守蜂群模式） |
 | `EVOLVER_SWARM_TICK_LOG_MAX_CHARS` | `8000` | `swarm_tick` 返回之 `engine_log` 尾部截断预算（dispatch prompt 不截断） |
 | `EVOLVER_FEEDBACK_DEGRADED_THRESHOLD` | `0.5` | 蜂群反馈降级阈值——低于此分或 `success=false` 注入 repair-bias 信号 |
-| `EVOLVER_HITL_MODE` | `off` | HITL 审批门——`on` 时高危 solidify 需人类批准（off 仍记审计） |
+| `EVOLVER_HITL_MODE` | `off` | HITL 审批门——`on`/`true`/`1`/`yes` 打开；`off`/`false`/`0`/`no` 关闭；**未知值（如 `disabled`）fail-closed 为 on**；`AUTO_HIJACK=1` 强制 on |
 | `EVOLVER_HITL_TTL_MS` | `1800000` | HITL 待决请求 TTL——超时 fail-safe 拒绝 |
 | `EVOLVER_SUPERVISION_AUTO_PAUSE_STREAK` | `3` | HOTL 绊线——连续 N 次降级反馈自动暂停（`0` 关闭） |
 | `EVOLVER_SKILL_ROOTS` | （默认三级根） | 技能根目录覆盖（os.pathsep 分隔，顺序即优先级） |

@@ -328,6 +328,7 @@ async def swarm_tick(agent_name: str | None = None, include_prompt: bool = True)
     from evolver.config import SWARM_TICK_LOG_MAX_CHARS
     from evolver.evolve.runner import _run_single_cycle
     from evolver.gep import supervision
+    from evolver.gep.instance_lock import instance_lock_ctx
 
     tripwire = supervision.auto_pause_check()
     if supervision.is_paused():
@@ -341,26 +342,65 @@ async def swarm_tick(agent_name: str | None = None, include_prompt: bool = True)
             "next_action": "await_supervisor_resume",
         }
 
+    with instance_lock_ctx(blocking=False, timeout=0) as lock_ok:
+        if not lock_ok:
+            return {
+                "ok": False,
+                "error": "instance_lock_held",
+                "agent_name": agent_name or "host-agent",
+                "next_action": "stop_and_report",
+            }
+        return await _swarm_tick_locked(
+            agent_name=agent_name,
+            include_prompt=include_prompt,
+            tripwire=tripwire,
+            run_cycle=_run_single_cycle,
+            log_budget=SWARM_TICK_LOG_MAX_CHARS,
+            supervision=supervision,
+        )
+
+
+async def _swarm_tick_locked(
+    *,
+    agent_name: str | None,
+    include_prompt: bool,
+    tripwire: dict[str, Any],
+    run_cycle: Any,
+    log_budget: int,
+    supervision: Any,
+) -> dict[str, Any]:
     with _capture_stdout() as capture:
         try:
-            ctx = await _run_single_cycle(is_loop=False)
+            ctx = await run_cycle(is_loop=False)
         except Exception as exc:  # engine crash must not kill the MCP session
             return {
                 "ok": False,
                 "error": f"cycle_crashed: {exc}",
-                "engine_log": _tail(capture.getvalue(), SWARM_TICK_LOG_MAX_CHARS),
+                "engine_log": _tail(capture.getvalue(), log_budget),
             }
     log = capture.getvalue()
+
+    if ctx.get("supervision_paused"):
+        return {
+            "ok": True,
+            "paused": True,
+            "supervision": supervision.supervision_summary(),
+            "tripwire": tripwire,
+            "agent_name": agent_name or "host-agent",
+            "next_action": "await_supervisor_resume",
+        }
 
     aborted = bool(ctx.get("autopoiesis_preflight_abort"))
     prompt = ctx.get("dispatch_prompt") if isinstance(ctx.get("dispatch_prompt"), str) else ""
     gene = ctx.get("selected_gene") or None
 
-    veto: dict[str, Any] | None = None
-    if prompt and isinstance(gene, dict):
-        veto = supervision.check_veto(str(gene.get("id") or ""), str(gene.get("name") or ""))
-        if veto is not None:
-            prompt = ""  # withhold: the supervisor vetoed this gene
+    veto: dict[str, Any] | None = (
+        ctx.get("supervision_veto") if isinstance(ctx.get("supervision_veto"), dict) else None
+    )
+    if veto is not None:
+        prompt = ""
+        if "BUILT_PROMPT" in log:
+            log = log.split("BUILT_PROMPT", 1)[0] + "[dispatch withheld]\n"
 
     if veto is not None:
         reason = "supervision_veto"
@@ -388,10 +428,11 @@ async def swarm_tick(agent_name: str | None = None, include_prompt: bool = True)
         ),
         "supervision_veto": veto,
         "dispatch_prompt": (prompt or None) if include_prompt else None,
-        "engine_log": _tail(log, SWARM_TICK_LOG_MAX_CHARS),
+        "engine_log": _tail(log, log_budget),
         "next_action": (
             "stop_and_report" if aborted else ("swarm_tick" if not prompt else "execute_prompt")
         ),
+        "tripwire": tripwire,
     }
     _record_tick(result)
     return result
@@ -420,14 +461,6 @@ def _record_tick(result: dict[str, Any]) -> None:
         _save_swarm_state(state)
 
 
-_DISTILL_FORMAT_HINT: Final = (
-    "no GEP assets extracted: submit the dispatch prompt's required ```json asset "
-    'blocks, e.g. {"type": "Gene", "id": "gene_<slug>", "category": '
-    '"repair|optimize|innovate|explore", "summary": "...", "signals_match": [...], '
-    '"strategy": [...], "validation": [...]}; free-text summaries are not distilled'
-)
-
-
 def swarm_distill(response_text: str, dry_run: bool = False) -> dict[str, Any]:
     """Distill the host agent's work output into Gene/Capsule candidates.
 
@@ -436,7 +469,7 @@ def swarm_distill(response_text: str, dry_run: bool = False) -> dict[str, Any]:
     result now carries a ``hint`` with the expected asset-block shape so one
     round-trip fixes the submission.
     """
-    from evolver.gep.distill import distill_text, install_distilled
+    from evolver.gep.distill import DISTILL_FORMAT_HINT, distill_text, install_distilled
 
     if not response_text.strip():
         return {"ok": False, "error": "empty_response", "next_action": "execute_prompt"}
@@ -458,38 +491,67 @@ def swarm_distill(response_text: str, dry_run: bool = False) -> dict[str, Any]:
         "next_action": "swarm_solidify",
     }
     if extracted == 0:
-        result["hint"] = _DISTILL_FORMAT_HINT
+        result["hint"] = DISTILL_FORMAT_HINT
         result["next_action"] = "resubmit_with_asset_blocks"
+    elif not dry_run:
+        gene_ids = [str(g.get("id")) for g in distilled.get("genes") or [] if g.get("id")]
+        if gene_ids:
+            from evolver.gep.solidify import record_landed_gene_ids
+
+            record_landed_gene_ids(gene_ids)
     return result
 
 
-def _pending_solidify_run_id() -> str:
-    """Best-effort run_id of the pending solidify state (gates HITL subjects)."""
+def _pending_solidify_meta() -> dict[str, str]:
+    """Pending solidify run_id / gene ids (empty strings if none)."""
     import json as _json
 
     from evolver.gep.paths import get_solidify_state_path
 
     try:
         data = _json.loads(get_solidify_state_path().read_text(encoding="utf-8"))
-        return str((data.get("last_run") or {}).get("run_id") or "unknown")
+        last = data.get("last_run") or {}
+        landed = last.get("landed_gene_ids") or []
+        head = str(landed[0]) if isinstance(landed, list) and landed else ""
+        return {
+            "run_id": str(last.get("run_id") or (last.get("mutation") or {}).get("id") or ""),
+            "gene_id": str(last.get("selected_gene_id") or ""),
+            "landed_gene_id": head,
+        }
     except Exception:
-        return "unknown"
+        return {"run_id": "", "gene_id": "", "landed_gene_id": ""}
+
+
+def _pending_solidify_run_id() -> str:
+    """Best-effort run_id of the pending solidify state (gates HITL subjects)."""
+    return _pending_solidify_meta()["run_id"] or "unknown"
 
 
 def swarm_solidify(skip_validation: bool = False, agent_name: str = "host-agent") -> dict[str, Any]:
     """Run the solidify gate (validations + acceptance gate + commit/rollback).
 
-    High-risk calls (``skip_validation=True``) pass through the HITL approval
-    gate first (EvoX concept harvest): ``EVOLVER_HITL_MODE=on`` blocks until a
-    human approves / fail-safe rejects on timeout; mode ``off`` auto-approves
-    but journals the decision for audit.
+    High-risk calls (``skip_validation=True``) require a pending run and pass
+    the HITL gate inside ``solidify()``. ``EVOLVER_HITL_MODE=on`` (or auto-hijack)
+    blocks until a human approves; timeout fails safe to reject.
     """
     from evolver.config import SWARM_TICK_LOG_MAX_CHARS
-    from evolver.gep import hitl, supervision
+    from evolver.gep import supervision
     from evolver.gep.solidify import solidify
 
-    run_id = _pending_solidify_run_id()
-    veto = supervision.check_veto(f"solidify:{run_id}", run_id)
+    meta = _pending_solidify_meta()
+    run_id = meta["run_id"]
+    if skip_validation and (not run_id or run_id == "unknown"):
+        return {
+            "ok": False,
+            "error": "skip_validation_requires_pending_run",
+            "next_action": "swarm_tick",
+        }
+    veto = supervision.check_veto(
+        f"solidify:{run_id}",
+        run_id,
+        meta["gene_id"],
+        meta["landed_gene_id"],
+    )
     if veto is not None:
         return {
             "ok": False,
@@ -497,24 +559,6 @@ def swarm_solidify(skip_validation: bool = False, agent_name: str = "host-agent"
             "veto": veto,
             "next_action": "swarm_tick",
         }
-
-    approval: dict[str, Any] | None = None
-    if skip_validation:
-        subject = f"solidify_skip_validation:{run_id}"
-        approval = hitl.request_approval(
-            subject=subject,
-            risk_reason="swarm_solidify with skip_validation=True bypasses the validation cascade",
-            requested_by=agent_name,
-        )
-        if approval.get("status") != "approved":
-            return {
-                "ok": False,
-                "error": f"hitl_{approval.get('status', 'pending')}",
-                "approval": approval,
-                "next_action": (
-                    "await_human_approval" if approval.get("status") == "pending" else "swarm_tick"
-                ),
-            }
 
     with _capture_stdout() as capture:
         try:
@@ -529,8 +573,14 @@ def swarm_solidify(skip_validation: bool = False, agent_name: str = "host-agent"
         result = dict(result)
         result.setdefault("ok", False)
         result["engine_log"] = _tail(capture.getvalue(), SWARM_TICK_LOG_MAX_CHARS)
-        if approval is not None:
-            result["hitl_approval"] = approval
+        err = str(result.get("error") or "")
+        if err.startswith("hitl_"):
+            status = err.removeprefix("hitl_")
+            result["next_action"] = "await_human_approval" if status == "pending" else "swarm_tick"
+        elif err == "supervision_paused":
+            result["next_action"] = "await_supervisor_resume"
+        elif err == "supervision_veto":
+            result["next_action"] = "swarm_tick"
     return result
 
 
@@ -603,12 +653,20 @@ def swarm_feedback(
     return record_feedback(fb)
 
 
+def host_relay_blocked() -> bool:
+    """True when unattended takeover must not accept host-relayed human acts."""
+    from evolver.config import SWARM_AUTO_HIJACK
+
+    return bool(SWARM_AUTO_HIJACK)
+
+
 def swarm_supervise(
     action: Literal["status", "pause", "resume", "direct", "veto", "unveto"],
     text: str | None = None,
     pattern: str | None = None,
     veto_id: str | None = None,
     reason: str = "",
+    note: str = "",
     by: str = "human",
 ) -> dict[str, Any]:
     """HOTL supervision entry point (human-on-the-loop; v1.101.0).
@@ -631,7 +689,7 @@ def swarm_supervise(
     if action == "direct":
         return supervision.add_directive(text or "", by=by)
     if action == "veto":
-        return supervision.add_veto(pattern or "", by=by)
+        return supervision.add_veto(pattern or "", by=by, note=note)
     if action == "unveto":
         return supervision.remove_veto(veto_id or "")
     return {"ok": False, "error": f"unknown_action:{action}"}

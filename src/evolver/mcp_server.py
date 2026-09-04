@@ -263,7 +263,14 @@ def build_server() -> Any:
     ) -> dict[str, Any]:
         """Relay a HUMAN decision on a pending HITL request (ask the user first)."""
         from evolver.gep.hitl import resolve_approval
+        from evolver.swarm import host_relay_blocked
 
+        if approve and host_relay_blocked():
+            return {
+                "ok": False,
+                "error": "host_relay_blocked",
+                "hint": "EVOLVER_SWARM_AUTO_HIJACK=1: approve via `evolver hitl approve`",
+            }
         return resolve_approval(request_id, approve=approve, decided_by="human-via-host", note=note)
 
     def tool_swarm_report(
@@ -302,8 +309,14 @@ def build_server() -> Any:
         directive. tick refuses cycles while paused; vetoed genes have their
         dispatch prompt withheld.
         """
-        from evolver.swarm import swarm_supervise
+        from evolver.swarm import host_relay_blocked, swarm_supervise
 
+        if action in ("resume", "unveto") and host_relay_blocked():
+            return {
+                "ok": False,
+                "error": "host_relay_blocked",
+                "hint": "EVOLVER_SWARM_AUTO_HIJACK=1: resume/unveto via `evolver supervise`",
+            }
         return swarm_supervise(
             action,
             text=text,
@@ -432,9 +445,9 @@ def build_server() -> Any:
         return swarm_status()
 
     def resource_instrument_prompt() -> str:
-        from evolver.swarm import swarm_boot
+        from evolver.swarm import build_instrument_prompt, swarm_status
 
-        return str(swarm_boot("resource-reader")["instrument_prompt"])
+        return build_instrument_prompt({**swarm_status(), "agent_name": "resource-reader"})
 
     def resource_dispatch_last() -> str:
         from evolver.gep.paths import get_evolution_dir
@@ -503,13 +516,13 @@ def build_server() -> Any:
         ("swarm_report", tool_swarm_report, None),
         ("swarm_status", tool_swarm_status, read_only),
         ("swarm_approvals", tool_swarm_approvals, read_only),
-        ("swarm_approval_resolve", tool_swarm_approval_resolve, None),
-        ("swarm_supervise", tool_swarm_supervise, None),
+        ("swarm_approval_resolve", tool_swarm_approval_resolve, destructive),
+        ("swarm_supervise", tool_swarm_supervise, destructive),
         ("swarm_hooks", tool_swarm_hooks, None),
         ("swarm_hook_event", tool_swarm_hook_event, None),
         ("swarm_skills", tool_swarm_skills, None),
         ("swarm_workflow_run", tool_swarm_workflow_run, None),
-        ("swarm_workflow_act", tool_swarm_workflow_act, None),
+        ("swarm_workflow_act", tool_swarm_workflow_act, destructive),
         ("swarm_workflow_status", tool_swarm_workflow_status, read_only),
     ]
     for name, fn, ann in swarm_tools:

@@ -36,6 +36,7 @@ def isolated_swarm_env(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
     monkeypatch.setenv("EVOLVER_NO_PARENT_GIT", "1")
     monkeypatch.setenv("OPENCLAW_WORKSPACE", str(tmp_path))
     monkeypatch.setenv("EVOLVER_USER_LOCK", str(tmp_path / "user.lock"))
+    monkeypatch.setenv("EVOLVER_HOME", str(tmp_path / ".evomap"))
     # Fast connection-refused instead of real-network timeouts (hub + ATP).
     monkeypatch.setenv("A2A_HUB_URL", "http://127.0.0.1:9")
     # Deterministic preflight: ambient host load must not abort cycles here.
@@ -79,7 +80,7 @@ class TestBootAndStatus:
         assert result["ok"] is True
         assert result["agent_name"] == "zcode-1"
         assert "EVOLVER SWARM" in result["instrument_prompt"]
-        assert result["state"]["version"] == "1.111.0"
+        assert result["state"]["version"] == "1.112.0"
         assert result["next_action"] == "swarm_tick"
 
         from evolver.proxy.mailbox.store import MailboxStore
@@ -177,6 +178,21 @@ class TestDistillSolidifyReport:
         assert "hint" not in result
         assert result["next_action"] == "swarm_solidify"
 
+    def test_distill_records_landed_gene_ids(self, isolated_swarm_env: Path) -> None:
+        from evolver.gep.paths import get_solidify_state_path
+        from evolver.gep.solidify import write_state_for_solidify
+
+        write_state_for_solidify({"run_id": "run_x", "selected_gene_id": "gene_playbook"})
+        response = (
+            "```json\n"
+            '{"type": "Gene", "id": "gene_landed_x", "category": "repair", '
+            '"summary": "x", "signals_match": ["ImportError"]}\n'
+            "```\n"
+        )
+        assert swarm_distill(response)["genes"] == 1
+        state = json.loads(get_solidify_state_path().read_text(encoding="utf-8"))
+        assert state["last_run"]["landed_gene_ids"] == ["gene_landed_x"]
+
     def test_distill_bad_category_hint_plus_errors(self, isolated_swarm_env: Path) -> None:
         response = (
             "```json\n"
@@ -242,12 +258,25 @@ class TestFeedbackChannel:
         assert stability["converged"] is True
 
 
+def _seed_pending_run(run_id: str = "run_hitl_test") -> None:
+    from evolver.gep.solidify import write_state_for_solidify
+
+    write_state_for_solidify(
+        {"run_id": run_id, "selected_gene_id": "gene_test", "mutation": {"id": "m1"}}
+    )
+
+
 class TestHitlGate:
-    def test_mode_off_auto_approves_with_audit(self, isolated_swarm_env: Path) -> None:
+    def test_skip_without_pending_run_is_refused(self, isolated_swarm_env: Path) -> None:
         result = swarm_solidify(skip_validation=True, agent_name="tester")
-        # Gate passed (auto-approved) — the engine itself then reports the
-        # fresh workspace has no pending run.
-        assert result.get("error") == "no_pending_run"
+        assert result["ok"] is False
+        assert result["error"] == "skip_validation_requires_pending_run"
+
+    def test_mode_off_auto_approves_with_audit(self, isolated_swarm_env: Path) -> None:
+        _seed_pending_run()
+        result = swarm_solidify(skip_validation=True, agent_name="tester")
+        # HITL passed (auto-approved); isolated workspace is not a git repo.
+        assert result.get("error") == "not_a_git_repo"
         journal = isolated_swarm_env / "evolution" / "hitl_approvals.jsonl"
         assert journal.exists() and "auto_approved" in journal.read_text(encoding="utf-8")
 
@@ -255,6 +284,7 @@ class TestHitlGate:
         self, isolated_swarm_env: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         monkeypatch.setattr("evolver.config.HITL_MODE", "on")
+        _seed_pending_run("run_on")
         blocked = swarm_solidify(skip_validation=True, agent_name="tester")
         assert blocked["ok"] is False
         assert blocked["error"] == "hitl_pending"
@@ -266,12 +296,13 @@ class TestHitlGate:
         assert resolve_approval(request_id, approve=True, decided_by="human")["ok"]
 
         passed = swarm_solidify(skip_validation=True, agent_name="tester")
-        assert passed.get("error") == "no_pending_run"
+        assert passed.get("error") == "not_a_git_repo"
 
     def test_mode_on_rejected_blocks(
         self, isolated_swarm_env: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         monkeypatch.setattr("evolver.config.HITL_MODE", "on")
+        _seed_pending_run("run_rej")
         blocked = swarm_solidify(skip_validation=True)
         from evolver.gep.hitl import resolve_approval
 
@@ -318,6 +349,7 @@ class TestSupervision:
         assert result["dispatch_reason"] == "supervision_veto"
         assert result["dispatch_prompt"] is None
         assert result["next_action"] == "swarm_tick"
+        assert "BUILT_PROMPT" not in (result.get("engine_log") or "")
 
     def test_solidify_veto_blocks(self, isolated_swarm_env: Path) -> None:
         from evolver.gep.supervision import add_veto

@@ -1,24 +1,54 @@
-# evolver.py 路线图（指针版）
+# evolver.py 工作清单
 
-> **本文件已冻结**：详细的差距清单、Sprint 回执与验收标准统一收敛到 **[`演进方案_wikiskill对照版.md`](演进方案_wikiskill对照版.md)**（单一真相源）。本文件仅保留当前状态指针，避免多份路线图互相矛盾（旧版仍锚 v1.89.14/v1.90.0，严重过时，已废弃）。
+> 当前阶段章程：[`演进方案.md`](演进方案.md)（蜂群闭环稳定化，v1.112）。
+> 长期差距 / Sprint 26–30 回执：[`演进方案_wikiskill对照版.md`](演进方案_wikiskill对照版.md)。
+> Node 对标基线仍是 v1.94.0；Python 线版本见 `pyproject.toml`。
 
 ## 当前状态（2026-09-05）
 
-- **对标基线**：Node evolver **v1.94.0**（master 1.x 线；v2.0.2 为独立 TS monorepo 线，评估见 演进方案_wikiskill对照版.md §9）
-- **版本声明**：`pyproject.toml` **1.111.0**（v1.95+ 为 Python 线原生演进：蜂群/MCP 接管、HITL/HOTL、Hooks 双轨、技能桥、自适应变异、验收门 soak、YAML 工作流引擎）
-- **测试规模**：**3455 用例全绿**（`-m "not llm"`；另 2 个 DeepSeek 活体 E2E 按 `-m llm` 门控）；`mypy src` strict **0 错误**
-- **工程闸门**：`ruff check` / `ruff format --check` / `mypy src` strict 全绿
-- **Dogfood（引擎吃自家狗粮）**：五轮真实仓库闭环跑通（round-1 `cb1c1d4` → round-5 `1bc35c3`）；验收门 gated_runs=**4**（verdict=collecting，需 ≥20 才可能 ready）；两工作流模板（repair/innovate）均已实战验证
-- **EvoX 概念收割**：✅ 全部完成（评估反馈 E、HITL、HOTL、技能注册表、自适应变异率、DAG↔YAML 工作流）
+- 包版本目标：**1.112.0**（稳定化；上一发布 1.111.0）
+- 测试：3469 passed（`-m "not slow and not llm"`）；ruff / mypy strict 全绿
+- Dogfood：五轮已跑通；验收门 gated_runs=**4**/20，verdict=`collecting`，**不转正**
+- 本阶段不做新的 EvoX 收割、不扩 CLI/MCP 表面
 
-## 剩余非阻塞项
+## P0 — 本阶段必须做（稳定化）
 
-| 项 | 优先级 | 说明 |
-|---|---|---|
-| 验收门样本积累 | 持续 | gated_runs 4/20；每轮 dogfood 自然积累；硬执法切换（`EVOLVER_ACCEPTANCE_SHADOW=0`）始终留人类决策 |
-| v2 概念收割（cycle 状态机 / 事件保留） | 季度节奏 | 见 演进方案_wikiskill对照版.md §9 决策；UCB1 已于 Sprint 22.3 落地 |
+| # | 项 | 状态 | 说明 |
+|---|---|---|---|
+| 1 | 演进方案 + 本清单 | 完成 | 审阅结论落盘 |
+| 2 | 运行态出仓 | 完成 | gitignore `memory/` 运行文件 + `evolver/.config/`；保留 `LESSONS_LEARNED.md`；`git rm --cached` |
+| 3 | HITL 真门 | 完成 | mode 解析、损坏 fail-closed、skip 需 pending run、审批进 `solidify()`、AUTO_HIJACK 强制 on |
+| 4 | HOTL 包整引擎 | 完成 | pause/veto 在 `_run_single_cycle`；dispatch 前否决；基因 id 再挡 solidify；实例锁；损坏视为暂停 |
+| 5 | MCP 无人值守切断 | 完成 | AUTO_HIJACK 下拒绝 approve/resume/unveto；destructive hint；instrument 资源无副作用 |
+| 6 | 反馈机械 repair | 完成 | `swarm_feedback:degraded` / adaptive `repair_bias` → `force_category=repair` |
+| 7 | 基因谱系 | 完成 | `landed_gene_id` 入事件/提交/冷却 |
+| 8 | 工作流门可审计 | 完成 | stdout+cwd+timeout；嵌套 park；模板写真话 |
+| 9 | 杂项契约 | 完成 | skill `os.pathsep`；CLI distill hint；veto `--note`；过泛 veto 拒绝 |
+| 10 | 发布卫生 | 完成 | 1.112.0；单一 Unreleased；`check_changelog.py` 拒绝多个 |
+| 11 | 回归 | 完成 | 3469 passed（not slow/llm）；ruff / mypy 全绿 |
 
-## 演进（全部详见 演进方案_wikiskill对照版.md）
+## 回执跟进（§9.4 → §9.5，已做）
 
-- 滚动审计版：2026-08-11（Sprint 20–21 完成）；蜂群弧线（v1.98–v1.111）见 CHANGELOG
-- 历史：2026-07-31 / 07-29 / 07-17 / 07-06 / 06-20 / 06-15
+- DEBUG.md #12 自批自恢、#13 归因错位；#9 标 v1.112.0
+- CHANGELOG Upgrade notes（`HITL_MODE=disabled` 现为 on）
+- `演进方案.md` 移出 gitignore，公开链接可入库
+- soak 运行门写法见 演进方案.md §10
+
+## P1 — 下一阶段（soak，不在 1.112 宣称完成）
+
+| 项 | 说明 |
+|---|---|
+| 外置 EVOLUTION_DIR 把 gated_runs 跑到 20 | 工具已就绪：`evolver soak setup/exports/status`；同一版本 1.112.0 实跑；禁止提交 memory/；人类再决定 SHADOW=0 |
+| S26.5 干净 worktree 跑门 | 引擎已落地（flag 默认关）；soak 时 `EVOLVER_FF_ENABLE_EVAL_WORKTREE=1` |
+| S30.4/30.5 env/flag 退役 | 252 → ≤80 |
+| 拆 `swarm/` 包 | 阻止 `swarm.py`/`cli.py` 继续膨胀 |
+| S29 机械提案作宿主默认路径 | 替代自由编辑 + distill |
+| Validator 安全模型 | 仍约 50% |
+| `enable_event_history` 转默认 | 冷却已不依赖；打开需单独 soak |
+
+## 明确不做
+
+- 再按收割切片 bump minor
+- `chore: runtime state sync` / 产品仓直推 `evolver: gene_*`
+- `EVOLVER_ACCEPTANCE_SHADOW=0`（样本不够）
+- 本阶段 PyPI / 新 EvoX 切片

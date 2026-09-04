@@ -30,6 +30,7 @@ def _server_env(tmp_path: Path) -> dict[str, str]:
             "EVOLUTION_DIR": str(tmp_path / "evolution"),
             "A2A_HUB_URL": "http://127.0.0.1:9",
             "EVOLVE_LOAD_MAX": "999",
+            "EVOLVER_HOME": str(tmp_path / ".evomap"),
         }
     )
     return env
@@ -152,7 +153,7 @@ class TestProtocol:
             "contents"
         ][0]["text"]
         status = json.loads(status_text)
-        assert status["ok"] is True and status["version"] == "1.111.0"
+        assert status["ok"] is True and status["version"] == "1.112.0"
 
         prompt_text = client.request("resources/read", {"uri": "evolver://instrument-prompt"})[
             "result"

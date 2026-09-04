@@ -37,6 +37,20 @@ class TestAppliedCooldownIds:
         ids = selector._applied_cooldown_ids([_event("g_applied"), _event(None)])
         assert ids == {"g_applied"}
 
+    def test_landed_gene_id_also_cools(self) -> None:
+        event = {
+            "id": "evt_x",
+            "mutation": {
+                "gene_id": "gene_playbook",
+                "landed_gene_id": "gene_distill_format_hint",
+            },
+            "outcome": {"status": "success"},
+        }
+        assert selector._applied_cooldown_ids([event]) == {
+            "gene_playbook",
+            "gene_distill_format_hint",
+        }
+
     def test_failed_outcomes_do_not_cool(self) -> None:
         assert selector._applied_cooldown_ids([_event("g_fail", status="failed")]) == set()
 

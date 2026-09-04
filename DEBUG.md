@@ -15,9 +15,11 @@
 | 6 | 蒸馏静默零产出（宿主无从自纠格式） | swarm_distill | round-4 | v1.110.1 |
 | 7 | 选择器反复重派已落地基因 | selector | round-5 | v1.111.0 |
 | 8 | 冷却死代码（flag 默认关致事件尾永不加载） | selector | round-5 | v1.111.0 |
-| 9 | `complete_agent` 无视失败契约（`ok: False` 照常推进） | workflow | 补测 | 未发版 |
+| 9 | `complete_agent` 无视失败契约（`ok: False` 照常推进） | workflow | 补测 | v1.112.0 |
 | 10 | 技能基因哈希失配被静默丢弃 | skill_assets | v1.104 | v1.104.0 |
 | 11 | solidify 回滚 stash 重放陷阱 | 运维 | round-2 | 运维经验 |
+| 12 | MCP 宿主可自批 skip / 自恢复监督 | hitl/hotl | 审阅 | v1.112.0 |
+| 13 | 固化提交与冷却记剧本基因、不记落地基因 | solidify/selector | round-4 实证 | v1.112.0 |
 
 ## 条目
 
@@ -124,6 +126,32 @@
   混在相邻两个 stash 里）。
 - **经验**：**引擎回滚产物的重放永远用 checkout，不用 pop**。
 
+### 12. MCP 宿主自批 skip、自恢复监督（v1.112 审阅）
+
+- **症状**：文档写 HITL/HOTL 是人类门；MCP 工具 `swarm_approval_resolve` /
+  `swarm_supervise(resume|unveto)` 默认 `by=human-via-host`，无人值守宿主
+  可自己批准 `skip_validation`、自己解除暂停。
+- **根因**：审批与监督被做成「宿主转达」而非带外通道；instrument 写「先问人」
+  只是提示词。`EVOLVER_HITL_MODE=ON`/`disabled` 也不等于 on（大小写/未知值
+  静默保持 off）。
+- **修复**：`parse_hitl_mode`（未知 fail-closed 为 on）；`AUTO_HIJACK=1` 强制
+  HITL 且拒绝 MCP 转达的 approve/resume/unveto（改走 CLI）；pause/veto 进入
+  `_run_single_cycle`；损坏的状态文件 fail-closed。
+- **经验**：**「请先问人」不是门**。凡高危动作，默认关闭的审批 + 同一 stdout
+  上的转达工具 = 宿主既是申请者也是批准者。无人值守必须切断转达或另开通道。
+
+### 13. 提交说明与冷却罚错基因（round-4 实证，v1.112 修）
+
+- **症状**：git 提交 `d68a7fc` 报 `gene_hub_fetch_resilience`，实际改的是
+  distill 格式提示（蒸馏基因为 `gene_distill_format_hint`）。冷却窗口跟着
+  剧本 id 走，罚错对象。
+- **根因**：`_commit_mutation` 与冷却只读 `selected_gene_id`（dispatch 选出的
+  剧本）。宿主按剧本改树后 distill 出的新基因从未写回事件。
+- **修复**：`swarm_distill` 把落地 id 写入 solidify state；事件同时带
+  `gene_id` 与 `landed_gene_id(s)`；提交说明优先落地基因；冷却对两类 id 都罚。
+- **经验**：**决策输入、审计输出、冷却键必须是同一标识**。历史 round-1~5
+  事件只有剧本 id——冷却对旧事件会天然失效一个窗口，属预期成本，不必回填。
+
 ## 方法论沉淀
 
 1. **覆盖审计先行**：`pytest --cov` 找冷分支再补测——#9 由审计钓出，非偶然。
@@ -133,3 +161,7 @@
    四个（#2/#6/#8/#10）生于静默。
 4. **真仓即试验场**：dogfood 让 #1/#4/#5/#7 只可能在真实运行中现形——单测全绿
    不等于引擎能用。
+5. **转达不是批准**：MCP 上的「人类」工具与申请者同一进程时，必须 fail-closed
+   或切断（#12）。提示词政策挡不住无人值守。
+6. **剧本 ≠ 落地**：选择器选出的基因 id 不是工作区里实际写下的基因 id（#13）。
+   提交、冷却、创新日志必须同时记下两者。

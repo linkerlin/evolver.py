@@ -44,6 +44,13 @@ def main() -> int:
         return 1
 
     body = changelog.read_text(encoding="utf-8")
+    unreleased = re.findall(r"^## \[Unreleased\]", body, re.MULTILINE)
+    if len(unreleased) != 1:
+        print(
+            f"ERROR: expected exactly one '## [Unreleased]' heading, found {len(unreleased)}",
+            file=sys.stderr,
+        )
+        return 1
     if version not in body:
         print(f"WARNING: version {version} not mentioned in CHANGELOG.md", file=sys.stderr)
         return 1

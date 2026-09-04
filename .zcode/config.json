@@ -1,0 +1,14 @@
+{
+  "mcp": {
+    "servers": {
+      "evolver": {
+        "command": "/Users/steperlin/GitHub/evolver.py/.venv/bin/python",
+        "args": ["-m", "evolver.mcp_server"],
+        "env": {
+          "OPENCLAW_WORKSPACE": "/Users/steperlin/GitHub/evolver.py",
+          "EVOLVER_SWARM_AUTO_HIJACK": "0"
+        }
+      }
+    }
+  }
+}

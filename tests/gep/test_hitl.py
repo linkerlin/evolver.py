@@ -80,3 +80,37 @@ class TestModeOn:
 
         assert expired["status"] == "rejected"
         assert "expired" in hitl_journal_path().read_text(encoding="utf-8")
+
+    def test_list_pending_expires_ttl(self, temp_workspace: Path, hitl_on: None) -> None:
+        import datetime
+
+        first = request_approval(subject="s5", risk_reason="r", ttl_ms=1)
+        assert first["status"] == "pending"
+        from evolver.gep import hitl as hitl_mod
+
+        future = datetime.datetime.now(datetime.UTC) + datetime.timedelta(seconds=5)
+        original = hitl_mod._utcnow
+        try:
+            hitl_mod._utcnow = lambda: future  # type: ignore[assignment]
+            assert list_pending() == []
+        finally:
+            hitl_mod._utcnow = original  # type: ignore[assignment]
+
+    def test_corrupt_store_fail_closes(self, temp_workspace: Path, hitl_on: None) -> None:
+        hitl_state_path().parent.mkdir(parents=True, exist_ok=True)
+        hitl_state_path().write_text("{not-json", encoding="utf-8")
+        result = request_approval(subject="s-corrupt", risk_reason="r")
+        assert result["status"] == "rejected"
+        assert result.get("error") == "hitl_store_corrupt"
+
+
+class TestModeParsing:
+    def test_unknown_mode_fail_closed_on(self) -> None:
+        from evolver.config import parse_hitl_mode
+
+        assert parse_hitl_mode("ON") == "on"
+        assert parse_hitl_mode("true") == "on"
+        assert parse_hitl_mode("1") == "on"
+        assert parse_hitl_mode("off") == "off"
+        assert parse_hitl_mode("maybe") == "on"
+        assert parse_hitl_mode("disabled") == "on"  # unknown fail-closed
