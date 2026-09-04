@@ -21,7 +21,10 @@ def test_preflight_dry_run_never_aborts() -> None:
     assert result.abort is False
 
 
-def test_repair_loop_circuit_breaker_empty() -> None:
+def test_repair_loop_circuit_breaker_empty(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    # Must not read the host repo's real events.jsonl (dogfood round-2: live
+    # repair-failed events leaked in and made this assertion host-dependent).
+    monkeypatch.setenv("GEP_ASSETS_DIR", str(tmp_path / "gep"))
     cb = guards.check_repair_loop_circuit_breaker()
     assert cb["tripped"] is False
     assert cb["consecutive"] == 0

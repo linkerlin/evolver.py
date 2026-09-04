@@ -288,9 +288,9 @@ def _linux_child_preexec() -> None:
     try:
         import resource as resource_mod
 
-        resource_mod.setrlimit(resource_mod.RLIMIT_CPU, (60, 60))  # type: ignore[attr-defined]
-        resource_mod.setrlimit(resource_mod.RLIMIT_AS, (512 * 1024 * 1024, 512 * 1024 * 1024))  # type: ignore[attr-defined]
-        resource_mod.setrlimit(resource_mod.RLIMIT_FSIZE, (128 * 1024 * 1024, 128 * 1024 * 1024))  # type: ignore[attr-defined]
+        resource_mod.setrlimit(resource_mod.RLIMIT_CPU, (60, 60))
+        resource_mod.setrlimit(resource_mod.RLIMIT_AS, (512 * 1024 * 1024, 512 * 1024 * 1024))
+        resource_mod.setrlimit(resource_mod.RLIMIT_FSIZE, (128 * 1024 * 1024, 128 * 1024 * 1024))
     except Exception as exc:
         logger.debug("[Sandbox] Failed to set resource limits: %s", exc)
     _try_linux_network_isolation()

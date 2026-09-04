@@ -527,3 +527,23 @@ class TestUnwrapAssetFromMessage:
     def test_publish_without_asset_payload_returns_none(self) -> None:
         msg = {"protocol": "gep-a2a", "message_type": "publish", "payload": {}}
         assert a2a.unwrap_asset_from_message(msg) is None
+
+
+@respx.mock
+async def test_send_heartbeat_retries_once_then_succeeds(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Dogfood round-2 (friction f001): transient Hub failure must not fail
+    the daemon heartbeat — same retry policy as fetch_tasks."""
+    monkeypatch.setenv("A2A_HUB_URL", "https://mock.hub")
+    monkeypatch.setenv("A2A_NODE_ID", "node_123")
+    monkeypatch.setattr("evolver.config.HUB_FETCH_RETRY_BACKOFF_MS", 1)
+    route = respx.post("https://mock.hub/v1/a2a/heartbeat").mock(
+        side_effect=[
+            Response(500, json={"error": "boom"}),
+            Response(200, json={"ok": True}),
+        ]
+    )
+    result = await a2a.send_heartbeat()
+    assert result["ok"] is True
+    assert route.call_count == 2

@@ -198,10 +198,12 @@ def start(*, delay_ms: int = 0) -> StartResult:
         }
 
         if platform.system() == "Windows":
+            # Creation flags are win32-only in typeshed; getattr keeps POSIX
+            # type-checking green without changing Windows runtime behaviour.
             popen_kwargs["creationflags"] = (
-                subprocess.CREATE_NEW_PROCESS_GROUP
-                | subprocess.DETACHED_PROCESS
-                | subprocess.CREATE_NO_WINDOW
+                int(getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0))
+                | int(getattr(subprocess, "DETACHED_PROCESS", 0))
+                | int(getattr(subprocess, "CREATE_NO_WINDOW", 0))
             )
         else:
             popen_kwargs["start_new_session"] = True
@@ -236,7 +238,7 @@ def stop() -> StopResult:
             if platform.system() == "Windows":
                 # Ctrl+Break is the Windows equivalent of SIGTERM for process
                 # groups created with CREATE_NEW_PROCESS_GROUP.
-                os.kill(info.pid, signal.CTRL_BREAK_EVENT)
+                os.kill(info.pid, int(getattr(signal, "CTRL_BREAK_EVENT", 0)))
             else:
                 os.kill(info.pid, signal.SIGTERM)
         except (OSError, ProcessLookupError):
@@ -645,7 +647,7 @@ def stop_owned_loops() -> StopResult:
     for pid in pids:
         try:
             if platform.system() == "Windows":
-                os.kill(pid, signal.CTRL_BREAK_EVENT)
+                os.kill(pid, int(getattr(signal, "CTRL_BREAK_EVENT", 0)))
             else:
                 os.kill(pid, signal.SIGTERM)
             killed.append(pid)

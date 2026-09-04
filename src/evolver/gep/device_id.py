@@ -37,13 +37,20 @@ def _collect_hardware_signals() -> list[str]:
     # Machine GUID on Windows.
     if platform.system() == "Windows":
         try:
-            import winreg  # type: ignore[import-not-found, unused-ignore]
+            import winreg
 
-            with winreg.OpenKey(
-                winreg.HKEY_LOCAL_MACHINE,
+            # winreg attrs are win32-only in typeshed; getattr keeps mypy happy
+            # on POSIX without changing runtime behaviour on Windows.
+            open_key = getattr(winreg, "OpenKey", None)
+            hklm = getattr(winreg, "HKEY_LOCAL_MACHINE", None)
+            query_value_ex = getattr(winreg, "QueryValueEx", None)
+            if open_key is None or hklm is None or query_value_ex is None:
+                raise AttributeError("winreg API incomplete")
+            with open_key(
+                hklm,
                 r"SOFTWARE\\Microsoft\\Cryptography",
             ) as key:
-                guid, _ = winreg.QueryValueEx(key, "MachineGuid")
+                guid, _ = query_value_ex(key, "MachineGuid")
                 signals.append(f"win-guid:{guid}")
         except Exception:
             pass

@@ -32,8 +32,13 @@ def detect_cpu_count() -> int:
 
 def get_system_load() -> LoadSample:
     cpu_count = detect_cpu_count()
+    # os.getloadavg is POSIX-only; the getattr probe routes Windows into the
+    # psutil fallback without a platform-conditional type: ignore.
+    getloadavg = getattr(os, "getloadavg", None)
     try:
-        raw = os.getloadavg()  # type: ignore[attr-defined]
+        if getloadavg is None:
+            raise AttributeError("os.getloadavg unavailable")
+        raw = getloadavg()
         loads = [min(float(x), 2.0 * cpu_count) for x in raw]
     except (AttributeError, OSError):
         loads = _windows_load_fallback()

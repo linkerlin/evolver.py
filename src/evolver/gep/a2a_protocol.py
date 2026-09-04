@@ -340,8 +340,32 @@ async def send_hello() -> dict[str, Any]:
         return {"ok": False, "error": str(exc)}
 
 
+async def _post_with_retry(
+    url: str, payload: dict[str, Any], *, timeout_ms: int | None = None
+) -> dict[str, Any]:
+    """_http_post with the hub-resilience retry policy (friction f001).
+
+    Shared by the high-frequency Hub calls (fetch_tasks, heartbeat): one
+    transient failure must not degrade a cycle/heartbeat to offline.
+    """
+    from evolver.config import HUB_FETCH_RETRIES, HUB_FETCH_RETRY_BACKOFF_MS
+
+    effective_timeout = timeout_ms if timeout_ms is not None else HTTP_TRANSPORT_TIMEOUT_MS
+    attempts = max(0, HUB_FETCH_RETRIES) + 1
+    last_error: Exception | None = None
+    for attempt in range(attempts):
+        if attempt:
+            await asyncio.sleep((HUB_FETCH_RETRY_BACKOFF_MS / 1000.0) * (3 ** (attempt - 1)))
+        try:
+            return await _http_post(url, payload, timeout_ms=effective_timeout)
+        except Exception as exc:
+            last_error = exc
+    assert last_error is not None
+    raise last_error
+
+
 async def send_heartbeat() -> dict[str, Any]:
-    """Send a heartbeat ping to the Hub."""
+    """Send a heartbeat ping to the Hub (retry-resilient, friction f001)."""
     hub = get_hub_url()
     if not hub:
         return {"ok": False, "error": "no_hub_url"}
@@ -351,7 +375,7 @@ async def send_heartbeat() -> dict[str, Any]:
         "timestamp": asyncio.get_event_loop().time(),
     }
     try:
-        result = await _http_post(f"{hub}/v1/a2a/heartbeat", payload)
+        result = await _post_with_retry(f"{hub}/v1/a2a/heartbeat", payload)
         return {"ok": True, "hub_response": result}
     except Exception as exc:
         return {"ok": False, "error": str(exc)}
@@ -367,8 +391,6 @@ async def fetch_tasks(
     Living-memory friction f001 (hub_offline): retry with short exponential
     backoff before a cycle degrades to offline/idle.
     """
-    from evolver.config import HUB_FETCH_RETRIES, HUB_FETCH_RETRY_BACKOFF_MS
-
     hub = get_hub_url()
     if not hub:
         return {"ok": False, "error": "no_hub_url", "tasks": []}
@@ -379,23 +401,16 @@ async def fetch_tasks(
     }
     if signals:
         payload["signals"] = signals
-
-    attempts = max(0, HUB_FETCH_RETRIES) + 1
-    last_error: Exception | None = None
-    for attempt in range(attempts):
-        if attempt:
-            await asyncio.sleep((HUB_FETCH_RETRY_BACKOFF_MS / 1000.0) * (3 ** (attempt - 1)))
-        try:
-            result = await _http_post(
-                f"{hub}/v1/a2a/tasks", payload, timeout_ms=HUB_SEARCH_TIMEOUT_MS
-            )
-            tasks = result.get("tasks", [])
-            if not isinstance(tasks, list):
-                tasks = []
-            return {"ok": True, "tasks": tasks, "hub_response": result}
-        except Exception as exc:
-            last_error = exc
-    return {"ok": False, "error": str(last_error), "tasks": []}
+    try:
+        result = await _post_with_retry(
+            f"{hub}/v1/a2a/tasks", payload, timeout_ms=HUB_SEARCH_TIMEOUT_MS
+        )
+        tasks = result.get("tasks", [])
+        if not isinstance(tasks, list):
+            tasks = []
+        return {"ok": True, "tasks": tasks, "hub_response": result}
+    except Exception as exc:
+        return {"ok": False, "error": str(exc), "tasks": []}
 
 
 async def submit_task_result(

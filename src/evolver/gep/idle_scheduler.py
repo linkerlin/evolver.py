@@ -69,11 +69,14 @@ def _idle_time_windows() -> float:
     class LASTINPUTINFO(ctypes.Structure):
         _fields_ = [("cbSize", ctypes.c_uint), ("dwTime", ctypes.c_ulong)]
 
-    user32 = ctypes.windll.user32
+    # ctypes.windll only exists on Windows; getattr guards POSIX type-checking.
+    windll = getattr(ctypes, "windll", None)
+    if windll is None:
+        return 0.0
     lii = LASTINPUTINFO()
     lii.cbSize = ctypes.sizeof(LASTINPUTINFO)
-    if user32.GetLastInputInfo(ctypes.byref(lii)):
-        return float((ctypes.windll.kernel32.GetTickCount() - lii.dwTime) / 1000.0)
+    if windll.user32.GetLastInputInfo(ctypes.byref(lii)):
+        return float((windll.kernel32.GetTickCount() - lii.dwTime) / 1000.0)
     return 0.0
 
 
@@ -263,9 +266,9 @@ def notify(title: str, message: str) -> None:
     system = platform.system()
     if system == "Windows":
         with suppress(Exception):
-            from ctypes import windll
-
-            windll.user32.MessageBoxW(0, message, title, 0x40 | 0x0)
+            windll = getattr(ctypes, "windll", None)
+            if windll is not None:
+                windll.user32.MessageBoxW(0, message, title, 0x40 | 0x0)
     elif system == "Darwin":
         with suppress(Exception):
             subprocess.run(
