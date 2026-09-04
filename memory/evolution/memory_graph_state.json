@@ -1,14 +1,13 @@
 {
   "last_action": {
-    "gene_id": "gene_hub_fetch_resilience",
-    "action_id": "act_1788534450232_5f452ef2",
+    "gene_id": "gene_degraded_local_dispatch",
+    "action_id": "act_1788538139637_0e27daf4",
     "outcome_recorded": true,
-    "ts": "2026-09-04T15:07:30.232Z",
-    "created_at": "2026-09-04T15:07:30.232Z",
-    "signal_key": "ff41176885f319b5eb35cb490a2befc6",
+    "ts": "2026-09-04T16:08:59.637Z",
+    "created_at": "2026-09-04T16:08:59.637Z",
+    "signal_key": "19e53202d53ee98ea6177415e8c9a9a0",
     "signals": [
       "stable_success_plateau",
-      "swarm_feedback:ok",
       "learning_signal:platform_warning:info",
       "autopoiesis:hub_offline_guard",
       "autopoiesis:solidify_guard",
@@ -43,6 +42,11 @@
       "gene_id": "gene_hub_fetch_resilience",
       "source": "solidify_success",
       "ts": "2026-09-04T15:40:27.630Z"
+    },
+    "8f4b9286cf60933588122caafb98ad92": {
+      "gene_id": "gene_degraded_local_dispatch",
+      "source": "solidify_success",
+      "ts": "2026-09-04T16:16:02.785Z"
     }
   }
 }

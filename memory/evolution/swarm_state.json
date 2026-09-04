@@ -1,15 +1,15 @@
 {
-  "ticks": 11,
-  "updated": "2026-09-04T15:07:31.939412+00:00",
+  "ticks": 15,
+  "updated": "2026-09-04T16:09:01.913174+00:00",
   "last_tick": {
-    "run_id": "run_1788534443483_58e17432",
-    "cycle_id": "40d827a7a8eda955",
+    "run_id": "run_1788538133187_b36e5af1",
+    "cycle_id": "94f37496249d3158",
     "agent_name": "host-agent",
     "preflight_aborted": false,
     "abort_reason": null,
     "dispatch_reason": "dispatched",
     "selected_gene": {
-      "id": "gene_hub_fetch_resilience",
+      "id": "gene_degraded_local_dispatch",
       "name": null
     },
     "next_action": "execute_prompt"

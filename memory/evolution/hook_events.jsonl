@@ -7,3 +7,7 @@
 {"event": "signal_detect", "source": "host-agent", "signals": ["perf_bottleneck"], "file_path": null, "at": "2026-09-04T14:29:40.638559+00:00"}
 {"event": "signal_detect", "source": "host-agent", "signals": ["perf_bottleneck"], "file_path": null, "at": "2026-09-04T14:29:54.283921+00:00"}
 {"event": "signal_detect", "source": "host-agent", "signals": [], "file_path": null, "at": "2026-09-04T15:07:23.392332+00:00"}
+{"event": "signal_detect", "source": "host-agent", "signals": ["perf_bottleneck"], "file_path": null, "at": "2026-09-04T16:02:32.015318+00:00"}
+{"event": "signal_detect", "source": "host-agent", "signals": ["perf_bottleneck"], "file_path": null, "at": "2026-09-04T16:03:41.163609+00:00"}
+{"event": "signal_detect", "source": "host-agent", "signals": ["perf_bottleneck"], "file_path": null, "at": "2026-09-04T16:04:32.743391+00:00"}
+{"event": "signal_detect", "source": "host-agent", "signals": [], "file_path": null, "at": "2026-09-04T16:08:53.075177+00:00"}
