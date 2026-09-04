@@ -19,6 +19,14 @@
           "score": 1.0,
           "r_best": 1.0,
           "verdict": "no_improvement"
+        },
+        {
+          "timestamp": "2026-09-04T15:40:27.522Z",
+          "domain": "cascade",
+          "source": "solidify:run_1788534443483_58e17432",
+          "score": 1.0,
+          "r_best": 1.0,
+          "verdict": "no_improvement"
         }
       ]
     }

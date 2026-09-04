@@ -6,3 +6,4 @@
 {"event": "signal_detect", "source": "host-agent", "signals": ["perf_bottleneck"], "file_path": null, "at": "2026-09-04T14:23:07.394973+00:00"}
 {"event": "signal_detect", "source": "host-agent", "signals": ["perf_bottleneck"], "file_path": null, "at": "2026-09-04T14:29:40.638559+00:00"}
 {"event": "signal_detect", "source": "host-agent", "signals": ["perf_bottleneck"], "file_path": null, "at": "2026-09-04T14:29:54.283921+00:00"}
+{"event": "signal_detect", "source": "host-agent", "signals": [], "file_path": null, "at": "2026-09-04T15:07:23.392332+00:00"}
