@@ -2,3 +2,7 @@
 {"event": "signal_detect", "source": "zcode-dogfood", "signals": ["perf_bottleneck", "log_error"], "file_path": null, "at": "2026-09-03T21:03:57.738080+00:00"}
 {"event": "signal_detect", "source": "zcode-dogfood", "signals": ["perf_bottleneck", "log_error"], "file_path": null, "at": "2026-09-03T21:05:24.479393+00:00"}
 {"event": "signal_detect", "source": "zcode-dogfood", "signals": ["perf_bottleneck", "log_error"], "file_path": null, "at": "2026-09-03T21:05:41.211123+00:00"}
+{"event": "signal_detect", "source": "host-agent", "signals": ["perf_bottleneck"], "file_path": null, "at": "2026-09-04T14:22:36.809737+00:00"}
+{"event": "signal_detect", "source": "host-agent", "signals": ["perf_bottleneck"], "file_path": null, "at": "2026-09-04T14:23:07.394973+00:00"}
+{"event": "signal_detect", "source": "host-agent", "signals": ["perf_bottleneck"], "file_path": null, "at": "2026-09-04T14:29:40.638559+00:00"}
+{"event": "signal_detect", "source": "host-agent", "signals": ["perf_bottleneck"], "file_path": null, "at": "2026-09-04T14:29:54.283921+00:00"}

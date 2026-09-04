@@ -1,15 +1,15 @@
 {
-  "ticks": 6,
-  "updated": "2026-09-03T21:05:45.246222+00:00",
+  "ticks": 10,
+  "updated": "2026-09-04T14:29:59.606192+00:00",
   "last_tick": {
-    "run_id": "run_1788469541349_80f67c89",
-    "cycle_id": "86e2cbc20464709d",
-    "agent_name": "zcode-dogfood",
+    "run_id": "run_1788532194380_71d8dff9",
+    "cycle_id": "53c0cc67df491f27",
+    "agent_name": "host-agent",
     "preflight_aborted": false,
     "abort_reason": null,
     "dispatch_reason": "dispatched",
     "selected_gene": {
-      "id": "gene_gep_repair_from_errors",
+      "id": "gene_hub_retry_helper",
       "name": null
     },
     "next_action": "execute_prompt"

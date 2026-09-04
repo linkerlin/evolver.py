@@ -119,3 +119,9 @@
 {"type": "llm_review", "timestamp": 1788529624.8225868, "approved": false, "confidence": 0.0, "concerns": ["LLM call failed: timeout"], "latency_ms": 0.19621849060058594}
 {"type": "llm_review", "timestamp": 1788529744.729072, "approved": false, "confidence": 0.0, "concerns": ["LLM call failed: timeout"], "latency_ms": 0.2090930938720703}
 {"type": "llm_review", "timestamp": 1788529956.844724, "approved": false, "confidence": 0.0, "concerns": ["LLM call failed: timeout"], "latency_ms": 0.2739429473876953}
+{"type": "llm_review", "timestamp": 1788531467.359141, "approved": false, "confidence": 0.0, "concerns": ["LLM call failed: timeout"], "latency_ms": 0.20313262939453125}
+{"type": "llm_review", "timestamp": 1788531945.862756, "approved": false, "confidence": 0.0, "concerns": ["LLM call failed: timeout"], "latency_ms": 0.23508071899414062}
+{"type": "llm_review", "timestamp": 1788532231.09316, "approved": false, "confidence": 0.0, "concerns": ["LLM call failed: timeout"], "latency_ms": 0.3190040588378906}
+{"type": "llm_review", "timestamp": 1788532373.295071, "approved": false, "confidence": 0.0, "concerns": ["LLM call failed: timeout"], "latency_ms": 0.19979476928710938}
+{"type": "llm_review", "timestamp": 1788532495.084863, "approved": false, "confidence": 0.0, "concerns": ["LLM call failed: timeout"], "latency_ms": 0.2079010009765625}
+{"type": "llm_review", "timestamp": 1788532658.492435, "approved": false, "confidence": 0.0, "concerns": ["LLM call failed: timeout"], "latency_ms": 0.1971721649169922}
