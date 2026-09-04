@@ -157,6 +157,20 @@ uv run evolver skills list              # 查看库中技能基因
 
 同步后，技能以基因身份参与信号匹配与选择——例如一个「修复 ImportError」技能会在信号命中时被选入 GEP 提示词。宿主也可经 MCP `swarm_skills` 工具（`scan|list|sync`）自助操作。
 
+### 进化工作流（EvoX 收割：协作即数据）
+
+一整段协作表达为一份 **YAML 工作流**（可 diff → 可进化）：`agent` 步骤声明 `role`/`instruction` 等宿主执行器认领，`gate` 步骤引擎侧直跑验证级联（ruff→mypy→pytest），`approval` 步骤落人类审批门——全程 WAL 持久化、断点续跑（Sprint 24.10 引擎 + v1.110.0 扩展）。
+
+```bash
+uv run evolver workflow templates                  # 捆绑模板：repair / innovate
+uv run evolver workflow run --template repair      # 启动修复回路（也可给 YAML 文件）
+uv run evolver workflow awaiting <id>              # 宿主执行器/审批者当前待办
+uv run evolver workflow complete <id> --result '{"ok": true, "files": 2}'
+uv run evolver workflow approve <id>               # 审批放行
+```
+
+MCP 侧：`swarm_workflow_run`（文件或模板启动）、`swarm_workflow_act`（approve/reject/complete/resume/cancel）、`swarm_workflow_status`（全量状态 + 宿主待办）。
+
 > WebUI / Proxy 需要 server extras：`uv sync --extra server`（核心进化引擎与 MCP server 无 fastapi 依赖）。
 
 ## Prerequisites

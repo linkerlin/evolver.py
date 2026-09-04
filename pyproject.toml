@@ -1,6 +1,6 @@
 [project]
 name = "evolver"
-version = "1.109.0"
+version = "1.110.0"
 description = "A GEP-powered self-evolution engine for AI agents (Python port of @evomap/evolver)"
 readme = "README.md"
 license = { text = "Apache-2.0" }
@@ -28,6 +28,7 @@ dependencies = [
     "psutil>=6.0",
     "keyring>=25.4",
     "mcp>=2.0.0",
+    "pyyaml>=6.0",
 ]
 
 [project.optional-dependencies]

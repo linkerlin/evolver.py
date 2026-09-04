@@ -731,6 +731,113 @@ def swarm_skills(
     return {"ok": False, "error": f"unknown_action:{action}"}
 
 
+def swarm_workflow_run(
+    file: str | None = None,
+    template: str | None = None,
+    workflow_id: str | None = None,
+) -> dict[str, Any]:
+    """Start a durable workflow from a YAML/JSON spec file or bundled template.
+
+    EvoX harvest: the collaboration is data — a YAML workflow whose agent
+    steps declare roles the host executor picks up via ``swarm_workflow_status``.
+    """
+    from evolver.gep.workflow import WorkflowEngine, load_spec, load_template
+
+    if bool(file) == bool(template):
+        return {"ok": False, "error": "exactly one of file|template is required"}
+    try:
+        spec: dict[str, Any]
+        if file is not None:
+            spec = load_spec(Path(file))
+        else:
+            assert template is not None  # exactly-one guard above
+            spec = load_template(template)
+    except (OSError, FileNotFoundError) as exc:
+        return {"ok": False, "error": f"spec_unreadable:{exc}"}
+    if workflow_id:
+        spec["id"] = workflow_id
+    engine = WorkflowEngine()
+    try:
+        state = engine.create(spec)
+        state = engine.run(state)
+    except Exception as exc:  # surfaced to the host verbatim
+        return {"ok": False, "error": f"workflow_error:{exc}"}
+    result: dict[str, Any] = {
+        "ok": True,
+        "workflow_id": state.id,
+        "status": state.status,
+        "step": state.step_index,
+        "steps": len(spec.get("steps", [])),
+    }
+    if state.status == "waiting_agent":
+        result["awaiting_agent"] = engine.awaiting_agent(state.id)
+    if state.status == "waiting_approval":
+        result["awaiting_approval"] = engine.awaiting_approval(state.id)
+    if state.error:
+        result["error"] = state.error
+    return result
+
+
+def swarm_workflow_act(
+    workflow_id: str,
+    action: Literal["approve", "reject", "complete", "resume", "cancel"],
+    result: Any = None,
+    note: str | None = None,
+) -> dict[str, Any]:
+    """Advance a waiting workflow: approve/reject approvals, complete agent
+    steps (host reports the mutation result), resume retries, cancel."""
+    from evolver.gep.workflow import WorkflowEngine, WorkflowPermanentError
+
+    engine = WorkflowEngine()
+    try:
+        if action == "approve":
+            state = engine.approve(workflow_id, note=note)
+        elif action == "reject":
+            state = engine.reject(workflow_id, note=note)
+        elif action == "complete":
+            state = engine.complete_agent(workflow_id, result)
+        elif action == "resume":
+            state = engine.resume(workflow_id)
+        elif action == "cancel":
+            state = engine.cancel(workflow_id)
+        else:
+            return {"ok": False, "error": f"unknown_action:{action}"}
+    except (WorkflowPermanentError, LookupError) as exc:
+        return {"ok": False, "error": str(exc)}
+    out: dict[str, Any] = {
+        "ok": True,
+        "workflow_id": state.id,
+        "status": state.status,
+        "step": state.step_index,
+    }
+    if state.status == "waiting_agent":
+        out["awaiting_agent"] = engine.awaiting_agent(state.id)
+    if state.status == "waiting_approval":
+        out["awaiting_approval"] = engine.awaiting_approval(state.id)
+    if state.error:
+        out["error"] = state.error
+    return out
+
+
+def swarm_workflow_status(
+    workflow_id: str,
+) -> dict[str, Any]:
+    """Full state of one workflow run, including what the host should do now."""
+    from evolver.gep.workflow import WorkflowEngine
+
+    engine = WorkflowEngine()
+    try:
+        state = engine.load(workflow_id)
+    except LookupError as exc:
+        return {"ok": False, "error": str(exc)}
+    out: dict[str, Any] = {"ok": True, **engine.status(workflow_id)}
+    if state.status == "waiting_agent":
+        out["awaiting_agent"] = engine.awaiting_agent(workflow_id)
+    if state.status == "waiting_approval":
+        out["awaiting_approval"] = engine.awaiting_approval(workflow_id)
+    return out
+
+
 __all__ = [
     "SWARM_PROTOCOL_VERSION",
     "build_instrument_prompt",
@@ -745,4 +852,7 @@ __all__ = [
     "swarm_status",
     "swarm_supervise",
     "swarm_tick",
+    "swarm_workflow_act",
+    "swarm_workflow_run",
+    "swarm_workflow_status",
 ]

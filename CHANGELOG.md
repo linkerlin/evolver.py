@@ -8,6 +8,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.110.0] — 2026-09-04
+
+### Added — EvoX 工作流收割：协作即数据（YAML 工作流 + 角色节点 + 级联门）
+- **YAML↔DSL**：工作流 spec 支持 YAML 载入/导出（`load_spec` 按后缀分派、
+  `dump_spec_yaml` 往返）——工作流成为可 diff、可进化的数据资产；`pyyaml`
+  转正式声明依赖。
+- **协作模式 = 节点**：`agent`/`approval` 步骤携带 `role`/`instruction`/
+  `risk_reason` 元数据，`awaiting_agent()` / `awaiting_approval()` 向宿主
+  执行器与人类审批者声明「现在该做什么」；WAL 等待事件记录角色。
+- **`gate` 步骤**：引擎侧直跑 fitness 级联（ruff→mypy→pytest，与 solidify
+  同源命令规格）；失败默认终结工作流，`on_fail: skip` 容忍并记录判定。
+- **捆绑模板**：`repair`（摩擦修复回路：agent 变异 → 级联门 → 发布审批）
+  与 `innovate`（探索回路：弱信号创新 → 级联门容忍失败 → 去留审批）；
+  `evolver workflow templates` 列出。
+- **MCP 三工具**：`swarm_workflow_run`（文件或模板启动）、
+  `swarm_workflow_act`（approve/reject/complete/resume/cancel）、
+  `swarm_workflow_status`（全量状态 + 宿主待办）。CLI `workflow` 增
+  `templates`/`awaiting`/`complete` 动词，`run` 收 YAML 与 `--template`。
+
+> 设计注：未另造 DAG 引擎——Sprint 24.10 既有持久化引擎（WAL + 快照 +
+> 重试退避）已是外部驱动状态机；EvoX 收割以四处增量（YAML/角色/门/模板）
+> 落于其上，`agent` 步骤等待面即蜂群宿主接口。
+
 ## [1.109.0] — 2026-09-04
 
 ### Added — dogfood round-2：验收门开始积累真实数据（首个 gated run）

@@ -21,6 +21,7 @@
 | HITL 审批门 | `uv run evolver hitl list\|approve\|reject` |
 | HOTL 监督 | `uv run evolver supervise status\|pause\|resume\|direct\|veto\|unveto` |
 | 技能生态桥 | `uv run evolver skills list\|scan\|sync [--dry-run]` |
+| 进化工作流 | `uv run evolver workflow run\|templates\|awaiting\|approve\|complete\|…` |
 | 验收门 soak 报告 | `uv run evolver gate-report [--json]` |
 | 守护进程生命周期 | `uv run evolver start` / `stop` / `restart` / `status` / `log` |
 | 健康检查 | `uv run evolver check` / `watch` |
@@ -49,7 +50,8 @@ canary.py           Fork-canary：验证 CLI 加载不出崩溃
 swarm.py            蜂群进化核心：instrument prompt（宿主接管协议）+ 闭环工具
                     （boot/tick/distill/solidify/report/status），stdout 全捕获
 mcp_server.py       MCP stdio server（薄工具面）：asset/mailbox/timeline 工具 +
-                    swarm 工具 + `evolver_swarm` prompt（mcp>=2.0 之 MCPServer）+
+                    swarm 工具（含 workflow 三工具：run/act/status）+
+                    `evolver_swarm` prompt（mcp>=2.0 之 MCPServer）+
                     四只读资源（evolver://status 等）+ 工具注解（readOnly/
                     destructive hint）；协议 E2E 测试见 tests/test_mcp_protocol.py
 gep/                GEP（基因组进化协议）核心
@@ -97,6 +99,8 @@ gep/                GEP（基因组进化协议）核心
   learning_signals.py   平台/依赖环境学习信号
   strategy.py       进化策略选择
   sync.py           Hub 同步：获取任务、下载资源
+  workflow.py       持久化工作流引擎（WAL+快照）：script/foreach/if/agent/
+                    approval/gate 步骤；YAML spec + 角色 + 级联门 + 模板（EvoX 收割）
   validator/        验证者守护进程（文件存在，安全模型待完善）
 evolve/             进化流水线
   runner.py         编排器：单周期 + 守护循环

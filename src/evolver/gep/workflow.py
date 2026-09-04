@@ -1,14 +1,21 @@
 """Durable workflow engine — declarative DSL, WAL history, approval gates.
 
 Concept harvest from Node v2 ``workflow/{dsl,runtime,stateStore}.d.ts``
-(behavioral re-implementation; no code copied; thin slice).
+(behavioral re-implementation; no code copied; thin slice), extended by the
+EvoX harvest (evox-workflow): YAML-serializable specs (diffable → evolvable
+as GEP assets), collaboration roles on agent steps (``role`` metadata the
+host executor reads via ``awaiting_agent``), a ``gate`` step that runs the
+engine-owned fitness cascade, and bundled YAML templates.
 
 Steps (structural args only — no eval):
 - ``script``   whitelisted named core call with JSON-ish args
 - ``foreach``  sequential iteration over a literal list or stored variable
 - ``if``       whitelisted named predicate → ``then`` / ``else`` branches
-- ``agent``    external payload; waits for ``complete_agent`` (like approval)
+- ``agent``    external payload with ``role``/``instruction``; waits for
+               ``complete_agent`` (the swarm host executor advances it)
 - ``approval`` durable human gate; ``approve`` / ``reject`` are the only exits
+- ``gate``     engine-side validation cascade (ruff → mypy → pytest); fails
+               the run unless ``on_fail: skip``
 
 Durability: append-only history JSONL (WAL) + atomic state snapshot after
 every step, so a crashed run resumes from its step index. Transient step
@@ -16,7 +23,7 @@ errors retry with exponential backoff (``retry_wait``); permanent errors
 fail the run. ``script`` steps default to idempotent-by-index: re-running a
 step after a crash re-executes it, so core calls must tolerate at-least-once.
 
-Sprint 24.10 (演进方案.md §9 概念收割 #9 — thin slice).
+Sprint 24.10 (演进方案.md §9 概念收割 #9 — thin slice); v1.110.0 EvoX harvest.
 """
 
 from __future__ import annotations
@@ -28,15 +35,18 @@ import uuid
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any
+from typing import Any, Final
+
+import yaml
 
 logger = logging.getLogger(__name__)
 
-WORKFLOWS_DIRNAME = "workflows"
+WORKFLOWS_DIRNAME: Final = "workflows"
 MAX_STEPS: int = 256
 MAX_DEPTH: int = 16
 MAX_ATTEMPTS: int = 3
 BACKOFF_BASE_S: float = 2.0
+GATE_TIMEOUT_S: Final = 600
 
 ST_PENDING = "pending"
 ST_RUNNING = "running"
@@ -120,6 +130,82 @@ def _default_predicates() -> dict[str, Callable[..., bool]]:
     }
 
 
+# ---------------------------------------------------------------------------
+# YAML specs & templates (EvoX harvest: workflows as diffable, evolvable data)
+# ---------------------------------------------------------------------------
+
+
+def load_spec(path: Path) -> dict[str, Any]:
+    """Load a workflow spec from YAML or JSON (suffix decides)."""
+    text = path.read_text(encoding="utf-8")
+    data = yaml.safe_load(text) if path.suffix.lower() in (".yaml", ".yml") else json.loads(text)
+    if not isinstance(data, dict):
+        raise WorkflowPermanentError(f"workflow spec {path} is not a mapping")
+    return data
+
+
+def dump_spec_yaml(spec: dict[str, Any], path: Path) -> Path:
+    """Serialize a spec to YAML (round-trips through ``load_spec``)."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(yaml.safe_dump(spec, sort_keys=False, allow_unicode=True), encoding="utf-8")
+    return path
+
+
+def templates_dir() -> Path:
+    return Path(__file__).resolve().parent.parent / "assets" / "workflows"
+
+
+def list_templates() -> list[str]:
+    d = templates_dir()
+    if not d.is_dir():
+        return []
+    return sorted(p.stem for p in d.glob("*.yaml") if p.is_file())
+
+
+def load_template(name: str) -> dict[str, Any]:
+    path = templates_dir() / f"{name}.yaml"
+    if not path.is_file():
+        raise FileNotFoundError(f"no workflow template {name!r} (have: {list_templates()})")
+    return load_spec(path)
+
+
+def default_cascade_runner() -> dict[str, Any]:
+    """Run the engine-owned fitness cascade synchronously (gate step)."""
+    import subprocess
+
+    from evolver.gep.solidify import get_fitness_cascade_commands
+
+    specs = get_fitness_cascade_commands()
+    if not specs:
+        return {"overall_ok": False, "stages": [], "failed_stages": ["no-runnable-cascade"]}
+    stages: list[dict[str, Any]] = []
+    failed: list[str] = []
+    for spec in specs:
+        try:
+            proc = subprocess.run(  # engine-owned commands, never spec input
+                list(spec["command"]),
+                capture_output=True,
+                text=True,
+                timeout=GATE_TIMEOUT_S,
+                check=False,
+            )
+            entry = {
+                "stage": spec.get("stage", spec["command"][0]),
+                "returncode": proc.returncode,
+                "stderr_tail": (proc.stderr or "")[-500:],
+            }
+        except (OSError, subprocess.TimeoutExpired) as exc:
+            entry = {
+                "stage": spec.get("stage", spec["command"][0]),
+                "returncode": -1,
+                "stderr_tail": str(exc),
+            }
+        stages.append(entry)
+        if entry["returncode"] != 0:
+            failed.append(str(entry["stage"]))
+    return {"overall_ok": not failed, "stages": stages, "failed_stages": failed}
+
+
 class WorkflowEngine:
     """Durable multi-step workflow runner (M4B thin slice)."""
 
@@ -129,6 +215,7 @@ class WorkflowEngine:
         workflows_dir: Path | None = None,
         core_calls: dict[str, Callable[..., Any]] | None = None,
         predicates: dict[str, Callable[..., bool]] | None = None,
+        cascade_runner: Callable[[], dict[str, Any]] | None = None,
         now: float | None = None,
     ) -> None:
         if workflows_dir is None:
@@ -138,6 +225,7 @@ class WorkflowEngine:
         self.dir = workflows_dir
         self.core_calls = dict(_default_registry(), **(core_calls or {}))
         self.predicates = dict(_default_predicates(), **(predicates or {}))
+        self.cascade_runner = cascade_runner or default_cascade_runner
         self._now = now
 
     # -- persistence --------------------------------------------------------
@@ -249,12 +337,45 @@ class WorkflowEngine:
         state.status = ST_RUNNING
         state.step_index += 1
         state.attempts = 0
-        self._save(state, event={"event": "agent_completed"})
+        step = state.spec["steps"][state.step_index - 1]
+        self._save(
+            state,
+            event={"event": "agent_completed", "role": step.get("role", "host-executor")},
+        )
         return self.run(state)
 
     def status(self, workflow_id: str) -> dict[str, Any]:
         state = self.load(workflow_id)
         return state.to_dict()
+
+    def awaiting_agent(self, workflow_id: str) -> dict[str, Any]:
+        """What the host executor should be doing right now (EvoX: role = node)."""
+        state = self.load(workflow_id)
+        if state.status != ST_WAITING_AGENT:
+            return {"waiting": False, "status": state.status}
+        step = state.spec["steps"][state.step_index]
+        return {
+            "waiting": True,
+            "workflow_id": workflow_id,
+            "step": state.step_index,
+            "role": str(step.get("role", "host-executor")),
+            "description": str(step.get("description", "")),
+            "instruction": str(step.get("instruction", "")),
+        }
+
+    def awaiting_approval(self, workflow_id: str) -> dict[str, Any]:
+        """What a human approver is being asked right now."""
+        state = self.load(workflow_id)
+        if state.status != ST_WAITING_APPROVAL:
+            return {"waiting": False, "status": state.status}
+        step = state.spec["steps"][state.step_index]
+        return {
+            "waiting": True,
+            "workflow_id": workflow_id,
+            "step": state.step_index,
+            "risk_reason": str(step.get("risk_reason", "")),
+            "detail": str(step.get("description") or step.get("detail", "")),
+        }
 
     # -- step machine -------------------------------------------------------
 
@@ -332,15 +453,34 @@ class WorkflowEngine:
             self._run_substeps(state, step.get(branch, []), None)
         elif kind == "approval":
             state.status = ST_WAITING_APPROVAL
-            self._save(state, event={"event": "waiting_approval", "step": state.step_index})
+            self._save(
+                state,
+                event={
+                    "event": "waiting_approval",
+                    "step": state.step_index,
+                    "risk_reason": step.get("risk_reason", ""),
+                },
+            )
             return True
         elif kind == "agent":
             state.status = ST_WAITING_AGENT
             self._save(
                 state,
-                event={"event": "waiting_agent", "step": state.step_index},
+                event={
+                    "event": "waiting_agent",
+                    "step": state.step_index,
+                    "role": step.get("role", "host-executor"),
+                    "instruction": step.get("instruction", ""),
+                },
             )
             return True
+        elif kind == "gate":
+            verdict = self.cascade_runner()
+            state.variables["_gate_verdict"] = verdict
+            if not verdict.get("overall_ok") and step.get("on_fail") != "skip":
+                raise WorkflowPermanentError(
+                    f"gate failed: {verdict.get('failed_stages') or 'cascade not runnable'}"
+                )
         else:
             raise WorkflowPermanentError(f"unknown step kind: {kind}")
         return False
@@ -366,4 +506,10 @@ __all__ = [
     "WorkflowPermanentError",
     "WorkflowState",
     "WorkflowTransientError",
+    "default_cascade_runner",
+    "dump_spec_yaml",
+    "list_templates",
+    "load_spec",
+    "load_template",
+    "templates_dir",
 ]

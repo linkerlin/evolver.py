@@ -228,3 +228,237 @@ class TestPersistence:
         engine.run(state)
         state = engine.cancel("wf1")
         assert state.status == "cancelled"
+
+
+# ---------------------------------------------------------------------------
+# v1.110.0 — EvoX harvest: YAML specs, templates, agent roles, gate steps
+# ---------------------------------------------------------------------------
+
+
+class TestYamlSpecs:
+    def test_yaml_round_trip(self, temp_workspace: Path) -> None:
+        from evolver.gep.workflow import dump_spec_yaml, load_spec
+
+        spec = _spec({"kind": "script", "name": "echo", "args": {"x": 1}})
+        path = dump_spec_yaml(spec, temp_workspace / "wf.yaml")
+        assert load_spec(path) == spec
+
+    def test_load_spec_rejects_non_mapping(self, temp_workspace: Path) -> None:
+        from evolver.gep.workflow import load_spec
+
+        path = temp_workspace / "bad.yaml"
+        path.write_text("- a\n- b\n", encoding="utf-8")
+        with pytest.raises(WorkflowPermanentError):
+            load_spec(path)
+
+    def test_json_spec_still_loads(self, temp_workspace: Path) -> None:
+        from evolver.gep.workflow import load_spec
+
+        path = temp_workspace / "wf.json"
+        path.write_text(json.dumps(_spec({"kind": "script", "name": "noop"})), encoding="utf-8")
+        assert load_spec(path)["id"] == "wf1"
+
+
+class TestTemplates:
+    def test_bundled_templates_load_and_validate(self, temp_workspace: Path) -> None:
+        from evolver.gep.workflow import list_templates, load_template
+
+        names = list_templates()
+        assert "repair" in names
+        assert "innovate" in names
+        for name in names:
+            spec = load_template(name)
+            state = _engine(temp_workspace).create(spec)  # create() validates
+            assert state.id
+
+    def test_unknown_template(self) -> None:
+        from evolver.gep.workflow import load_template
+
+        with pytest.raises(FileNotFoundError):
+            load_template("does-not-exist")
+
+
+def _gate(ok: bool) -> dict[str, object]:
+    return {"overall_ok": ok, "stages": [], "failed_stages": [] if ok else ["mypy"]}
+
+
+class TestGateStep:
+    def test_gate_pass_records_verdict(self, temp_workspace: Path) -> None:
+        engine = _engine(temp_workspace, cascade_runner=lambda: _gate(True))
+        state = engine.create(_spec({"kind": "gate"}))
+        engine.run(state)
+        assert state.status == ST_DONE
+        assert state.variables["_gate_verdict"]["overall_ok"] is True
+
+    def test_gate_fail_fails_run(self, temp_workspace: Path) -> None:
+        engine = _engine(temp_workspace, cascade_runner=lambda: _gate(False))
+        state = engine.create(_spec({"kind": "gate"}))
+        engine.run(state)
+        assert state.status == ST_FAILED
+        assert "gate failed" in (state.error or "")
+
+    def test_gate_on_fail_skip_continues(self, temp_workspace: Path) -> None:
+        engine = _engine(temp_workspace, cascade_runner=lambda: _gate(False))
+        state = engine.create(_spec({"kind": "gate", "on_fail": "skip"}))
+        engine.run(state)
+        assert state.status == ST_DONE
+        assert state.variables["_gate_verdict"]["overall_ok"] is False
+
+    def test_default_runner_without_cascade(
+        self, temp_workspace: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        from evolver.gep import solidify as solidify_mod
+        from evolver.gep.workflow import default_cascade_runner
+
+        monkeypatch.setattr(solidify_mod, "get_fitness_cascade_commands", lambda: [])
+        verdict = default_cascade_runner()
+        assert verdict["overall_ok"] is False
+        assert verdict["failed_stages"] == ["no-runnable-cascade"]
+
+
+class TestAgentRoles:
+    def test_awaiting_agent_metadata(self, temp_workspace: Path) -> None:
+        engine = _engine(temp_workspace)
+        state = engine.create(
+            _spec(
+                {
+                    "kind": "agent",
+                    "role": "mutator",
+                    "description": "apply the repair",
+                    "instruction": "implement the selected gene",
+                }
+            )
+        )
+        engine.run(state)
+        assert state.status == ST_WAITING_AGENT
+        info = engine.awaiting_agent("wf1")
+        assert info["waiting"] is True
+        assert info["role"] == "mutator"
+        assert info["instruction"] == "implement the selected gene"
+        wal = json.loads(
+            (temp_workspace / "workflows" / "wf1.wal.jsonl")
+            .read_text(encoding="utf-8")
+            .splitlines()[-1]
+        )
+        assert wal["role"] == "mutator"
+        state = engine.complete_agent("wf1", {"ok": True})
+        assert state.status == ST_DONE
+
+    def test_awaiting_approval_metadata(self, temp_workspace: Path) -> None:
+        engine = _engine(temp_workspace)
+        state = engine.create(
+            _spec({"kind": "approval", "risk_reason": "publish genome", "description": "risky"})
+        )
+        engine.run(state)
+        info = engine.awaiting_approval("wf1")
+        assert info["waiting"] is True
+        assert info["risk_reason"] == "publish genome"
+
+    def test_awaiting_agent_when_not_waiting(self, temp_workspace: Path) -> None:
+        engine = _engine(temp_workspace)
+        state = engine.create(_spec({"kind": "script", "name": "noop"}))
+        engine.run(state)
+        assert engine.awaiting_agent("wf1") == {"waiting": False, "status": ST_DONE}
+
+
+class TestSwarmWorkflowSurface:
+    def test_template_full_loop(
+        self, temp_workspace: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        from evolver.swarm import swarm_workflow_act, swarm_workflow_run, swarm_workflow_status
+
+        monkeypatch.setattr("evolver.gep.workflow.default_cascade_runner", lambda: _gate(True))
+        run = swarm_workflow_run(template="innovate", workflow_id="swf1")
+        assert run["ok"] is True
+        assert run["status"] == "waiting_agent"
+        assert run["awaiting_agent"]["role"] == "innovator"
+
+        stepped = swarm_workflow_act("swf1", "complete", result={"ok": True, "files": 2})
+        assert stepped["ok"] is True
+        assert stepped["status"] == "waiting_approval"
+        assert "keep the innovation" in stepped["awaiting_approval"]["risk_reason"]
+
+        final = swarm_workflow_act("swf1", "approve")
+        assert final["ok"] is True
+        assert final["status"] == "done"
+
+        status = swarm_workflow_status("swf1")
+        assert status["ok"] is True
+        assert status["status"] == "done"
+
+    def test_template_reject_path(
+        self, temp_workspace: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        from evolver.swarm import swarm_workflow_act, swarm_workflow_run
+
+        monkeypatch.setattr("evolver.gep.workflow.default_cascade_runner", lambda: _gate(False))
+        swarm_workflow_run(template="innovate", workflow_id="swf2")
+        swarm_workflow_act("swf2", "complete", result={"ok": True})
+        # gate on_fail=skip in the template → approval still reached despite failing cascade
+        stepped = swarm_workflow_act("swf2", "approve")
+        assert stepped["status"] == "done"
+
+    def test_bad_invocations(self, temp_workspace: Path) -> None:
+        from evolver.swarm import swarm_workflow_act, swarm_workflow_run, swarm_workflow_status
+
+        assert swarm_workflow_run()["ok"] is False  # neither file nor template
+        assert swarm_workflow_run(file="a", template="b")["ok"] is False  # both
+        assert swarm_workflow_run(template="nope")["ok"] is False
+        assert swarm_workflow_status("missing-id")["ok"] is False
+        assert swarm_workflow_act("missing-id", "approve")["ok"] is False
+
+    def test_yaml_file_source(self, temp_workspace: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+        from evolver.gep.workflow import dump_spec_yaml
+        from evolver.swarm import swarm_workflow_run
+
+        monkeypatch.setattr("evolver.gep.workflow.default_cascade_runner", lambda: _gate(True))
+        spec_path = dump_spec_yaml(
+            {
+                "id": "yf1",
+                "steps": [
+                    {"kind": "agent", "role": "reviewer", "instruction": "review the diff"},
+                    {"kind": "gate"},
+                ],
+            },
+            temp_workspace / "custom.yaml",
+        )
+        run = swarm_workflow_run(file=str(spec_path))
+        assert run["ok"] is True
+        assert run["awaiting_agent"]["role"] == "reviewer"
+
+
+class TestWorkflowCli:
+    def test_run_template_awaiting_complete(
+        self, temp_workspace: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture
+    ) -> None:
+        import argparse
+
+        from evolver.cli import _cmd_workflow
+
+        monkeypatch.setattr("evolver.gep.workflow.default_cascade_runner", lambda: _gate(True))
+        args = argparse.Namespace(
+            workflow_action="run", spec_file=None, template="innovate", id="cli1"
+        )
+        assert _cmd_workflow(args) == 1  # waiting_agent ≠ done
+        out = capsys.readouterr().out
+        assert "innovator" in out
+
+        args = argparse.Namespace(workflow_action="complete", id="cli1", result=None, fail=False)
+        assert _cmd_workflow(args) == 0
+        args = argparse.Namespace(workflow_action="approve", id="cli1", note=None)
+        assert _cmd_workflow(args) == 0
+
+        args = argparse.Namespace(workflow_action="awaiting", id="cli1")
+        assert _cmd_workflow(args) == 0
+        assert "nothing awaited" in capsys.readouterr().out
+
+    def test_templates_listing(self, capsys: pytest.CaptureFixture, temp_workspace: Path) -> None:
+        import argparse
+
+        from evolver.cli import _cmd_workflow
+
+        args = argparse.Namespace(workflow_action="templates")
+        assert _cmd_workflow(args) == 0
+        out = capsys.readouterr().out
+        assert "repair" in out
+        assert "innovate" in out

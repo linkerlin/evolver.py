@@ -387,6 +387,37 @@ def build_server() -> Any:
 
         return swarm_skills(action=action, dry_run=dry_run)
 
+    def tool_swarm_workflow_run(
+        file: str | None = None,
+        template: str | None = None,
+        workflow_id: str | None = None,
+    ) -> dict[str, Any]:
+        """Start a durable evolution workflow from a YAML/JSON spec file or a
+        bundled template (repair-cycle / innovate-cycle). Returns the state,
+        including the agent role + instruction the host should execute now."""
+        from evolver.swarm import swarm_workflow_run
+
+        return swarm_workflow_run(file=file, template=template, workflow_id=workflow_id)
+
+    def tool_swarm_workflow_act(
+        workflow_id: str,
+        action: Literal["approve", "reject", "complete", "resume", "cancel"],
+        result: Any = None,
+        note: str | None = None,
+    ) -> dict[str, Any]:
+        """Advance a waiting workflow: approve/reject its approval gate,
+        complete its agent step with the host's result, resume, or cancel."""
+        from evolver.swarm import swarm_workflow_act
+
+        return swarm_workflow_act(workflow_id=workflow_id, action=action, result=result, note=note)
+
+    def tool_swarm_workflow_status(workflow_id: str) -> dict[str, Any]:
+        """Full state of one workflow run — step index, variables, gate
+        verdicts, and what the host executor should do next."""
+        from evolver.swarm import swarm_workflow_status
+
+        return swarm_workflow_status(workflow_id=workflow_id)
+
     def prompt_evolver_swarm(agent_name: str = "host-agent") -> str:
         """Instrument prompt: inject the swarm-evolution takeover protocol."""
         from evolver.swarm import swarm_boot
@@ -477,6 +508,9 @@ def build_server() -> Any:
         ("swarm_hooks", tool_swarm_hooks, None),
         ("swarm_hook_event", tool_swarm_hook_event, None),
         ("swarm_skills", tool_swarm_skills, None),
+        ("swarm_workflow_run", tool_swarm_workflow_run, None),
+        ("swarm_workflow_act", tool_swarm_workflow_act, None),
+        ("swarm_workflow_status", tool_swarm_workflow_status, read_only),
     ]
     for name, fn, ann in swarm_tools:
         server.tool(name=name, annotations=ann)(fn)

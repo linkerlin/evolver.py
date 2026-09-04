@@ -1,0 +1,25 @@
+# Repair cycle — EvoX-harvested workflow template (v1.110.0).
+#
+# Friction-driven repair: the host executor applies the mutation selected by
+# the last GEP dispatch, the engine gates it through the validation cascade,
+# and a human approves publishing it to the asset store.
+id: repair-cycle
+name: Repair cycle
+description: Friction-driven repair mutation with cascade gate and publish approval
+steps:
+  - kind: script
+    name: noop
+    args: {}
+    description: Signals were collected by the pipeline (engine-side placeholder)
+  - kind: agent
+    role: mutator
+    description: Apply the friction-driven repair mutation from the last GEP dispatch
+    instruction: >-
+      Read the last dispatch output (memory/evolution/ dispatch artifact), then
+      implement its selected gene as a minimal faithful mutation in the working
+      tree. Do not commit — the engine solidifies after the gate.
+  - kind: gate
+    description: Validation cascade (ruff → mypy → pytest)
+  - kind: approval
+    risk_reason: distill + solidify the repaired genome into the asset store
+    description: Engine will run swarm_distill + swarm_solidify after approval

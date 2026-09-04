@@ -197,7 +197,7 @@ class TestResources:
         # In-process model exposes .content (serialized as `text` over the wire).
         data = json.loads(first.content)
         assert data["ok"] is True
-        assert data["version"] == "1.109.0"
+        assert data["version"] == "1.110.0"
 
         prompt_contents = asyncio.run(server.read_resource("evolver://instrument-prompt"))
         assert "EVOLVER SWARM" in next(iter(prompt_contents)).content
@@ -252,3 +252,40 @@ class TestCallToolInProcess:
         )
         data = json.loads(result.content[0].text)
         assert "perf_bottleneck" in data["detected_signals"]
+
+    def test_workflow_tools_full_loop(
+        self, temp_workspace: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        import asyncio
+        import json
+
+        monkeypatch.setenv("EVOLVER_REPO_ROOT", str(temp_workspace))
+        monkeypatch.setattr(
+            "evolver.gep.workflow.default_cascade_runner",
+            lambda: {"overall_ok": True, "stages": [], "failed_stages": []},
+        )
+        server = build_server()
+
+        started = asyncio.run(
+            server.call_tool("swarm_workflow_run", {"template": "innovate", "workflow_id": "mcpwf"})
+        )
+        run = json.loads(started.content[0].text)
+        assert run["ok"] is True
+        assert run["status"] == "waiting_agent"
+        assert run["awaiting_agent"]["role"] == "innovator"
+
+        stepped = asyncio.run(
+            server.call_tool(
+                "swarm_workflow_act",
+                {"workflow_id": "mcpwf", "action": "complete", "result": {"ok": True}},
+            )
+        )
+        assert json.loads(stepped.content[0].text)["status"] == "waiting_approval"
+
+        final = asyncio.run(
+            server.call_tool("swarm_workflow_act", {"workflow_id": "mcpwf", "action": "approve"})
+        )
+        assert json.loads(final.content[0].text)["status"] == "done"
+
+        status = asyncio.run(server.call_tool("swarm_workflow_status", {"workflow_id": "mcpwf"}))
+        assert json.loads(status.content[0].text)["status"] == "done"

@@ -207,18 +207,33 @@ def _build_parser() -> argparse.ArgumentParser:
     skills_sub.add_parser("scan", help="Scan skill roots (project > user > builtin)")
     skills_sync = skills_sub.add_parser("sync", help="Sync discovered skills into the GEP store")
     skills_sync.add_argument("--dry-run", action="store_true", help="Preview without writing")
-    wf_p = sub.add_parser("workflow", help="Durable workflow engine (Sprint 24.10)")
+    wf_p = sub.add_parser("workflow", help="Durable workflow engine (Sprint 24.10 + EvoX harvest)")
     wf_sub = wf_p.add_subparsers(dest="workflow_action", required=True)
-    wf_run = wf_sub.add_parser("run", help="Run a workflow spec file")
-    wf_run.add_argument("spec_file", help="Path to workflow JSON spec")
+    wf_run = wf_sub.add_parser("run", help="Run a workflow spec file (YAML or JSON)")
+    wf_run.add_argument(
+        "spec_file", nargs="?", default=None, help="Path to workflow spec (YAML or JSON)"
+    )
     wf_run.add_argument("--id", default=None, help="Override workflow id")
+    wf_run.add_argument("--template", default=None, help="Bundled template name instead of a file")
+    wf_sub.add_parser("templates", help="List bundled workflow templates (EvoX harvest)")
     wf_sub.add_parser("status", help="Show workflow state").add_argument("id")
+    wf_sub.add_parser(
+        "awaiting", help="Show what the host executor / approver should do now"
+    ).add_argument("id")
     wf_approve = wf_sub.add_parser("approve", help="Approve a waiting workflow")
     wf_approve.add_argument("id")
     wf_approve.add_argument("--note", default=None)
     wf_reject = wf_sub.add_parser("reject", help="Reject a waiting workflow")
     wf_reject.add_argument("id")
     wf_reject.add_argument("--note", default=None)
+    wf_complete = wf_sub.add_parser(
+        "complete", help="Report an agent step's result (host executor)"
+    )
+    wf_complete.add_argument("id")
+    wf_complete.add_argument("--result", default=None, help="Result payload (JSON or plain text)")
+    wf_complete.add_argument(
+        "--fail", action="store_true", help="Report failure instead of success"
+    )
     wf_sub.add_parser("resume", help="Resume a retry_wait/waiting_agent workflow").add_argument(
         "id"
     )
@@ -1201,18 +1216,24 @@ def _cmd_rebuild_views(args: argparse.Namespace) -> int:
 
 
 def _cmd_workflow(args: argparse.Namespace) -> int:
-    """Sprint 24.10: durable workflow verbs."""
+    """Sprint 24.10 durable workflow verbs + v1.110.0 EvoX harvest surface."""
     import json as _json
+    from pathlib import Path as _Path
 
-    from evolver.gep.workflow import WorkflowEngine
+    from evolver.gep.workflow import WorkflowEngine, load_spec, load_template
 
     engine = WorkflowEngine()
     action = args.workflow_action
 
     if action == "run":
+        if bool(args.spec_file) == bool(args.template):
+            print("workflow: exactly one of spec_file|--template is required")
+            return 1
         try:
-            spec = _json.loads(Path(args.spec_file).read_text(encoding="utf-8"))
-        except (OSError, _json.JSONDecodeError) as exc:
+            spec = (
+                load_spec(_Path(args.spec_file)) if args.spec_file else load_template(args.template)
+            )
+        except (OSError, ValueError, FileNotFoundError) as exc:
             print(f"workflow: cannot read spec: {exc}")
             return 1
         if args.id:
@@ -1220,9 +1241,23 @@ def _cmd_workflow(args: argparse.Namespace) -> int:
         state = engine.create(spec)
         engine.run(state)
         print(f"workflow {state.id}: {state.status} (step {state.step_index}/{len(spec['steps'])})")
+        if state.status == "waiting_agent":
+            info = engine.awaiting_agent(state.id)
+            print(f"  awaiting host [{info['role']}]: {info['instruction'][:200]}")
+        if state.status == "waiting_approval":
+            info = engine.awaiting_approval(state.id)
+            print(f"  awaiting approval: {info['risk_reason']}")
         if state.error:
             print(f"  error: {state.error}")
         return 0 if state.status == "done" else 1
+
+    if action == "templates":
+        from evolver.gep.workflow import list_templates
+
+        for name in list_templates():
+            tpl = load_template(name)
+            print(f"{name:20s} {tpl.get('name', '')} — {tpl.get('description', '')[:80]}")
+        return 0
 
     if action == "status":
         try:
@@ -1230,6 +1265,23 @@ def _cmd_workflow(args: argparse.Namespace) -> int:
         except LookupError as exc:
             print(f"workflow: {exc}")
             return 1
+        return 0
+
+    if action == "awaiting":
+        try:
+            agent = engine.awaiting_agent(args.id)
+            approval = engine.awaiting_approval(args.id)
+        except LookupError as exc:
+            print(f"workflow: {exc}")
+            return 1
+        if agent["waiting"]:
+            print(f"host executor [{agent['role']}]: {agent['description']}")
+            print(f"  instruction: {agent['instruction']}")
+        elif approval["waiting"]:
+            print(f"approver: {approval['risk_reason']}")
+            print(f"  detail: {approval['detail']}")
+        else:
+            print(f"workflow {args.id}: nothing awaited (status {agent['status']})")
         return 0
 
     if action == "approve":
@@ -1241,6 +1293,19 @@ def _cmd_workflow(args: argparse.Namespace) -> int:
         state = engine.reject(args.id, note=args.note)
         print(f"workflow {state.id}: {state.status}")
         return 0
+
+    if action == "complete":
+        raw = args.result
+        if raw is not None:
+            try:
+                payload: object = _json.loads(raw)
+            except _json.JSONDecodeError:
+                payload = raw
+        else:
+            payload = None
+        state = engine.complete_agent(args.id, {"ok": not args.fail, "output": payload})
+        print(f"workflow {state.id}: {state.status}")
+        return 0 if state.status != "failed" else 1
 
     if action == "resume":
         state = engine.resume(args.id)
