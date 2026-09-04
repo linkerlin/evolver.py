@@ -8,6 +8,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.111.0] — 2026-09-04
+
+### Added — dogfood round-5：已应用基因冷却（选择器效率，gated_runs 3→4）
+- **观察**：round-3/4 的 tick 反复选中早已落地的基因（同信号仍在语料、
+  同基因仍最佳匹配）——每次重派都是浪费的周期。选择器此前对「近期已
+  成功固化」零感知。
+- **修复**：`select_gene` 对近窗内成功固化过的基因施加**惩罚（×0.25，
+  非禁选）**——并列时新候选胜出、唯一匹配仍可选；窗口只计带 outcome
+  的 mutation 事件（簿记噪音不稀释）；事件尾加载独立于
+  `enable_event_history`（该 flag 默认关，曾令冷却静默失效——本根因
+  由 gate 前实证发现）。实证：同信号下选择从已落地的
+  `gene_hub_retry_helper` 切换到从未应用的 `gene_degraded_local_dispatch`。
+- 新配置：`EVOLVER_APPLIED_GENE_COOLDOWN_EVENTS`（默认 5）/
+  `EVOLVER_APPLIED_GENE_COOLDOWN_PENALTY`（默认 0.25）；8 个新测试；
+  新基因 `gene_applied_cooldown`；引擎提交 1bc35c3。
+- 工作流 gate 首次逮住真实违规（测试文件 RUF005）——innovate 模板
+  `on_fail: skip` 容忍并如实记录，修复后经 solidify 权威级联全绿。
+
 ## [1.110.1] — 2026-09-04
 
 ### Fixed — dogfood round-4（repair 工作流首个实战周期，gated_runs 2→3）

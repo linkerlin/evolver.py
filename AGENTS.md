@@ -330,6 +330,8 @@ instrument prompt 第三章（Hooks 集成）指导宿主择轨。
 | `EVOLVER_REPAIR_LOOP_DEGRADED` | `1` | repair-loop 降级运行（非硬 abort） |
 | `EVOLVER_LEARNING_SIGNALS` | `1` | 注入环境学习信号 |
 | `EVOLVER_GENE_INERT_BAN_STREAK` | `8` | 惰性基因禁用阈值——连续 N 次零工作结果后禁选 (#562) |
+| `EVOLVER_APPLIED_GENE_COOLDOWN_EVENTS` | `5` | 已应用基因冷却窗口——近 N 个成功固化事件内选择打分惩罚 (#round-5) |
+| `EVOLVER_APPLIED_GENE_COOLDOWN_PENALTY` | `0.25` | 冷却惩罚乘数（非禁选：唯一匹配仍可选） |
 | `EVOLVER_MEMORY_GRAPH_MAX_SIZE_MB` | `100` | memory_graph.jsonl 超阈值 gzip 轮转 (#519) |
 | `EVOLVER_MEMORY_GRAPH_RETENTION_COUNT` | `7` | 轮转归档保留个数（`0`=全删） |
 | `EVOLVER_MEMORY_GRAPH_AUTO_ROTATE` | `true` | 设为 `false`/`0`/`no` 关闭自动轮转 |
