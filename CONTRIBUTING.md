@@ -89,7 +89,7 @@ Current baseline (2026-06-15): **1331 tests** (`pytest`), **mypy 0 errors**.
 3. Ensure lint passes: `uv run ruff check src tests`
 4. Ensure type check passes: `uv run mypy src`
 5. Update documentation if your change affects user-facing behavior (`README.md`, `AGENTS.md`, `SKILL.md`).
-6. If modifying architecture or adding new modules, update `设计方案.md` and `TODO.md` accordingly.
+6. If modifying architecture or adding new modules, update `演进方案_wikiskill对照版.md` and `TODO.md` accordingly.
 7. Open a PR with a clear description of the change and motivation.
 
 ## Architecture Decisions
@@ -116,7 +116,7 @@ When adding or modifying features, update the relevant documentation:
 - User-facing changes → `README.md` and `README.zh.md`
 - Agent integration changes → `AGENTS.md`
 - Skill/capability changes → `SKILL.md`
-- Architecture changes → `设计方案.md`
+- Architecture changes → `演进方案_wikiskill对照版.md`
 - Gap analysis changes → `TODO.md`
 
 ## Security
@@ -130,6 +130,6 @@ When adding or modifying features, update the relevant documentation:
 
 When contributing to partially implemented subsystems, please be transparent about the scope:
 
-- If implementing a previously missing module, remove it from the "missing" lists in `TODO.md` and update its status in `设计方案.md`.
+- If implementing a previously missing module, remove it from the "missing" lists in `TODO.md` and update its status in `演进方案_wikiskill对照版.md`.
 - If adding a stub or placeholder, mark it clearly with `pass` and a `# TODO:` comment referencing the relevant issue or roadmap item.
 - Do not mark features as "complete" in documentation unless they have corresponding tests.

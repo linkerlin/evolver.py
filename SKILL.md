@@ -271,7 +271,7 @@ Env: `EVOLVER_FF_<NAME>=1|0`. Disk layers (low → high): defaults → `evolver/
 - `examples/hub-publish-flow/` — Distill→reuse→publish lifecycle
 - `examples/skill2recipe/` — Skill→Recipe composition
 - `examples/atp-quickstart/` — ATP loop demo
-- `设计方案.md` — Chinese design document (~1500 lines)
+- `演进方案_wikiskill对照版.md` — Chinese design document (~1500 lines)
 
 ## Environment Variables
 
