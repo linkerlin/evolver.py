@@ -8,6 +8,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.109.0] — 2026-09-04
+
+### Added — dogfood round-2：验收门开始积累真实数据（首个 gated run）
+- 级联修复后重放 round-2 变异并 `solidify` 成功：`gene_hub_retry_helper`
+  （`_post_with_retry` 共享重试策略，fetch_tasks 与 send_heartbeat 统一走
+  同一指数退避；None timeout 回退 `HTTP_TRANSPORT_TIMEOUT_MS`）——引擎提交
+  a576564，`ValidationReport` 三阶段 overall_ok=True（216s），爆炸半径恰为
+  8 文件（运行态过滤持续生效）。
+- **验收门首个 gated run 落账**：`gate-report` gated_runs 0 → 1，
+  `acceptance_result` 随事件持久化，verdict 诚实停在 collecting（< 20）；
+  转正开关仍由人类掌握（`EVOLVER_ACCEPTANCE_SHADOW=0`）。
+
+### Fixed — round-2 级联真实执行后暴露的存量闸门债
+- **15 个跨平台 mypy 错误清偿**（此前级联从未真正跑过 mypy stage，v1.108
+  venv 修复后才暴露）：winreg/windll/creationflags/CTRL_BREAK_EVENT 等
+  Windows-only 属性统一改 `getattr(module, name, default)` 惯用法（运行时
+  行为不变）；`os.getloadavg` 改 getattr 探测路由 fallback；删除 4 处已
+  漂移的 unused-ignore（sandbox_executor×3、winreg import×1）。
+- **测试隔离缺陷（dogfood 第 4 缺陷）**：`test_repair_loop_circuit_breaker_
+  empty` 直读宿主仓库真实 `events.jsonl`，round-2 的 repair+failed 真实
+  事件使其宿主相关地失败——补 `GEP_ASSETS_DIR` 隔离。
+
 ## [1.108.0] — 2026-09-04
 
 ### Added — dogfood round-1：蜂群在真实仓库完成首轮自主进化
