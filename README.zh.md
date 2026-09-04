@@ -297,7 +297,7 @@ python scripts/validate_modules.py
 
 ## 文档
 
-- [`设计方案.md`](设计方案.md) — 综合设计文档（~1500 行）
+- [`演进方案_wikiskill对照版.md`](演进方案_wikiskill对照版.md) — wikiskill 对照审计与差距路线图
 - [`TODO.md`](TODO.md) — 详细差距分析与路线图
 - [`AGENTS.md`](AGENTS.md) — Agent 集成指南、编码规范、常见陷阱
 - [`CONTRIBUTING.md`](CONTRIBUTING.md) — 贡献指南

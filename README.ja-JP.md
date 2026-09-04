@@ -138,7 +138,7 @@ uv run mypy src                            # 型チェック（strict）
 - [SKILL.md](SKILL.md) — AI エージェント用スキル定義
 - [CONTRIBUTING.md](CONTRIBUTING.md) — コントリビューションガイド
 - [AGENTS.md](AGENTS.md) — AI エージェント向け参照
-- [设计方案.md](设计方案.md) — 設計書（中文）
+- [演进方案_wikiskill对照版.md](演进方案_wikiskill对照版.md) — wikiskill 監査とギャップロードマップ（中文）
 - [TODO.md](TODO.md) — ギャップ分析とロードマップ
 - [演进方案_wikiskill对照版.md](演进方案_wikiskill对照版.md) — v1.89.11 対追跡計画（中文）
 

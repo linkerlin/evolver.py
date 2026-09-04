@@ -138,7 +138,7 @@ uv run mypy src                            # 타입 체크 (strict)
 - [SKILL.md](SKILL.md) — AI 에이전트용 스킬 정의
 - [CONTRIBUTING.md](CONTRIBUTING.md) — 기여 가이드
 - [AGENTS.md](AGENTS.md) — AI 에이전트 참조
-- [设计方案.md](设计方案.md) — 설계 문서 (중문)
+- [演进方案_wikiskill对照版.md](演进方案_wikiskill对照版.md) — wikiskill 감사 및 격차 로드맵 (중문)
 - [TODO.md](TODO.md) — 갭 분석과 로드맵
 - [演进方案_wikiskill对照版.md](演进方案_wikiskill对照版.md) — v1.89.11 추적 계획 (중문)
 
