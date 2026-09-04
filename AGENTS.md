@@ -355,6 +355,8 @@ instrument prompt 第三章（Hooks 集成）指导宿主择轨。
 
 ## 坑阱篇
 
+> dogfood 五轮与补测会话真实修复之 bug 全录（症状/根因/修复/可迁移经验）见 **[DEBUG.md](DEBUG.md)**——排障先查此簿，修完新 bug 须回填。
+
 - **`.env` 加载次序攸关**：`cli.py:_load_dotenv()` 先加载 cwd 之 `.env`，后加载仓库根之 `.env`。内部导入在其后。若在 `cli.py` 中添加顶层重型模块导入，将破坏环境变量优先级。
 - **JSONL 叠加语义**：`genes.jsonl` 条目按 ID 覆盖 `genes.json`。从 `.json` 中删除一基因而未从 `.jsonl` 中删除，将使其复活。须以二文件同测之。
 - **内容哈希验证**：`asset_store.load_genes()` 静默跳过 `asset_id` 哈希与内容不符之条目。加载时"消失"之基因，其哈希大概率为损坏者。

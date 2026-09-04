@@ -8,6 +8,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Docs — DEBUG.md 修复经验簿
+- 新增 **`DEBUG.md`**：dogfood 五轮与补测会话真实修复之 11 个 bug 全录
+  （症状/根因/修复/可迁移经验四段式）+ 方法论沉淀（覆盖审计先行、实证
+  闭环、静默降级头号嫌疑、真仓即试验场）；AGENTS.md 坑阱篇置顶链接。
+- 顺手修复 README.md 文档区残留断链（`设计方案.md` 已于 c195b82 删除）
+  与过期弧线注记（v1.98–v1.105 → v1.98–v1.111）。
+
 ### Added — 最近一周 API 表面补测（v1.98–v1.111，25 个新用例）
 - **`tests/test_recent_api_surface.py`**：覆盖审计驱动（`--cov` 找冷分支），
   补齐六块——

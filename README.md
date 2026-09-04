@@ -493,10 +493,11 @@ A2A_HUB_URL=https://your-hub.example.com uv run evolver proxy
 
 ## Documentation
 
-- [`CHANGELOG.md`](CHANGELOG.md) — Release history (v1.98–v1.105 swarm arc)
-- [`设计方案.md`](设计方案.md) — Comprehensive design document (Chinese, ~1500 lines)
-- [`TODO.md`](TODO.md) — Detailed gap analysis and roadmap
+- [`CHANGELOG.md`](CHANGELOG.md) — Release history (v1.98–v1.111 swarm arc)
+- [`演进方案_wikiskill对照版.md`](演进方案_wikiskill对照版.md) — Audit vs wikiskill + live gap roadmap (Chinese)
+- [`TODO.md`](TODO.md) — Roadmap pointers (frozen; details in the audit doc)
 - [`AGENTS.md`](AGENTS.md) — Agent integration guide, coding standards, pitfalls
+- [`DEBUG.md`](DEBUG.md) — Debugging playbook: every bug fixed during dogfood, with root causes and transferable lessons
 - [`CONTRIBUTING.md`](CONTRIBUTING.md) — Contribution guidelines
 - [`SKILL.md`](SKILL.md) — Skill usage reference
 
