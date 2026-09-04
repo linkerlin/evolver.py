@@ -1,0 +1,18 @@
+{
+  "domains": {
+    "cascade": {
+      "baseline": 1.0,
+      "r_best": 1.0,
+      "history": [
+        {
+          "timestamp": "2026-09-04T13:50:34.889Z",
+          "domain": "cascade",
+          "source": "solidify:run_1788528663767_e956f03a",
+          "score": 1.0,
+          "r_best": 1.0,
+          "verdict": "baseline_established"
+        }
+      ]
+    }
+  }
+}
