@@ -205,8 +205,15 @@ async def dispatch_phase(ctx: dict[str, Any]) -> dict[str, Any]:
     _anchor_constrained_hook(ctx)
 
     if ctx.get("skip_hub_calls"):
-        print("Idle cycle complete.")
-        return ctx
+        # Saturation steady-state (no hub_skip_reason) is an intentional pause.
+        # Degraded modes (hub offline flag / preflight-abort recovery) skip Hub
+        # ENRICHMENT, not local evolution — dispatching the selected gene here
+        # removes the burn-a-whole-tick latency a degraded cycle used to add
+        # (dogfood round-3: fresh signals needed two ticks to dispatch).
+        if ctx.get("hub_skip_reason") not in ("autopoiesis_degraded", "preflight_abort_recovery"):
+            print("Idle cycle complete.")
+            return ctx
+        print("Degraded cycle: dispatching local gene without Hub enrichment.")
 
     gene = ctx.get("selected_gene")
     if not gene:
