@@ -8,6 +8,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.110.1] — 2026-09-04
+
+### Fixed — dogfood round-4（repair 工作流首个实战周期，gated_runs 2→3）
+- **`swarm_distill` 静默零产出**：非空响应但零资产提取时（纯文本摘要、
+  无 ```json 块），返回值只有 `genes: 0` 且无任何指引——宿主无从自纠。
+  现附 `hint`（期望的资产块形状 + `Gene.category` 合法枚举）并把
+  `next_action` 置为 `resubmit_with_asset_blocks`；格式损坏但存在块的场景
+  validation errors 与 hint 双信号并列。3 个新测试钉住（hint 触发/valid
+  无 hint/坏类别 hint+errors）。
+- 本轮为 **repair 模板工作流首个实战周期**（mutator → gate 真实级联
+  三阶段绿 → 审批），与 round-3 的 innovate 模板互补；引擎提交 d68a7fc，
+  爆炸半径恰 2 文件。新基因 `gene_distill_format_hint` 入库。
+
 ## [1.110.0] — 2026-09-04
 
 ### Added — EvoX 工作流收割：协作即数据（YAML 工作流 + 角色节点 + 级联门）
