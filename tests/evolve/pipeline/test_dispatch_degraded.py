@@ -65,3 +65,30 @@ def test_degraded_without_gene_no_dispatch(_ws: Path, capsys: pytest.CaptureFixt
     result = asyncio.run(dispatch_phase(ctx))
     assert "dispatch_prompt" not in result
     assert "No matching Gene found" in capsys.readouterr().out
+
+
+class TestPromptArtifactFreshness:
+    def test_artifact_written_even_without_bridge(
+        self, _ws: Path, capsys: pytest.CaptureFixture
+    ) -> None:
+        # Round-11: the artifact feeds evolver://dispatch/last — bash-mediated
+        # ticks (bridge off) used to leave it hours stale.
+        from evolver.gep.bridge import write_prompt_artifact  # noqa: F401
+        from evolver.gep.paths import get_evolution_dir
+
+        ctx = _ctx(None)  # no hub_skip_reason → saturation path → early return
+        ctx["skip_hub_calls"] = False  # force the full dispatch body
+        ctx["dispatch_prompt"] = ""
+        ctx["bridge_enabled"] = False
+        ctx["genes"] = []
+        ctx["hub_hit"] = {}
+        ctx["hub_lessons"] = []
+        ctx["recent_events"] = []
+        ctx["cycle_id"] = "c-artifact"
+        import asyncio
+
+        asyncio.run(dispatch_phase(ctx))
+        artifact = get_evolution_dir() / "last_prompt.md"
+        assert artifact.exists()
+        assert "g1" in artifact.read_text(encoding="utf-8")  # selected gene id
+        assert "BUILT_PROMPT" in capsys.readouterr().out

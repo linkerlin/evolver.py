@@ -271,8 +271,13 @@ async def dispatch_phase(ctx: dict[str, Any]) -> dict[str, Any]:
     # host-agent executor can consume it structurally instead of parsing stdout.
     ctx["dispatch_prompt"] = prompt
 
+    # The artifact feeds swarm_status + the evolver://dispatch/last resource —
+    # it must track the LATEST dispatch regardless of how the cycle was run
+    # (round-11: bash-mediated ticks left the resource hours stale because the
+    # write was gated on bridge_enabled, which needs OPENCLAW_WORKSPACE).
+    write_prompt_artifact(prompt)
+
     if ctx.get("bridge_enabled"):
-        write_prompt_artifact(prompt)
         spawn = render_sessions_spawn_call(
             {
                 "task": prompt[:4000],
