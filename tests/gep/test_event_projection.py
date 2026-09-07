@@ -8,6 +8,7 @@ import pytest
 
 from evolver.gep import mutation as mutation_mod
 from evolver.gep.event_projection import (
+    augment_gene_stats,
     load_projections,
     project_events,
     rebuild_projections,
@@ -122,3 +123,35 @@ class TestOperatorBanditWiring:
         finally:
             set_flag("enable_event_projection", False)
             invalidate_cache()
+
+
+class TestSelfHealingCache:
+    def test_stale_cache_rebuilds_on_read(self, temp_workspace: Path) -> None:
+        # Round-10: the cache sat with zero readers; a stale event_count now
+        # triggers a rebuild so the read is either fresh or absent.
+        from evolver.gep.asset_store import append_event_jsonl
+
+        append_event_jsonl(_evt("r1"))
+        rebuild_projections()
+        append_event_jsonl(_evt("r2"))  # drift: real log now ahead of cache
+
+        loaded = load_projections()
+        assert loaded is not None
+        assert loaded["event_count"] == 2  # healed, not the stale 1
+
+    def test_fresh_cache_no_rebuild(self, temp_workspace: Path) -> None:
+        from evolver.gep.asset_store import append_event_jsonl
+
+        append_event_jsonl(_evt("r1"))
+        views = rebuild_projections()
+        assert load_projections() == views
+
+    def test_augment_uses_self_healed_cache(self, temp_workspace: Path) -> None:
+        from evolver.gep.asset_store import append_event_jsonl
+
+        append_event_jsonl(_evt("r1"))
+        rebuild_projections()
+        append_event_jsonl(_evt("r2"))  # cache stale by one event
+
+        merged = augment_gene_stats({})
+        assert merged["gene_a"]["attempts"] == 2  # healed before merge

@@ -100,13 +100,29 @@ def rebuild_projections() -> dict[str, Any]:
 
 
 def load_projections() -> dict[str, Any] | None:
-    """Load persisted projections, or ``None`` when absent/corrupt."""
+    """Load persisted projections, or ``None`` when absent/corrupt.
+
+    Self-healing read (round-10): the file is a write-once cache that sat
+    with zero production readers — a stale copy (event_count drifted after
+    the x1-purge) could silently feed flag-gated consumers like
+    ``augment_gene_stats``. A count mismatch against the live event log now
+    triggers one rebuild, so the cache is either fresh or not returned.
+    """
     path = projections_path()
     try:
         raw = json.loads(path.read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError):
         return None
-    return raw if isinstance(raw, dict) and raw.get("schema_version") == SCHEMA_VERSION else None
+    if not isinstance(raw, dict) or raw.get("schema_version") != SCHEMA_VERSION:
+        return None
+    from evolver.gep.asset_store import read_all_events
+
+    try:
+        if int(raw.get("event_count") or 0) != len(read_all_events()):
+            return rebuild_projections()
+    except Exception:
+        return raw  # freshness check itself failed: better stale than crash
+    return raw
 
 
 def scored_category_window(window: int = 50) -> dict[str, dict[str, float]]:
@@ -137,8 +153,13 @@ def augment_gene_stats(stats: dict[str, dict[str, float]]) -> dict[str, dict[str
     """
     from evolver.gep.asset_store import read_all_events
 
+    cached = load_projections()
+    gene_outcomes = (
+        cached.get("gene_outcomes") if isinstance(cached, dict) else None
+    ) or project_events(read_all_events())["gene_outcomes"]
+
     merged = {gid: dict(row) for gid, row in stats.items()}
-    for gid, row in project_events(read_all_events())["gene_outcomes"].items():
+    for gid, row in gene_outcomes.items():
         if gid in merged:
             continue
         merged[gid] = {
