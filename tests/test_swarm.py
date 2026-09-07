@@ -73,6 +73,24 @@ class TestInstrumentPrompt:
         assert "tick_count: 7" in prompt
         assert "genes: 3" in prompt
 
+    def test_first_action_pending_solidify_branch(self) -> None:
+        # Tool-check 2026-09-05: boot used to say "tick first" even with an
+        # un-solidified run pending — a tick would clobber it.
+        pending = build_instrument_prompt(
+            {"agent_name": "a", "workspace_root": "/ws", "pending_solidify": True}
+        )
+        assert "先调用 `swarm_solidify`" in pending
+        assert "调用 `swarm_tick` 开始第一轮进化" not in pending
+        fresh = build_instrument_prompt({"agent_name": "a", "workspace_root": "/ws"})
+        assert "调用 `swarm_tick` 开始第一轮进化" in fresh
+
+    def test_references_real_tool_names(self) -> None:
+        prompt = build_instrument_prompt({"agent_name": "a", "workspace_root": "/ws"})
+        # MCP-registered names, not bare aliases.
+        assert "tool_mailbox_poll" in prompt
+        assert "tool_mailbox_send" in prompt
+        assert "`mailbox_poll`" not in prompt and "`mailbox_send`" not in prompt
+
 
 class TestBootAndStatus:
     def test_boot_returns_prompt_state_and_hello(self, isolated_swarm_env: Path) -> None:
@@ -209,6 +227,42 @@ class TestDistillSolidifyReport:
         result = swarm_solidify()
         assert result["ok"] is False
         assert result["error"] == "no_pending_run"
+
+    def test_solidify_failure_carries_failure_mode(
+        self, isolated_swarm_env: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        # Instrument prompt references ``failure_mode`` — it must actually be
+        # in the tool return (tool-check 2026-09-05: ghost key).
+        import evolver.gep.solidify as solidify_mod
+
+        monkeypatch.setattr(
+            solidify_mod,
+            "solidify",
+            lambda **kw: {
+                "ok": False,
+                "error": "validation_failed",
+                "details": {"validation_result": {"ok": False, "stage": "mypy"}},
+            },
+        )
+        result = swarm_solidify()
+        assert result["failure_mode"] == {
+            "mode": "soft",
+            "reasonClass": "validation",
+            "retryable": True,
+        }
+        assert result["next_action"] == "swarm_tick"
+
+    def test_solidify_hard_failure_directs_stop(
+        self, isolated_swarm_env: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        import evolver.gep.solidify as solidify_mod
+
+        monkeypatch.setattr(
+            solidify_mod, "solidify", lambda **kw: {"ok": False, "error": "not_a_git_repo"}
+        )
+        result = swarm_solidify()
+        assert result["failure_mode"]["retryable"] is False
+        assert result["next_action"] == "stop_and_report"
 
     def test_report_heartbeat(self, isolated_swarm_env: Path) -> None:
         result = swarm_report(category="friction", description="demo", resolution="none")

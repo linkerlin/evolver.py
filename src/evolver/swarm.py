@@ -118,6 +118,14 @@ def build_instrument_prompt(state: dict[str, Any]) -> str:
     capsules_n = state.get("capsules", "?")
     pending = state.get("pending_solidify", False)
     bridge = state.get("bridge_enabled", "?")
+    # Pending run first: a tick writes fresh solidify state and would clobber
+    # the un-solidified run (tool-check 2026-09-05: boot said pending_solidify:
+    # True while directing the host to tick first).
+    first_action = (
+        "存在待固化 run——先调用 `swarm_solidify` 完成固化，再回到步骤 1"
+        if pending
+        else "调用 `swarm_tick` 开始第一轮进化"
+    )
     return f"""# EVOLVER SWARM — 宿主接管协议 (instrument v{SWARM_PROTOCOL_VERSION})
 
 > 本提示词由 evolver 引擎经 MCP 注入。自此刻起，你（{agent}）成为 evolver 蜂群的
@@ -138,19 +146,22 @@ solidify 验证门真实落盘或回滚。
    并停止（这是引擎稳态行为，不得重试绕过）。若 `paused=true`（HOTL
    监督暂停）：立即停止并告知用户，等待 `resume`。若 `supervision_veto`
    非空：本基因已被人类否决，不得执行，直接进入下一轮 tick。
+   若 `next_action=stop_and_report`（如 `instance_lock_held`——另一实例
+   持有引擎锁）：停止并报告，不得重试。
 2. **执行变异** — 严格按 `dispatch_prompt` 修改工作区（{workspace}）代码。
    提示词中的精确锚点与输出契约是唯一的变异指令来源；不得自行发挥范围。
 3. `swarm_distill` — 把你的工作产出（提示词要求的 JSON 资产块 + 变更摘要）
    作为 `response_text` 提交，蒸馏安装为 Gene/Capsule 候选。
-4. `swarm_solidify` — 触发验证门（pytest/ruff/mypy 级联 + 验收门）并固化。
-   失败时阅读返回的 `failure_mode`；repair bias 已自动注入下一轮选择，
-   直接回到步骤 1 即可。
+4. `swarm_solidify` — 触发验证门（ruff→mypy→pytest 级联 + 验收门）并固化。
+   失败时阅读返回的 `failure_mode`（`mode`/`reasonClass`/`retryable`）：
+   `retryable=true` 时 repair bias 已自动注入下一轮选择，直接回到步骤 1；
+   `retryable=false` 则停止并报告，不得重试同一变异。
 5. `swarm_feedback` — 每轮执行后诚实上报统一评估信号 E：
    `primary_score`（0-1）、`metrics`（可选多维诊断）、`textual_gradient`
    （自然语言方向——什么有效/什么没用）。低分或失败会自动注入下轮
    repair-bias 信号；评分必须反映真实执行效果。
 6. 心跳：每 3 轮或遇到显著摩擦时调用 `swarm_report` 捕获教训（写入活记忆）。
-7. 回到步骤 1。多节点协作经 `mailbox_poll` / `mailbox_send`。
+7. 回到步骤 1。多节点协作经 `tool_mailbox_poll` / `tool_mailbox_send`。
 
 ## 三、Hooks 集成（信号自动采集）
 
@@ -192,7 +203,7 @@ solidify 验证门真实落盘或回滚。
 - pending_solidify: {pending} | bridge: {bridge}
 - mailbox 待处理: inbound={inbound} outbound={outbound}
 
-立即行动：调用 `swarm_tick` 开始第一轮进化。"""
+立即行动：{first_action}"""
 
 
 # ---------------------------------------------------------------------------
@@ -581,6 +592,21 @@ def swarm_solidify(skip_validation: bool = False, agent_name: str = "host-agent"
             result["next_action"] = "await_supervisor_resume"
         elif err == "supervision_veto":
             result["next_action"] = "swarm_tick"
+        if not result.get("ok") and "failure_mode" not in result:
+            # The instrument prompt tells the host to read ``failure_mode`` —
+            # make it real (tool-check 2026-09-05: the key was referenced but
+            # never present, so the host could not decide retry vs stop).
+            from evolver.gep.solidify import classify_failure_mode
+
+            details = result.get("details")
+            if err == "validation_failed" and isinstance(details, dict):
+                mode = classify_failure_mode(validation=details.get("validation_result"))
+            else:
+                mode = {"mode": "hard", "reasonClass": err or "unknown", "retryable": False}
+            result["failure_mode"] = mode
+            result.setdefault(
+                "next_action", "swarm_tick" if mode.get("retryable") else "stop_and_report"
+            )
     return result
 
 

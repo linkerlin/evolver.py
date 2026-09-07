@@ -19,6 +19,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   非运行态工作树文件，级联与验收门在该副本上跑；失败回退 live cwd（不挡 soak）。
   `EVOLVER_FF_ENABLE_EVAL_WORKTREE=1` 打开。事件可带 `eval_workspace` 元数据。
 
+### Fixed — instrument prompt 设计审阅：三处事实错误落地修复
+- **`failure_mode` 幽灵键**：prompt 两处教宿主读 solidify 返回的
+  `failure_mode`，但该键从未出现在工具面。现 `swarm_solidify` 失败时附
+  `classify_failure_mode` 结果（`mode`/`reasonClass`/`retryable`——
+  `validation_failed` 走真实分类，其余按硬失败）；`next_action` 按
+  `retryable` 分派（`swarm_tick` / `stop_and_report`），prompt 同步写明
+  retryable 决策语义。
+- **mailbox 工具名错误**：prompt 引用 `mailbox_poll`/`mailbox_send`，
+  实际注册名 `tool_mailbox_*`——严格调名必败。已改真名并加测试钉住
+  （`test_references_real_tool_names`）。
+- **「立即行动」与 pending_solidify 自相矛盾**：boot 时有待固化 run 却
+  指示宿主先 tick（会覆盖待固化状态）。现按状态分支：pending → 先
+  `swarm_solidify`。
+- 小项：级联顺序改正（ruff→mypy→pytest）；步骤 1 补
+  `next_action=stop_and_report`（`instance_lock_held`）处置。
+- 5 个新测试；全量 3508 passed。
+
 ## [1.112.0] — 2026-09-05
 
 ### Changed — 蜂群闭环稳定化（演进方案.md）
