@@ -49,21 +49,31 @@ def _local_assets() -> list[tuple[str, dict[str, Any]]]:
 
 
 def asset_search(query: str, limit: int = 10) -> list[dict[str, Any]]:
-    """Search local Genes/Capsules by substring over id/name/description."""
-    needle = query.strip().casefold()
+    """Search local Genes/Capsules by token-AND over id/name/summary/signals.
+
+    Tool-check finding (2026-09-05): the old whole-string substring match made
+    multi-word queries ("hub retry") silently empty, and `summary` /
+    `signals_match` — a Gene's primary text — were not searched at all.
+    """
+    needles = [t.casefold() for t in query.strip().split() if t]
     matches: list[dict[str, Any]] = []
+    if not needles:
+        return matches
     for kind, asset in _local_assets():
         haystack = " ".join(
             str(asset.get(field) or "")
-            for field in ("id", "name", "description", "category", "title")
+            for field in ("id", "name", "description", "summary", "category", "title")
         ).casefold()
-        if needle in haystack:
+        signals = asset.get("signals_match")
+        if isinstance(signals, list):
+            haystack += " " + " ".join(str(s) for s in signals)
+        if all(n in haystack for n in needles):
             matches.append(
                 {
                     "type": kind,
                     "id": asset.get("id"),
                     "name": asset.get("name") or asset.get("title"),
-                    "description": asset.get("description"),
+                    "description": asset.get("description") or asset.get("summary"),
                 }
             )
         if len(matches) >= max(1, limit):

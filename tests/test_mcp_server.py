@@ -37,8 +37,16 @@ def seeded_store(temp_workspace: Path, monkeypatch: pytest.MonkeyPatch) -> None:
         "description": "first capsule",
         "category": "repair",
     }
+    gene_rich = {
+        "type": "Gene",
+        "id": "gene_applied_cooldown",
+        "category": "optimize",
+        "summary": "Selector penalizes recently-solidified genes so ticks stop re-dispatching",
+        "signals_match": ["hub_offline", "selection_inefficiency"],
+    }
     upsert_gene(gene)
     append_capsule(capsule)
+    upsert_gene(gene_rich)
 
 
 class TestAssetTools:
@@ -49,6 +57,22 @@ class TestAssetTools:
 
     def test_search_no_match(self, seeded_store: None) -> None:
         assert asset_search("zzz_nonexistent") == []
+
+    def test_search_multi_word_is_token_and(self, seeded_store: None) -> None:
+        # Whole-string substring used to make "fix import" silently empty.
+        hits = asset_search("fix import")
+        assert "gene_fix_import" in {h["id"] for h in hits}
+        assert asset_search("fix zzz_nonexistent") == []
+
+    def test_search_covers_summary_and_signals(self, seeded_store: None) -> None:
+        # summary / signals_match are a Gene's primary text — must be searchable.
+        by_summary = asset_search("selector penalizes")
+        assert "gene_applied_cooldown" in {h["id"] for h in by_summary}
+        by_signal = asset_search("hub_offline")
+        assert "gene_applied_cooldown" in {h["id"] for h in by_signal}
+
+    def test_search_empty_query(self, seeded_store: None) -> None:
+        assert asset_search("   ") == []
 
     def test_get_round_trip(self, seeded_store: None) -> None:
         hit = asset_get("cap_1")

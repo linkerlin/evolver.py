@@ -20,6 +20,11 @@
 | 11 | solidify 回滚 stash 重放陷阱 | 运维 | round-2 | 运维经验 |
 | 12 | MCP 宿主可自批 skip / 自恢复监督 | hitl/hotl | 审阅 | v1.112.0 |
 | 13 | 固化提交与冷却记剧本基因、不记落地基因 | solidify/selector | round-4 实证 | v1.112.0 |
+| 14 | MCP 探针单通道解包致工具面全 FAIL（假阴性） | 测试工具 | MCP 接入 | 运维经验 |
+| 15 | 探针断言口径三处错（假阴性第二批） | 测试工具 | MCP 接入 | 运维经验 |
+| 16 | venv 旧模块疑虑 + stdio 长驻进程不重载 | 部署 | MCP 接入 | 运维经验 |
+| 17 | 工具面缺两个：配置/服务端/客户端三层排查 | 部署 | MCP 接入 | 运维经验 |
+| 18 | `asset_search` 多词必空 + summary/signals 不入检索 | mcp_server | 工具体检 | 未发版 |
 
 ## 条目
 
@@ -152,6 +157,76 @@
 - **经验**：**决策输入、审计输出、冷却键必须是同一标识**。历史 round-1~5
   事件只有剧本 id——冷却对旧事件会天然失效一个窗口，属预期成本，不必回填。
 
+### 14. MCP 探针单通道解包致工具面全 FAIL（MCP 接入，2026-09-05）
+
+- **症状**：stdio 烟测 22 项里 8 项工具面检查全 FAIL（返回 None），协议面
+  （initialize/resources/prompts）却全过——疑服务端工具坏。
+- **根因**：探针只读 `structuredContent`；该构建下服务端把 dict 结果序列化为
+  `content[0].text` JSON（pretty-printed）且不带 structuredContent 字段。
+  后经 ZCode 客户端实际连接发现两通道皆有——通道可用性随客户端能力协商
+  而异，探针写死了单一假设。
+- **修复**：双通道解包——优先 `structuredContent`（含 `{"result": ...}` 解包），
+  退化为 `json.loads(content[0].text)`。
+- **经验**：**测试工具自身的 bug 会伪装成被测物的全面故障**。协议面过、
+  数据面全挂这种「一刀切」的失败模式，先怀疑探针的解包/断言层，再怀疑服务。
+  另：裸 `timeout` 管道在 macOS 静默无输出（无 GNU coreutils），子进程超时
+  用 Python `communicate(timeout=)`。
+
+### 15. 探针断言口径三处错（MCP 接入，2026-09-05）
+
+- **症状**：解包修复后仍 3 项 FAIL：approvals / supervise status /
+  AUTO_HIJACK approve 阻断。
+- **根因**：三处断言与实现口径不符——`swarm_approvals` 返回 `{pending,
+  recent}`（非 `requests`/`ok`）；`swarm_supervise` 的 state 嵌套于
+  `supervision.state`；`swarm_approval_resolve` 的参数是 `approve: bool`
+  而探针传了 `decision:`（approve 默认 False → 阻断分支自然不触发）。
+- **修复**：按真实返回键形与参数名修正断言，22/22 全过。
+- **经验**：**写断言前先抓一次原始响应**（raw dump），别凭记忆写键名。
+  布尔参数传错名是静默的：默认值让调用「成功」却测不到目标分支。
+
+### 16. venv 旧模块疑虑 + stdio 长驻进程不重载（MCP 接入，2026-09-05）
+
+- **症状**：用户担心 MCP 配置用的是旧安装模块，问是否要重装、是否要
+  禁用再启用。
+- **核实**：`.venv/lib/.../ _editable_impl_evolver.pth`——`uv sync` 默认
+  可编辑安装，`evolver.__file__` 直指 `src/evolver/`；服务端线上回报
+  1.112.0（含未提交工作树）。无需重装。
+- **经验**：**Python stdio server 是长驻进程，代码在 spawn 时载入**。
+  两条推论：(a) 工作区 MCP 配置在会话启动时加载——会话中途写入的配置
+  本会话不可见，需新会话；(b) 改完引擎源码后必须重连 MCP（禁用→启用或
+  重启会话）才加载新版。验证模块新鲜度一行命令：
+  `python -c "import evolver; print(evolver.__file__, evolver.__version__)"`。
+
+### 17. 工具面缺两个：三层排查法（MCP 接入，2026-09-05）
+
+- **症状**：客户端模型工具面 21/23，缺 `swarm_solidify` 与 `swarm_approvals`
+  （两者无共性：一 destructive、一 read-only、schema 正常）。
+- **排查**：(1) 配置层——`~/.zcode/cli/config.json` 与工作区配置均规范、
+  无 enabled:false、无工具过滤字段；(2) 服务端层——直连 `tools/list`
+  23 个全注册、schema/注解齐全；(3) 客户端组装层——无法从外部观测，
+  但「destructive 注解被隐藏」假设被反例排除（三个 destructive 工具
+  可见）。结论：长会话（1000+ 消息）中途接入的服务器被客户端工具面
+  裁剪，裁谁近似随机。
+- **经验**：**假阴性排查自底向上：证明每层干净再上移**，反例优先于假设
+  （一个可见的 destructive 工具即推翻「注解过滤」论）。最终不可观测层
+  用可执行的对照实验收口（新会话看是否 23/23）。缺的工具找 CLI 等价物
+  （`evolver solidify` / `evolver hitl list`），不阻塞闭环。
+
+### 18. asset_search 三重检索缺陷（MCP 工具体检，2026-09-05）
+
+- **症状**：`tool_asset_search("hub retry")` 返回空——库里明明有
+  `gene_hub_fetch_resilience` 等应命中基因；单关键词却正常。
+- **根因（三面）**：(1) 整串子串匹配（`"hub retry" in haystack`）——多词
+  查询需连续出现，必然落空；(2) `summary` 不在检索字段——而它是 Gene 的
+  主文本（`penalize` 查不到 gene_applied_cooldown）；(3) `signals_match`
+  不入检索（`hub_offline` 查空）。
+- **修复**：token-AND 语义（分词后全命中才入选）+ `summary` 入 haystack +
+  `signals_match` 列表拼接 + 结果 description 回退 summary；4 个新测试
+  钉住（多词命中/多词带噪排除/summary 检索/signals 检索/空查询）。
+- **经验**：**检索工具要用「真实查询语料」测，别只测单关键词**。用户自然
+  输入是多词的；子串匹配对多词静默归零是最阴的假阴性。另：体检时
+  proxy 路由同名函数是文件名搜索（不同域），勿误伤。
+
 ## 方法论沉淀
 
 1. **覆盖审计先行**：`pytest --cov` 找冷分支再补测——#9 由审计钓出，非偶然。
@@ -165,3 +240,9 @@
    或切断（#12）。提示词政策挡不住无人值守。
 6. **剧本 ≠ 落地**：选择器选出的基因 id 不是工作区里实际写下的基因 id（#13）。
    提交、冷却、创新日志必须同时记下两者。
+7. **测试工具先于被测物**：「协议面过、数据面一刀切全挂」先查探针解包/断言
+   （#14/#15）；写断言前先 raw dump 一次真实响应，别凭记忆写键名。
+8. **长驻进程的重载语义**：stdio MCP server 只在 spawn 时载入代码——改码后
+   重连才生效；会话中途加的配置要新会话才加载（#16）。
+9. **三层排查**：配置层 → 服务端层 → 客户端组装层，逐层证明干净再上移；
+   不可观测层用对照实验收口，缺的功能找 CLI 等价物绕行（#17）。
