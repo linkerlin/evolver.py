@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import os
 import secrets
+import sys
 from pathlib import Path
 
 
@@ -43,7 +44,7 @@ def get_repo_root(cwd: Path | str | None = None, *, _quiet: bool | None = None) 
     if env_root:
         p = Path(env_root).expanduser().resolve()
         if not _quiet:
-            print(f"[paths] Using EVOLVER_REPO_ROOT: {p}")
+            print(f"[paths] Using EVOLVER_REPO_ROOT: {p}", file=sys.stderr)
         return p
 
     if os.environ.get("EVOLVER_NO_PARENT_GIT") == "1":
@@ -53,7 +54,7 @@ def get_repo_root(cwd: Path | str | None = None, *, _quiet: bool | None = None) 
     for path in [start, *start.parents]:
         if (path / ".git").exists():
             if not _quiet:
-                print(f"[paths] Using host git repository at: {path}")
+                print(f"[paths] Using host git repository at: {path}", file=sys.stderr)
             return path
         if (path / ".evolver" / "no-parent-git").exists():
             return None

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import os
 import subprocess
 import sys
 from pathlib import Path
@@ -430,3 +431,64 @@ def test_new_run_after_solidify_not_blocked(git_ws: Path) -> None:
     get_solidify_state_path().write_text(json.dumps(state), encoding="utf-8")
     result = solidify(skip_validation=True)
     assert result.get("error") != "already_solidified"
+
+
+def test_validation_env_prepends_tool_dirs(monkeypatch: pytest.MonkeyPatch) -> None:
+    # Round-13: GUI-spawned MCP hosts propagate the launchd minimal PATH;
+    # validation must measure the repo, not the host app's environment.
+    monkeypatch.setenv("PATH", "/usr/bin:/bin")
+    env = solidify_mod._validation_env()
+    parts = env["PATH"].split(os.pathsep)
+    assert parts[0] == str(Path(sys.executable).parent)
+    assert "/usr/bin" in parts  # never drops inherited entries
+    assert "/opt/homebrew/bin" in parts or "/usr/local/bin" in parts
+
+
+def test_run_validations_augments_crippled_path(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("PATH", "/usr/bin:/bin")
+    result = solidify_mod._run_validations(
+        [[sys.executable, "-c", "import os; print(os.environ['PATH'])"]],
+        tmp_path,
+    )
+    assert result["ok"] is True
+    assert str(Path(sys.executable).parent) in result["results"][0]["stdout"]
+
+
+def test_bounded_output_keeps_head_and_tail() -> None:
+    # Failure summaries sit at the very END of pytest output (as in a real run).
+    long_text = "A" * 5000 + "B" * 5000 + "\nFAILED tests/x.py"
+    bounded = solidify_mod._bounded_output(long_text)
+    assert "FAILED tests/x.py" in bounded  # tail summary survives
+    assert bounded.startswith("A" * 10)
+    assert solidify_mod._bounded_output("short") == "short"
+    assert solidify_mod._bounded_output(None) == ""
+
+
+def test_legacy_rollback_deletes_relative_to_workspace_not_cwd(
+    git_ws: Path, monkeypatch: pytest.MonkeyPatch, tmp_path_factory: pytest.TempPathFactory
+) -> None:
+    """DEBUG #20: the legacy validation-failure path listed untracked files in
+    the isolated workspace but deleted them from Path.cwd(). Under a cascade
+    that cwd is the real repo, so the workspace-relative runtime-state path
+    named the engine's OWN state file there and deleted it mid-cascade."""
+    proc_cwd = tmp_path_factory.mktemp("proccwd")
+    victim_dir = proc_cwd / "memory" / "evolution"
+    victim_dir.mkdir(parents=True)
+    victim = victim_dir / "evolution_solidify_state.json"
+    victim.write_text("{}", encoding="utf-8")
+    monkeypatch.chdir(proc_cwd)
+    set_flag("enable_fitness_cascade", False, persist=False)
+    write_state_for_solidify(
+        _last_run(
+            mutation={
+                "id": "mut_cwd_rollback",
+                "validation": [[sys.executable, "-c", "import sys; sys.exit(1)"]],
+            }
+        )
+    )
+    result = solidify()
+    assert result["ok"] is False
+    assert result["error"] == "validation_failed"
+    assert victim.exists()  # deletion must be relative to the workspace, not cwd

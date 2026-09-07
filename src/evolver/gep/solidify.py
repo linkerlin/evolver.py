@@ -9,6 +9,7 @@ import contextlib
 import difflib
 import json
 import logging
+import os
 import re
 import secrets
 import shutil
@@ -254,6 +255,49 @@ def _normalize_validation_command(cmd: Any) -> tuple[list[str], str, int | None]
     return [text], text, timeout_ms
 
 
+_VALIDATION_HEAD_CHARS = 1200
+_VALIDATION_TAIL_CHARS = 2800
+
+
+def _bounded_output(text: str | None) -> str:
+    """Keep the head AND tail of validation output.
+
+    pytest puts its failure summary (``FAILED ...`` lines, the ``N passed``
+    rate the cascade scorer parses) at the END of stdout — a head-only cap
+    discarded exactly the bytes needed to diagnose a failed gate.
+    """
+    text = text or ""
+    if len(text) <= _VALIDATION_HEAD_CHARS + _VALIDATION_TAIL_CHARS:
+        return text
+    return (
+        text[:_VALIDATION_HEAD_CHARS] + "\n…[output truncated]…\n" + text[-_VALIDATION_TAIL_CHARS:]
+    )
+
+
+def _validation_env() -> dict[str, str]:
+    """Subprocess env for validation commands.
+
+    Host apps that spawn the engine (GUI MCP clients) propagate the launchd
+    minimal PATH; validation subprocesses that shell out to repo tooling then
+    die on ``FileNotFoundError`` even though the mutation is green in a dev
+    shell — the gate would measure the host app's PATH, not the repo. Never
+    drop entries; prepend the well-known toolchain dirs (existing ones only).
+    """
+    env = dict(os.environ)
+    parts = [p for p in env.get("PATH", "").split(os.pathsep) if p]
+    known = [
+        str(Path(sys.executable).parent),
+        "/opt/homebrew/bin",
+        "/usr/local/bin",
+        str(Path.home() / ".local" / "bin"),
+    ]
+    for directory in reversed(known):
+        if directory not in parts and Path(directory).is_dir():
+            parts.insert(0, directory)
+    env["PATH"] = os.pathsep.join(parts)
+    return env
+
+
 def _run_validations(
     commands: list[Any],
     cwd: Path,
@@ -284,10 +328,11 @@ def _run_validations(
                 timeout=timeout_s,
                 shell=False,
                 check=False,
+                env=_validation_env(),
             )
             result["ok"] = proc.returncode == 0
-            result["stdout"] = (proc.stdout or "")[:2000]
-            result["stderr"] = (proc.stderr or "")[:2000]
+            result["stdout"] = _bounded_output(proc.stdout)
+            result["stderr"] = _bounded_output(proc.stderr)
         except Exception as exc:
             result["stderr"] = str(exc)[:500]
         if not result["ok"]:
@@ -917,7 +962,12 @@ def solidify(
                 # lesson — after rollback the tree is clean and radius reads 0).
                 failed_blast = _compute_blast_radius()
                 rollback_tracked()
-                rollback_new_untracked_files(git_list_untracked_files(cwd))
+                # cwd must be explicit here too (Sprint 23 lesson, applied to
+                # the legacy path in round-13): without it the deletion runs
+                # from the process cwd — under a cascade that is the real
+                # repo, and the workspace-relative untracked list then names
+                # its own runtime state file there (DEBUG #20).
+                rollback_new_untracked_files(git_list_untracked_files(cwd), cwd=cwd)
                 record_solidify_failure(last_run, error="validation_failed")
                 _append_failure_event(
                     last_run, cwd, blast_radius=failed_blast, error="validation_failed"

@@ -1246,7 +1246,7 @@ def _cmd_review(_args: argparse.Namespace) -> int:
         from evolver.gep.git_ops import rollback_new_untracked_files, rollback_tracked
 
         rollback_tracked()
-        rollback_new_untracked_files(git_list_untracked_files(cwd))
+        rollback_new_untracked_files(git_list_untracked_files(cwd), cwd=cwd)
         print("Rolled back changes.")
         return 0
 

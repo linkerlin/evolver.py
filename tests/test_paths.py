@@ -40,6 +40,23 @@ def test_get_repo_root_discovers_git(tmp_path: Path, monkeypatch: pytest.MonkeyP
     assert paths.get_repo_root() == tmp_path
 
 
+def test_get_repo_root_diagnostic_goes_to_stderr(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """CLI --json verbs pipe stdout to JSON parsers; diagnostics must use stderr."""
+    (tmp_path / ".git").mkdir()
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.delenv("EVOLVER_QUIET_PARENT_GIT", raising=False)
+    monkeypatch.delenv("EVOLVER_REPO_ROOT", raising=False)
+    monkeypatch.delenv("EVOLVER_NO_PARENT_GIT", raising=False)
+    assert paths.get_repo_root() == tmp_path
+    captured = capsys.readouterr()
+    assert captured.out == ""
+    assert "Using host git repository" in captured.err
+
+
 def test_workspace_id_is_stable(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("OPENCLAW_WORKSPACE", str(tmp_path))
     first = paths.get_workspace_id()
