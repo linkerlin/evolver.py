@@ -48,6 +48,10 @@ class TestSQLiteStore:
 
 class TestAssetStoreRouting:
     def test_jsonl_by_default(self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+        # GEP_ASSETS_DIR is the knob the jsonl store actually reads (round-8:
+        # isolating only EVOLUTION_DIR leaked an x1 stub into the real
+        # workspace events.jsonl on every full-suite run — 32 accumulated).
+        monkeypatch.setenv("GEP_ASSETS_DIR", str(tmp_path / "gep"))
         monkeypatch.setenv("EVOLUTION_DIR", str(tmp_path / "evolution"))
         from evolver.gep.asset_store import append_event_jsonl, read_all_events
 
