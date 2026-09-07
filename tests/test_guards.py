@@ -16,6 +16,27 @@ def test_preflight_load_exceeds_threshold(monkeypatch: pytest.MonkeyPatch) -> No
     assert isinstance(result.abort, bool)
 
 
+def test_default_load_max_scales_with_cpu_count(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Round-14: a flat 1.5 permanently blocked multi-core hosts whose ambient
+    GUI load sits at 2-3; the default must track the core count so ambient
+    load passes and genuine saturation (queue deeper than cores) still trips."""
+    monkeypatch.setattr(guards, "detect_cpu_count", lambda: 1)
+    assert guards.get_default_load_max() == 0.9
+    monkeypatch.setattr(guards, "detect_cpu_count", lambda: 2)
+    assert guards.get_default_load_max() == 2.0
+    monkeypatch.setattr(guards, "detect_cpu_count", lambda: 10)
+    assert guards.get_default_load_max() == 10.0
+
+
+def test_ambient_load_below_cores_passes_preflight(monkeypatch: pytest.MonkeyPatch) -> None:
+    """The round-6~13 friction: 10-core host, ambient load 2.8 (GUI apps),
+    no EVOLVE_LOAD_MAX override — preflight must not abort."""
+    monkeypatch.setattr(guards, "detect_cpu_count", lambda: 10)
+    monkeypatch.setattr(guards, "get_system_load", lambda: guards.LoadSample(2.8, 2.5, 2.4))
+    result = asyncio.run(guards.run_preflight_checks(is_dry_run=False))
+    assert result.abort is False
+
+
 def test_preflight_dry_run_never_aborts() -> None:
     result = asyncio.run(guards.run_preflight_checks(is_dry_run=True))
     assert result.abort is False

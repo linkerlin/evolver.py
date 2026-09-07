@@ -66,7 +66,18 @@ def _windows_load_fallback() -> list[float]:
 
 
 def get_default_load_max() -> float:
-    return 0.9 if detect_cpu_count() == 1 else 1.5
+    """Load-average abort threshold, CPU-count aware (round-14).
+
+    load1m approximates runnable-task queue depth, which scales with cores:
+    a flat 1.5 (Node heritage) permanently blocked multi-core hosts whose
+    ambient GUI load sits at 2-3 (a fraction of one core's worth of work per
+    core). Abort only when the queue is deeper than the core count; 1.5 stays
+    the floor for low core counts. EVOLVE_LOAD_MAX overrides either.
+    """
+    cpus = detect_cpu_count()
+    if cpus == 1:
+        return 0.9
+    return max(1.5, float(cpus))
 
 
 def determine_bridge_enabled() -> bool:
