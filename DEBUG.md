@@ -30,6 +30,8 @@
 | 21 | `paths.py` 诊断打 stdout，CLI `--json` 契约全破 | cli/paths | round-13 | 未发版 |
 | 22 | 级联在宿主残废 PATH 下验证 + 证据只存头 2000 字符 | solidify | round-13 | 未发版 |
 | 23 | DEBUG #20 真凶：legacy 回滚 cwd 缺失，级联中删真实运行态 | solidify/cli | round-13 | 未发版 |
+| 24 | preflight 负载阈 1.5 平坦常数，多核宿主永久被拦 | guards | round-14 | 未发版 |
+| 25 | 验收门饥饿：PATH 盲区 + 全量 argv 单超时 → 永远 0 分、基线永不落盘 | acceptance | round-14 | 未发版 |
 
 ## 条目
 
@@ -308,6 +310,51 @@
   时，soak 样本全部失真；GUI 拉起的 MCP 宿主是残废环境的头号来源。
   (2) 证据保留必须偏尾——失败诊断永远在输出末尾；头切片证据等于让门
   失败时自我致盲。**
+
+### 24. preflight 负载阈 1.5 平坦常数，多核宿主永久被拦（round-14）
+
+- **症状**：无人值守 tick 在 10 核 Mac 上每次 preflight abort（环境
+  负载 2.2-2.8 > 1.5）——round-6~13 全靠手工 `EVOLVE_LOAD_MAX=8` 绕行；
+  守护循环 `--loop` 在此宿主形态下根本跑不起来。
+- **根因**：`get_default_load_max()` 对多核一律返回 1.5（Node 遗产常数）。
+  load1m 是运行队列深度，随核数缩放：10 核机上 2.8 的环境负载只占机器
+  容量的四分之一不到（GUI 常态），却被当成过载。「机器忙时不进化」的
+  守护本意被扭曲成「GUI 活跃时不进化」。
+- **修复**：CPU 感知默认值——队列深于核数才拦（`max(1.5, cpus)`；单核
+  保持 0.9），`EVOLVE_LOAD_MAX` 仍是显式覆盖。自证：环境负载 1.87、无
+  任何覆盖跑 `evolver run` → 零 abort 正常派发（此前每轮必 abort 的同一
+  命令）。回归测试钉公式（1→0.9、2→2.0、10→10.0）+ 环境 2.8/10 核
+  放行。
+- **经验**：**可移植阈值不能是平坦常数——量纲随硬件缩放的指标（load、
+  IO 深度）必须归一到硬件容量再比较**。修完的验收标准是「在出问题的
+  机器上、不带任何绕行，原命令跑通」。
+
+### 25. 验收门饥饿：PATH 盲区 + 全量 argv 单超时（round-14）
+
+- **症状**：round-14-A 固化成功但 `gated_runs` 卡在 13 不涨；翻 round-13
+  事件发现门的 `candidate_repeats` 全是 `score 0.0, denominator 3527`，
+  baseline.json 从未存在过——soak 的 interception 0.0 不是运气好，是
+  **门从未量到过任何东西**。
+- **根因（三环链）**：(1) `t0_frozen.py` 用裸 `"pytest"` + 无 `env=` 起
+  子进程——GUI 宿主残废 PATH 下 FileNotFoundError，`gate_or_none` 吞异常
+  返回 None → 事件无 `acceptance_result` → 计数不涨（round-13 的
+  `_validation_env` 只修了级联，漏了门自己的子进程——同类缺陷第二
+  现场）。(2) `run_pass_rate` 把全部 ~3.5k 个 node ID 塞一个 argv、共用
+  一个 120s 超时——套件实际 ~130s+，每次必 TimeoutExpired → (0, 3527)。
+  (3) `should_persist` 要求 `candidate_mean > 0`——0 分永不满足，baseline
+  永不落盘，每次都走「首次建立」，0.0 对 0.0 = unchanged = 全放行。
+- **修复**：提取共享 `gep/validation_env.py`（级联与门同源消费；
+  solidify 留薄别名）；`run_pass_rate` 按 400 ID 分块执行（argv 有界、
+  单块 ~20s 远低于单块超时；逐块超时/OSError 记该块 0 分，fail-safe
+  方向不变）。首次真实测量：3530 ID、352s、`candidate_mean 0.8861`
+  （两次 repeat 完全一致），**baseline.json 首次落盘**（0.886）。
+- **经验**：**(1) 「门从未拒绝」与「门从未测量」不可区分时先怀疑后者——
+  全零分 + 分母满额 + 基线永不存在，就是测量路径死的自画像。 (2) 子进程
+  spawn 点是环境缺陷的复利面：每新增一个 spawn 点都要过同一个 env 规范
+  化助手，别让修复只覆盖第一个现场。 (3) 大集合过单一超时预算 = 必超时，
+  分块让预算与工作量同尺度。** 校准余项（留给人类）：分块显式枚举绕过
+  级联的 `-m "not slow"` deselect，干净树测得 0.886 而非 ~1.0——回归地板
+  的一致性（基线与候选同尺同测）已保，绝对分口径是否对齐级联由人定。
 
 ## 方法论沉淀
 
