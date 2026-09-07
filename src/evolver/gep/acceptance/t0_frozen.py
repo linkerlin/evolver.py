@@ -17,9 +17,13 @@ import re
 import subprocess
 from pathlib import Path
 
+from evolver.gep.validation_env import validation_env
+
 _PASSED_RE = re.compile(r"(\d+)\s+passed")
 _FAILED_RE = re.compile(r"(\d+)\s+failed")
 _ERROR_RE = re.compile(r"(\d+)\s+errors?")
+
+_CHUNK_SIZE = 400
 
 
 def snapshot_hash(test_ids: list[str]) -> str:
@@ -59,7 +63,12 @@ def parse_pytest_summary(stdout: str, total: int) -> tuple[int, int]:
 
 
 def discover_test_ids(cwd: Path, *, timeout_s: float = 60.0) -> list[str]:
-    """Collect pytest node IDs via ``pytest --collect-only -q`` (sorted)."""
+    """Collect pytest node IDs via ``pytest --collect-only -q`` (sorted).
+
+    ``validation_env()``: GUI-spawned hosts propagate a minimal PATH where
+    bare ``pytest`` does not resolve — without it this raises, and
+    ``gate_or_none`` degrades the whole acceptance gate to disabled (round-14).
+    """
     proc = subprocess.run(
         ["pytest", "--collect-only", "-q", "-p", "no:cacheprovider"],
         cwd=str(cwd),
@@ -68,6 +77,7 @@ def discover_test_ids(cwd: Path, *, timeout_s: float = 60.0) -> list[str]:
         timeout=timeout_s,
         check=False,
         shell=False,
+        env=validation_env(),
     )
     ids = [
         ln.strip()
@@ -85,25 +95,36 @@ def run_pass_rate(
 ) -> tuple[int, int]:
     """Run pytest on *test_ids*; return ``(passed, total)``.
 
-    *total* is ``len(test_ids)`` (the frozen denominator). Each ID is passed
-    verbatim to pytest; collection failures degrade passed toward 0.
+    *total* is ``len(test_ids)`` (the frozen denominator). IDs run in chunks
+    of ``_CHUNK_SIZE``: one invocation for the whole frozen set pushed ~3.5k
+    node IDs onto argv and could not finish inside a single ``timeout_s``
+    budget — every measurement timed out and scored 0 while the baseline
+    (requiring ``candidate_mean > 0``) never persisted (round-14). Per-chunk
+    failures (timeout / OSError) count that chunk's tests as failed
+    (fail-safe, as before).
     """
     total = len(test_ids)
     if total == 0:
         return (0, 0)
-    try:
-        proc = subprocess.run(
-            ["pytest", *test_ids, "-q", "--tb=no", "-p", "no:cacheprovider"],
-            cwd=str(cwd),
-            capture_output=True,
-            text=True,
-            timeout=timeout_s,
-            check=False,
-            shell=False,
-        )
-        return parse_pytest_summary(proc.stdout or "", total)
-    except (subprocess.TimeoutExpired, OSError):
-        return (0, total)
+    passed = 0
+    for start in range(0, total, _CHUNK_SIZE):
+        chunk = test_ids[start : start + _CHUNK_SIZE]
+        try:
+            proc = subprocess.run(
+                ["pytest", *chunk, "-q", "--tb=no", "-p", "no:cacheprovider"],
+                cwd=str(cwd),
+                capture_output=True,
+                text=True,
+                timeout=timeout_s,
+                check=False,
+                shell=False,
+                env=validation_env(),
+            )
+            chunk_passed, _chunk_total = parse_pytest_summary(proc.stdout or "", len(chunk))
+            passed += chunk_passed
+        except (subprocess.TimeoutExpired, OSError):
+            continue
+    return (passed, total)
 
 
 __all__ = [

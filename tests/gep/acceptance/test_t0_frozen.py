@@ -115,3 +115,31 @@ class TestSubprocessIntegration:
     def test_empty_ids_returns_zero(self, tmp_path: Path) -> None:
         passed, total = run_pass_rate([], tmp_path)
         assert (passed, total) == (0, 0)
+
+    def test_large_frozen_set_runs_in_chunks(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Round-14: one argv for the whole frozen set timed out as a whole
+        (single timeout budget vs suite runtime) and scored 0 — IDs beyond one
+        chunk must be split across subprocess invocations, results summed."""
+        import evolver.gep.acceptance.t0_frozen as t0
+
+        calls: list[int] = []
+
+        def fake_run(argv, **kwargs):
+            calls.append(len([a for a in argv if "::" in str(a)]))
+            ids_in_call = [a for a in argv if "::" in str(a)]
+
+            class P:
+                stdout = f"{len(ids_in_call)} passed in 0.01s"
+                stderr = ""
+                returncode = 0
+
+            return P()
+
+        monkeypatch.setattr(t0.subprocess, "run", fake_run)
+        ids = [f"tests/test_x.py::test_{i}" for i in range(t0._CHUNK_SIZE * 2 + 5)]
+        passed, total = run_pass_rate(ids, tmp_path)
+        assert total == len(ids)
+        assert passed == total
+        assert calls == [t0._CHUNK_SIZE, t0._CHUNK_SIZE, 5]

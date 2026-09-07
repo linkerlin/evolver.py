@@ -9,7 +9,6 @@ import contextlib
 import difflib
 import json
 import logging
-import os
 import re
 import secrets
 import shutil
@@ -275,27 +274,15 @@ def _bounded_output(text: str | None) -> str:
 
 
 def _validation_env() -> dict[str, str]:
-    """Subprocess env for validation commands.
+    """Subprocess env for validation commands (shared helper, round-14).
 
-    Host apps that spawn the engine (GUI MCP clients) propagate the launchd
-    minimal PATH; validation subprocesses that shell out to repo tooling then
-    die on ``FileNotFoundError`` even though the mutation is green in a dev
-    shell — the gate would measure the host app's PATH, not the repo. Never
-    drop entries; prepend the well-known toolchain dirs (existing ones only).
+    Lives in :mod:`evolver.gep.validation_env` now — the acceptance gate's
+    pytest subprocesses needed the same PATH normalization; kept as a thin
+    alias so existing call sites and tests stay put.
     """
-    env = dict(os.environ)
-    parts = [p for p in env.get("PATH", "").split(os.pathsep) if p]
-    known = [
-        str(Path(sys.executable).parent),
-        "/opt/homebrew/bin",
-        "/usr/local/bin",
-        str(Path.home() / ".local" / "bin"),
-    ]
-    for directory in reversed(known):
-        if directory not in parts and Path(directory).is_dir():
-            parts.insert(0, directory)
-    env["PATH"] = os.pathsep.join(parts)
-    return env
+    from evolver.gep.validation_env import validation_env
+
+    return validation_env()
 
 
 def _run_validations(
