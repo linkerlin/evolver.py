@@ -25,6 +25,8 @@
 | 16 | venv 旧模块疑虑 + stdio 长驻进程不重载 | 部署 | MCP 接入 | 运维经验 |
 | 17 | 工具面缺两个：配置/服务端/客户端三层排查 | 部署 | MCP 接入 | 运维经验 |
 | 18 | `asset_search` 多词必空 + summary/signals 不入检索 | mcp_server | 工具体检 | 未发版 |
+| 19 | 重复固化烧级联 + 幻影成功事件污染 soak 样本 | solidify | round-12 | 未发版 |
+| 20 | 谱系链测试假设同 run 双固化（与 #19 守卫冲突） | tests | round-12 | 未发版 |
 
 ## 条目
 
@@ -229,6 +231,32 @@
 - **经验**：**检索工具要用「真实查询语料」测，别只测单关键词**。用户自然
   输入是多词的；子串匹配对多词静默归零是最阴的假阴性。另：体检时
   proxy 路由同名函数是文件名搜索（不同域），勿误伤。
+
+### 19. 重复固化无守卫（round-12，2026-09-07）
+
+- **症状**：对已固化 run 再调 solidify，会烧完整级联（实测 424s）、以
+  `ok:True` 结束且追加一条幻影 success 事件——验收门 soak 样本被无意义
+  gated run 污染（verdict=ready 的输入!）。
+- **修复**：`last_solidify.run_id == last_run.run_id` 时早退
+  `already_solidified`（next_action=swarm_tick）；新 dispatch（新 run_id）
+  永不受阻。
+- **连锁**：守卫上线即被级联两次拒绝——`test_acceptance_shadow_lineage`
+  的谱系链测试靠「同 run 固化两次」造事件链，与守卫冲突。按生产事实修
+  测试：链跨 run 生成（每次 tick 新 run_id）。
+- **经验**：**守卫落地时必须全文检索依赖旧行为的测试**——级联两次在同一
+  位置拒绝，正是门在工作；「闪失」判断错了，位置取证（收集序 #204）才是正解。
+
+### 20. 悬案：失败固化后状态文件消失（round-12，未定罪）
+
+- **现象**：solidify 级联失败 → 回滚后 `evolution_solidify_state.json`
+  消失（复现两次）。已排除：stash（文件被 gitignore 覆盖，`--include-
+  untracked` 不触碰）、选择性删除（`--exclude-standard` 令其不可见）、
+  tick（标记实验：状态过 tick 完好）。`record_landed_gene_ids` 会用空
+  `last_run` 复活骨架状态（run_id 空 → 守卫跳过——这解释了守卫一度未触发）。
+- **现状**：守卫封死危险路径（无级联→无回滚→无删除机会），实际影响已
+  被压制；删除机制未定罪，标记实验复现脚本在 DEBUG 本条。
+- **经验**：**未定罪的删除者要用「标记 + 全程验尸」实验圈定窗口**，而非
+  源码遍历猜想——本轮源码三猜全错，实验一次定性 tick 无辜。
 
 ## 方法论沉淀
 
