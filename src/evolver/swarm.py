@@ -273,8 +273,13 @@ def swarm_status() -> dict[str, Any]:
     mailbox: dict[str, int] = {}
     try:
         store = _mailbox_store()
+        # "Pending" means status=pending: poll() returns every inbound message
+        # (acked/synced included), and counting them all made the label lie —
+        # the number only ever went up, even after acks (dogfood round-7).
         mailbox = {
-            "inbound": len(store.poll(limit=100)),
+            "inbound": sum(
+                1 for m in store.poll(limit=100) if getattr(m, "status", "") == "pending"
+            ),
             "outbound": len(store.poll_outbound(limit=100)),
         }
     except Exception:

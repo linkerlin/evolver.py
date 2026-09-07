@@ -514,3 +514,19 @@ class TestCodeStaleness:
         finally:
             psutil.Process.create_time = original
         assert cs is not None and cs["stale"] is True
+
+
+class TestMailboxPendingCount:
+    def test_status_counts_only_pending_inbound(self, isolated_swarm_env: Path) -> None:
+        # poll() returns acked/synced messages too; the "pending" count must
+        # not (dogfood round-7: the number only ever went up, even after acks).
+        from evolver.swarm import _mailbox_store
+
+        store = _mailbox_store()
+        store.write_inbound(id="m-pending-1", type="t", payload={})
+        store.write_inbound(id="m-pending-2", type="t", payload={})
+        store.write_inbound(id="m-done", type="t", payload={})
+        assert store.ack(["m-done"]) == 1
+
+        result = swarm_status()
+        assert result["mailbox_pending"]["inbound"] == 2
