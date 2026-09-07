@@ -256,6 +256,28 @@ def _code_staleness() -> dict[str, Any] | None:
         return None
 
 
+def _pending_solidify_state() -> bool:
+    """True when the state file holds a last_run newer than the last solidify.
+
+    The file persists after success by design (lineage: ``last_run`` +
+    ``last_solidify``), so existence alone kept reporting pending forever —
+    and boot's pending-first directive then sent every fresh host into a
+    full no-op cascade (round-9 measurement: 424 s, ok:True, nothing landed).
+    """
+    from evolver.gep.paths import get_solidify_state_path
+
+    path = get_solidify_state_path()
+    if not path.exists():
+        return False
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except Exception:
+        return True  # unreadable state: assume pending (fail toward solidify)
+    last_run_id = str((data.get("last_run") or {}).get("run_id") or "")
+    last_done_id = str((data.get("last_solidify") or {}).get("run_id") or "")
+    return bool(last_run_id) and last_run_id != last_done_id
+
+
 def swarm_status() -> dict[str, Any]:
     """Summarize engine state for swarm agents (cheap, no cycle side effects)."""
     from evolver import __version__
@@ -294,7 +316,7 @@ def swarm_status() -> dict[str, Any]:
         "bridge_enabled": determine_bridge_enabled(),
         "genes": len(load_genes()),
         "capsules": len(load_capsules()),
-        "pending_solidify": get_solidify_state_path().exists(),
+        "pending_solidify": _pending_solidify_state(),
         "last_prompt_artifact": str(prompt_artifact) if prompt_artifact.exists() else None,
         "code_staleness": _code_staleness(),
         "tick_count": int(swarm_state.get("ticks") or 0),

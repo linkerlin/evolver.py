@@ -530,3 +530,34 @@ class TestMailboxPendingCount:
 
         result = swarm_status()
         assert result["mailbox_pending"]["inbound"] == 2
+
+
+class TestPendingSolidifyTruth:
+    def _write_state(self, path: Path, run_id: str, done_id: str | None) -> None:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        data: dict[str, object] = {"last_run": {"run_id": run_id}}
+        if done_id is not None:
+            data["last_solidify"] = {"run_id": done_id, "outcome": "success"}
+        path.write_text(json.dumps(data), encoding="utf-8")
+
+    def test_landed_run_is_not_pending(self, isolated_swarm_env: Path) -> None:
+        # The state file persists after success (lineage); existence alone
+        # kept the flag True forever (round-9: 424 s no-op cascade per boot).
+        from evolver.gep.paths import get_solidify_state_path
+        from evolver.swarm import _pending_solidify_state
+
+        self._write_state(get_solidify_state_path(), "run_a", "run_a")
+        assert _pending_solidify_state() is False
+        assert swarm_status()["pending_solidify"] is False
+
+    def test_newer_run_is_pending(self, isolated_swarm_env: Path) -> None:
+        from evolver.gep.paths import get_solidify_state_path
+        from evolver.swarm import _pending_solidify_state
+
+        self._write_state(get_solidify_state_path(), "run_b", "run_a")
+        assert _pending_solidify_state() is True
+
+    def test_missing_file_not_pending(self, isolated_swarm_env: Path) -> None:
+        from evolver.swarm import _pending_solidify_state
+
+        assert _pending_solidify_state() is False
