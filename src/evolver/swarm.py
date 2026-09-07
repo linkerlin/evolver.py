@@ -231,6 +231,31 @@ def _feedback_stability(rows: list[dict[str, Any]], window: int = 10) -> dict[st
     }
 
 
+def _code_staleness() -> dict[str, Any] | None:
+    """Compare process start against the newest source mtime (status surface).
+
+    Dogfood round-6: a reconnect landing between two fixes produced a
+    half-new process; the host only found out by diffing prompt texts.
+    The stdio server loads code at spawn — surface the mismatch so the
+    host sees "reload required" directly.
+    """
+    try:
+        import os
+
+        import psutil
+
+        pkg_dir = Path(__file__).resolve().parent
+        newest_src = max(p.stat().st_mtime for p in pkg_dir.rglob("*.py"))
+        proc_start = psutil.Process(os.getpid()).create_time()
+        return {
+            "stale": newest_src > proc_start,
+            "process_started_at": proc_start,
+            "newest_src_mtime": newest_src,
+        }
+    except Exception:
+        return None
+
+
 def swarm_status() -> dict[str, Any]:
     """Summarize engine state for swarm agents (cheap, no cycle side effects)."""
     from evolver import __version__
@@ -266,6 +291,7 @@ def swarm_status() -> dict[str, Any]:
         "capsules": len(load_capsules()),
         "pending_solidify": get_solidify_state_path().exists(),
         "last_prompt_artifact": str(prompt_artifact) if prompt_artifact.exists() else None,
+        "code_staleness": _code_staleness(),
         "tick_count": int(swarm_state.get("ticks") or 0),
         "last_tick": swarm_state.get("last_tick"),
         "feedback": {

@@ -481,3 +481,36 @@ class TestHooksSurface:
         assert install["ok"] is True
 
         assert swarm_hooks("reinstall")["ok"] is False
+
+
+class TestCodeStaleness:
+    def test_status_reports_staleness_surface(self, isolated_swarm_env: Path) -> None:
+        result = swarm_status()
+        cs = result["code_staleness"]
+        assert cs is not None
+        assert set(cs) == {"stale", "process_started_at", "newest_src_mtime"}
+        # A freshly imported test process cannot predate the sources it runs.
+        assert cs["stale"] is False
+
+    def test_staleness_detects_newer_source(self, isolated_swarm_env: Path) -> None:
+        # Simulate a process that started before the newest source edit.
+        import os
+
+        import psutil
+
+        from evolver.swarm import _code_staleness
+
+        real_ct = psutil.Process.create_time
+
+        def fake_ct(self: psutil.Process) -> float:
+            if os.getpid() == self.pid:
+                return 0.0  # epoch — older than any source file
+            return real_ct(self)
+
+        original = psutil.Process.create_time
+        psutil.Process.create_time = fake_ct
+        try:
+            cs = _code_staleness()
+        finally:
+            psutil.Process.create_time = original
+        assert cs is not None and cs["stale"] is True
