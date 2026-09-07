@@ -402,3 +402,31 @@ def test_multi_validation_second_fails(git_ws: Path, monkeypatch: pytest.MonkeyP
     result = solidify()
     assert result["ok"] is False
     assert len(result["details"]["results"]) == 2
+
+
+def test_duplicate_solidify_refused(git_ws: Path) -> None:
+    # Round-12: a second solidify on an already-landed run used to burn a
+    # full cascade and append a phantom success event, polluting the
+    # acceptance gate's soak sample.
+    _ = git_ws
+    write_state_for_solidify(_last_run())
+    first = solidify(skip_validation=True)
+    assert first["ok"] is True
+
+    second = solidify(skip_validation=True)
+    assert second["ok"] is False
+    assert second["error"] == "already_solidified"
+    assert second["next_action"] == "swarm_tick"
+
+
+def test_new_run_after_solidify_not_blocked(git_ws: Path) -> None:
+    _ = git_ws
+    write_state_for_solidify(_last_run())
+    assert solidify(skip_validation=True)["ok"] is True
+
+    # A fresh dispatch writes a new last_run — must solidify fine.
+    state = json.loads(get_solidify_state_path().read_text(encoding="utf-8"))
+    state["last_run"] = dict(state["last_run"], run_id="run_newer")
+    get_solidify_state_path().write_text(json.dumps(state), encoding="utf-8")
+    result = solidify(skip_validation=True)
+    assert result.get("error") != "already_solidified"

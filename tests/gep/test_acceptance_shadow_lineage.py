@@ -189,7 +189,11 @@ class TestLineageLessons:
         write_state_for_solidify(_last_run())
         solidify(skip_validation=True)
         first = read_all_events()[-1]
-        write_state_for_solidify(_last_run())
+        # Production lineage chains across runs: every tick writes a fresh
+        # run_id, and the duplicate-solidify guard refuses a re-solidify of
+        # the same run — so the chained event comes from a new run.
+        second_run = dict(_last_run(), run_id="run_shadow_2")
+        write_state_for_solidify(second_run)
         solidify(skip_validation=True)
         second = read_all_events()[-1]
         assert "parent_event_id" not in first  # no predecessor

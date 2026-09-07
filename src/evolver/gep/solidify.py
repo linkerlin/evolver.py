@@ -790,6 +790,20 @@ def solidify(
     last_run = state["last_run"]
     cwd = get_workspace_root()
 
+    # Duplicate-solidify guard (round-12): a re-run on an already-landed run
+    # used to burn a full validation cascade (~7 min), succeed with nothing to
+    # commit, and append a phantom success event — inflating the acceptance
+    # gate's soak sample with a run that validated no mutation.
+    last_solidify = state.get("last_solidify") or {}
+    run_id_str = str(last_run.get("run_id") or "")
+    if run_id_str and last_solidify.get("run_id") == run_id_str:
+        return {
+            "ok": False,
+            "error": "already_solidified",
+            "run_id": run_id_str,
+            "next_action": "swarm_tick",
+        }
+
     from evolver.gep import supervision as supervision_mod
 
     if supervision_mod.is_paused():
