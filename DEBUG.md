@@ -27,6 +27,9 @@
 | 18 | `asset_search` 多词必空 + summary/signals 不入检索 | mcp_server | 工具体检 | 未发版 |
 | 19 | 重复固化烧级联 + 幻影成功事件污染 soak 样本 | solidify | round-12 | 未发版 |
 | 20 | 谱系链测试假设同 run 双固化（与 #19 守卫冲突） | tests | round-12 | 未发版 |
+| 21 | `paths.py` 诊断打 stdout，CLI `--json` 契约全破 | cli/paths | round-13 | 未发版 |
+| 22 | 级联在宿主残废 PATH 下验证 + 证据只存头 2000 字符 | solidify | round-13 | 未发版 |
+| 23 | DEBUG #20 真凶：legacy 回滚 cwd 缺失，级联中删真实运行态 | solidify/cli | round-13 | 未发版 |
 
 ## 条目
 
@@ -246,17 +249,65 @@
 - **经验**：**守卫落地时必须全文检索依赖旧行为的测试**——级联两次在同一
   位置拒绝，正是门在工作；「闪失」判断错了，位置取证（收集序 #204）才是正解。
 
-### 20. 悬案：失败固化后状态文件消失（round-12，未定罪）
+### 20. 悬案告破：legacy 回滚 cwd 缺失，级联中删真实运行态（round-12 起，round-13 定罪）
 
-- **现象**：solidify 级联失败 → 回滚后 `evolution_solidify_state.json`
-  消失（复现两次）。已排除：stash（文件被 gitignore 覆盖，`--include-
-  untracked` 不触碰）、选择性删除（`--exclude-standard` 令其不可见）、
-  tick（标记实验：状态过 tick 完好）。`record_landed_gene_ids` 会用空
-  `last_run` 复活骨架状态（run_id 空 → 守卫跳过——这解释了守卫一度未触发）。
-- **现状**：守卫封死危险路径（无级联→无回滚→无删除机会），实际影响已
-  被压制；删除机制未定罪，标记实验复现脚本在 DEBUG 本条。
-- **经验**：**未定罪的删除者要用「标记 + 全程验尸」实验圈定窗口**，而非
-  源码遍历猜想——本轮源码三猜全错，实验一次定性 tick 无辜。
+- **现象**：solidify 级联失败 → 回滚后 `evolution_solidify_state.json` 消失
+  （round-12 复现两次，round-13 判决实验第三次）。已排除：stash（文件被
+  gitignore 覆盖）、选择性删除（`--exclude-standard` 令其不可见）、tick、
+  失败路径全部六个调用者逐一点名——全数清白。
+- **真凶（syscall 级铁证）**：legacy 验证失败路径
+  `rollback_new_untracked_files(git_list_untracked_files(cwd))`
+  **漏传 `cwd=cwd`**（solidify.py:965；cli.py:1249 同款）。列表取自隔离
+  workspace（相对路径 `memory/evolution/evolution_solidify_state.json`），
+  删除却回退 `Path.cwd()`——级联 pytest 从真实仓库根启动，相对路径拼真实
+  根 = 删中真实运行态。**每次级联必中**（派发先写状态文件）：成功路径随后
+  重写状态文件掩盖删除，失败路径不重写 → 文件失踪。round-9~12 全部现象
+  （只在失败后现形、三嫌犯全清白）由此完全和解——删除发生在级联 pytest
+  子进程内部，仓库内实验天然不可见。
+- **修复**：两处补 `cwd=cwd`（对齐 Sprint 23 在级联处理器已有的显式 cwd
+  模式）；回归测试复现几何（chdir 第二临时根 + 同名受害者文件 + 断言
+  幸存），**负向验证通过**（还原 bug 行 → FAILED）。
+- **经验**：**(1) 「列表在 A 域取、删除在 B 域执行」是相对路径 API 的经典
+  错位，修复模式是让同一 cwd 贯穿 list+delete。 (2) 悬案侦破的武器升级链：
+  逐文件 bisect → 进程内看门狗（1ms 轮询抓栈，漂移会冤枉无辜）→ 删除型
+  syscall 间谍（确定性但漏子进程）→ `chflags uchg` 不可变标志做蜜罐
+  （删除必 EPERM，间谍在调用前记栈，异常吞不掉）。(3) 全量测试套件在真实
+  仓库跑时，套件本身就是「未隔离副作用」的携带者——排障时把测试进程当成
+  嫌疑人之一。**
+
+### 21. `paths.py` 诊断打 stdout，CLI `--json` 契约全破（round-13）
+
+- **症状**：`uv run evolver gate-report --json | python3 -m json.tool` 崩
+  （JSONDecodeError）——stdout 前面混着两行
+  `[paths] Using host git repository at: ...`。
+- **根因**：`get_repo_root()` 用裸 `print()` 向 stdout 打诊断（两处）。
+  库层路径解析的副作用污染所有 CLI 动词；`EVOLVER_QUIET_PARENT_GIT` 旋钮
+  是事后绷带，通道纪律从未修。
+- **修复**：两处 `print(..., file=sys.stderr)`；回归测试断言 stdout 空、
+  诊断在 stderr。端到端验证 `--json | json.tool` 恢复可解析。
+- **经验**：**JSON 动词的 stdout 是契约**；库层禁止向 stdout 打诊断——与
+  MCP stdio 的 stdout 纪律（#16 同源）互为镜像。发现即修通道，别加旋钮。
+
+### 22. 级联在宿主残废 PATH 下验证 + 证据只存头 2000 字符（round-13）
+
+- **症状**：round-13 固化级联 `validation_failed`（score 0.6667），变异在
+  开发 shell 下全绿（本地重放 3498 passed）；证据文件里 pytest 输出止于
+  51%，失败名单缺失。
+- **根因（两层）**：(1) MCP 服务器由 GUI 应用拉起，继承 launchd 精简
+  PATH（无 homebrew）；级联子进程照单全收，测试内 shell 出去的工具
+  FileNotFoundError——**验收门在量宿主环境，不是在量仓库**（env -i
+  PATH=/usr/bin:/bin 精确复现 2 failed；全量 8-10 失败为环境差异族）。
+  (2) `_run_validations` 只存 `stdout[:2000]`（头部切片）——pytest 失败
+  摘要在末尾，全丢；连 `_parse_pytest_rate` 都读不到 `N passed`
+  （0.6667 = rate=None 的旁证）。
+- **修复**：`_validation_env()`（venv bin + /opt/homebrew/bin +
+  /usr/local/bin + ~/.local/bin 前插，只增不删，存在才插）+
+  `_bounded_output()`（头 1200 + 尾 2800 + 截断标记）。靶向验证：同款
+  残废 PATH 下此前失败文件经真实 `_run_validations` 路径 15 passed。
+- **经验**：**(1) 门的公信力 = 环境规范化——gated 判定混入宿主环境变量
+  时，soak 样本全部失真；GUI 拉起的 MCP 宿主是残废环境的头号来源。
+  (2) 证据保留必须偏尾——失败诊断永远在输出末尾；头切片证据等于让门
+  失败时自我致盲。**
 
 ## 方法论沉淀
 
