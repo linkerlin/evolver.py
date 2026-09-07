@@ -65,12 +65,27 @@ def parse_pytest_summary(stdout: str, total: int) -> tuple[int, int]:
 def discover_test_ids(cwd: Path, *, timeout_s: float = 60.0) -> list[str]:
     """Collect pytest node IDs via ``pytest --collect-only -q`` (sorted).
 
+    Population parity with the validation cascade (round-15): discovery
+    applies the same ``-m "not slow"`` filter the cascade's pytest stage uses.
+    The frozen set otherwise included slow-marked tests whose per-chunk
+    runtime blew the 120s budget (whole chunks scored 0 on a clean tree) and
+    whose execution in the live repo is a state-pollution hazard (unisolated
+    e2e tests writing real runtime state mid-gate).
+
     ``validation_env()``: GUI-spawned hosts propagate a minimal PATH where
     bare ``pytest`` does not resolve — without it this raises, and
     ``gate_or_none`` degrades the whole acceptance gate to disabled (round-14).
     """
     proc = subprocess.run(
-        ["pytest", "--collect-only", "-q", "-p", "no:cacheprovider"],
+        [
+            "pytest",
+            "--collect-only",
+            "-q",
+            "-p",
+            "no:cacheprovider",
+            "-m",
+            "not slow",
+        ],
         cwd=str(cwd),
         capture_output=True,
         text=True,

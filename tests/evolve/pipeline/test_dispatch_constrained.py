@@ -3,10 +3,20 @@
 from __future__ import annotations
 
 import asyncio
+from pathlib import Path
 
 import pytest
 
 from evolver.evolve.pipeline.dispatch import dispatch_phase
+
+
+@pytest.fixture(autouse=True)
+def _isolated_workspace(temp_workspace: Path) -> None:
+    """dispatch_phase unconditionally writes the solidify run-state (round-11
+    made the write bridge-independent); without isolation these five tests
+    overwrite the host repo's real state file mid-cascade — round-15 caught
+    r1/g1..g3 fixture writes surviving failed solidifies."""
+    _ = temp_workspace
 
 
 def _ctx(gene: dict) -> dict:
