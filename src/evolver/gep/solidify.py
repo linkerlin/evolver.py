@@ -67,12 +67,19 @@ def _timing_block(validation_result: dict[str, Any]) -> dict[str, Any]:
     Round-19: attached on failure events too — a rejected cascade burns the
     same validation seconds, and the efficiency metric was blind to its most
     expensive path (two round-16 rejections left zero cost trace).
+
+    Round-20: ``total_ms`` prefers the monotonic ``duration_ms`` measured by
+    ``_run_validations``; the wall-clock diff stays only as a fallback for
+    legacy results that predate the field.
     """
-    return {
-        "total_ms": round(
+    total_ms = validation_result.get("duration_ms")
+    if total_ms is None:
+        total_ms = round(
             float(validation_result.get("finished_at", 0))
             - float(validation_result.get("started_at", 0))
-        ),
+        )
+    return {
+        "total_ms": total_ms,
         "stages": [
             {
                 "command": str(r.get("command", ""))[:120],
@@ -322,10 +329,18 @@ def _run_validations(
     *,
     cascade: bool = False,
 ) -> dict[str, Any]:
-    """Run validation commands; ``cascade`` short-circuits on first failure."""
+    """Run validation commands; ``cascade`` short-circuits on first failure.
+
+    Round-20: durations come from ``time.monotonic()`` — the wall clock
+    (``time.time()``) absorbs system sleep and NTP steps, which once billed
+    a 5.1h laptop sleep to a 208s pytest stage (88x). ``started_at`` /
+    ``finished_at`` stay wall-clock epoch ms: they are timestamps for the
+    ValidationReport contract, never a duration source.
+    """
     results: list[dict[str, Any]] = []
     overall_ok = True
     started_at = time.time() * 1000.0
+    started_mono = time.monotonic() * 1000.0
     for cmd in commands:
         argv, display, timeout_ms = _normalize_validation_command(cmd)
         result: dict[str, Any] = {
@@ -338,7 +353,7 @@ def _run_validations(
         timeout_s = (
             timeout_ms / 1000.0 if timeout_ms is not None else VALIDATION_TIMEOUT_MS / 1000.0
         )
-        stage_t0 = time.time()
+        stage_t0 = time.monotonic()
         try:
             proc = subprocess.run(
                 argv,
@@ -355,7 +370,7 @@ def _run_validations(
             result["stderr"] = _bounded_output(proc.stderr)
         except Exception as exc:
             result["stderr"] = str(exc)[:500]
-        result["duration_ms"] = round((time.time() - stage_t0) * 1000.0)
+        result["duration_ms"] = round((time.monotonic() - stage_t0) * 1000.0)
         if not result["ok"]:
             overall_ok = False
         results.append(result)
@@ -367,6 +382,7 @@ def _run_validations(
         "results": results,
         "started_at": started_at,
         "finished_at": finished_at,
+        "duration_ms": round(time.monotonic() * 1000.0 - started_mono),
     }
 
 

@@ -163,6 +163,30 @@ def test_run_validations_success(git_ws: Path) -> None:
     assert "ok" in res["results"][0]["stdout"]
 
 
+def test_run_validations_total_duration_is_monotonic(git_ws: Path) -> None:
+    # Round-20: total duration must come from the monotonic clock — the wall
+    # clock once billed a 5.1h system sleep to a 208s pytest stage.
+    res = solidify_mod._run_validations([[sys.executable, "-c", "print('ok')"]], git_ws)
+    assert isinstance(res["duration_ms"], (int, float))
+    assert res["duration_ms"] >= 0
+    # Wall-clock span may exceed the monotonic duration (sleep); never the
+    # reverse by more than rounding.
+    wall_ms = res["finished_at"] - res["started_at"]
+    assert res["duration_ms"] <= wall_ms + 50
+
+
+def test_timing_block_prefers_monotonic_duration() -> None:
+    # A wall-clock span polluted by sleep (9_000_000 ms) must lose to the
+    # monotonic measurement (5 ms) whenever the field exists.
+    block = solidify_mod._timing_block(
+        {"duration_ms": 5, "started_at": 100.0, "finished_at": 9_000_100.0, "results": []}
+    )
+    assert block["total_ms"] == 5
+    # Legacy results without the field keep the wall-clock diff.
+    legacy = solidify_mod._timing_block({"started_at": 100.0, "finished_at": 300.0, "results": []})
+    assert legacy["total_ms"] == 200
+
+
 def test_run_validations_failure(git_ws: Path) -> None:
     res = solidify_mod._run_validations([[sys.executable, "-c", "import sys; sys.exit(2)"]], git_ws)
     assert res["ok"] is False
