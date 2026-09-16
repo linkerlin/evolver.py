@@ -328,6 +328,21 @@ GATE_SOAK_MIN_RUNS: Final = env_int("EVOLVER_GATE_SOAK_MIN_RUNS", 20)
 GATE_SOAK_MAX_FALSE_KILL: Final = env_float("EVOLVER_GATE_SOAK_MAX_FALSE_KILL", 0.1)
 GATE_SOAK_INTERCEPT_MIN: Final = env_float("EVOLVER_GATE_SOAK_INTERCEPT_MIN", 0.05)
 GATE_SOAK_INTERCEPT_MAX: Final = env_float("EVOLVER_GATE_SOAK_INTERCEPT_MAX", 0.5)
+# Anchor evaluation (RSI P0-1): mutation paths that may weaken the verification
+# machinery trigger the out-of-tree anchor suite during solidify. Plain
+# constants by charter — no new env knobs during soak (演进方案.md §4).
+ANCHOR_TRIGGER_SURFACES: Final[tuple[str, ...]] = (
+    "src/evolver/gep/acceptance/",
+    "src/evolver/gep/anchor.py",
+    "src/evolver/gep/git_ops.py",
+    "src/evolver/gep/hitl.py",
+    "src/evolver/gep/solidify.py",
+    "src/evolver/gep/supervision.py",
+    "src/evolver/gep/validation_env.py",
+    "tests/gep/acceptance/",
+    "tests/gep/test_solidify.py",
+)
+ANCHOR_PROBE_TIMEOUT_S: Final = 120.0
 
 # --- Ops ---
 MAX_SILENCE_MS: Final = env_int("EVOLVER_MAX_SILENCE_MS", 30 * 60 * 1_000)

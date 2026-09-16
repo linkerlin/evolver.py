@@ -1,0 +1,7 @@
+{
+  "id": "rollback-cwd-alignment",
+  "title": "Legacy rollback deletes relative to the listing workspace, never Path.cwd()",
+  "source": "DEBUG #20/#23 (round-13)",
+  "epoch_added": 1,
+  "kind": "python_contract"
+}

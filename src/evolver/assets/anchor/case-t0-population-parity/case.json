@@ -1,0 +1,7 @@
+{
+  "id": "t0-population-parity",
+  "title": "T0 discovery excludes slow-marked tests (cascade population parity)",
+  "source": "DEBUG #25/#26 (round-14/15)",
+  "epoch_added": 1,
+  "kind": "python_contract"
+}

@@ -1,0 +1,7 @@
+{
+  "id": "paths-diag-stderr",
+  "title": "Path-resolution diagnostics go to stderr, stdout stays data-only",
+  "source": "DEBUG #21 (round-13)",
+  "epoch_added": 1,
+  "kind": "python_contract"
+}

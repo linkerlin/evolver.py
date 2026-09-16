@@ -23,6 +23,8 @@
 | 技能生态桥 | `uv run evolver skills list\|scan\|sync [--dry-run]` |
 | 进化工作流 | `uv run evolver workflow run\|templates\|awaiting\|approve\|complete\|…` |
 | 验收门 soak 报告 | `uv run evolver gate-report [--json]` |
+| 锚定评测（RSI P0-1） | `uv run evolver anchor init\|list\|run`（仓外冻结契约，`$EVOLVER_HOME/anchor/`；验证面变异触发，环内只读） |
+| 改进机制遥测（RSI P0-2） | `uv run evolver meta-report [--json]`（Table-8 六维面板 + 后代质量 + structural-L5 审计） |
 | Soak 外置运行态 | `uv run evolver soak setup\|exports\|status`（`$EVOLVER_HOME/evolver.py-soak`，勿提交 `memory/`） |
 | 评估隔离 worktree | `EVOLVER_FF_ENABLE_EVAL_WORKTREE=1`（S26.5；失败回退 live cwd） |
 | 守护进程生命周期 | `uv run evolver start` / `stop` / `restart` / `status` / `log` |

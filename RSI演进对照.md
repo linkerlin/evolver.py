@@ -5,6 +5,13 @@
 > 对照 evolver.py 当前实现，给出突破性改进方案。
 > 与《演进方案.md》的关系：彼为现行稳定化章程（soak 纪律不破）；本文为 soak 后的
 > 技术路线输入，P0 项可在 soak 期内以「纯测量 / 带外安全治理」形式先行。
+>
+> **实施状态（2026-09-16）**：P0-1 锚定评测已落地——`gep/anchor.py` + 8 种子探针
+> （DEBUG #9/#12/#19/#20-23/#21/#22/#24/#25-26 契约化）+ solidify 触发接线
+> （`anchor_failed` 硬失败）+ CLI `evolver anchor init/list/run`，本机 epoch 1 已装机，
+> 负向验证通过（弱化重复固化守卫→探针变红）。P0-2 meta-report 已落地——
+> `ops/meta_report.py` + CLI `evolver meta-report`，六维面板 + 后代质量 +
+> structural-L5 审计行。P1/P2 未动。
 
 ---
 

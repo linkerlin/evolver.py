@@ -94,6 +94,29 @@ def _build_parser() -> argparse.ArgumentParser:
     )
     gate_p.add_argument("--json", action="store_true", help="Output raw JSON")
     gate_p.add_argument("--limit", type=int, default=5000, help="Max events to scan")
+    anchor_p = sub.add_parser(
+        "anchor",
+        help="Out-of-tree anchor suite: frozen verifier contracts (RSI P0-1)",
+    )
+    anchor_sub = anchor_p.add_subparsers(dest="anchor_action")
+    anchor_init = anchor_sub.add_parser(
+        "init", help="Freeze the packaged seed suite into $EVOLVER_HOME/anchor (human write)"
+    )
+    anchor_init.add_argument(
+        "--epoch",
+        type=int,
+        default=None,
+        help="New epoch number (must be strictly greater than installed)",
+    )
+    anchor_sub.add_parser("list", help="List installed anchor cases")
+    anchor_run = anchor_sub.add_parser("run", help="Run the anchor suite now")
+    anchor_run.add_argument("--json", action="store_true", help="Output raw JSON")
+    meta_p = sub.add_parser(
+        "meta-report",
+        help="Improvement-mechanism telemetry: RSI Table-8 panel + descendant quality",
+    )
+    meta_p.add_argument("--json", action="store_true", help="Output raw JSON")
+    meta_p.add_argument("--limit", type=int, default=5000, help="Max events to scan")
     soak_p = sub.add_parser(
         "soak",
         help="Keep evolution runtime off the git tree (setup / exports / status)",
@@ -520,6 +543,10 @@ def main(argv: Sequence[str] | None = None) -> int:
 
     if command == "gate-report":
         return _cmd_gate_report(args)
+    if command == "anchor":
+        return _cmd_anchor(args)
+    if command == "meta-report":
+        return _cmd_meta_report(args)
 
     if command == "soak":
         return _cmd_soak(args)
@@ -894,6 +921,95 @@ async def _cmd_run(_args: argparse.Namespace) -> int:
     except Exception as exc:
         print(f"Evolution failed: {exc}", file=sys.stderr)
         return 1
+    return 0
+
+
+def _cmd_anchor(args: argparse.Namespace) -> int:
+    """Anchor suite management (RSI P0-1) — the only sanctioned write path."""
+    from evolver.gep import anchor
+
+    action = args.anchor_action or "list"
+    if action == "init":
+        epoch = args.epoch
+        if epoch is None:
+            existing = anchor.load_epoch() or {}
+            epoch = int(existing.get("epoch") or 0) + 1
+        result = anchor.install_anchor_suite(epoch=epoch)
+        if not result.get("ok"):
+            print(f"anchor init failed: {result.get('error')}", file=sys.stderr)
+            return 1
+        print(
+            f"Anchor epoch {result['epoch']} installed "
+            f"({len(result['cases'])} cases) at {result['path']}"
+        )
+        return 0
+    if action == "list":
+        epoch = anchor.load_epoch()
+        if epoch is None:
+            print("anchor suite not installed — see `evolver anchor init`")
+            return 0
+        cases = anchor.list_anchor_cases()
+        print(f"epoch {epoch.get('epoch')} — {len(cases)} cases @ {anchor.anchor_dir()}")
+        for c in cases:
+            print(f"  {c.get('id')!s:32s} {c.get('title', '')}")
+        return 0
+    if action == "run":
+        result = anchor.run_anchor_suite()
+        if args.json:
+            print(json.dumps(result, ensure_ascii=False, indent=2))
+            return 0 if result.get("ok") else 1
+        if result.get("skipped"):
+            print(f"anchor suite skipped: {result['skipped']}")
+            return 0
+        for c in result.get("results", []):
+            mark = "PASS" if c.get("ok") else "FAIL"
+            tail = (c.get("stdout") or c.get("stderr") or "").strip()[:100]
+            print(f"  [{mark}] {c.get('id')}: {tail}")
+        status = "OK" if result.get("ok") else "FAILED"
+        print(f"anchor suite: {status} (epoch {result.get('epoch')})")
+        return 0 if result.get("ok") else 1
+    print(f"unknown anchor action: {action}", file=sys.stderr)
+    return 2
+
+
+def _cmd_meta_report(args: argparse.Namespace) -> int:
+    """Improvement-mechanism telemetry (RSI P0-2): the effective-L5 panel."""
+    from evolver.gep.asset_store import read_all_events
+    from evolver.ops.meta_report import build_meta_report, load_feedback_events
+
+    events = read_all_events()[-max(1, args.limit) :]
+    report = build_meta_report(events, load_feedback_events())
+    if args.json:
+        print(json.dumps(report, ensure_ascii=False, indent=2))
+        return 0
+
+    panel = report["panel"]
+    ad = panel["adaptivity"]
+    print(f"events {ad['events']} | accepted {ad['accepted']} | failed {ad['failed']}")
+    print(f"accepted per window: {ad['accepted_per_window']}")
+    ret = panel["retention"]
+    print(
+        f"landed genes tracked {ret['landed_genes_tracked']} | "
+        f"recurrence-free {ret['signal_recurrence_free']} | "
+        f"insufficient descendants {ret['insufficient_descendants']}"
+    )
+    n_transfer = panel["transfer"]["genes_under_multiple_signal_families"]
+    print(f"transfer: {n_transfer} gene(s) across signal families")
+    rounds_per_gain = panel["efficiency"]["rounds_per_validated_gain"]
+    print(f"efficiency: {rounds_per_gain} rounds per validated gain")
+    stab = panel["stability"]
+    print(
+        f"stability: {stab['failed_events']} failed events | {stab['degraded_feedback']} degraded"
+    )
+    meta = panel["meta_recursion"]
+    print(f"meta-recursion: {meta['structural_l5_mutations']} structural-L5 mutation(s)")
+    for row in report["mechanism_audit"][-8:]:
+        rate = row.get("descendant_success_rate")
+        rate_s = f"{rate:.0%}" if isinstance(rate, float) else "n/a"
+        print(
+            f"  {str(row.get('timestamp'))[:19]} {row.get('outcome'):<7} "
+            f"desc_ok={rate_s:<5} {','.join(row.get('mechanism_files') or [])[:70]}"
+        )
     return 0
 
 

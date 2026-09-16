@@ -1,0 +1,7 @@
+{
+  "id": "hitl-fail-closed",
+  "title": "HITL fails closed: unknown mode is ON; corrupt store refuses skip-validation",
+  "source": "DEBUG #12 (v1.112 interlock)",
+  "epoch_added": 1,
+  "kind": "python_contract"
+}

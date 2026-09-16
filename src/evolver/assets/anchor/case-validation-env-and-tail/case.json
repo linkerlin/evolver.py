@@ -1,0 +1,7 @@
+{
+  "id": "validation-env-and-tail",
+  "title": "Validation env normalizes crippled PATH; evidence keeps head AND tail",
+  "source": "DEBUG #22 (round-13)",
+  "epoch_added": 1,
+  "kind": "python_contract"
+}

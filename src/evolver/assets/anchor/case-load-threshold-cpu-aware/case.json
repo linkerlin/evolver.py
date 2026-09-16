@@ -1,0 +1,7 @@
+{
+  "id": "load-threshold-cpu-aware",
+  "title": "Preflight load threshold scales with CPU count",
+  "source": "DEBUG #24 (round-14)",
+  "epoch_added": 1,
+  "kind": "python_contract"
+}

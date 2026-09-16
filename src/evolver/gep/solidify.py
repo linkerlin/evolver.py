@@ -25,6 +25,7 @@ from evolver.config import (
     VALIDATION_TIMEOUT_MS,
 )
 from evolver.gep.acceptance.solidify_hook import gate_or_none
+from evolver.gep.anchor import run_anchor_suite, touches_verifier_surface
 from evolver.gep.asset_store import (
     append_event_jsonl,
     get_last_event_id,
@@ -919,6 +920,14 @@ def solidify(
 
     validation_result: dict[str, Any] | None = None
     validation_report: dict[str, Any] | None = None
+    # RSI P0-1 (anchor evaluation): a mutation touching the verification
+    # machinery must survive the out-of-tree frozen contracts. In-repo tests
+    # are mutable by the very mutation they judge — without the anchor, a
+    # change that weakens the gate and its tests together would be accepted
+    # by the weakened gate (self-preferencing loop, RSI演进对照.md P0-1).
+    # Runs even on the skip-validation path (cheap, human already approved
+    # the skip; the anchor guards against weakening the guards themselves).
+    anchor_result: dict[str, Any] | None = None
     from evolver.gep.eval_worktree import isolated_eval_cwd
 
     with isolated_eval_cwd(cwd) as (eval_cwd, eval_meta):
@@ -966,6 +975,41 @@ def solidify(
                     "ok": False,
                     "error": "validation_failed",
                     "details": details,
+                }
+
+        # RSI P0-1: anchor contracts for verifier-surface mutations.
+        anchor_touched = touches_verifier_surface(
+            [
+                f
+                for f in git_list_changed_files(cwd) + git_list_untracked_files(cwd)
+                if f and not _is_runtime_state(f)
+            ]
+        )
+        if anchor_touched:
+            anchor_result = run_anchor_suite()
+            if not anchor_result["ok"]:
+                failed_blast = _compute_blast_radius()
+                rollback_tracked(cwd=cwd, include_untracked=False)
+                rollback_new_untracked_files(_disposable_untracked(cwd), cwd=cwd)
+                append_event_jsonl(
+                    _failure_event(
+                        last_run,
+                        mutation,
+                        failed_blast,
+                        {"status": "failed", "score": 0.0, "error": "anchor_failed"},
+                    )
+                )
+                record_solidify_failure(last_run, error="anchor_failed", score=0.0)
+                return {
+                    "ok": False,
+                    "error": "anchor_failed",
+                    "failure_mode": {
+                        "mode": "hard",
+                        "reasonClass": "anchor",
+                        "retryable": False,
+                    },
+                    "next_action": "stop_and_report",
+                    "details": {"touched": anchor_touched, "anchor_result": anchor_result},
                 }
 
         # Self-Harness A1: empirical acceptance gate. S26.5 runs it in the
@@ -1023,6 +1067,21 @@ def solidify(
     }
     if fitness_verdict is not None:
         event["fitness_gate"] = fitness_verdict
+    if anchor_result is not None:
+        # Compact record (per-case verdict + failure tails only) — the audit
+        # trail that a verifier-surface mutation passed the frozen contracts.
+        cases: list[dict[str, Any]] = []
+        for c in anchor_result.get("results", []):
+            row: dict[str, Any] = {"id": c.get("id"), "ok": c.get("ok")}
+            if not c.get("ok"):
+                row["stderr_tail"] = str(c.get("stderr"))[-300:]
+            cases.append(row)
+        event["anchor_result"] = {
+            "ok": anchor_result.get("ok"),
+            "epoch": anchor_result.get("epoch"),
+            "skipped": anchor_result.get("skipped"),
+            "cases": cases,
+        }
     if validation_report is not None:
         event["validation_report"] = validation_report
     if gate_result is not None:

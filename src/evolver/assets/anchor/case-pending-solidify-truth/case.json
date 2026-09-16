@@ -1,0 +1,7 @@
+{
+  "id": "pending-solidify-truth",
+  "title": "Pending-solidify truth: run-id comparison, fail toward solidify on corrupt state",
+  "source": "DEBUG #9 (round-9)",
+  "epoch_added": 1,
+  "kind": "python_contract"
+}

@@ -1,0 +1,7 @@
+{
+  "id": "dup-solidify-refused",
+  "title": "Duplicate solidify on an already-landed run is refused (already_solidified)",
+  "source": "DEBUG #19 (round-12)",
+  "epoch_added": 1,
+  "kind": "python_contract"
+}
