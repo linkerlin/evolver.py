@@ -1,0 +1,7 @@
+{
+  "id": "telemetry-invariants",
+  "title": "meta-report telemetry invariants: same-population ratios, background-excluded transfer, monotonic durations",
+  "source": "RSI audit 5.3-3 + DEBUG #29/#30/#31 (round-23)",
+  "epoch_added": 4,
+  "kind": "python_contract"
+}

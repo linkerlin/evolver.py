@@ -242,6 +242,27 @@ def test_validation_failure_event_carries_timing(git_ws: Path) -> None:
     assert evt["validation_timing"]["stages"][0]["command"]
 
 
+def test_failure_event_eval_meta_filtering() -> None:
+    # Round-23: a rejected event must be able to prove it ran in the clean
+    # worktree — same filter as the success path (flag_off/skipped → absent).
+    evt = solidify_mod._failure_event(
+        {"run_id": "r1"},
+        {},
+        {"files": 0, "lines": 0},
+        {"status": "failed", "score": 0.0, "error": "x"},
+        eval_meta={"isolated": True, "reason": "worktree", "path": "/tmp/w"},
+    )
+    assert evt["eval_workspace"]["isolated"] is True
+    evt_flag_off = solidify_mod._failure_event(
+        {"run_id": "r1"},
+        {},
+        {"files": 0, "lines": 0},
+        {"status": "failed", "score": 0.0, "error": "x"},
+        eval_meta={"isolated": False, "reason": "flag_off"},
+    )
+    assert "eval_workspace" not in evt_flag_off
+
+
 def test_solidify_validation_success(git_ws: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     _ = git_ws
     # Legacy path (cascade off): mutation.validation drives validation.

@@ -58,12 +58,30 @@ class TestTriggerDetection:
 
         assert "src/evolver/gep/anchor.py" in ANCHOR_TRIGGER_SURFACES
 
+    def test_telemetry_instrument_is_guarded(self) -> None:
+        # Round-23 (RSI audit 5.3-3): the meter is part of the machinery it
+        # audits — mutations to meta_report.py must trigger the anchor and
+        # count as structural-L5 (mechanism surfaces spread the anchor tuple).
+        from evolver.config import ANCHOR_TRIGGER_SURFACES
+        from evolver.ops.meta_report import META_MECHANISM_SURFACES
+
+        assert "src/evolver/ops/meta_report.py" in ANCHOR_TRIGGER_SURFACES
+        assert "src/evolver/ops/meta_report.py" in META_MECHANISM_SURFACES
+        assert anchor_mod.touches_verifier_surface(["src/evolver/ops/meta_report.py"]) == [
+            "src/evolver/ops/meta_report.py"
+        ]
+
 
 class TestRunner:
     def test_missing_suite_skips_ok(self, anchor_ws: Path) -> None:
         result = anchor_mod.run_anchor_suite()
         assert result["ok"] is True
         assert result["skipped"] == "anchor_suite_not_installed"
+
+    def test_seed_suite_includes_telemetry_invariants(self, anchor_ws: Path) -> None:
+        _install_seed(anchor_ws)
+        ids = {c["id"] for c in anchor_mod.list_anchor_cases()}
+        assert "telemetry-invariants" in ids
 
     def test_seed_suite_passes_on_clean_tree(self, anchor_ws: Path) -> None:
         _install_seed(anchor_ws)

@@ -35,7 +35,9 @@ from evolver.gep.git_ops import normalize_rel_path
 
 # Surfaces whose mutation means "the improvement machinery edited itself"
 # (structural-L5). Verifier surfaces (anchor triggers) plus the evolution
-# engine's own selector/mutation/prompt/pipeline code.
+# engine's own selector/mutation/prompt/pipeline code. Round-23: this module
+# itself is in ANCHOR_TRIGGER_SURFACES — the meter is part of the machinery
+# it audits (RSI audit 5.3-3).
 META_MECHANISM_SURFACES: tuple[str, ...] = (
     *ANCHOR_TRIGGER_SURFACES,
     "src/evolver/gep/adaptive.py",

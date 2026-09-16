@@ -98,12 +98,15 @@ def _failure_event(
     outcome: dict[str, Any],
     *,
     validation_result: dict[str, Any] | None = None,
+    eval_meta: dict[str, Any] | None = None,
     **extra: Any,
 ) -> dict[str, Any]:
     """Shared skeleton for failed EvolutionEvents (review dedup): every
     rejection path — cascade, novelty, acceptance, fitness — lands the same
     auditable shape. When validation ran before the rejection, its timing
-    rides along (cost visibility for the efficiency panel)."""
+    rides along (cost visibility for the efficiency panel), and so does the
+    eval-isolation meta (round-23: a rejected event must be able to prove it
+    ran in the clean worktree — same filter as the success path)."""
     event = {
         "type": "EvolutionEvent",
         "id": f"evt_{int(time.time() * 1000)}_{secrets.token_hex(4)}",
@@ -119,6 +122,8 @@ def _failure_event(
     }
     if validation_result is not None:
         event["validation_timing"] = _timing_block(validation_result)
+    if eval_meta and eval_meta.get("reason") not in ("flag_off", "skipped"):
+        event["eval_workspace"] = eval_meta
     return event
 
 
@@ -558,6 +563,7 @@ def _append_failure_event(
     error: str,
     score: float = 0.0,
     validation_result: dict[str, Any] | None = None,
+    eval_meta: dict[str, Any] | None = None,
 ) -> None:
     """Sprint 24.6 (enable_failure_events): land failed EvolutionEvents on
     rejection paths that historically stayed silent (Node v2 emits failure
@@ -572,6 +578,7 @@ def _append_failure_event(
             blast_radius,
             {"status": "failed", "score": score, "error": error},
             validation_result=validation_result,
+            eval_meta=eval_meta,
         )
     )
 
@@ -817,6 +824,7 @@ def _handle_cascade_validation_failure(
     cwd: Path,
     validation_result: dict[str, Any],
     validation_report: dict[str, Any] | None,
+    eval_meta: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Sprint 22.2 graded failure: blast radius captured *before* rollback, a
     failed EvolutionEvent lands in events.jsonl (feeds the repair-loop breaker
@@ -838,6 +846,7 @@ def _handle_cascade_validation_failure(
             failed_blast,
             {"status": "failed", "score": score, "error": "validation_failed"},
             validation_result=validation_result,
+            eval_meta=eval_meta,
             novelty_fingerprint=failed_fp[:4000],
             novelty_added=failed_added[:4000],
         )
@@ -1008,6 +1017,7 @@ def solidify(
                         cwd=cwd,
                         validation_result=validation_result,
                         validation_report=validation_report,
+                        eval_meta=eval_meta,
                     )
                 # Blast radius must be captured BEFORE the rollback (Sprint 23
                 # lesson — after rollback the tree is clean and radius reads 0).
@@ -1026,6 +1036,7 @@ def solidify(
                     blast_radius=failed_blast,
                     error="validation_failed",
                     validation_result=validation_result,
+                    eval_meta=eval_meta,
                 )
                 details: dict[str, Any] = dict(validation_result)
                 if validation_report is not None:
@@ -1057,6 +1068,7 @@ def solidify(
                         failed_blast,
                         {"status": "failed", "score": 0.0, "error": "anchor_failed"},
                         validation_result=validation_result,
+                        eval_meta=eval_meta,
                     )
                 )
                 record_solidify_failure(last_run, error="anchor_failed", score=0.0)

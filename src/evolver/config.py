@@ -346,6 +346,11 @@ ANCHOR_TRIGGER_SURFACES: Final[tuple[str, ...]] = (
     "src/evolver/gep/solidify.py",
     "src/evolver/gep/supervision.py",
     "src/evolver/gep/validation_env.py",
+    # Round-23 (RSI audit 5.3-3): the measurement instrument itself — three
+    # consecutive rounds fixed telemetry honesty (#29/#30/#31); those
+    # mutations neither triggered the anchor nor counted as structural-L5.
+    # Guarded from epoch 4 by the telemetry-invariants probe.
+    "src/evolver/ops/meta_report.py",
     "tests/gep/acceptance/",
     "tests/gep/test_solidify.py",
 )
