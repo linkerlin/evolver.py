@@ -38,6 +38,7 @@
 | 29 | meta-report transfer 维度两度过松：常驻信号头背景虚报「迁移」 | ops/meta_report | round-18 | 未发版 |
 | 30 | 效率维度混合种群平均 + 失败事件验证成本零痕迹 | meta_report/solidify | round-19 | 未发版 |
 | 31 | 时长测量用挂历时钟：系统睡眠 5.1h 计入 pytest 段（88 倍虚增） | solidify | round-20 | 未发版 |
+| 32 | 验收门 layer_id 前缀翻倍（存档往返腐蚀）；soak 判定 false_kill_high | acceptance | round-21 | 未发版 |
 
 ## 条目
 
@@ -523,3 +524,26 @@
   上合盖即睡，挂历差会把分钟级操作记成小时级；效率/性能类遥测的第一
   个审计问题就是「你的分子是哪个钟量的」。append-only 账本不改史：污染
   事件留档，新样本累积后指标自愈。
+
+### 32. 验收门 layer_id 前缀翻倍 + soak 判定 false_kill_high（round-21）
+
+- **症状**：事件持久化的验收层 id 形如 `T0_frozen@T0_frozen@b50bcb4c…`
+  （前缀翻倍）；同轮 soak 判定翻为 `false_kill_high`（false_kill_risk=1.0）。
+- **根因（layer_id）**：`solidify_hook` 把上一轮的 `t0_layer.layer_id`
+  （`T0_frozen@<hash>`）存进 `baseline.json` 的 `t0_snapshot_hash` 字段；
+  下轮 orchestrator 读回作 `snap_label`，组装处
+  `f"T0_frozen@{snap_label.removeprefix('t0_')}"` 只剥小写 `t0_` 词干
+  （对应快照文件名 `t0_<hash>`），对已带 `T0_frozen@` 前缀的存档值无效
+  → 每个比较周期前缀翻一倍。`unchanged` 判决不重存基线，故停在两倍；
+  一旦 `improved` 会把翻倍值再存档并向三倍演化。
+- **修复**：`_t0_layer_id(snap_label)` 规范化助手——剥 `T0_frozen@` 与
+  `t0_` 两种拼写（兼容裸 hash）后组装 `T0_frozen@<hash>`；establishing 与
+  comparison 两处组装点共用。三测试钉住三种输入拼写归一。
+- **经验**：**标识符组装的输入有两种来源拼写时，组装点必须先规范化再拼**
+  ——「把组装产物存进原始值字段」是往返腐蚀的经典通路，读回再组装即翻倍。
+  **soak 头号发现（本轮另一线）**：gated 20/20 达标，但 T0 repeat0 测
+  0.8863 / repeat1 0.9997——0.886 即 #25/#26「分块超时→整块归零」旧签名，
+  同轮级联全绿、变异仅改 id 字符串，纯测量噪声伪杀；interception=0.05
+  踩线、false_kill_risk=1.0 如实报告。**结论：门过紧未到转正水位，
+  校准方向=分块超时单块重试 + 重复间方差异议裁决**（下轮候选）。soak
+  的价值正在于让伪杀在 shadow 里现形，而不是在硬执法里杀掉好变异。
