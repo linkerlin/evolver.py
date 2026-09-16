@@ -9,8 +9,8 @@ from __future__ import annotations
 
 import os
 import sys
-import tempfile
 from pathlib import Path
+
 
 def _isolate(ws: Path) -> None:
     (ws / "memory" / "evolution").mkdir(parents=True, exist_ok=True)
@@ -28,6 +28,7 @@ def _isolate(ws: Path) -> None:
             "EVOLVER_LOGS_DIR": str(ws / "logs"),
         }
     )
+
 
 def main() -> int:
     ws = Path("/tmp/anchor-probe-load")

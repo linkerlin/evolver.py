@@ -15,6 +15,7 @@ import sys
 import tempfile
 from pathlib import Path
 
+
 def _isolate(ws: Path) -> None:
     (ws / "memory" / "evolution").mkdir(parents=True, exist_ok=True)
     (ws / ".evolver" / "gep").mkdir(parents=True, exist_ok=True)
@@ -31,6 +32,7 @@ def _isolate(ws: Path) -> None:
             "EVOLVER_LOGS_DIR": str(ws / "logs"),
         }
     )
+
 
 def _git(ws: Path, *args: str) -> None:
     subprocess.run(["git", "-C", str(ws), *args], check=True, capture_output=True, text=True)

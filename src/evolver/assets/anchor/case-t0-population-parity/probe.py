@@ -13,6 +13,7 @@ import sys
 import tempfile
 from pathlib import Path
 
+
 def _isolate(ws: Path) -> None:
     (ws / "memory" / "evolution").mkdir(parents=True, exist_ok=True)
     (ws / ".evolver" / "gep").mkdir(parents=True, exist_ok=True)
@@ -30,6 +31,7 @@ def _isolate(ws: Path) -> None:
         }
     )
 
+
 def main() -> int:
     with tempfile.TemporaryDirectory() as tmp:
         ws = Path(tmp) / "ws"
@@ -38,7 +40,7 @@ def main() -> int:
         tests = ws / "tests"
         tests.mkdir()
         (ws / "pyproject.toml").write_text(
-            "[tool.pytest.ini_options]\nmarkers = [\"slow: anchor probe\"]\n",
+            '[tool.pytest.ini_options]\nmarkers = ["slow: anchor probe"]\n',
             encoding="utf-8",
         )
         (tests / "test_fast.py").write_text(

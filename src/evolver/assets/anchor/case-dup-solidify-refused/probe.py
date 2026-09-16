@@ -35,9 +35,7 @@ def _isolate(ws: Path) -> None:
 
 
 def _git(ws: Path, *args: str) -> None:
-    subprocess.run(
-        ["git", "-C", str(ws), *args], check=True, capture_output=True, text=True
-    )
+    subprocess.run(["git", "-C", str(ws), *args], check=True, capture_output=True, text=True)
 
 
 def main() -> int:

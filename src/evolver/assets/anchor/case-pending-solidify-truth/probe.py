@@ -13,6 +13,7 @@ import sys
 import tempfile
 from pathlib import Path
 
+
 def _isolate(ws: Path) -> None:
     (ws / "memory" / "evolution").mkdir(parents=True, exist_ok=True)
     (ws / ".evolver" / "gep").mkdir(parents=True, exist_ok=True)
@@ -30,13 +31,14 @@ def _isolate(ws: Path) -> None:
         }
     )
 
+
 def main() -> int:
     with tempfile.TemporaryDirectory() as tmp:
         ws = Path(tmp) / "ws"
         ws.mkdir()
         _isolate(ws)
-        from evolver.swarm import _pending_solidify_state
         from evolver.gep.paths import get_solidify_state_path
+        from evolver.swarm import _pending_solidify_state
 
         path = get_solidify_state_path()
         # 1. no file -> False
@@ -45,12 +47,18 @@ def main() -> int:
             return 1
         # 2. last_run != last_solidify -> True
         path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text(json.dumps({"last_run": {"run_id": "r_a"}, "last_solidify": {"run_id": "r_b"}}), encoding="utf-8")
+        path.write_text(
+            json.dumps({"last_run": {"run_id": "r_a"}, "last_solidify": {"run_id": "r_b"}}),
+            encoding="utf-8",
+        )
         if _pending_solidify_state() is not True:
             print("FAIL: newer last_run must report pending")
             return 1
         # 3. equal -> False
-        path.write_text(json.dumps({"last_run": {"run_id": "r_a"}, "last_solidify": {"run_id": "r_a"}}), encoding="utf-8")
+        path.write_text(
+            json.dumps({"last_run": {"run_id": "r_a"}, "last_solidify": {"run_id": "r_a"}}),
+            encoding="utf-8",
+        )
         if _pending_solidify_state() is not False:
             print("FAIL: landed run must report not-pending")
             return 1

@@ -12,6 +12,7 @@ import os
 import sys
 from pathlib import Path
 
+
 def _isolate(ws: Path) -> None:
     (ws / "memory" / "evolution").mkdir(parents=True, exist_ok=True)
     (ws / ".evolver" / "gep").mkdir(parents=True, exist_ok=True)
@@ -29,12 +30,13 @@ def _isolate(ws: Path) -> None:
         }
     )
 
+
 def main() -> int:
     ws = Path("/tmp/anchor-probe-validation-env")
     ws.mkdir(parents=True, exist_ok=True)
     _isolate(ws)
-    from evolver.gep.validation_env import validation_env
     from evolver.gep.solidify import _bounded_output
+    from evolver.gep.validation_env import validation_env
 
     os.environ["PATH"] = "/usr/bin:/bin"
     env = validation_env()

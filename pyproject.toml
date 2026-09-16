@@ -176,6 +176,11 @@ strict = true
 warn_return_any = true
 warn_unused_ignores = true
 ignore_missing_imports = true
+# Frozen anchor probes / seed assets are standalone scripts (duplicate
+# "probe" module names by design; correctness enforced by the anchor suite
+# itself when they run), not package source — exclude from module-identity
+# checking (round-16: `mypy src` choked on 8 same-named probe.py files).
+exclude = "src/evolver/assets/"
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"

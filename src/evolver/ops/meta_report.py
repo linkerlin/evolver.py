@@ -162,6 +162,14 @@ def build_meta_report(
     transferred = {g: sorted(h) for g, h in gene_signal_heads.items() if len(h) > 1}
 
     rounds_per_gain = round(len(events) / len(accepted), 2) if accepted else None
+    # Round-16: per-stage validation durations land on events as
+    # validation_timing; convert to ms-per-validated-gain when present.
+    timing_ms = [
+        int((e.get("validation_timing") or {}).get("total_ms") or 0)
+        for e in events
+        if (e.get("validation_timing") or {}).get("total_ms")
+    ]
+    ms_per_gain = round(sum(timing_ms) / len(accepted)) if timing_ms and accepted else None
     dq = _descendant_quality(events)
     resolved = sum(1 for r in dq if r["resolved"])
     unknown = sum(1 for r in dq if r["unknown"])
@@ -186,7 +194,13 @@ def build_meta_report(
             },
             "efficiency": {
                 "rounds_per_validated_gain": rounds_per_gain,
-                "note": "count-based until per-stage durations land on events",
+                "validation_ms_per_validated_gain": ms_per_gain,
+                "timed_events": len(timing_ms),
+                "note": (
+                    "time-based when validation_timing present; else count-based"
+                    if ms_per_gain is not None
+                    else "count-based until validation_timing lands on events"
+                ),
             },
             "stability": {
                 "failed_events": len(failed),

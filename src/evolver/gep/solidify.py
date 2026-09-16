@@ -303,10 +303,12 @@ def _run_validations(
             "ok": False,
             "stdout": "",
             "stderr": "",
+            "duration_ms": None,
         }
         timeout_s = (
             timeout_ms / 1000.0 if timeout_ms is not None else VALIDATION_TIMEOUT_MS / 1000.0
         )
+        stage_t0 = time.time()
         try:
             proc = subprocess.run(
                 argv,
@@ -323,6 +325,7 @@ def _run_validations(
             result["stderr"] = _bounded_output(proc.stderr)
         except Exception as exc:
             result["stderr"] = str(exc)[:500]
+        result["duration_ms"] = round((time.time() - stage_t0) * 1000.0)
         if not result["ok"]:
             overall_ok = False
         results.append(result)
@@ -1081,6 +1084,23 @@ def solidify(
             "epoch": anchor_result.get("epoch"),
             "skipped": anchor_result.get("skipped"),
             "cases": cases,
+        }
+    if validation_result is not None:
+        # RSI P0-2 (round-16): per-stage durations feed the meta-report
+        # efficiency panel (time per validated gain, not just rounds).
+        event["validation_timing"] = {
+            "total_ms": round(
+                float(validation_result.get("finished_at", 0))
+                - float(validation_result.get("started_at", 0))
+            ),
+            "stages": [
+                {
+                    "command": str(r.get("command", ""))[:120],
+                    "ok": r.get("ok"),
+                    "duration_ms": r.get("duration_ms"),
+                }
+                for r in validation_result.get("results", [])
+            ],
         }
     if validation_report is not None:
         event["validation_report"] = validation_report

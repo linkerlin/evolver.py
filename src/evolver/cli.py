@@ -995,8 +995,10 @@ def _cmd_meta_report(args: argparse.Namespace) -> int:
     )
     n_transfer = panel["transfer"]["genes_under_multiple_signal_families"]
     print(f"transfer: {n_transfer} gene(s) across signal families")
-    rounds_per_gain = panel["efficiency"]["rounds_per_validated_gain"]
-    print(f"efficiency: {rounds_per_gain} rounds per validated gain")
+    eff = panel["efficiency"]
+    ms_per_gain = eff.get("validation_ms_per_validated_gain")
+    time_note = f" | {ms_per_gain} ms validation/gain" if ms_per_gain else ""
+    print(f"efficiency: {eff['rounds_per_validated_gain']} rounds per gain{time_note}")
     stab = panel["stability"]
     print(
         f"stability: {stab['failed_events']} failed events | {stab['degraded_feedback']} degraded"

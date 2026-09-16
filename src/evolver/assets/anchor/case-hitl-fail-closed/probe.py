@@ -12,6 +12,7 @@ import sys
 import tempfile
 from pathlib import Path
 
+
 def _isolate(ws: Path) -> None:
     (ws / "memory" / "evolution").mkdir(parents=True, exist_ok=True)
     (ws / ".evolver" / "gep").mkdir(parents=True, exist_ok=True)
@@ -28,6 +29,7 @@ def _isolate(ws: Path) -> None:
             "EVOLVER_LOGS_DIR": str(ws / "logs"),
         }
     )
+
 
 def main() -> int:
     with tempfile.TemporaryDirectory() as tmp:
@@ -48,6 +50,7 @@ def main() -> int:
         (evo / "hitl_approvals.json").write_text("{corrupt", encoding="utf-8")
         os.environ["EVOLVER_HITL_MODE"] = "on"
         import importlib
+
         import evolver.config as config_mod
 
         importlib.reload(config_mod)

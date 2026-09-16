@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import subprocess
+import sys
 from pathlib import Path
 from typing import Any
 
@@ -233,3 +234,33 @@ class TestMetaReport:
         dq = report["descendant_quality"]
         assert dq and dq[0]["resolved"] is False
         assert dq[0]["signal_recurrence_in_failures"] == 1
+
+    def test_efficiency_uses_validation_timing_when_present(self) -> None:
+        from evolver.ops.meta_report import build_meta_report
+
+        events = [
+            {
+                "id": "e1",
+                "outcome": {"status": "success"},
+                "mutation": {"landed_gene_ids": ["g1"]},
+                "signals": ["log_error"],
+                "validation_timing": {
+                    "total_ms": 100_000,
+                    "stages": [{"command": "pytest", "ok": True, "duration_ms": 99_000}],
+                },
+            }
+        ]
+        report = build_meta_report(events, [])
+        eff = report["panel"]["efficiency"]
+        assert eff["timed_events"] == 1
+        assert eff["validation_ms_per_validated_gain"] == 100_000
+        assert "time-based" in eff["note"]
+
+    def test_run_validations_records_stage_durations(self, tmp_path: Path) -> None:
+        from evolver.gep.solidify import _run_validations
+
+        result = _run_validations([[sys.executable, "-c", "print('ok')"]], tmp_path, cascade=True)
+        stage = result["results"][0]
+        assert stage["ok"] is True
+        assert isinstance(stage["duration_ms"], (int, float))
+        assert stage["duration_ms"] >= 0

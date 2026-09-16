@@ -7,12 +7,11 @@ Exit 0 = pass.
 
 from __future__ import annotations
 
-import contextlib
-import io
 import os
 import sys
 import tempfile
 from pathlib import Path
+
 
 def _isolate(ws: Path) -> None:
     (ws / "memory" / "evolution").mkdir(parents=True, exist_ok=True)
@@ -30,6 +29,7 @@ def _isolate(ws: Path) -> None:
             "EVOLVER_LOGS_DIR": str(ws / "logs"),
         }
     )
+
 
 def main() -> int:
     with tempfile.TemporaryDirectory() as tmp:
