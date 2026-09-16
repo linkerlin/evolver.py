@@ -34,6 +34,7 @@
 | 25 | 验收门饥饿：PATH 盲区 + 全量 argv 单超时 → 永远 0 分、基线永不落盘 | acceptance | round-14 | 未发版 |
 | 26 | T0 门与级联种群错位（402 幻影失败）+ 未隔离管线测试污染真实运行态 | acceptance/tests | round-15 | 未发版 |
 | 27 | 新增源码型资产只跑靶向检查就提交：ruff I001/E501 + mypy 同名模块连拒两次 | assets/mypy | round-16 | 未发版 |
+| 28 | stale 宿主惰性导入崩成裸 ImportError；工具目录暴露于回滚处置 | swarm/gitignore | round-17 | 未发版 |
 
 ## 条目
 
@@ -429,3 +430,26 @@
   原始三段命令，不是靶向检查**——靶向过 + 全量 pytest 过仍可能 ruff/mypy
   全扫炸。另：连续失败的回滚 stash 会把未提交的修复一并卷走，恢复清单
   要含修复文件而不只是变异文件。**
+
+### 28. stale 宿主惰性导入裸崩 + 工具目录暴露于回滚处置（round-17）
+
+- **症状**：round-16 实况——长驻 MCP 进程在引擎改码后，`swarm_tick`/
+  `swarm_distill` 直接返回裸 `ImportError`（"cannot import name
+  'ANCHOR_PROBE_TIMEOUT_S'"）：进程内存持有旧 config，惰性导入磁盘上的
+  新 solidify→anchor，新旧模块链拼接即炸；宿主拿到栈回溯而非可行动
+  错误。另：`.mimosa/`、`.video_agent/` 等宿主工具目录未跟踪——级联
+  失败回滚会把它们当「可弃未跟踪文件」删除。
+- **根因**：`_swarm_tick_locked` 的 except-Exception 只盖 run_cycle，
+  盖不到 tick 序言导入与 distill 深层安装路径（record_landed_gene_ids
+  的惰性导入）；回滚的 `--exclude-standard` 只豁免 gitignore 路径，
+  未知未跟踪目录按变异残留处置（对变异残留是对的，对工具目录是误伤）。
+- **修复**：`_stale_import_error()` → `error=code_stale_process` +
+  `next_action=reconnect_host` + hint；三处守卫（tick 序言、run_cycle
+  分支先于 cycle_crashed 分类、distill 安装路径）；三个回归测试
+  （monkeypatch raiser）。工具目录入 gitignore——ignored 路径回滚豁免、
+  变异残留照旧可弃，语义各归其位。
+- **经验**：**长驻进程的每个惰性导入面都是版本混拼断点——守卫要盖
+  序言与深层调用路径两处；「未跟踪 ≠ 可弃」，回滚处置以 gitignore 为
+  声明边界。** 里程碑：本轮门完成首次「候选 vs 基线」比较
+  （t0_only_no_regression，0.9997==0.9997 unchanged 接受）——回归地板
+  全链路运转。
