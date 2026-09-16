@@ -60,6 +60,20 @@ def save_baseline(path: Path, t0_pass_rate: float, snapshot_hash: str) -> None:
     path.write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8")
 
 
+def _t0_layer_id(snap_label: str) -> str:
+    """Canonical T0 layer id: ``T0_frozen@<hash>``.
+
+    The label arrives in two spellings: a snapshot stem (``t0_<hash>``,
+    from freeze_snapshot) or the persisted baseline value — which
+    solidify_hook stores as the previous run's full layer id
+    (``T0_frozen@<hash>``). Stripping only ``t0_`` let the stored
+    ``T0_frozen@`` through and doubled the prefix on every comparison
+    cycle (round-21: live events read ``T0_frozen@T0_frozen@<hash>``).
+    """
+    core = snap_label.removeprefix("T0_frozen@").removeprefix("t0_")
+    return f"T0_frozen@{core}"
+
+
 def _run_t0_repeats(
     frozen_ids: list[str],
     cwd: Path,
@@ -116,7 +130,7 @@ def run_acceptance_gate(
         # Establishing mode: record only, no gating.
         total = len(frozen)
         t0_layer = LayerMetric(
-            layer_id=f"T0_frozen@{snap_label.removeprefix('t0_')}",
+            layer_id=_t0_layer_id(snap_label),
             kind="T0_frozen",
             baseline_repeats=[],
             candidate_repeats=candidate_repeats,
@@ -138,7 +152,7 @@ def run_acceptance_gate(
         baseline_repeats, candidate_repeats, epsilon=epsilon
     )
     t0_layer = LayerMetric(
-        layer_id=f"T0_frozen@{snap_label.removeprefix('t0_')}",
+        layer_id=_t0_layer_id(snap_label),
         kind="T0_frozen",
         baseline_repeats=baseline_repeats,
         candidate_repeats=candidate_repeats,

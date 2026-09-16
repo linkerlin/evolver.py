@@ -73,6 +73,43 @@ class TestEstablishingMode:
         assert result.layers[0].kind == "T0_frozen"
 
 
+class TestLayerIdNormalization:
+    """Round-21: the persisted baseline stores a full layer id back into
+    t0_snapshot_hash; composing the next layer id must not double the
+    ``T0_frozen@`` prefix (live events read
+    ``T0_frozen@T0_frozen@<hash>``)."""
+
+    def test_layer_id_from_persisted_layer_label(self, _stub_t0: Path, tmp_path: Path) -> None:
+        result = run_acceptance_gate(
+            cwd=tmp_path,
+            snapshot_dir=tmp_path / "snap",
+            baseline_t0_rate=0.75,
+            repeats=1,
+            baseline_t0_snapshot="T0_frozen@abc123",
+        )
+        assert result.layers[0].layer_id == "T0_frozen@abc123"
+
+    def test_layer_id_from_snapshot_stem(self, _stub_t0: Path, tmp_path: Path) -> None:
+        result = run_acceptance_gate(
+            cwd=tmp_path,
+            snapshot_dir=tmp_path / "snap",
+            baseline_t0_rate=0.75,
+            repeats=1,
+            baseline_t0_snapshot="t0_abc123",
+        )
+        assert result.layers[0].layer_id == "T0_frozen@abc123"
+
+    def test_layer_id_from_bare_hash(self, _stub_t0: Path, tmp_path: Path) -> None:
+        result = run_acceptance_gate(
+            cwd=tmp_path,
+            snapshot_dir=tmp_path / "snap",
+            baseline_t0_rate=0.75,
+            repeats=1,
+            baseline_t0_snapshot="abc123",
+        )
+        assert result.layers[0].layer_id == "T0_frozen@abc123"
+
+
 class TestDegradedT0Only:
     def test_no_regression_accepts(self, _stub_t0: Path, tmp_path: Path) -> None:
         result = run_acceptance_gate(
