@@ -235,3 +235,8 @@ memory/*.json
 
 # evolver: wiki knowledge layer — never rolled back (S27)
 memory/evolution/wiki/
+
+# host-tool owned dirs (round-17): untracked-but-not-ours — a failed cascade
+# rollback disposes disposable untracked files; ignored paths are spared.
+.mimosa/
+.video_agent/

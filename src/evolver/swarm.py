@@ -256,6 +256,29 @@ def _code_staleness() -> dict[str, Any] | None:
         return None
 
 
+def _stale_import_error(exc: ImportError) -> dict[str, Any]:
+    """Self-diagnosing error for stale long-lived MCP hosts (round-17).
+
+    A process that predates a code change holds old modules in memory while
+    lazily importing new ones from disk; the mixed import chain dies with a
+    raw ``ImportError`` (round-16 live: tick/distill crashed on
+    ``ANCHOR_PROBE_TIMEOUT_S``). Convert it into an actionable result instead
+    of a stack trace: fail closed, tell the host to reconnect.
+    """
+    return {
+        "ok": False,
+        "error": "code_stale_process",
+        "reason": str(exc)[:300],
+        "next_action": "reconnect_host",
+        "hint": (
+            "this MCP process predates the current src tree (in-memory old "
+            "modules + on-disk new ones); restart/reconnect the host so a "
+            "fresh process loads matching code (see swarm_status "
+            "code_staleness)"
+        ),
+    }
+
+
 def _pending_solidify_state() -> bool:
     """True when the state file holds a last_run newer than the last solidify.
 
@@ -390,9 +413,14 @@ async def swarm_tick(agent_name: str | None = None, include_prompt: bool = True)
     a supervisor veto on the selected gene withholds the dispatch prompt.
     """
     from evolver.config import SWARM_TICK_LOG_MAX_CHARS
-    from evolver.evolve.runner import _run_single_cycle
-    from evolver.gep import supervision
-    from evolver.gep.instance_lock import instance_lock_ctx
+
+    try:
+        from evolver.evolve.runner import _run_single_cycle
+        from evolver.gep import supervision
+        from evolver.gep.instance_lock import instance_lock_ctx
+    except ImportError as exc:
+        # Stale long-lived host: in-memory modules predate the on-disk tree.
+        return _stale_import_error(exc)
 
     tripwire = supervision.auto_pause_check()
     if supervision.is_paused():
@@ -436,6 +464,8 @@ async def _swarm_tick_locked(
     with _capture_stdout() as capture:
         try:
             ctx = await run_cycle(is_loop=False)
+        except ImportError as exc:  # stale-host lazy import (round-17)
+            return _stale_import_error(exc)
         except Exception as exc:  # engine crash must not kill the MCP session
             return {
                 "ok": False,
@@ -533,12 +563,20 @@ def swarm_distill(response_text: str, dry_run: bool = False) -> dict[str, Any]:
     result now carries a ``hint`` with the expected asset-block shape so one
     round-trip fixes the submission.
     """
-    from evolver.gep.distill import DISTILL_FORMAT_HINT, distill_text, install_distilled
+    try:
+        from evolver.gep.distill import DISTILL_FORMAT_HINT, distill_text, install_distilled
+    except ImportError as exc:
+        return _stale_import_error(exc)
 
     if not response_text.strip():
         return {"ok": False, "error": "empty_response", "next_action": "execute_prompt"}
     distilled = distill_text(response_text)
-    install = install_distilled(distilled, dry_run=dry_run)
+    try:
+        install = install_distilled(distilled, dry_run=dry_run)
+    except ImportError as exc:
+        # Deep lazy imports (solidify.record_landed_gene_ids) hit the same
+        # stale-host module mix (round-16 live crash).
+        return _stale_import_error(exc)
     extracted = (
         len(distilled.get("genes", []))
         + len(distilled.get("capsules", []))

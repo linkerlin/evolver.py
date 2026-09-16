@@ -8,6 +8,7 @@ state persistence. No Node.js equivalent — Python-native design.
 from __future__ import annotations
 
 import json
+from collections.abc import Iterator
 from pathlib import Path
 
 import pytest
@@ -561,3 +562,55 @@ class TestPendingSolidifyTruth:
         from evolver.swarm import _pending_solidify_state
 
         assert _pending_solidify_state() is False
+
+
+class TestStaleImportGuard:
+    """Round-17: stale long-lived hosts crash on lazy imports of new code —
+    convert to a self-diagnosing code_stale_process result."""
+
+    def test_helper_shape(self) -> None:
+        from evolver.swarm import _stale_import_error
+
+        err = ImportError("cannot import name 'X' from 'evolver.config'")
+        result = _stale_import_error(err)
+        assert result["ok"] is False
+        assert result["error"] == "code_stale_process"
+        assert result["next_action"] == "reconnect_host"
+        assert "X" in result["reason"]
+
+    def test_distill_deep_import_returns_stale_error(
+        self, isolated_swarm_env: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        import evolver.gep.distill as distill_mod
+        from evolver import swarm
+
+        def boom(*args: object, **kwargs: object) -> dict:
+            raise ImportError("cannot import name 'NEW_THING' from 'evolver.config'")
+
+        monkeypatch.setattr(distill_mod, "install_distilled", boom)
+        result = swarm.swarm_distill("```json\n[]\n```")
+        assert result["ok"] is False
+        assert result["error"] == "code_stale_process"
+        assert result["next_action"] == "reconnect_host"
+
+    def test_tick_run_cycle_import_returns_stale_error(
+        self, isolated_swarm_env: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        import asyncio
+
+        from evolver import swarm
+
+        async def boom_cycle(is_loop: bool = False) -> dict:
+            raise ImportError("cannot import name 'Y' from 'evolver.gep.anchor'")
+
+        import contextlib
+
+        @contextlib.contextmanager
+        def fake_lock_ctx(**kwargs: object) -> Iterator[bool]:
+            yield True
+
+        monkeypatch.setattr("evolver.evolve.runner._run_single_cycle", boom_cycle, raising=False)
+        monkeypatch.setattr("evolver.gep.instance_lock.instance_lock_ctx", fake_lock_ctx)
+        result = asyncio.run(swarm.swarm_tick(include_prompt=False))
+        assert result["ok"] is False
+        assert result["error"] == "code_stale_process"
