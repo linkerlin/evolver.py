@@ -1061,6 +1061,9 @@ def _cmd_gate_report(args: argparse.Namespace) -> int:
     print(f"  validation_disagreements: {metrics['validation_disagreements']}")
     print(f"  false_kill_risk       : {metrics['false_kill_risk']}")
     print(f"  window                : {window['first'] or '-'} .. {window['last'] or '-'}")
+    print(
+        f"  window_runs           : {metrics.get('window_runs', metrics['gated_runs'])} (rolling)"
+    )
     print(f"  verdict               : {recommendation['verdict']}")
     for reason in recommendation["reasons"]:
         print(f"    - {reason}")

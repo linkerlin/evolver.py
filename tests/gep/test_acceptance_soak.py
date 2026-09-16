@@ -71,3 +71,52 @@ class TestWindow:
         assert metrics["gated_runs"] == 2
         assert metrics["window"]["first"] == "2026-09-04T01:00:00Z"
         assert metrics["window"]["last"] == "2026-09-04T03:00:00Z"
+
+
+class TestRollingWindow:
+    """Round-24: soak metrics cover the most recent GATE_SOAK_MIN_RUNS gated
+    events. An all-time window meant a pre-calibration flake never expired —
+    the only dilution path was deliberately feeding bad mutations."""
+
+    @staticmethod
+    def _gated(i: int) -> dict[str, object]:
+        return {
+            "timestamp": f"2026-09-{i + 1:02d}T00:00:00Z",
+            "acceptance_result": {"reason": "t0_only_no_regression"},
+        }
+
+    @staticmethod
+    def _flaky_rejection(i: int) -> dict[str, object]:
+        # shadow rejection with a green cascade = the false-kill signature
+        return {
+            "timestamp": f"2026-09-{i + 1:02d}T00:00:00Z",
+            "acceptance_result": {"shadow": True, "would_accept": False},
+            "validation_report": {"overall_ok": True},
+        }
+
+    def test_pre_calibration_flake_ages_out(self) -> None:
+        events = [self._flaky_rejection(1)] + [self._gated(i) for i in range(24)]
+        m = summarize_acceptance(events)  # default window = GATE_SOAK_MIN_RUNS
+        assert m["window_runs"] == 20
+        assert m["gated_runs"] == 20
+        assert m["shadow_rejected"] == 0
+        assert m["false_kill_risk"] is None
+
+    def test_recent_flake_still_counts(self) -> None:
+        events = [self._gated(i) for i in range(24)] + [self._flaky_rejection(24)]
+        m = summarize_acceptance(events)
+        assert m["shadow_rejected"] == 1
+        assert m["validation_disagreements"] == 1
+        assert m["false_kill_risk"] == 1.0
+
+    def test_fewer_events_than_window_includes_all(self) -> None:
+        events = [self._flaky_rejection(1)] + [self._gated(i) for i in range(3)]
+        m = summarize_acceptance(events)
+        assert m["window_runs"] == 4
+        assert m["shadow_rejected"] == 1
+
+    def test_explicit_window_overrides(self) -> None:
+        events = [self._gated(i) for i in range(5)] + [self._flaky_rejection(5)]
+        m = summarize_acceptance(events, window_runs=2)
+        assert m["window_runs"] == 2
+        assert m["shadow_rejected"] == 1  # the flake IS within the last 2

@@ -13,7 +13,11 @@ from __future__ import annotations
 from typing import Any
 
 
-def summarize_acceptance(events: list[dict[str, Any]]) -> dict[str, Any]:
+def summarize_acceptance(
+    events: list[dict[str, Any]],
+    *,
+    window_runs: int | None = None,
+) -> dict[str, Any]:
     """Summarize gate activity over EvolutionEvents.
 
     Metrics (shadow mode):
@@ -25,8 +29,26 @@ def summarize_acceptance(events: list[dict[str, Any]]) -> dict[str, Any]:
       (false-kill proxy, since ground truth is unavailable mid-gray-scale)
     - ``false_kill_risk``: disagreements / shadow_rejected (None when 0)
     - ``window``: first/last gated-event timestamps (None when empty)
+    - ``window_runs``: gated events actually inside the evaluation window
+
+    Round-24 rolling window: metrics cover the most recent ``window_runs``
+    gated events (default :data:`GATE_SOAK_MIN_RUNS`, stable-sorted by
+    timestamp). With an all-time window a pre-calibration flake never
+    expired — the only way to dilute ``false_kill_risk`` below the
+    promotion bar was accumulating ~9 more rejections, i.e. feeding bad
+    mutations on purpose. The soak question is about the *calibrated*
+    gate; samples older than the window age out naturally. Fewer gated
+    events than the window → all included (collection phase unchanged).
     """
-    gated = [e for e in events if isinstance(e.get("acceptance_result"), dict)]
+    from evolver.config import GATE_SOAK_MIN_RUNS
+
+    if window_runs is None:
+        window_runs = GATE_SOAK_MIN_RUNS
+    gated_all = sorted(
+        (e for e in events if isinstance(e.get("acceptance_result"), dict)),
+        key=lambda e: str(e.get("timestamp") or ""),
+    )
+    gated = gated_all[-max(1, window_runs) :] if window_runs else gated_all
     shadow_rejected = [
         e
         for e in gated
@@ -52,6 +74,7 @@ def summarize_acceptance(events: list[dict[str, Any]]) -> dict[str, Any]:
             "first": min(timestamps) if timestamps else None,
             "last": max(timestamps) if timestamps else None,
         },
+        "window_runs": n_gated,
     }
 
 

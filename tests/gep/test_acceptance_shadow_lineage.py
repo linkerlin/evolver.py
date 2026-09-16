@@ -120,6 +120,7 @@ class TestSummarizeAcceptance:
             "validation_disagreements": 0,
             "false_kill_risk": None,
             "window": {"first": None, "last": None},
+            "window_runs": 0,
         }
 
     def test_metrics(self) -> None:
