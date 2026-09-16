@@ -6,14 +6,16 @@
 > 与《演进方案.md》的关系：彼为现行稳定化章程（soak 纪律不破）；本文为 soak 后的
 > 技术路线输入，P0 项可在 soak 期内以「纯测量 / 带外安全治理」形式先行。
 >
-> **实施状态（2026-09-16）**：P0-1 锚定评测已落地——`gep/anchor.py` + 8 种子探针
-> （DEBUG #9/#12/#19/#20-23/#21/#22/#24/#25-26 契约化）+ solidify 触发接线
-> （`anchor_failed` 硬失败）+ CLI `evolver anchor init/list/run`，本机 epoch 3 已装机
-> （round-16 首次生产触发 8/8 通过），负向验证通过（弱化重复固化守卫→探针变红）。
-> P0-2 meta-report 已落地——`ops/meta_report.py` + CLI `evolver meta-report`，
-> 六维面板 + 后代质量 + structural-L5 审计行 + validation_ms_per_validated_gain +
-> transfer 差分头集口径（round-18：排除 ≥50% 事件常驻信号头后比较差分集，
-> live 诚实归零；见 DEBUG #29）。P1/P2 未动。
+> **实施状态（2026-09-17 全项目审阅后更新）**：P0 两项已落地并经生产实证——
+> P0-1 锚定评测（`gep/anchor.py` + epoch 3 × 8 冻结探针 + `anchor_failed` 硬失败
+> + CLI）：**连续四次生产触发全 8/8**（round-16/19/20/21 验证面变异），负向验证
+> 通过；P0-2 meta-report（`ops/meta_report.py` + CLI）：六维面板 + 后代质量 +
+> structural-L5 审计（10 行）+ ms/gain + timing_coverage，口径经三轮诚实性修复
+> （#29 transfer 差分头集、#30 分子分母同种群+失败成本入账、#31 单调钟）。
+> **soak 已达标并出判定：gated 20/20，verdict=`false_kill_high`**（唯一拦截是
+> T0 分块超时伪杀——门自身测量如实报告了「过紧」，转正不切，校准方向见 §五）。
+> P1-3/4/5、P2-6..10 未动（grep 确认）。落地细节、诚实缺口与下一步见 **§五
+> 落地实况审计**。
 
 ---
 
@@ -111,11 +113,11 @@ Group-Evolving Agents；元选择：HGM），L3 起步（SWE-RL / Socratic-SWE �
 
 | 级 | 判定 | 证据 |
 |---|---|---|
-| L1 | **巩固达成** | 固化提交/基因/活记忆跨轮存活；15 轮 dogfood、14 gated run |
-| L2 | **芽** | adaptive.py 依反馈 E 移策略权重、降级连击→repair 枢转、平台期→novelty——「证据改变下轮试什么」已存在；但每轮**单候选贪心**，宿主不依证据选干预（选择器启发式独裁），无搜索 |
+| L1 | **巩固达成** | 固化提交/基因/活记忆跨轮存活；21 轮 dogfood、20 gated run、版本钉在 1.112.0（章程纪律） |
+| L2 | **芽** | adaptive.py 依反馈 E 移策略权重、降级连击→repair 枢转、平台期→novelty——「证据改变下轮试什么」已存在；round-19→20→21 展示了遥测→摩擦→下轮变异的完整证据链（宿主读面板选干预），但选择器启发式+宿主仍是决策者，每轮**单候选贪心**，无搜索；P1-4 把这条链机械化后才算晋级 |
 | L3 | **消费级** | autopoiesis 摩擦→信号、question_generator（悬赏问题）、curriculum.py（flag 默认关）皆是「失败回声」驱动的消费者；无自主生成/寻求经验的议程 |
 | L4 | **域内特化、超同期软工系统** | 论文称 L4 在软工「基本缺席」，而 evolver 的部署场即进化场（引擎边跑边进化），且回归感知选择（T0 冻结分母）+ 版本化继承俱全；短板：单工作区单宿主，无跨环境适应 |
-| L5 | **structural 零星 / effective 未测** | 变异曾落于 selector.py（冷却）、adaptive.py 读者、门运行器——改进机制被修订且被后续轮继承使用（structural 成立，events+双 id 谱系+DEBUG.md 即机制审计原始材料）；但从未测量「修订后的机制是否产出更好的后继」 |
+| L5 | **structural 有测量、effective 仍未测** | structural-L5 审计行已运行（10 行，后代成功率 60–100%——首个事后信号）；但论文标准的 effective L5 受控比较（同预算+独立评测下修订机制产出更好后继）从未运行——仪器已备（T0 基线+ms/gain），实验未做（见 §五） |
 
 ### 2.3 论文对现有设计的背书（勿动的部分）
 
@@ -322,7 +324,8 @@ Group-Evolving Agents；元选择：HGM），L3 起步（SWE-RL / Socratic-SWE �
 
 | 阶段 | 内容 | 与演进方案.md 的关系 |
 |---|---|---|
-| soak 期内（现在） | P0-1 锚定评测、P0-2 meta-report | 纯测量与带外治理：不加 env 旋钮、不动 SHADOW、不 bump minor；P0-1 是转正前置条件 |
+| soak 期内（**已完结**） | P0-1 锚定评测、P0-2 meta-report | 已按纪律完成：零新 env 旋钮、SHADOW 未动、版本钉 1.112.0；soak 20/20 出判定 `false_kill_high`——**数据不支持转正**，校准后再议（§五） |
+| 门校准期（现在） | T0 分块超时重试 + 重复间方差异议裁决，重攒 soak 样本 | 仍是纯测量修复；转正与否永远留人类 |
 | soak 转正后第一波 | P1-3 种群、P1-4 证据包、P1-5 生命周期 | 与 §7 既定次序（S26.5 干净 worktree 门、S29 机械提案、S30 环境变量削减）合流：P1-3 用 S26.5 的桥、P1-4 用 S29 的提案通道 |
 | 结构扩展 | P2-6..P2-10 | 下一份章程的候选清单，按 P0-2 的实测数据排优先级 |
 
@@ -332,3 +335,91 @@ evolver 恰好倒挂——L1/L4 强（部署即进化场是同期软工系统没
 而是**先以 P0 两项把「自己改进自己」的安全性与效率变成可测量的量**（锚防
 自偏好、遥测防自欺），再以种群与证据包完成 L2 跃迁——这正与现行章程
 「先稳互锁、再谈转正、后收割」的节拍器同频。
+
+---
+
+## 五、落地实况审计（2026-09-17 全项目审阅）
+
+> 依 live 遥测逐点核对代码与账本后的诚实盘点：什么真的在生产运转、数字说了
+> 什么、哪些缺口是本次审阅新发现的。
+
+### 5.1 P0 两项的生产实证
+
+**P0-1 锚定评测**（`gep/anchor.py`，epoch 3 × 8 探针，`$EVOLVER_HOME/anchor/`）：
+
+- 触发接线真实工作：round-16/19/20/21 四次验证面变异（solidify.py×3、
+  acceptance/orchestrator.py×1）全部触发锚，**4/4 轮 8/8 探针通过**并记
+  `anchor_result` 于事件；
+- 负向验证在先（弱化 dup-solidify 守卫→对应探针变红）；
+- 纪律守住：epoch.json 只由人 CLI 写（`evolver anchor init --epoch`），
+  引擎只读；epoch 1→2→3 严格递增（round-16 探针源码修 ruff/mypy 时重装两次）。
+
+**P0-2 meta-report**（`ops/meta_report.py` + CLI `evolver meta-report [--json]`）：
+live 读数（2026-09-17）：
+
+| 维度 | 读数 | 解读 |
+|---|---|---|
+| adaptivity | 29 事件 / 22 接受 / 7 失败，窗口序列 [3,5,3,4,3,4] | 无恶化趋势，平台期是实况（0.9997 之上增益本就稀疏） |
+| retention | 13 落地基因追踪 / 5 信号无复发 / 0 后代不足 | 复发-free 占比 38%——修过的摩擦多数没再犯 |
+| transfer | **0**（差分头集口径） | 诚实零：尚无基因在剥离常驻背景后跨信号族复用（P1-3/4 的动机） |
+| efficiency | 1.32 rounds/gain；3.27M ms/gain（timed 6/22） | 均值被 18.3M 睡眠污染事件主导（5 个干净样本 ≈235s/gain）——**覆盖率字段让污染可见**，这正是 #30 的价值 |
+| stability | 7 失败 / 0 降级反馈 | 失败全部入账（#30 后失败也带 timing） |
+| meta-recursion | structural-L5 变异 10 行 | 近三行 solidify.py 后代成功率 100%、orchestrator 行尚无后代（unknown） |
+
+口径诚实性本身经三轮修复（#29 差分头集 / #30 同种群+失败成本 / #31 单调钟）
+——**遥测的演化史就是「防自欺」的实战记录**。
+
+### 5.2 soak 判定：数据不支持转正（这是系统的成功，不是失败）
+
+`gate-report --json`：gated_runs **20/20**、shadow_rejected 1、
+interception 0.05（踩 [0.05,0.5] 下限）、validation_disagreements 1、
+**false_kill_risk 1.0 > 0.1 → verdict `false_kill_high`**。
+
+唯一次拦截的解剖：round-21 的 T0 repeat0 测 0.8863、repeat1 0.9997——0.886
+即 #25/#26「分块超时→整块归零」旧签名；同轮级联 pytest 全绿、变异只改
+layer_id 字符串。**纯测量噪声伪杀**。false_kill_risk=1.0 把这件事如实摆在
+台面上：soak 的设计目的（让伪杀在 shadow 里现形，而不是硬执法杀好变异）
+达成。校准方向（下一 dogfood 弧线）：分块超时单块重试 + 重复间方差异议
+裁决（repeat 间差 >ε 时追加仲裁轮取中位）。**转正（SHADOW=0）始终是
+人类决策，且当前数据明确说不。**
+
+### 5.3 本次审阅新发现的诚实缺口
+
+1. **soak 在仓内进行**：`inside_repo=true`——20 个 gated run 累积在产品仓的
+   `.evolver/`/`memory/`，未按演进方案 §10 处方用外置 soak 工作区
+   （`~/.evomap/evolver.py-soak` 不存在）。缓解成立（运行态 gitignore、
+   从未提交、锚在仓外），但「soak 状态与产品仓隔离」的处方未照办——
+   重攒校准样本时应改用 `evolver soak setup`。
+2. **S26.5 eval-worktree 旗标全程未开**：29/29 事件无 `eval_workspace`——
+   级联与门都在活树测量（引擎按设计回退 live cwd）。门的候选树=活树，
+   「干净 worktree 门」从未真正运行过。
+3. **测量仪器自外于锚与机制面**：`ops/meta_report.py` 既不在
+   `ANCHOR_TRIGGER_SURFACES` 也不在 `META_MECHANISM_SURFACES`——遥测自身的
+   变异（round-18/19）不触发锚、不计 structural-L5。而连续三轮修的都是
+   「表」的诚实性（#29/#30/#31）。**建议 epoch 4**：加遥测不变量探针
+   （合成事件集上断言分子分母同种群、单调时长 ≤ 挂历跨度），并把
+   meta_report.py 纳入机制面。
+4. **effective L5 仍未测**：structural 有了数字（10 行、后代 60–100%），
+   但论文标准的受控比较（同预算+独立评测下，修订后的机制是否产出更好
+   后继）一次都没跑。仪器已备（T0 基线 + ms/gain + 锚），缺的是实验设计：
+   候选=机制变异前后各 N 轮同信号族对照。这是 P1 之前最值得做的
+   「零新代码」实验。
+
+### 5.4 章程纪律核对（全部守住）
+
+版本钉 1.112.0（round-13~21 零 minor bump）✓；零新 `EVOLVER_*` 旋钮
+（#29/#30/#31/#32 四次修复均无新 env）✓；SHADOW 未动 ✓；运行态零提交
+（`git ls-files memory` 仅 LESSONS_LEARNED.md）✓；锚仓外+epoch 递增 ✓；
+DEBUG.md 惯例不辍（#29–#32 四条四段式）✓。
+
+### 5.5 结论与排序
+
+P0 的落地把论文两个最尖锐的警告变成了生产行为：**评测者自偏好**（锚四产
+全绿+负向验证）与**自欺式遥测**（六维面板+三轮口径修复+覆盖率暴露）。
+soak 判定 `false_kill_high` 是测量系统在正确工作。下一步排序：
+
+1. **门校准**（分块重试+方差异议裁决）→ 重攒 soak（这次用外置工作区+
+   开 eval-worktree 旗标，补上 5.3-1/2 两笔债）；
+2. **effective-L5 对照实验**（零新代码，直接产出论文级证据）；
+3. 锚 **epoch 4**（遥测不变量探针）；
+4. 然后才轮到 P1-3/4/5（种群、证据包、生命周期——L2 跃迁主体）。
