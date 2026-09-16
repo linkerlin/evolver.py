@@ -37,6 +37,7 @@
 | 28 | stale 宿主惰性导入崩成裸 ImportError；工具目录暴露于回滚处置 | swarm/gitignore | round-17 | 未发版 |
 | 29 | meta-report transfer 维度两度过松：常驻信号头背景虚报「迁移」 | ops/meta_report | round-18 | 未发版 |
 | 30 | 效率维度混合种群平均 + 失败事件验证成本零痕迹 | meta_report/solidify | round-19 | 未发版 |
+| 31 | 时长测量用挂历时钟：系统睡眠 5.1h 计入 pytest 段（88 倍虚增） | solidify | round-20 | 未发版 |
 
 ## 条目
 
@@ -502,3 +503,23 @@
   挂历时钟陷阱——固化期间本机系统睡眠 5.1 小时整段计入 pytest 时长
   （真实 ~208s 记成 18,349s，88 倍），时长测量必须用 `time.monotonic()`
   （round-20 修）。
+
+### 31. 时长测量用挂历时钟：系统睡眠整段计入验证时长（round-20）
+
+- **症状**：round-19 事件 `validation_timing.total_ms = 18,348,987`
+  （≈5.1 小时），但该次固化墙钟窗口内宿主只观察了 ~14 分钟轮询。
+- **根因**：`_run_validations` 的总时长与逐段 `duration_ms` 全用
+  `time.time()`——挂历时钟吸收系统睡眠与 NTP 步进。固化期间本机睡眠
+  5.1 小时（事件 ts 18:58Z=本机 02:58 vs 启动 21:44，虚增秒数与睡眠
+  窗口精确吻合），整段计给了 pytest 段。round-16 引入计时以来第一次
+  睡眠撞上固化，即刻现形。
+- **修复**：时长源改 `time.monotonic()`（睡眠免疫、单调）；顶层新增
+  `duration_ms`（单调测量）；`_timing_block` 优先取之，legacy 无字段
+  事件回退挂历差。`started_at`/`finished_at` 保留挂历 epoch——它们是
+  ValidationReport 的时间戳契约，语义是「何时」不是「多久」。回归测试：
+  单调时长 ≤ 挂历跨度+舍入容差；伪造 9e6ms 挂历污染不得覆盖 5ms 单调值。
+- **经验**：**时间语义二分法——时间戳（when）用挂历 epoch，时长
+  （how long）必用单调钟**。长驻进程（守护、MCP 宿主、固化）在笔记本电脑
+  上合盖即睡，挂历差会把分钟级操作记成小时级；效率/性能类遥测的第一
+  个审计问题就是「你的分子是哪个钟量的」。append-only 账本不改史：污染
+  事件留档，新样本累积后指标自愈。
