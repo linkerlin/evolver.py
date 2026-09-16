@@ -998,6 +998,9 @@ def _cmd_meta_report(args: argparse.Namespace) -> int:
     eff = panel["efficiency"]
     ms_per_gain = eff.get("validation_ms_per_validated_gain")
     time_note = f" | {ms_per_gain} ms validation/gain" if ms_per_gain else ""
+    cov = eff.get("timing_coverage") or {}
+    if ms_per_gain and cov:
+        time_note += f" (timed {cov.get('timed_accepted')}/{cov.get('accepted_total')} accepted)"
     print(f"efficiency: {eff['rounds_per_validated_gain']} rounds per gain{time_note}")
     stab = panel["stability"]
     print(

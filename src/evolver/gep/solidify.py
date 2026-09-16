@@ -60,17 +60,44 @@ def _now_iso_ms() -> str:
     )
 
 
+def _timing_block(validation_result: dict[str, Any]) -> dict[str, Any]:
+    """RSI P0-2 (round-16): per-stage validation durations, consumed by the
+    meta-report efficiency panel (time per validated gain, not just rounds).
+
+    Round-19: attached on failure events too — a rejected cascade burns the
+    same validation seconds, and the efficiency metric was blind to its most
+    expensive path (two round-16 rejections left zero cost trace).
+    """
+    return {
+        "total_ms": round(
+            float(validation_result.get("finished_at", 0))
+            - float(validation_result.get("started_at", 0))
+        ),
+        "stages": [
+            {
+                "command": str(r.get("command", ""))[:120],
+                "ok": r.get("ok"),
+                "duration_ms": r.get("duration_ms"),
+            }
+            for r in validation_result.get("results", [])
+        ],
+    }
+
+
 def _failure_event(
     last_run: dict[str, Any],
     mutation: dict[str, Any],
     blast_radius: dict[str, Any],
     outcome: dict[str, Any],
+    *,
+    validation_result: dict[str, Any] | None = None,
     **extra: Any,
 ) -> dict[str, Any]:
     """Shared skeleton for failed EvolutionEvents (review dedup): every
     rejection path — cascade, novelty, acceptance, fitness — lands the same
-    auditable shape."""
-    return {
+    auditable shape. When validation ran before the rejection, its timing
+    rides along (cost visibility for the efficiency panel)."""
+    event = {
         "type": "EvolutionEvent",
         "id": f"evt_{int(time.time() * 1000)}_{secrets.token_hex(4)}",
         "run_id": last_run.get("run_id") or (last_run.get("mutation") or {}).get("id"),
@@ -83,6 +110,9 @@ def _failure_event(
         **extra,
         **_lineage_fields(),
     }
+    if validation_result is not None:
+        event["validation_timing"] = _timing_block(validation_result)
+    return event
 
 
 def write_state_for_solidify(last_run: dict[str, Any]) -> None:
@@ -475,6 +505,8 @@ def _apply_acceptance_gate(
     gate_result: Any,
     last_run: dict[str, Any],
     cwd: Path,
+    *,
+    validation_result: dict[str, Any] | None = None,
 ) -> dict[str, Any] | None:
     """Handle a rejection from the acceptance gate; None → gate passed/absent."""
     if gate_result is None or gate_result.accepted:
@@ -493,6 +525,7 @@ def _apply_acceptance_gate(
         cwd,
         blast_radius=failed_blast,
         error="acceptance_gate_rejected",
+        validation_result=validation_result,
     )
     return {
         "ok": False,
@@ -508,6 +541,7 @@ def _append_failure_event(
     blast_radius: dict[str, int],
     error: str,
     score: float = 0.0,
+    validation_result: dict[str, Any] | None = None,
 ) -> None:
     """Sprint 24.6 (enable_failure_events): land failed EvolutionEvents on
     rejection paths that historically stayed silent (Node v2 emits failure
@@ -521,6 +555,7 @@ def _append_failure_event(
             last_run.get("mutation", {}),
             blast_radius,
             {"status": "failed", "score": score, "error": error},
+            validation_result=validation_result,
         )
     )
 
@@ -786,6 +821,7 @@ def _handle_cascade_validation_failure(
             mutation,
             failed_blast,
             {"status": "failed", "score": score, "error": "validation_failed"},
+            validation_result=validation_result,
             novelty_fingerprint=failed_fp[:4000],
             novelty_added=failed_added[:4000],
         )
@@ -969,7 +1005,11 @@ def solidify(
                 rollback_new_untracked_files(git_list_untracked_files(cwd), cwd=cwd)
                 record_solidify_failure(last_run, error="validation_failed")
                 _append_failure_event(
-                    last_run, cwd, blast_radius=failed_blast, error="validation_failed"
+                    last_run,
+                    cwd,
+                    blast_radius=failed_blast,
+                    error="validation_failed",
+                    validation_result=validation_result,
                 )
                 details: dict[str, Any] = dict(validation_result)
                 if validation_report is not None:
@@ -1000,6 +1040,7 @@ def solidify(
                         mutation,
                         failed_blast,
                         {"status": "failed", "score": 0.0, "error": "anchor_failed"},
+                        validation_result=validation_result,
                     )
                 )
                 record_solidify_failure(last_run, error="anchor_failed", score=0.0)
@@ -1018,7 +1059,11 @@ def solidify(
         # Self-Harness A1: empirical acceptance gate. S26.5 runs it in the
         # isolated eval tree when the flag is on (fallback = live cwd).
         gate_result = gate_or_none(last_run, eval_cwd)
-    if (rejected := _apply_acceptance_gate(gate_result, last_run, cwd)) is not None:
+    if (
+        rejected := _apply_acceptance_gate(
+            gate_result, last_run, cwd, validation_result=validation_result
+        )
+    ) is not None:
         return rejected
 
     blast_radius = _compute_blast_radius()
@@ -1088,20 +1133,7 @@ def solidify(
     if validation_result is not None:
         # RSI P0-2 (round-16): per-stage durations feed the meta-report
         # efficiency panel (time per validated gain, not just rounds).
-        event["validation_timing"] = {
-            "total_ms": round(
-                float(validation_result.get("finished_at", 0))
-                - float(validation_result.get("started_at", 0))
-            ),
-            "stages": [
-                {
-                    "command": str(r.get("command", ""))[:120],
-                    "ok": r.get("ok"),
-                    "duration_ms": r.get("duration_ms"),
-                }
-                for r in validation_result.get("results", [])
-            ],
-        }
+        event["validation_timing"] = _timing_block(validation_result)
     if validation_report is not None:
         event["validation_report"] = validation_report
     if gate_result is not None:

@@ -181,14 +181,30 @@ def build_meta_report(
     }
 
     rounds_per_gain = round(len(events) / len(accepted), 2) if accepted else None
-    # Round-16: per-stage validation durations land on events as
-    # validation_timing; convert to ms-per-validated-gain when present.
-    timing_ms = [
-        int((e.get("validation_timing") or {}).get("total_ms") or 0)
-        for e in events
-        if (e.get("validation_timing") or {}).get("total_ms")
+    # Round-19: ms-per-gain over the TIMED population only. The round-16
+    # version divided timed spend by ALL accepted events — the untimed
+    # pre-round-16 majority diluted the live figure 6.3x (28,226 reported
+    # vs 178,765 true) and it drifted mechanically as the window aged.
+    # Failure events carry timing too (round-19): rejected cascades price
+    # into the numerator while only timed gains count as the denominator —
+    # both sides of the ratio now cover the same population. #29's sibling:
+    # a metric is only as honest as its numerator/denominator alignment.
+    timed_events = [e for e in events if (e.get("validation_timing") or {}).get("total_ms")]
+    timed_accepted = [
+        e for e in timed_events if (e.get("outcome") or {}).get("status") == "success"
     ]
-    ms_per_gain = round(sum(timing_ms) / len(accepted)) if timing_ms and accepted else None
+    ms_per_gain = (
+        round(
+            sum(int(e["validation_timing"]["total_ms"]) for e in timed_events) / len(timed_accepted)
+        )
+        if timed_accepted
+        else None
+    )
+    timing_coverage = {
+        "timed_events": len(timed_events),
+        "timed_accepted": len(timed_accepted),
+        "accepted_total": len(accepted),
+    }
     dq = _descendant_quality(events)
     resolved = sum(1 for r in dq if r["resolved"])
     unknown = sum(1 for r in dq if r["unknown"])
@@ -214,9 +230,12 @@ def build_meta_report(
             "efficiency": {
                 "rounds_per_validated_gain": rounds_per_gain,
                 "validation_ms_per_validated_gain": ms_per_gain,
-                "timed_events": len(timing_ms),
+                "timed_events": len(timed_events),
+                "timing_coverage": timing_coverage,
                 "note": (
-                    "time-based when validation_timing present; else count-based"
+                    "time-based over the timed population "
+                    f"({len(timed_accepted)}/{len(accepted)} accepted timed); "
+                    "else count-based"
                     if ms_per_gain is not None
                     else "count-based until validation_timing lands on events"
                 ),

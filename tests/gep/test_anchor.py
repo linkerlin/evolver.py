@@ -277,6 +277,48 @@ class TestMetaReport:
         assert eff["timed_events"] == 1
         assert eff["validation_ms_per_validated_gain"] == 100_000
         assert "time-based" in eff["note"]
+        assert eff["timing_coverage"] == {
+            "timed_events": 1,
+            "timed_accepted": 1,
+            "accepted_total": 1,
+        }
+
+    def test_efficiency_ms_per_gain_uses_timed_population_only(self) -> None:
+        from evolver.ops.meta_report import build_meta_report
+
+        # Round-19: the round-16 metric divided timed spend by ALL accepted
+        # events — untimed history diluted it 6.3x live. Both ratio sides
+        # must cover the timed population; a timed rejection prices into
+        # the numerator but is never a gain in the denominator.
+        events = [
+            {  # untimed success — must NOT dilute the denominator
+                "id": "e1",
+                "outcome": {"status": "success"},
+                "mutation": {"landed_gene_ids": ["g1"]},
+                "signals": ["log_error"],
+            },
+            {
+                "id": "e2",
+                "outcome": {"status": "success"},
+                "mutation": {"landed_gene_ids": ["g1"]},
+                "signals": ["log_error"],
+                "validation_timing": {"total_ms": 100_000, "stages": []},
+            },
+            {
+                "id": "e3",
+                "outcome": {"status": "failed", "error": "validation_failed"},
+                "signals": ["log_error"],
+                "validation_timing": {"total_ms": 50_000, "stages": []},
+            },
+        ]
+        eff = build_meta_report(events, [])["panel"]["efficiency"]
+        # (100_000 + 50_000) / 1 timed gain — old code reported 150_000/2 = 75_000
+        assert eff["validation_ms_per_validated_gain"] == 150_000
+        assert eff["timing_coverage"] == {
+            "timed_events": 2,
+            "timed_accepted": 1,
+            "accepted_total": 2,
+        }
 
     def test_run_validations_records_stage_durations(self, tmp_path: Path) -> None:
         from evolver.gep.solidify import _run_validations

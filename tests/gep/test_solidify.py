@@ -194,6 +194,30 @@ def test_solidify_validation_failed(git_ws: Path) -> None:
     assert result["error"] == "validation_failed"
 
 
+def test_validation_failure_event_carries_timing(git_ws: Path) -> None:
+    _ = git_ws
+    # Round-19: a rejected cascade burns the same validation seconds — the
+    # failure event must carry validation_timing or the efficiency panel is
+    # blind to its most expensive path.
+    set_flag("enable_fitness_cascade", False, persist=False)
+    write_state_for_solidify(
+        _last_run(
+            mutation={
+                "id": "mut_fail_t",
+                "validation": [[sys.executable, "-c", "import sys; sys.exit(1)"]],
+            }
+        )
+    )
+    result = solidify()
+    assert result["ok"] is False
+    evt = json.loads(
+        (get_gep_assets_dir() / "events.jsonl").read_text(encoding="utf-8").strip().splitlines()[-1]
+    )
+    assert evt["outcome"]["error"] == "validation_failed"
+    assert evt["validation_timing"]["total_ms"] >= 0
+    assert evt["validation_timing"]["stages"][0]["command"]
+
+
 def test_solidify_validation_success(git_ws: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     _ = git_ws
     # Legacy path (cascade off): mutation.validation drives validation.
