@@ -36,6 +36,7 @@
 | 27 | 新增源码型资产只跑靶向检查就提交：ruff I001/E501 + mypy 同名模块连拒两次 | assets/mypy | round-16 | 未发版 |
 | 28 | stale 宿主惰性导入崩成裸 ImportError；工具目录暴露于回滚处置 | swarm/gitignore | round-17 | 未发版 |
 | 29 | meta-report transfer 维度两度过松：常驻信号头背景虚报「迁移」 | ops/meta_report | round-18 | 未发版 |
+| 30 | 效率维度混合种群平均 + 失败事件验证成本零痕迹 | meta_report/solidify | round-19 | 未发版 |
 
 ## 条目
 
@@ -475,3 +476,29 @@
 - **经验**：**凡「跨情境复现/迁移/泛化」类指标，必须先估计背景分布再比差分**
   ——直接比较原始集合，测到的往往是背景噪声的漂移而非信号本身。诚实归零
   优于体面的虚报：structural-L5 审计的目的是暴露真实水位，不是装点它。
+
+### 30. 效率维度混合种群平均 + 失败事件验证成本零痕迹（round-19）
+
+- **症状**：`evolver meta-report` 效率面板 live 报 28,226 ms validation/gain；
+  取证计时种群内真实成本 178,765 ms（6.3 倍低估），且覆盖率仅 3/19——14 个
+  round-16 之前的 accepted 事件无 `validation_timing`，稀释了分母。另：
+  round-16 两次级联拒付（各烧一整轮验证）在事件上零成本痕迹——效率维度对
+  最贵的路径全盲。
+- **根因**：`ms_per_gain = sum(计时事件)/len(全部 accepted)`——分子分母种群
+  错配（#29 的对偶：#29 是观测集混背景，本条是比率两侧不同群）；且
+  `validation_timing` 只在成功事件构造（round-16 只挂了成功路径），失败事件
+  走 `_failure_event` 骨架不带计时。
+- **修复**：(1) `meta_report.py` 分母改计时种群内 accepted 数，分子含失败
+  事件的计时（拒绝的级联同样烧秒），面板新增 `timing_coverage`
+  （timed_events/timed_accepted/accepted_total）暴露样本代表性；CLI 效率行
+  附 `(timed M/N accepted)`。(2) `solidify.py` 提取 `_timing_block()`
+  助手，`_failure_event` 增可选 `validation_result` 参数——级联失败/legacy
+  失败/anchor 失败/验收门拒绝四条路径全部挂 validation_timing。live 修正为
+  178,765 ms/gain。负例测试：无计时样本不得稀释分母、计时失败进分子不进
+  分母。
+- **经验**：**比率型遥测的第一审计问题是「分子与分母是否同一种群」**；
+  成本可见性必须覆盖所有终点（失败是成本大头——只记成功样本的效率面板
+  系统性乐观）。**后续发现（本轮回填）**：本轮固化实况暴露 `time.time()`
+  挂历时钟陷阱——固化期间本机系统睡眠 5.1 小时整段计入 pytest 时长
+  （真实 ~208s 记成 18,349s，88 倍），时长测量必须用 `time.monotonic()`
+  （round-20 修）。
