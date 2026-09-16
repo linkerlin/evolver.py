@@ -39,6 +39,7 @@
 | 30 | 效率维度混合种群平均 + 失败事件验证成本零痕迹 | meta_report/solidify | round-19 | 未发版 |
 | 31 | 时长测量用挂历时钟：系统睡眠 5.1h 计入 pytest 段（88 倍虚增） | solidify | round-20 | 未发版 |
 | 32 | 验收门 layer_id 前缀翻倍（存档往返腐蚀）；soak 判定 false_kill_high | acceptance | round-21 | 未发版 |
+| 33 | T0 分块超时不重试 + 重复间分歧直接进均值 → 伪杀；preflight 测试未隔离 user-lock | acceptance/guards | round-22 | 未发版 |
 
 ## 条目
 
@@ -547,3 +548,30 @@
   踩线、false_kill_risk=1.0 如实报告。**结论：门过紧未到转正水位，
   校准方向=分块超时单块重试 + 重复间方差异议裁决**（下轮候选）。soak
   的价值正在于让伪杀在 shadow 里现形，而不是在硬执法里杀掉好变异。
+
+### 33. 门噪声免疫（分块重试 + 方差异议裁决）+ preflight 测试未隔离 user-lock（round-22）
+
+- **症状**：#32 伪杀根因双修 + 一次「级联正当拒绝」。round-22 首次固化
+  `validation_failed`：`test_ambient_load_below_cores_passes_preflight`
+  abort 于 `user lock active (lock_active, age=37317ms)`——真实守护进程
+  （`evolver --loop`）持有的 `~/.evolver/user.lock` 被测试读到。
+- **根因**：(A) `t0_frozen.run_pass_rate` 每块 `TimeoutExpired/OSError`
+  直接 `continue`——瞬时负载尖峰令 400 ID 计零（0.886 签名）；重复观测
+  无条件进均值，单次抖动即可把均值拖成 dropped。(B) 该 preflight 测试
+  stub 了 CPU/负载却没隔离锁路径（#4 家族）——eval worktree 隔离了文件、
+  隔离不了 env 键控的宿主态，守护进程持锁时必炸；活树跑时此前靠运气
+  （锁不存在或已过期）。
+- **修复**：(A) 分块失败重试一次（`_CHUNK_ATTEMPTS=2`），二次失败保持
+  fail-safe 计零；`orchestrator._adjudicate_flakes`——重复极差 >
+  `T0_FLAKE_ADJUDICATION_SPREAD`（0.05，config 常量非 env 旋钮）时追加
+  一次仲裁 repeat 取中位数，偏离中位数超 spread/2 的观测写入
+  `LayerMetric.adjudication`（trimmed-not-hidden）后移出均值；一致低分
+  （真回归）不触发裁决照拒；establishing 模式同过裁决（基线被单次抖动
+  打低会让后续轮全读 improved）。(B) 测试 `EVOLVER_USER_LOCK` 指向
+  tmp 不存在路径，在守护进程持锁实况下验证绿。
+- **经验**：**校准只治噪声、不放宽标准**——负例测试钉住「一致回归仍被拒、
+  一致重复零额外开销」是这类修复的验收面；**隔离测试要覆盖全部被读的
+  状态维度**（stub 了 CPU/负载却漏了锁，等于没隔离）；干净 worktree 会
+  把 env 键控的宿主态泄漏照出来——那正是它的职责。另：级联的正当拒绝
+  → stash 恢复清单含修复文件 → 重固化通过，闭环在诚实工作；首个带计时
+  的失败事件（168s）入账，#30 的失败成本可见性兑现。
