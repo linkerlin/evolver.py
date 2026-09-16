@@ -8,10 +8,12 @@
 >
 > **实施状态（2026-09-16）**：P0-1 锚定评测已落地——`gep/anchor.py` + 8 种子探针
 > （DEBUG #9/#12/#19/#20-23/#21/#22/#24/#25-26 契约化）+ solidify 触发接线
-> （`anchor_failed` 硬失败）+ CLI `evolver anchor init/list/run`，本机 epoch 1 已装机，
-> 负向验证通过（弱化重复固化守卫→探针变红）。P0-2 meta-report 已落地——
-> `ops/meta_report.py` + CLI `evolver meta-report`，六维面板 + 后代质量 +
-> structural-L5 审计行。P1/P2 未动。
+> （`anchor_failed` 硬失败）+ CLI `evolver anchor init/list/run`，本机 epoch 3 已装机
+> （round-16 首次生产触发 8/8 通过），负向验证通过（弱化重复固化守卫→探针变红）。
+> P0-2 meta-report 已落地——`ops/meta_report.py` + CLI `evolver meta-report`，
+> 六维面板 + 后代质量 + structural-L5 审计行 + validation_ms_per_validated_gain +
+> transfer 差分头集口径（round-18：排除 ≥50% 事件常驻信号头后比较差分集，
+> live 诚实归零；见 DEBUG #29）。P1/P2 未动。
 
 ---
 
