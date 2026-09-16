@@ -235,6 +235,13 @@ DIAGNOSIS_MAX_EVENTS: Final = env_int("EVOLVER_DIAGNOSIS_MAX_EVENTS", 20)
 # --- Self-Harness acceptance gate (Sprint A1; opt-in, off by default) ---
 ACCEPTANCE_REPEATS: Final = env_int("EVOLVER_ACCEPTANCE_REPEATS", 2)
 ACCEPTANCE_DELTA_EPSILON: Final = env_float("EVOLVER_ACCEPTANCE_DELTA_EPSILON", 0.0)
+# Round-22 (soak false_kill_high calibration): when candidate repeats disagree
+# by more than this spread, the orchestrator runs one extra adjudication
+# repeat and excludes median-outliers from the mean — a single timed-out T0
+# chunk once flaked a repeat to 0.886 while its sibling measured 0.9997 and
+# the mean turned that noise into a phantom "regresses" verdict (DEBUG #32).
+# Plain constant, not an env knob (charter: no new EVOLVER_* dials in soak).
+T0_FLAKE_ADJUDICATION_SPREAD: Final = 0.05
 # Sprint 22.5 gray-scale + S26 promotion: compute + record gate verdicts but
 # never enforce during the soak window (interception / false-kill rates are
 # measured on events as shadow markers). Set EVOLVER_ACCEPTANCE_SHADOW=0 to

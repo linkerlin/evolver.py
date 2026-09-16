@@ -110,6 +110,82 @@ class TestLayerIdNormalization:
         assert result.layers[0].layer_id == "T0_frozen@abc123"
 
 
+class TestFlakeAdjudication:
+    """Round-22: one flaky repeat must not become a verdict (soak
+    false_kill_high, DEBUG #32). Spread > T0_FLAKE_ADJUDICATION_SPREAD
+    triggers one extra repeat; median-outliers are recorded but excluded
+    from the mean. A consistent drop never triggers adjudication."""
+
+    def test_flaky_repeat_trimmed_not_rejected(
+        self, _stub_t0: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        # repeat0 flakes to 2/4 (0.5), repeat1 measures 4/4, the adjudication
+        # repeat corroborates 4/4 → the 0.5 observation is trimmed, the mean
+        # returns to 1.0, and the phantom "regresses" verdict disappears.
+        sequence = iter([(2, 4), (4, 4), (4, 4)])
+
+        def fake_run(ids: list[str], _cwd: Path, **_kw: object) -> tuple[int, int]:
+            return next(sequence)
+
+        monkeypatch.setattr(orchestrator.t0_frozen, "run_pass_rate", fake_run)
+        result = run_acceptance_gate(
+            cwd=tmp_path,
+            snapshot_dir=tmp_path / "snap",
+            baseline_t0_rate=1.0,
+            repeats=2,
+        )
+        layer = result.layers[0]
+        assert layer.verdict == "unchanged"
+        assert layer.candidate_mean == 1.0
+        assert result.accepted is True
+        assert layer.adjudication is not None
+        assert layer.adjudication["trimmed"][0]["score"] == 0.5
+        assert layer.adjudication["adjudication_repeat"]["score"] == 1.0
+
+    def test_consistent_regression_still_rejects(
+        self, _stub_t0: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        # Both repeats agree on 2/4 — a real regression, not noise. No
+        # adjudication, no extra run, the rejection path is untouched.
+        calls = {"n": 0}
+
+        def fake_run(ids: list[str], _cwd: Path, **_kw: object) -> tuple[int, int]:
+            calls["n"] += 1
+            return (2, 4)
+
+        monkeypatch.setattr(orchestrator.t0_frozen, "run_pass_rate", fake_run)
+        result = run_acceptance_gate(
+            cwd=tmp_path,
+            snapshot_dir=tmp_path / "snap",
+            baseline_t0_rate=1.0,
+            repeats=2,
+        )
+        layer = result.layers[0]
+        assert layer.verdict == "dropped"
+        assert result.accepted is False
+        assert layer.adjudication is None
+        assert calls["n"] == 2  # exactly the requested repeats
+
+    def test_consistent_repeats_skip_adjudication(
+        self, _stub_t0: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        calls = {"n": 0}
+
+        def fake_run(ids: list[str], _cwd: Path, **_kw: object) -> tuple[int, int]:
+            calls["n"] += 1
+            return (4, 4)
+
+        monkeypatch.setattr(orchestrator.t0_frozen, "run_pass_rate", fake_run)
+        result = run_acceptance_gate(
+            cwd=tmp_path,
+            snapshot_dir=tmp_path / "snap",
+            baseline_t0_rate=1.0,
+            repeats=2,
+        )
+        assert result.layers[0].adjudication is None
+        assert calls["n"] == 2
+
+
 class TestDegradedT0Only:
     def test_no_regression_accepts(self, _stub_t0: Path, tmp_path: Path) -> None:
         result = run_acceptance_gate(
@@ -175,6 +251,10 @@ class TestRepeatsAveraging:
         tmp_path: Path,
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
+        # Round-22: spread this wide would normally trigger flake adjudication
+        # (TestFlakeAdjudication covers that); widen the threshold here so
+        # this test isolates the plain mean-over-repeats machinery.
+        monkeypatch.setattr(orchestrator, "T0_FLAKE_ADJUDICATION_SPREAD", 0.6)
         # cycle through 3/4, 4/4, 2/4 across repeats
         sequence = iter([(3, 4), (4, 4), (2, 4)])
 

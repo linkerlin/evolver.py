@@ -18,8 +18,11 @@ with B1 disabled).
 from __future__ import annotations
 
 import json
+import statistics
 from pathlib import Path
+from typing import Any
 
+from evolver.config import T0_FLAKE_ADJUDICATION_SPREAD
 from evolver.gep.acceptance import t0_frozen
 from evolver.gep.acceptance.gate import classify_rate, decide
 from evolver.gep.acceptance.schemas import (
@@ -90,6 +93,49 @@ def _run_t0_repeats(
     return obs
 
 
+def _adjudicate_flakes(
+    frozen_ids: list[str],
+    cwd: Path,
+    obs: list[RepeatObs],
+) -> tuple[list[RepeatObs], dict[str, Any] | None]:
+    """Round-22 flake adjudication for T0 repeats.
+
+    A single timed-out chunk once flaked one repeat to 0.886 while its sibling
+    measured 0.9997; the mean turned that measurement noise into a phantom
+    "regresses" verdict (soak false_kill_high, DEBUG #32). When repeats
+    disagree by more than T0_FLAKE_ADJUDICATION_SPREAD, run ONE extra
+    adjudication repeat and exclude observations that deviate from the
+    median by more than half the spread. A consistent drop (real regression)
+    never triggers adjudication — the rejection path is untouched.
+    """
+    if len(obs) < 2:
+        return obs, None
+    scores = [o.score for o in obs]
+    if max(scores) - min(scores) <= T0_FLAKE_ADJUDICATION_SPREAD:
+        return obs, None
+    extra = _run_t0_repeats(frozen_ids, cwd, repeats=1)[0]
+    extra = extra.model_copy(update={"repeat_index": max(o.repeat_index for o in obs) + 1})
+    all_obs = [*obs, extra]
+    scores = [o.score for o in all_obs]
+    median = statistics.median(scores)
+    kept = [o for o in all_obs if abs(o.score - median) <= T0_FLAKE_ADJUDICATION_SPREAD / 2]
+    if not kept:  # paranoia: median itself excluded cannot happen with <= spread/2
+        kept = all_obs
+    info: dict[str, Any] = {
+        "trigger": "repeat_spread",
+        "spread": round(max(scores) - min(scores), 6),
+        "adjudication_repeat": extra.model_dump(),
+        "median": round(median, 6),
+        "trimmed": [o.model_dump() for o in all_obs if o not in kept],
+        "reason": (
+            "repeats disagreed beyond T0_FLAKE_ADJUDICATION_SPREAD; one extra "
+            "repeat run, median-outliers excluded from the mean (recorded, "
+            "not hidden) — measurement noise must not become a verdict"
+        ),
+    }
+    return kept, info
+
+
 def run_acceptance_gate(
     *,
     cwd: Path,
@@ -124,10 +170,14 @@ def run_acceptance_gate(
         snap = t0_frozen.freeze_snapshot(test_ids, snapshot_dir)
         frozen = t0_frozen.load_snapshot(snap)
         snap_label = snap.stem
-    candidate_repeats = _run_t0_repeats(frozen, cwd, repeats=repeats)
+    candidate_repeats, adjudication = _adjudicate_flakes(
+        frozen, cwd, _run_t0_repeats(frozen, cwd, repeats=repeats)
+    )
 
     if baseline_t0_rate is None:
-        # Establishing mode: record only, no gating.
+        # Establishing mode: record only, no gating. A flake here would poison
+        # the baseline low (everything after would read "improved"), so
+        # adjudication applies before the rate is recorded/persisted.
         total = len(frozen)
         t0_layer = LayerMetric(
             layer_id=_t0_layer_id(snap_label),
@@ -138,6 +188,7 @@ def run_acceptance_gate(
             candidate_mean=candidate_repeats[0].score if candidate_repeats else 0.0,
             delta=0.0,
             verdict="unchanged",
+            adjudication=adjudication,
         )
         return AcceptanceResult(
             accepted=True,
@@ -160,6 +211,7 @@ def run_acceptance_gate(
         candidate_mean=c_mean,
         delta=delta,
         verdict=verdict,
+        adjudication=adjudication,
     )
 
     layers: list[LayerMetric] = [t0_layer]

@@ -143,3 +143,47 @@ class TestSubprocessIntegration:
         assert total == len(ids)
         assert passed == total
         assert calls == [t0._CHUNK_SIZE, t0._CHUNK_SIZE, 5]
+
+
+class TestChunkRetry:
+    """Round-22: a transient chunk timeout must be retried once instead of
+    zeroing 400 IDs into a phantom regression (soak false_kill_high,
+    DEBUG #32); a second failure stays fail-safe."""
+
+    def test_timed_out_chunk_retried_once(
+        self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+    ) -> None:
+        import subprocess as sp
+
+        import evolver.gep.acceptance.t0_frozen as t0
+
+        calls = {"n": 0}
+
+        def fake_run(argv: list[str], **kwargs: object) -> object:
+            calls["n"] += 1
+            if calls["n"] == 1:
+                raise sp.TimeoutExpired(cmd="pytest", timeout=1)
+            return sp.CompletedProcess(argv, 0, stdout="2 passed", stderr="")
+
+        monkeypatch.setattr(t0.subprocess, "run", fake_run)
+        passed, total = run_pass_rate(["m::t1", "m::t2"], tmp_path)
+        assert (passed, total) == (2, 2)
+        assert calls["n"] == 2
+
+    def test_persistent_chunk_failure_counts_failed(
+        self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+    ) -> None:
+        import subprocess as sp
+
+        import evolver.gep.acceptance.t0_frozen as t0
+
+        calls = {"n": 0}
+
+        def fake_run(argv: list[str], **kwargs: object) -> object:
+            calls["n"] += 1
+            raise sp.TimeoutExpired(cmd="pytest", timeout=1)
+
+        monkeypatch.setattr(t0.subprocess, "run", fake_run)
+        passed, total = run_pass_rate(["m::t1", "m::t2"], tmp_path)
+        assert (passed, total) == (0, 2)
+        assert calls["n"] == 2  # exactly one retry, no loop

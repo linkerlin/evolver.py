@@ -28,11 +28,19 @@ def test_default_load_max_scales_with_cpu_count(monkeypatch: pytest.MonkeyPatch)
     assert guards.get_default_load_max() == 10.0
 
 
-def test_ambient_load_below_cores_passes_preflight(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_ambient_load_below_cores_passes_preflight(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     """The round-6~13 friction: 10-core host, ambient load 2.8 (GUI apps),
-    no EVOLVE_LOAD_MAX override — preflight must not abort."""
+    no EVOLVE_LOAD_MAX override — preflight must not abort.
+
+    Round-22: the user-lock probe must be isolated too — a live daemon
+    holding ~/.evolver/user.lock made this test read REAL host state and
+    abort (an eval-worktree cascade caught it; DEBUG #4 family: tests that
+    read state files must isolate the paths)."""
     monkeypatch.setattr(guards, "detect_cpu_count", lambda: 10)
     monkeypatch.setattr(guards, "get_system_load", lambda: guards.LoadSample(2.8, 2.5, 2.4))
+    monkeypatch.setenv("EVOLVER_USER_LOCK", str(tmp_path / "absent-user.lock"))
     result = asyncio.run(guards.run_preflight_checks(is_dry_run=False))
     assert result.abort is False
 

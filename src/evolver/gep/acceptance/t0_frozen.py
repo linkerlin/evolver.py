@@ -102,6 +102,9 @@ def discover_test_ids(cwd: Path, *, timeout_s: float = 60.0) -> list[str]:
     return sorted(ids)
 
 
+_CHUNK_ATTEMPTS = 2
+
+
 def run_pass_rate(
     test_ids: list[str],
     cwd: Path,
@@ -115,8 +118,10 @@ def run_pass_rate(
     node IDs onto argv and could not finish inside a single ``timeout_s``
     budget — every measurement timed out and scored 0 while the baseline
     (requiring ``candidate_mean > 0``) never persisted (round-14). Per-chunk
-    failures (timeout / OSError) count that chunk's tests as failed
-    (fail-safe, as before).
+    failures (timeout / OSError) are retried once (round-22: a transient
+    load spike on one chunk once zeroed 400 IDs into a phantom 0.886
+    "regression" — soak false_kill_high, DEBUG #32); a second failure still
+    counts that chunk's tests as failed (fail-safe, as before).
     """
     total = len(test_ids)
     if total == 0:
@@ -124,21 +129,23 @@ def run_pass_rate(
     passed = 0
     for start in range(0, total, _CHUNK_SIZE):
         chunk = test_ids[start : start + _CHUNK_SIZE]
-        try:
-            proc = subprocess.run(
-                ["pytest", *chunk, "-q", "--tb=no", "-p", "no:cacheprovider"],
-                cwd=str(cwd),
-                capture_output=True,
-                text=True,
-                timeout=timeout_s,
-                check=False,
-                shell=False,
-                env=validation_env(),
-            )
-            chunk_passed, _chunk_total = parse_pytest_summary(proc.stdout or "", len(chunk))
-            passed += chunk_passed
-        except (subprocess.TimeoutExpired, OSError):
-            continue
+        for _attempt in range(_CHUNK_ATTEMPTS):
+            try:
+                proc = subprocess.run(
+                    ["pytest", *chunk, "-q", "--tb=no", "-p", "no:cacheprovider"],
+                    cwd=str(cwd),
+                    capture_output=True,
+                    text=True,
+                    timeout=timeout_s,
+                    check=False,
+                    shell=False,
+                    env=validation_env(),
+                )
+                chunk_passed, _chunk_total = parse_pytest_summary(proc.stdout or "", len(chunk))
+                passed += chunk_passed
+                break
+            except (subprocess.TimeoutExpired, OSError):
+                continue
     return (passed, total)
 
 

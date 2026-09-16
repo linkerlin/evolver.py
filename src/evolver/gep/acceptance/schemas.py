@@ -11,7 +11,7 @@ only held-out layer is T0.
 
 from __future__ import annotations
 
-from typing import Literal
+from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
@@ -65,6 +65,11 @@ class LayerMetric(BaseModel):
     candidate_mean: float = 0.0
     delta: float = 0.0
     verdict: LayerVerdict = "unknown"
+    # Round-22 flake adjudication: when repeats disagreed beyond
+    # T0_FLAKE_ADJUDICATION_SPREAD an extra repeat was run and
+    # median-outliers were excluded from the mean. The excluded
+    # observations stay recorded here — trimmed, never hidden.
+    adjudication: dict[str, Any] | None = None
 
 
 class AcceptanceResult(BaseModel):
