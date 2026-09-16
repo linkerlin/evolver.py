@@ -111,10 +111,11 @@ class TestLayerIdNormalization:
 
 
 class TestFlakeAdjudication:
-    """Round-22: one flaky repeat must not become a verdict (soak
-    false_kill_high, DEBUG #32). Spread > T0_FLAKE_ADJUDICATION_SPREAD
-    triggers one extra repeat; median-outliers are recorded but excluded
-    from the mean. A consistent drop never triggers adjudication."""
+    """Round-22/25: one flaky repeat must not become a verdict (soak
+    false_kill_high, DEBUG #32). The frozen set is deterministic — ANY
+    inter-repeat mismatch triggers one extra repeat; the majority value
+    anchors the mean, minority observations are recorded but excluded.
+    A consistent drop never triggers adjudication."""
 
     def test_flaky_repeat_trimmed_not_rejected(
         self, _stub_t0: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
@@ -185,6 +186,52 @@ class TestFlakeAdjudication:
         assert result.layers[0].adjudication is None
         assert calls["n"] == 2
 
+    def test_single_test_flake_triggers_adjudication(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        # Round-25 (DEBUG #35 tail): a repeat short by exactly ONE test
+        # (3517 vs 3518 of 3519, spread 0.00028) previously sailed under
+        # the 0.05 bar and dragged the mean into a phantom "dropped".
+        # Deterministic suite ⇒ any mismatch adjudicates; majority anchors.
+        from evolver.gep.acceptance.schemas import RepeatObs
+
+        n = 3519
+        obs = [
+            RepeatObs(repeat_index=0, score=3517 / n, denominator=n),
+            RepeatObs(repeat_index=1, score=3518 / n, denominator=n),
+        ]
+
+        def fake_extra(_ids: list[str], _cwd: Path, *, repeats: int) -> list[RepeatObs]:
+            return [RepeatObs(repeat_index=9, score=3518 / n, denominator=n)]
+
+        monkeypatch.setattr(orchestrator, "_run_t0_repeats", fake_extra)
+        kept, info = orchestrator._adjudicate_flakes([], tmp_path, obs)
+        assert [o.score for o in kept] == [3518 / n, 3518 / n]
+        assert info is not None
+        assert info["trigger"] == "repeat_mismatch"
+        assert info["trimmed"][0]["score"] == 3517 / n
+
+    def test_no_majority_keeps_everything(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        # Continuous flakiness (three distinct values): conservative — all
+        # observations stay in the mean, verdict fails toward rejection.
+        from evolver.gep.acceptance.schemas import RepeatObs
+
+        obs = [
+            RepeatObs(repeat_index=0, score=0.9, denominator=10),
+            RepeatObs(repeat_index=1, score=0.8, denominator=10),
+        ]
+
+        def fake_extra(_ids: list[str], _cwd: Path, *, repeats: int) -> list[RepeatObs]:
+            return [RepeatObs(repeat_index=9, score=0.7, denominator=10)]
+
+        monkeypatch.setattr(orchestrator, "_run_t0_repeats", fake_extra)
+        kept, info = orchestrator._adjudicate_flakes([], tmp_path, obs)
+        assert len(kept) == 3
+        assert info is not None
+        assert info["trimmed"] == []
+
 
 class TestDegradedT0Only:
     def test_no_regression_accepts(self, _stub_t0: Path, tmp_path: Path) -> None:
@@ -251,12 +298,10 @@ class TestRepeatsAveraging:
         tmp_path: Path,
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
-        # Round-22: spread this wide would normally trigger flake adjudication
-        # (TestFlakeAdjudication covers that); widen the threshold here so
-        # this test isolates the plain mean-over-repeats machinery.
-        monkeypatch.setattr(orchestrator, "T0_FLAKE_ADJUDICATION_SPREAD", 0.6)
-        # cycle through 3/4, 4/4, 2/4 across repeats
-        sequence = iter([(3, 4), (4, 4), (2, 4)])
+        # Round-25: mismatched repeats now always adjudicate
+        # (TestFlakeAdjudication); identical repeats exercise the plain
+        # mean-over-repeats machinery without an extra run.
+        sequence = iter([(3, 4), (3, 4), (3, 4)])
 
         def fake_run(_ids: list[str], _cwd: Path, **_kw: object) -> tuple[int, int]:
             return next(sequence)
@@ -268,6 +313,6 @@ class TestRepeatsAveraging:
             baseline_t0_rate=0.75,
             repeats=3,
         )
-        # mean = (0.75 + 1.0 + 0.5) / 3 = 0.75 → unchanged vs 0.75
+        # mean of three identical 0.75 repeats = 0.75 -> unchanged vs 0.75
         assert result.layers[0].candidate_mean == pytest.approx(0.75)
         assert len(result.layers[0].candidate_repeats) == 3

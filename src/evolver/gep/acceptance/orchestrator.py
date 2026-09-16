@@ -18,11 +18,9 @@ with B1 disabled).
 from __future__ import annotations
 
 import json
-import statistics
 from pathlib import Path
 from typing import Any
 
-from evolver.config import T0_FLAKE_ADJUDICATION_SPREAD
 from evolver.gep.acceptance import t0_frozen
 from evolver.gep.acceptance.gate import classify_rate, decide
 from evolver.gep.acceptance.schemas import (
@@ -98,39 +96,61 @@ def _adjudicate_flakes(
     cwd: Path,
     obs: list[RepeatObs],
 ) -> tuple[list[RepeatObs], dict[str, Any] | None]:
-    """Round-22 flake adjudication for T0 repeats.
+    """Round-25 granularity-aware flake adjudication for T0 repeats.
 
-    A single timed-out chunk once flaked one repeat to 0.886 while its sibling
-    measured 0.9997; the mean turned that measurement noise into a phantom
-    "regresses" verdict (soak false_kill_high, DEBUG #32). When repeats
-    disagree by more than T0_FLAKE_ADJUDICATION_SPREAD, run ONE extra
-    adjudication repeat and exclude observations that deviate from the
-    median by more than half the spread. A consistent drop (real regression)
-    never triggers adjudication — the rejection path is untouched.
+    The frozen set is deterministic — same IDs, same tree, so repeats SHOULD
+    be identical. Any inter-repeat difference is measurement noise (a timed-
+    out chunk once flaked a repeat to 0.886, DEBUG #32; a single-test flake
+    later dragged the mean by exactly 1/3519, DEBUG #35 tail). Trigger on ANY
+    mismatch (no spread threshold — a fixed 0.05 bar let single-test noise
+    through), run ONE extra adjudication repeat, and anchor on the majority
+    value: observations equal to the mode are kept, the rest are recorded in
+    ``adjudication`` but excluded from the mean. No majority (all distinct =
+    continuous flakiness) keeps everything — conservative, fail-toward-
+    reject. Identical repeats (real regression or real health) never trigger
+    adjudication; the rejection path is untouched.
     """
     if len(obs) < 2:
         return obs, None
     scores = [o.score for o in obs]
-    if max(scores) - min(scores) <= T0_FLAKE_ADJUDICATION_SPREAD:
+    if max(scores) == min(scores):
         return obs, None
     extra = _run_t0_repeats(frozen_ids, cwd, repeats=1)[0]
     extra = extra.model_copy(update={"repeat_index": max(o.repeat_index for o in obs) + 1})
     all_obs = [*obs, extra]
     scores = [o.score for o in all_obs]
-    median = statistics.median(scores)
-    kept = [o for o in all_obs if abs(o.score - median) <= T0_FLAKE_ADJUDICATION_SPREAD / 2]
-    if not kept:  # paranoia: median itself excluded cannot happen with <= spread/2
-        kept = all_obs
-    info: dict[str, Any] = {
-        "trigger": "repeat_spread",
+    counts: dict[float, int] = {}
+    for s in scores:
+        counts[s] = counts.get(s, 0) + 1
+    majority_score, majority_count = max(counts.items(), key=lambda kv: kv[1])
+    if majority_count < 2:
+        # all distinct — too flaky to adjudicate; keep everything and say so
+        info: dict[str, Any] = {
+            "trigger": "repeat_mismatch",
+            "spread": round(max(scores) - min(scores), 6),
+            "adjudication_repeat": extra.model_dump(),
+            "counts": {str(k): v for k, v in counts.items()},
+            "trimmed": [],
+            "reason": (
+                "repeats mismatched and the adjudication repeat produced a "
+                "third value — continuous flakiness, all observations kept "
+                "(conservative: verdict uses the full mean)"
+            ),
+        }
+        return all_obs, info
+    kept = [o for o in all_obs if o.score == majority_score]
+    info = {
+        "trigger": "repeat_mismatch",
         "spread": round(max(scores) - min(scores), 6),
         "adjudication_repeat": extra.model_dump(),
-        "median": round(median, 6),
-        "trimmed": [o.model_dump() for o in all_obs if o not in kept],
+        "counts": {str(k): v for k, v in counts.items()},
+        "majority_score": round(majority_score, 6),
+        "trimmed": [o.model_dump() for o in all_obs if o.score != majority_score],
         "reason": (
-            "repeats disagreed beyond T0_FLAKE_ADJUDICATION_SPREAD; one extra "
-            "repeat run, median-outliers excluded from the mean (recorded, "
-            "not hidden) — measurement noise must not become a verdict"
+            "deterministic suite, mismatched repeats; one extra repeat run, "
+            "majority value anchored, minority observations excluded from "
+            "the mean (recorded, not hidden) — measurement noise must not "
+            "become a verdict"
         ),
     }
     return kept, info
