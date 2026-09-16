@@ -153,13 +153,32 @@ def build_meta_report(
         chunk = outcomes[start : start + window]
         gains_traj.append(sum(1 for o in chunk if o == "success"))
 
-    # transfer: landed gene seen again under a different dominant signal head
-    gene_signal_heads: dict[str, set[str]] = {}
+    # transfer (round-18 fix): a gene reused across events whose DISTINCTIVE
+    # signal heads differ. Two guards against boilerplate: (a) heads present
+    # in >= half of all events are "common" and excluded — dogfood rounds
+    # share one long signal list whose minor per-round variation (a missing
+    # swarm_feedback etc.) is noise, not cross-family reuse; (b) the gene
+    # must appear in >= 2 events. The previous within-event union metric
+    # reported 12/12 genes "transferred" with identical head sets.
+    head_counts: dict[str, int] = {}
+    event_head_sets: list[frozenset[str]] = []
     for e in events:
+        heads = frozenset(s.split(":", 1)[0] for s in _trigger_signals(e))
+        event_head_sets.append(heads)
+        for h in heads:
+            head_counts[h] = head_counts.get(h, 0) + 1
+    n_events = max(1, len(events))
+    common_heads = frozenset(h for h, c in head_counts.items() if c * 2 >= n_events)
+    gene_event_heads: dict[str, list[frozenset[str]]] = {}
+    for e, heads in zip(events, event_head_sets, strict=True):
+        distinctive = heads - common_heads
         for g in _landed_genes(e):
-            heads = {s.split(":", 1)[0] for s in _trigger_signals(e)}
-            gene_signal_heads.setdefault(g, set()).update(heads)
-    transferred = {g: sorted(h) for g, h in gene_signal_heads.items() if len(h) > 1}
+            gene_event_heads.setdefault(g, []).append(distinctive)
+    transferred = {
+        g: [sorted(h) for h in hs if h][:4]
+        for g, hs in gene_event_heads.items()
+        if len(hs) >= 2 and len(set(hs)) >= 2
+    }
 
     rounds_per_gain = round(len(events) / len(accepted), 2) if accepted else None
     # Round-16: per-stage validation durations land on events as

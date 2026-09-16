@@ -214,6 +214,28 @@ class TestMetaReport:
         # gene_selector_fix landed under two signal families → transfer
         assert panel["transfer"]["genes_under_multiple_signal_families"] == 1
 
+    def test_transfer_requires_differing_head_sets(self) -> None:
+        """Round-18: boilerplate-identical events are not cross-family reuse."""
+        from evolver.ops.meta_report import build_meta_report
+
+        boilerplate = ["stable_success_plateau", "swarm_feedback:ok", "autopoiesis:x"]
+        events = [
+            {
+                "id": "e1",
+                "outcome": {"status": "success"},
+                "mutation": {"landed_gene_ids": ["gene_same"]},
+                "signals": list(boilerplate),
+            },
+            {
+                "id": "e2",
+                "outcome": {"status": "success"},
+                "mutation": {"landed_gene_ids": ["gene_same"]},
+                "signals": list(boilerplate),
+            },
+        ]
+        report = build_meta_report(events, [])
+        assert report["panel"]["transfer"]["genes_under_multiple_signal_families"] == 0
+
     def test_descendant_recurrence_detection(self) -> None:
         from evolver.ops.meta_report import build_meta_report
 
