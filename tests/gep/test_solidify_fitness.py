@@ -147,7 +147,14 @@ class TestFitnessCascadeCommands:
 
 
 class TestCascadeFailurePath:
-    def test_failed_event_appended_with_score(self, monkeypatch: Any, tmp_path: Path) -> None:
+    def test_failed_event_appended_with_score(
+        self, monkeypatch: Any, tmp_path: Path, temp_workspace: Path
+    ) -> None:
+        # Round-26: this test drives the REAL _handle_cascade_validation_failure,
+        # whose _wiki_rejection side effect resolves wiki_dir() from EVOLUTION_DIR
+        # — without temp_workspace it appended fixture "gene-1" rejections into
+        # the PRODUCTION wiki (128/161 entries were this noise; DEBUG #37).
+        _ = temp_workspace
         order: list[str] = []
         appended: dict[str, Any] = {}
         recorded: dict[str, Any] = {}
