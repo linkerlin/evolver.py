@@ -96,6 +96,45 @@ def _production_wiki_tripwire() -> Iterator[None]:
     )
 
 
+@pytest.fixture(autouse=True, scope="session")
+def _phantom_abort_snapshot_tripwire() -> Iterator[None]:
+    """Round-28 (DEBUG #39): a full-cycle test once aborted through the REAL
+    runner and persisted its fixture reason ("test abort") as the production
+    preflight-abort snapshot — every later evolution cycle then injected
+    phantom preflight_abort signals and repair bias. The abort path returns
+    before the end-of-cycle clear, so an unisolated test's snapshot survives
+    the session. The daemon legitimately writes real abort reasons (load /
+    lock / release-window), so existence alone cannot trip — only a snapshot
+    whose reason is a known test fixture string does (zero false positives)."""
+    import json
+    import os
+
+    if os.environ.get("EVOLUTION_DIR"):
+        # An outer harness already isolated the evolution dir.
+        yield
+        return
+    from evolver.gep.paths import get_evolution_dir
+
+    path = get_evolution_dir() / "autopoiesis_preflight_abort.json"
+
+    def _reason() -> str | None:
+        if not path.is_file():
+            return None
+        try:
+            data = json.loads(path.read_text(encoding="utf-8", errors="replace"))
+        except (OSError, ValueError):
+            return None
+        return str(data.get("reason") or "").strip() if isinstance(data, dict) else None
+
+    yield
+    final_reason = _reason()
+    assert final_reason != "test abort", (
+        "production preflight-abort snapshot carries the test fixture reason "
+        "'test abort' — a test persisted an abort through the real runner "
+        "without isolating its evolution dir (request temp_workspace)"
+    )
+
+
 @pytest.fixture
 def temp_workspace(monkeypatch: pytest.MonkeyPatch) -> Path:
     with tempfile.TemporaryDirectory() as tmp:

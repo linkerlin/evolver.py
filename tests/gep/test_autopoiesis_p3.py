@@ -109,7 +109,7 @@ def test_post_solidify_hooks_calls_autopoiesis_success(temp_workspace, monkeypat
 
 
 @pytest.mark.asyncio
-async def test_runner_preflight_abort_attaches_report(monkeypatch):
+async def test_runner_preflight_abort_attaches_report(temp_workspace, monkeypatch):
     from evolver.evolve.guards import PreflightResult
 
     async def _abort_preflight(**_kwargs):
@@ -121,6 +121,15 @@ async def test_runner_preflight_abort_attaches_report(monkeypatch):
     ctx = await _run_single_cycle()
     assert "autopoiesis_preflight_abort" in ctx
     assert ctx["autopoiesis_preflight_abort"]["friction_summary"]["total"] == 1
+    # Round-28 (DEBUG #39): the abort path returns before the end-of-cycle
+    # clear, so the snapshot MUST land in the sandbox — writing it to the real
+    # evolution dir left a phantom "test abort" that steered every later
+    # cycle's signals toward repair bias.
+    persisted = read_preflight_abort_report()
+    assert persisted is not None
+    assert persisted["reason"] == "test abort"
+    snapshot = temp_workspace / "memory" / "evolution" / "autopoiesis_preflight_abort.json"
+    assert snapshot.exists()
 
 
 def test_repair_loop_hard_abort_when_degraded_off(tmp_path, monkeypatch):
