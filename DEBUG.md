@@ -708,3 +708,41 @@
   常量须在探针进程首次导入 evolver 前钉死。仓内种子守卫测试防「探针
   被从种子里静默删除」，仓外冻结防「测试与实现同谋弱化」——两层各管
   一边。
+
+### 39. 幻影 preflight-abort 快照：测试泄漏的信号操纵蜂群选择器（round-28）
+
+- **症状**：round-27 tick 的信号列表持续携带 `preflight_abort` /
+  `autopoiesis:preflight_abort` / `preflight_abort:test_abort` 三信号，
+  上下文行「resolve blocker (test abort) before innovate」、repair
+  偏置与 Hub 跳过常驻——但近 9 轮全部成功固化，并无真实阻断。磁盘
+  `memory/evolution/autopoiesis_preflight_abort.json` 存在且
+  reason="test abort"，时间戳恰落 round-27 固化级联的 pytest 段内；
+  该 reason 字符串全仓唯一出处是测试 fixture。
+- **根因**：`test_runner_preflight_abort_attaches_report` 只带
+  monkeypatch 无 `temp_workspace`，驱动真实 `_run_single_cycle` 的
+  abort 路径——`run_preflight_abort_self_report` 经
+  `persist_preflight_abort_report` **无条件**落盘（生产语义：降级
+  周期也要暴露 abort，`EVOLVER_AUTOPOIESIS_WRITE` 只管 SelfReport 自身）
+  ；而 runner 的 abort 路径提前 return，**永不到达周期末的
+  `clear_preflight_abort_report`**，测试也不清。每次全套件跑后真实
+  运行态留下幻影，后续所有周期经 `preflight_abort_signal_keys()`
+  读到即注入信号与偏置。#37 家族第三例（wiki→flags→abort 快照）。
+- **修复**：(1) 该测试补 `temp_workspace` + 断言快照落沙箱（并注明
+  abort 路径为何到不了 clear）；(2) conftest 会话级
+  `_phantom_abort_snapshot_tripwire`——收尾时真实快照若存在且 reason
+  为已知 fixture 串即红；**按 reason 判红而非按存在性**（守护进程
+  合法写真实 abort：load/lock/release-window——存在性判红必误报）；
+  (3) 清理现场幻影。清后即时证伪：round-28 tick 信号列表干净、
+  adaptive 模式从 `explore_plateau` 回 `balanced`。负向验证：植入
+  fixture-reason 快照→会话收尾 AssertionError（消息含修法）→清理。
+  引擎自提交 `90e8387`。**附带：本环首次环境性级联超时拒绝**——
+  宿主开会（腾讯会议 151% CPU，负载 154）把 eval worktree 的 pytest
+  拖过 600s 线，validation_failed 诚实落账（级联红=非伪杀，不污染
+  false-kill 口径）；负载回落后 stash 恢复重固化即绿。
+- **经验**：**带持久化副作用的提前返回路径是测试泄漏的高发面**——
+  测试作者看得见「调用了被测函数」，看不见「周期末还有个 clear 在
+  别处等着」。tripwire 的判据要选「生产写手写不出来的值」（fixture
+  reason 字符串），而不是「文件存在」——凡是守护进程/生产路径会
+  合法创建的同名工件，存在性判红都是误报机器。宿主环境过载导致的
+  级联超时是环境事实不是变异缺陷：等负载、恢复、重固化，不改编
+  timeout。
