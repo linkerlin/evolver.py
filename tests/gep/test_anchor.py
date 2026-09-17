@@ -83,6 +83,14 @@ class TestRunner:
         ids = {c["id"] for c in anchor_mod.list_anchor_cases()}
         assert "telemetry-invariants" in ids
 
+    def test_seed_suite_includes_gate_calibration_invariants(self, anchor_ws: Path) -> None:
+        # Round-27: rounds 22-25's calibration semantics (rolling window,
+        # majority adjudication, chunk retry) leave the repo only via in-repo
+        # tests -- the frozen probe is the out-of-tree backstop.
+        _install_seed(anchor_ws)
+        ids = {c["id"] for c in anchor_mod.list_anchor_cases()}
+        assert "gate-calibration-invariants" in ids
+
     def test_seed_suite_passes_on_clean_tree(self, anchor_ws: Path) -> None:
         _install_seed(anchor_ws)
         result = anchor_mod.run_anchor_suite()

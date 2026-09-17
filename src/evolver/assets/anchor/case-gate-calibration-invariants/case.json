@@ -1,0 +1,7 @@
+{
+  "id": "gate-calibration-invariants",
+  "title": "acceptance-gate calibration invariants: rolling soak window, majority flake adjudication, chunk retry",
+  "source": "RSI audit 5.5 anchor gap + DEBUG #33/#35/#36 (round-27)",
+  "epoch_added": 5,
+  "kind": "python_contract"
+}
