@@ -8,6 +8,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed — round-30：验收门退出判据可达性（演进方案 §11.4 P0-1）
+- **`gated_cumulative`**：`summarize_acceptance` / `evolver gate-report` 增全时段
+  gated 计数；`gated_runs` 仍是滚动窗计数（窗口上限 `GATE_SOAK_MIN_RUNS`，
+  饱和后恒为 20），二者并存——饱和不再吞掉阶段进度（DEBUG #41）。
+- **`verified_true_positives` / `verified_false_kills`**：人工裁决计数，**全时段**
+  不随窗口过期。数据源为仓外只读账本 `$EVOLVER_HOME/anchor/gate-verifications.jsonl`
+  （人写、引擎永不写；缺文件与坏行皆跳过），零新增 env 旋钮。
+- **判据重排 + 两个新 verdict**：`unverified`（无人工确认真阳性→不得转正）与
+  `collecting_verified`（安静期但已获背书）取代结构性不可达的
+  `under_intercepting`；校准类判定（`false_kill_high` / `over_intercepting`）
+  优先于完备性判定。转正始终由人：`EVOLVER_ACCEPTANCE_SHADOW=0`。
+- **锚 epoch 6**：新增探针 `case-gate-verdict-reachability`（累积计数暴露饱和 /
+  无指控不给 ready / 确认滑出窗口仍解死锁），全套 11/11 通过。
+
 ### Added — soak 外置运行态入口
 - **`evolver soak setup|exports|status`**（`ops/soak_env.py`）：在
   `$EVOLVER_HOME/evolver.py-soak/` 建进化目录并写出 `env.sh`，避免 soak

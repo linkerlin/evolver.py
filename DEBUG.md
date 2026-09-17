@@ -44,6 +44,10 @@
 | 35 | soak 判定全历史窗口：校准前伪杀永不过期，稀释路径 perverse | acceptance/report | round-24 | 未发版 |
 | 36 | 裁决粒度盲区：固定大极差阈放行单测试噪声（1/3519）拖垮均值 | acceptance/orchestrator | round-25 | 未发版 |
 | 37 | 测试泄生产 wiki（gene-1 噪声 128/161）+ set_flag 进程内无撤销泄漏 | tests/conftest | round-26 | 未发版 |
+| 38 | 门校准语义无仓外冻结：验证者相邻不变量只受可同谋测试保护 | anchor | round-27 | 未发版 |
+| 39 | 幻影 preflight-abort 快照：测试泄漏的信号被选择器当真 | pipeline/signals | round-28 | 未发版 |
+| 40 | shell 模板执行器：原始占位符值即注入面（Mimosa triage） | gep/llm_template | round-29 | 未发版 |
+| 41 | 验收门终态死锁：ready 结构性不可达 + phase 指标读数饱和 | acceptance/report | round-30 | 未发版 |
 
 ## 条目
 
@@ -778,3 +782,38 @@
   扫描器固定误报源，triage 先认模式再谈修复。fail-safe 拒绝优于
   转义（shell 转义无法区分 markdown 反引号与命令替换）——拒绝
   消息写明正道，操作者可自助换通道。
+
+### 41. 验收门终态死锁：ready 结构性不可达 + 阶段指标读数饱和（round-30）
+
+- **症状**：round-21 起 `gate-report` 的 verdict 恒为 `false_kill_high`；即便
+  round-22/25 两次校准已消除伪杀的成因、且旧伪杀随滚动窗自然滑出，机器也
+  **永远不会给出 `ready`**——「校准后的健康安静期」的终态是另一个非 ready
+  判定（旧的 `under_intercepting`）。同时 `gated_runs` 自达标之日起恒为 20
+  （累积实已达 28），阶段进度停止表达，只能靠人肉记忆追 40/42。
+- **根因**：三处叠加。① `report.py:51` 窗口切片 `gated_all[-window_runs:]`，
+  `gated_runs` 天花板 = `GATE_SOAK_MIN_RUNS`，metrics 又无累积字段——一个
+  **被用作阶段退出条件的读数，饱和之后就不再是观测口**；② 判据缺「门是否真
+  的判别过」这一维：零拦截既可解释为代码健康，也可解释为从未锻炼过判别力，
+  无证据时二者不可分；③ `shadow_rejected=0 → false_kill_risk=None` 使流程
+  必然落到 `interception < 0.05` 的最后一支——**最坏输入（健康）的落点是
+  「另一个非 ready」，那不是判据，是死锁**。
+- **修复**：① metrics 增 `gated_cumulative`（全时段）与 `verified_true_positives`
+  / `verified_false_kills`（人工裁决计数，**全时段**——确认真阳性是耐久证据，
+  不应随窗口过期）；② 判据重排：样本成熟度 → **校准类**（false_kill_high /
+  over_intercepting）→ 人工确认真阳性下限（`unverified`）→ 安静期
+  （`collecting_verified`，替掉不可达的 `under_intercepting`）→ `ready`。
+  校准类排在证据完备性之前是因为它们 actionable——「你的门太紧」比「你没
+  交材料」更该说；③ 人工裁决走仓外只读账本
+  `$EVOLVER_HOME/anchor/gate-verifications.jsonl`（与锚同级信任：人写、引擎
+  永不写；缺文件/坏行跳过而非致命），由 `ops/soak_env.read_gate_verifications`
+  喂给纯函数形态的 `summarize_acceptance`；④ 触 `acceptance/` 面 → 同轮升锚
+  **epoch 6**，新增探针 `case-gate-verdict-reachability` 冻结三条不变量（累积
+  计数必须暴露饱和、无指控绝不给 ready、确认滑出窗口仍解死锁），11/11 探针
+  通过。零新 env 旋钮，版本仍钉 1.112.0。
+- **经验**：**凡作为「阶段退出条件」的读数，写判据时必须把每个分支的最坏输入
+  跑一遍**——此处最坏输入恰恰是成功（健康安静）。落点若仍是「非 ready」，
+  则 `ready` 不可达，整套判据只是记账器而非门。其次，**窗口化指标必须同时报
+  累积值**：天花板一到，进度就被迫回流到人的记忆，而人的记忆会漂移（本轮
+  复核里三处计数偏差全部出自人工核账——包括写下这条经验的 reviewer 自己）。
+  最后，**自动门要证明的不是「它很少误杀」，而是「它真的能动」**：二者需要
+  的证据不是同一个东西，前者是统计，后者至少一次人工确认的真阳性。

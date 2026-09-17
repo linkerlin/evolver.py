@@ -1025,9 +1025,12 @@ def _cmd_gate_report(args: argparse.Namespace) -> int:
         summarize_acceptance,
     )
     from evolver.gep.asset_store import read_all_events
-    from evolver.ops.soak_env import evolution_dir_inside_repo
+    from evolver.ops.soak_env import evolution_dir_inside_repo, read_gate_verifications
 
-    metrics = summarize_acceptance(read_all_events()[-max(1, args.limit) :])
+    metrics = summarize_acceptance(
+        read_all_events()[-max(1, args.limit) :],
+        verified=read_gate_verifications(),
+    )
     recommendation = gate_soak_recommendation(metrics)
     inside = evolution_dir_inside_repo()
 
@@ -1055,8 +1058,11 @@ def _cmd_gate_report(args: argparse.Namespace) -> int:
 
     window = metrics["window"]
     print("Acceptance-gate soak report (shadow mode)")
-    print(f"  gated_runs            : {metrics['gated_runs']}")
+    print(f"  gated_runs            : {metrics['gated_runs']} (rolling window)")
+    print(f"  gated_cumulative      : {metrics['gated_cumulative']}")
     print(f"  shadow_rejected       : {metrics['shadow_rejected']}")
+    print(f"  verified_true_positives: {metrics['verified_true_positives']}")
+    print(f"  verified_false_kills  : {metrics['verified_false_kills']}")
     print(f"  interception_rate     : {metrics['interception_rate']}")
     print(f"  validation_disagreements: {metrics['validation_disagreements']}")
     print(f"  false_kill_risk       : {metrics['false_kill_risk']}")

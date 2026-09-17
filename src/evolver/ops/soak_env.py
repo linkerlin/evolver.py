@@ -8,11 +8,18 @@ current process is still pointing at in-repo paths.
 
 from __future__ import annotations
 
+import json
 import shutil
 from pathlib import Path
 from typing import Any, Final
 
 SOAK_DIRNAME: Final = "evolver.py-soak"
+
+#: Round-30 (演进方案.md §11.4 P0-1): human adjudication ledger for gate
+#: decisions, stored next to the anchor suite — outside every workspace and
+#: never written by the engine. Rows are ``{"event_id", "verdict", "by"}``
+#: with ``verdict`` in {true_positive, false_kill}.
+GATE_VERIFICATIONS_FILE: Final = "gate-verifications.jsonl"
 
 
 def soak_root() -> Path:
@@ -83,6 +90,45 @@ def setup(*, copy_lessons: bool = True) -> dict[str, Any]:
     }
 
 
+def gate_verifications_path() -> Path:
+    """Anchor-adjacent ledger path for human-adjudicated gate decisions."""
+    from evolver.gep.anchor import anchor_dir
+
+    return anchor_dir() / GATE_VERIFICATIONS_FILE
+
+
+def read_gate_verifications() -> dict[str, str]:
+    """Read ``event_id -> verdict`` from the out-of-tree ledger (read-only).
+
+    Missing or malformed rows are skipped, not fatal: this is advisory human
+    evidence, and a corrupt ledger must not take the report down with it. The
+    engine never writes here — same trust posture as the anchor suite.
+    """
+    path = gate_verifications_path()
+    if not path.is_file():
+        return {}
+    out: dict[str, str] = {}
+    try:
+        raw = path.read_text(encoding="utf-8")
+    except OSError:
+        return {}
+    for line in raw.splitlines():
+        line = line.strip()
+        if not line:
+            continue
+        try:
+            row = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        if not isinstance(row, dict):
+            continue
+        event_id = str(row.get("event_id") or "")
+        verdict = str(row.get("verdict") or "")
+        if event_id and verdict:
+            out[event_id] = verdict
+    return out
+
+
 def status(*, event_limit: int = 5000) -> dict[str, Any]:
     """Current path layout + gate-report metrics for the active env."""
     from evolver.gep.acceptance.report import (
@@ -92,7 +138,10 @@ def status(*, event_limit: int = 5000) -> dict[str, Any]:
     from evolver.gep.asset_store import read_all_events
     from evolver.gep.paths import get_evolution_dir, get_gep_assets_dir
 
-    metrics = summarize_acceptance(read_all_events()[-max(1, event_limit) :])
+    metrics = summarize_acceptance(
+        read_all_events()[-max(1, event_limit) :],
+        verified=read_gate_verifications(),
+    )
     return {
         "ok": True,
         "evolution_dir": str(get_evolution_dir()),
@@ -105,10 +154,13 @@ def status(*, event_limit: int = 5000) -> dict[str, Any]:
 
 
 __all__ = [
+    "GATE_VERIFICATIONS_FILE",
     "SOAK_DIRNAME",
     "evolution_dir_inside_repo",
     "exports_shell",
+    "gate_verifications_path",
     "path_is_inside",
+    "read_gate_verifications",
     "setup",
     "soak_root",
     "status",

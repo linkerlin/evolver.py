@@ -1,0 +1,7 @@
+{
+  "id": "gate-verdict-reachability",
+  "title": "acceptance-gate promotion verdicts stay reachable: cumulative sample counter + human-confirmed true positive floor",
+  "source": "演进方案.md §11.2/§11.4 P0-1 (round-30)",
+  "epoch_added": 6,
+  "kind": "python_contract"
+}

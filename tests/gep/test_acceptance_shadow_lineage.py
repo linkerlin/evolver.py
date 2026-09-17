@@ -115,10 +115,13 @@ class TestSummarizeAcceptance:
     def test_empty(self) -> None:
         assert summarize_acceptance([]) == {
             "gated_runs": 0,
+            "gated_cumulative": 0,
             "shadow_rejected": 0,
             "interception_rate": 0.0,
             "validation_disagreements": 0,
             "false_kill_risk": None,
+            "verified_true_positives": 0,
+            "verified_false_kills": 0,
             "window": {"first": None, "last": None},
             "window_runs": 0,
         }

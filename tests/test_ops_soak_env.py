@@ -9,7 +9,9 @@ import pytest
 from evolver.ops.soak_env import (
     evolution_dir_inside_repo,
     exports_shell,
+    gate_verifications_path,
     path_is_inside,
+    read_gate_verifications,
     setup,
     soak_root,
     status,
@@ -57,6 +59,46 @@ def test_status_flags_in_repo_layout(temp_workspace: Path, monkeypatch: pytest.M
     report = status()
     assert report["inside_repo"] is True
     assert report["metrics"]["gated_runs"] >= 0
+
+
+class TestGateVerificationLedger:
+    """Round-30 (演进方案.md §11.4 P0-1): the human adjudication ledger lives
+    outside every workspace (anchor dir) and is read-only for the engine. A
+    malformed row is skipped, never fatal — this is advisory human evidence."""
+
+    def _write(self, text: str) -> None:
+        path = gate_verifications_path()
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(text, encoding="utf-8")
+
+    def test_missing_ledger_is_empty(self, temp_workspace: Path) -> None:
+        assert read_gate_verifications() == {}
+
+    def test_reads_verdicts(self, temp_workspace: Path) -> None:
+        self._write(
+            '{"event_id": "evt_a", "verdict": "true_positive", "by": "human"}\n'
+            '{"event_id": "evt_b", "verdict": "false_kill", "by": "human"}\n'
+        )
+        assert read_gate_verifications() == {
+            "evt_a": "true_positive",
+            "evt_b": "false_kill",
+        }
+
+    def test_malformed_rows_skipped(self, temp_workspace: Path) -> None:
+        self._write(
+            "not json\n"
+            '{"verdict": "true_positive"}\n'  # no event_id
+            '{"event_id": "evt_c"}\n'  # no verdict
+            "[1,2,3]\n"  # not an object
+            '{"event_id": "evt_d", "verdict": "true_positive"}\n'
+        )
+        assert read_gate_verifications() == {"evt_d": "true_positive"}
+
+    def test_status_carries_verified_counts(self, temp_workspace: Path) -> None:
+        report = status()
+        assert report["metrics"]["verified_true_positives"] == 0
+        criteria = report["recommendation"]["criteria"]
+        assert criteria["min_verified_true_positives"] == 1
 
 
 def test_cli_soak_setup_and_exports(
