@@ -43,6 +43,7 @@
 | 34 | 遥测仪器自外于锚/机制面；失败事件缺隔离元数据；探针夹具撞统计阈值边界 | anchor/meta_report | round-23 | 未发版 |
 | 35 | soak 判定全历史窗口：校准前伪杀永不过期，稀释路径 perverse | acceptance/report | round-24 | 未发版 |
 | 36 | 裁决粒度盲区：固定大极差阈放行单测试噪声（1/3519）拖垮均值 | acceptance/orchestrator | round-25 | 未发版 |
+| 37 | 测试泄生产 wiki（gene-1 噪声 128/161）+ set_flag 进程内无撤销泄漏 | tests/conftest | round-26 | 未发版 |
 
 ## 条目
 
@@ -647,3 +648,32 @@
   测量物是否确定再选框架。粒度单测（3519 分母单测试差异）与无多数
   保守测试钉住两个方向。校准瀑布至此三层（块级 #33 → 窗口级 #35 →
   粒度级 #36）：本轮 T0 双重复干净一致、裁决零打扰——接近收敛。
+
+### 37. 测试泄生产 wiki + set_flag 进程内泄漏（round-26）
+
+- **症状**：(a) 生产 `wiki/skill-impact.md` 161 条中 **128 条（79.5%）
+  是 fixture 噪声**（`gene-1`/log_error/0.98 逐字段吻合测试夹具）——
+  dispatch 提示词的「勿重复」记忆被噪声淹没，实质失效；每次全套件
+  跑泄 3-4 条（级联 1 + T0 双重复 2-3）。(b) `test_solidify_fitness.py`
+  与 `test_wiki.py` 相邻同进程跑必红（`test_solidify_shadow_rejection_
+  lands_impact_entry` 丢条目），反序/单跑/全套件（文件间隔）皆绿——
+  stash 验证为**预存**顺序缺陷。
+- **根因**：(a) `test_failed_event_appended_with_score` 驱动真实
+  `_handle_cascade_validation_failure`，stub 了事件/回滚/状态五个
+  函数却漏 `_wiki_rejection`，且未请求 opt-in 的 `temp_workspace`
+  → `wiki_dir()` 落到真实 `memory/evolution/wiki`。#4 家族第 N 次：
+  stub 五漏一。(b) `set_flag(persist=False)` 改进程内 `_disk_flags`
+  缓存**无撤销**——flag 测试把 `enable_fitness_cascade=False` 泄给
+  后续测试，wiki 测试走 legacy 路径无测量无 no_improvement 无条目。
+- **修复**：(1) 泄漏测试补 `temp_workspace`；(2) conftest **会话级
+  tripwire**——快照真实 skill-impact.md 条目数、收尾断言不变（泄漏
+  即红且报修法；刻意不 redirect——env 驱动的 wiki 测试自管路径）；
+  (3) conftest **autouse flag 快照恢复**——对进程内 flag 缓存做
+  monkeypatch 之于 env 的等价物；(4) 运维清创 128 条噪声（wiki 自有
+  审计 git 提交）。生产实证：修复后固化期间全套件 3 跑，wiki 仅 +1
+  正当条目、噪声零增长。
+- **经验**：**逐测试手工隔离纪律必然有洞——洞用套件级机械防线兜底
+  （tripwire + 快照恢复），不是更仔细的人**。顺序敏感的绿（单跑绿/
+  全套件绿/相邻红）本身就是缺陷信号：说明行为依赖了同进程前任测试
+  的残留。会话 tripwire 的判据要选「只增不减」的单调量（条目数），
+  误报率零。
