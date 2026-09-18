@@ -52,29 +52,29 @@ class TestDefaultOrderHandler:
 
 class TestResolveAtpServices:
     def test_from_env_json(self) -> None:
-        env = {"EVOLVER_ATP_SERVICES": json.dumps([{"title": "Custom"}])}
+        env = {"ATP_SERVICES": json.dumps([{"title": "Custom"}])}
         services = resolve_atp_services(env)
         assert services == [{"title": "Custom"}]
 
     def test_from_env_invalid_json_uses_default(self) -> None:
-        env = {"EVOLVER_ATP_SERVICES": "not-json"}
+        env = {"ATP_SERVICES": "not-json"}
         services = resolve_atp_services(env)
         assert len(services) == 1
         assert "Code Evolution" in services[0]["title"]
 
     def test_from_env_empty_list_uses_default(self) -> None:
-        env = {"EVOLVER_ATP_SERVICES": "[]"}
+        env = {"ATP_SERVICES": "[]"}
         services = resolve_atp_services(env)
         assert len(services) == 1
         assert "Code Evolution" in services[0]["title"]
 
     def test_default_uses_env_name(self) -> None:
-        env = {"EVOLVER_AGENT_NAME": "MyAgent"}
+        env = {"AGENT_NAME": "MyAgent"}
         services = resolve_atp_services(env)
         assert services[0]["title"] == "MyAgent - Code Evolution"
 
     def test_default_uses_model_name_fallback(self) -> None:
-        env = {"EVOLVER_MODEL_NAME": "GPT-4"}
+        env = {"AGENT_MODEL": "GPT-4"}
         services = resolve_atp_services(env)
         assert services[0]["title"] == "GPT-4 - Code Evolution"
 

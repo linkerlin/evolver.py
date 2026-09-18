@@ -10,9 +10,11 @@ import pytest
 from evolver.gep.acceptance import orchestrator, t0_frozen
 from evolver.gep.acceptance.orchestrator import (
     load_baseline,
+    load_baseline_repeats,
     run_acceptance_gate,
     save_baseline,
 )
+from evolver.gep.acceptance.schemas import RepeatObs
 
 
 @pytest.fixture
@@ -316,3 +318,64 @@ class TestRepeatsAveraging:
         # mean of three identical 0.75 repeats = 0.75 -> unchanged vs 0.75
         assert result.layers[0].candidate_mean == pytest.approx(0.75)
         assert len(result.layers[0].candidate_repeats) == 3
+
+
+class TestBilateralRepeats:
+    def test_save_and_load_baseline_repeats_round_trip(self, tmp_path: Path) -> None:
+        p = tmp_path / "base.json"
+        obs = [
+            RepeatObs(repeat_index=0, score=0.75, denominator=4),
+            RepeatObs(repeat_index=1, score=0.75, denominator=4),
+        ]
+        save_baseline(p, t0_pass_rate=0.75, snapshot_hash="h1", repeats=obs)
+        loaded = load_baseline_repeats(p)
+        assert loaded is not None
+        assert len(loaded) == 2
+        assert loaded[0].score == 0.75
+        assert loaded[1].repeat_index == 1
+
+    def test_run_acceptance_gate_with_baseline_repeats(
+        self, _stub_t0: Path, tmp_path: Path
+    ) -> None:
+        base_obs = [
+            RepeatObs(repeat_index=0, score=0.75, denominator=4),
+            RepeatObs(repeat_index=1, score=0.75, denominator=4),
+        ]
+        result = run_acceptance_gate(
+            cwd=tmp_path,
+            snapshot_dir=tmp_path / "snap",
+            baseline_t0_rate=None,
+            baseline_repeats=base_obs,
+            repeats=1,
+        )
+        assert result.accepted is True
+        layer = result.layers[0]
+        assert len(layer.baseline_repeats) == 2
+        assert layer.baseline_mean == 0.75
+
+    def test_run_acceptance_gate_with_baseline_cwd(
+        self, _stub_t0: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        base_dir = tmp_path / "baseline_cwd"
+        base_dir.mkdir()
+        cand_dir = tmp_path / "cand_cwd"
+        cand_dir.mkdir()
+
+        def fake_run(ids: list[str], cwd: Path, **_kw: object) -> tuple[int, int]:
+            if cwd == base_dir:
+                return (3, len(ids))  # 0.75
+            return (4, len(ids))  # 1.0
+
+        monkeypatch.setattr(orchestrator.t0_frozen, "run_pass_rate", fake_run)
+        result = run_acceptance_gate(
+            cwd=cand_dir,
+            snapshot_dir=tmp_path / "snap",
+            baseline_t0_rate=None,
+            baseline_cwd=base_dir,
+            repeats=2,
+        )
+        assert result.accepted is True
+        layer = result.layers[0]
+        assert layer.baseline_mean == 0.75
+        assert layer.candidate_mean == 1.0
+        assert layer.verdict == "improved"

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 from pathlib import Path
 
 import pytest
@@ -113,3 +114,124 @@ def test_cli_soak_setup_and_exports(
     exports = capsys.readouterr().out
     assert "export EVOLUTION_DIR=" in exports
     assert main(["soak", "status", "--json"]) == 0
+
+
+class TestSoakInterlock:
+    """S11.4 / P1 #4: Out-of-tree soak interlock tests."""
+
+    def test_is_test_environment(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        from evolver.ops.soak_env import is_test_environment
+
+        assert is_test_environment() is True
+
+        monkeypatch.delenv("PYTEST_CURRENT_TEST", raising=False)
+        monkeypatch.delenv("EVOLVER_TEST_MODE", raising=False)
+        monkeypatch.delenv("EVOLVER_NO_PARENT_GIT", raising=False)
+        assert is_test_environment() is False
+
+        monkeypatch.setenv("EVOLVER_TEST_MODE", "1")
+        assert is_test_environment() is True
+
+        monkeypatch.delenv("EVOLVER_TEST_MODE", raising=False)
+        monkeypatch.setenv("EVOLVER_NO_PARENT_GIT", "1")
+        assert is_test_environment() is True
+
+    def test_maybe_route_bypassed_in_test_env(self) -> None:
+        from evolver.ops.soak_env import maybe_route_to_soak
+
+        res = maybe_route_to_soak()
+        assert res["routed"] is False
+        assert res["reason"] == "test_environment"
+
+    def test_maybe_route_bypassed_by_env(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        from evolver.ops.soak_env import maybe_route_to_soak
+
+        monkeypatch.setenv("EVOLVER_SOAK_ALLOW_INSIDE", "1")
+        res = maybe_route_to_soak()
+        assert res["routed"] is False
+        assert res["reason"] == "bypassed_by_env"
+
+    def test_maybe_route_already_outside(
+        self, temp_workspace: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        from evolver.ops.soak_env import maybe_route_to_soak
+
+        # Outside repo: repo root is None
+        monkeypatch.delenv("EVOLVER_REPO_ROOT", raising=False)
+        monkeypatch.setenv("EVOLVER_NO_PARENT_GIT", "1")
+        # Ensure inside_repo is False
+        res = maybe_route_to_soak(force=False)
+        assert res["routed"] is False
+
+    def test_maybe_route_force_routes_and_seeds(
+        self,
+        temp_workspace: Path,
+        tmp_path: Path,
+        capsys: pytest.CaptureFixture[str],
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        from evolver.ops.soak_env import evolution_dir_inside_repo, maybe_route_to_soak, soak_root
+
+        # Point EVOLVER_HOME outside ws (like ~/.evomap is outside the repo in production)
+        out_home = tmp_path / "user_home" / ".evomap"
+        monkeypatch.setenv("EVOLVER_HOME", str(out_home))
+
+        # Seed in-repo assets
+        ws = temp_workspace
+        gep_dir = ws / ".evolver" / "gep"
+        gep_dir.mkdir(parents=True, exist_ok=True)
+        (gep_dir / "events.jsonl").write_text('{"event": 1}\n', encoding="utf-8")
+        (gep_dir / "genes.json").write_text('[{"id": "g1"}]\n', encoding="utf-8")
+
+        evo_dir = ws / "memory" / "evolution"
+        evo_dir.mkdir(parents=True, exist_ok=True)
+        (evo_dir / "LESSONS_LEARNED.md").write_text("# lessons\n", encoding="utf-8")
+        (evo_dir / "feedback.jsonl").write_text('{"fb": 1}\n', encoding="utf-8")
+
+        monkeypatch.setenv("EVOLVER_REPO_ROOT", str(ws))
+        monkeypatch.setenv("OPENCLAW_WORKSPACE", str(ws))
+        monkeypatch.setenv("EVOLUTION_DIR", str(evo_dir))
+        monkeypatch.setenv("GEP_ASSETS_DIR", str(gep_dir))
+
+        assert evolution_dir_inside_repo() is True
+
+        res = maybe_route_to_soak(force=True, copy_existing=True)
+        assert res["routed"] is True
+        assert res["soak_root"] == str(soak_root())
+
+        # Check environment variables were updated
+        assert os.environ["EVOLUTION_DIR"] == str(soak_root() / "evolution")
+        assert os.environ["GEP_ASSETS_DIR"] == str(soak_root() / "gep")
+
+        # Now evolution_dir_inside_repo is False (outside repo)
+        assert evolution_dir_inside_repo() is False
+
+        # Seeded assets were copied
+        assert (soak_root() / "gep" / "events.jsonl").is_file()
+        assert (soak_root() / "gep" / "genes.json").is_file()
+        assert (soak_root() / "evolution" / "LESSONS_LEARNED.md").is_file()
+        assert (soak_root() / "evolution" / "feedback.jsonl").is_file()
+
+        # Check stderr notice
+        err = capsys.readouterr().err
+        assert "[soak] Notice: in-repo runtime detected" in err
+
+    def test_cli_charter_check_with_soak(
+        self,
+        temp_workspace: Path,
+        tmp_path: Path,
+        capsys: pytest.CaptureFixture[str],
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        from evolver.cli import main
+
+        out_home = tmp_path / "user_home" / ".evomap"
+        monkeypatch.setenv("EVOLVER_HOME", str(out_home))
+        monkeypatch.setenv("EVOLVER_REPO_ROOT", str(temp_workspace))
+
+        code = main(["charter-check", "--soak"])
+        assert code == 0
+        captured = capsys.readouterr()
+        assert "Charter Machine Receipt" in captured.out
+        # With --soak, inside_repo is False and outside_met is True
+        assert "inside_repo=False (outside_met=True)" in captured.out

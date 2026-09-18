@@ -4,7 +4,7 @@ Equivalent to ``evolver/src/adapters/scripts/_runtimePaths.js`` (440 lines).
 
 Two responsibilities, mirroring the Node.js reference:
 
-1. **Locate the evolver package** — supports ``$EVOLVER_ROOT`` override, the
+1. **Locate the evolver package** — supports ``$EVOLVER_REPO_ROOT`` override, the
    dev/colocated layout (``__file__`` walk), the installed package (via
    :func:`importlib.util.find_spec`), and a ``~/skills/evolver`` fallback.
 2. **Locate the evolution memory graph** — so that hook scripts in
@@ -64,14 +64,14 @@ def find_evolver_root() -> Path | None:
 
     Resolution order (mirrors ``findEvolverRoot`` in ``_runtimePaths.js``):
 
-    1. ``EVOLVER_ROOT`` env override (validated as a real package dir).
+    1. ``EVOLVER_REPO_ROOT`` env override (validated as a real package dir).
     2. Dev/repo layout: walk up from this file
        (``src/evolver/adapters/scripts/runtime_paths.py``).
     3. Installed package via :func:`importlib.util.find_spec`.
     4. ``~/skills/evolver`` fallback.
     """
     # 1. Explicit override.
-    env_root = os.environ.get("EVOLVER_ROOT")
+    env_root = os.environ.get("EVOLVER_REPO_ROOT")
     if env_root:
         candidate = Path(env_root).expanduser()
         if _is_evolver_package(candidate) or (candidate / "src" / "evolver").exists():
@@ -260,14 +260,14 @@ def resolve_workspace_id(
     """Resolve the current workspace id (forge-resistant tag).
 
     Resolution order (mirrors ``resolveWorkspaceId`` in ``_runtimePaths.js``):
-      1. ``EVOLVER_WORKSPACE_ID`` env override.
+      1. ``WORKSPACE_ID`` env override.
       2. ``paths.get_workspace_id()`` loaded from the resolved evolver root.
       3. FS-only fallback for plugin-only installs.
 
     Returns ``None`` if even the FS write fails — callers must then NOT filter
     (show everything), preserving prior behavior.
     """
-    env_id = os.environ.get("EVOLVER_WORKSPACE_ID")
+    env_id = os.environ.get("WORKSPACE_ID")
     if env_id:
         return str(env_id)
 

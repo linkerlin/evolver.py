@@ -47,7 +47,7 @@ NON_GIT_NOTICE_TTL_S = 30 * 60  # once per 30 min per folder
 
 
 def _state_dir() -> Path:
-    d = Path(os.environ.get("EVOLVER_SESSION_STATE_DIR", Path.home() / ".evolver"))
+    d = Path(os.environ.get("EVOLVER_SETTINGS_DIR", Path.home() / ".evolver"))
     d.mkdir(parents=True, exist_ok=True)
     return d
 
@@ -97,7 +97,7 @@ def _should_skip_injection() -> bool:
     raw = os.environ.get("EVOLVER_SESSION_START_DEDUP", "")
     if raw.lower() not in ("1", "true"):
         return False
-    ttl_s = float(os.environ.get("EVOLVER_SESSION_START_DEDUP_TTL_S", "1800"))
+    ttl_s = 1800.0
     return _throttled(os.getcwd(), ttl_s, _get_dedup_state_path())
 
 

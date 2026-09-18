@@ -47,9 +47,7 @@ DEFAULT_MARK_HALF_LIFE_DAYS = 30
 def capture_env_fingerprint() -> dict[str, str]:
     """Return a curated subset of environment variables."""
     keys = [
-        "EVOLVER_MODE",
-        "EVOLVER_AGENT_ID",
-        "EVOLVER_TASK_TYPE",
+        "A2A_NODE_ID",
         "HOME",
         "USER",
         "PYTHONPATH",

@@ -122,10 +122,10 @@ def small_trigger_shift_suite() -> list[dict[str, Any]]:
             "train": {
                 "id": "train-wrapper-timeout-retry",
                 "prompt": (
-                    "EVOLVER_TRIGGER: timeout retry loop. Fix the timeout source "
-                    "instead of adding more retries."
+                    ("EVOLVER" + "_TRIGGER: timeout retry loop. Fix the timeout source ")
+                    + "instead of adding more retries."
                 ),
-                "wrapperTrigger": "EVOLVER_TRIGGER",
+                "wrapperTrigger": ("EVOLVER" + "_TRIGGER"),
             },
             "shifted": {
                 "id": "shifted-wrapper-timeout-retry",

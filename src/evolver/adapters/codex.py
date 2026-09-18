@@ -22,7 +22,7 @@ from evolver.adapters.hook_adapter import (
 )
 
 HOOK_SCRIPTS_DIR_NAME = "hooks"
-EVOLVER_MARKER = "<!-- evolver-evolution-memory -->"
+SECTION_MARKER = "<!-- evolver-evolution-memory -->"
 
 
 def build_hooks_json(evolver_root: Path) -> dict[str, Any]:
@@ -107,7 +107,7 @@ def _clean_config_toml(codex_dir: Path) -> bool:
 
 
 def build_agents_md_section() -> str:
-    return f"""{EVOLVER_MARKER}
+    return f"""{SECTION_MARKER}
 ## Evolution Memory (Evolver)
 
 This project uses evolver for self-evolution. Hooks automatically:
@@ -156,7 +156,7 @@ def install(
 
     from evolver.adapters.hook_adapter import append_section_to_file
 
-    injected = append_section_to_file(agents_md_path, EVOLVER_MARKER, build_agents_md_section())
+    injected = append_section_to_file(agents_md_path, SECTION_MARKER, build_agents_md_section())
     if injected:
         print(f"[codex] Injected evolution section into {agents_md_path}")
 
@@ -239,7 +239,7 @@ def uninstall(
         print("[codex] Removed codex_hooks flag from config.toml")
         changed = True
 
-    if remove_marked_section(agents_md_path, EVOLVER_MARKER):
+    if remove_marked_section(agents_md_path, SECTION_MARKER):
         changed = True
 
     print(

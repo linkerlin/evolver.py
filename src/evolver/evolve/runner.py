@@ -54,9 +54,7 @@ _loop_review_mode: bool = False
 #: bridge run". If the run does not complete within this timeout (seconds), the
 #: loop treats it as stale and breaks — preventing a "Ralph-loop" where the
 #: daemon keeps re-spawning sessions that never finish (#559).
-BRIDGE_STALE_TIMEOUT_S: float = float(
-    __import__("os").environ.get("EVOLVER_BRIDGE_STALE_TIMEOUT_S", "600")
-)
+BRIDGE_STALE_TIMEOUT_S: float = 600.0
 
 
 def _current_event() -> asyncio.Event | None:
@@ -98,6 +96,9 @@ def _build_initial_context() -> dict[str, Any]:
 
 async def _run_single_cycle(*, is_loop: bool = False) -> dict[str, Any]:
     """Execute one full evolution cycle and return the final context."""
+    from evolver.ops.soak_env import maybe_route_to_soak
+
+    maybe_route_to_soak()
     ctx = _build_initial_context()
     from evolver.gep import supervision as supervision_mod
 

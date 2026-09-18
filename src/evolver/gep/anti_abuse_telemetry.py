@@ -38,12 +38,12 @@ def _pseudonym(identifier: str, salt: str | None = None) -> str | None:
     """HMAC-SHA256 pseudonym: stable but non-reversible.
 
     Mirrors the Node.js ``_pseudonym`` helper.  Returns ``None`` when the
-    identifier is empty.  The salt defaults to ``EVOLVER_ANTI_ABUSE_SALT``
-    / ``EVOMAP_DEVICE_ID`` env, falling back to the process title.
+    identifier is empty.  The salt defaults to ``EVOMAP_DEVICE_ID`` env,
+    falling back to the process title.
     """
     if not identifier:
         return None
-    s = salt or os.environ.get("EVOLVER_ANTI_ABUSE_SALT") or os.environ.get("EVOMAP_DEVICE_ID")
+    s = salt or os.environ.get("EVOMAP_DEVICE_ID")
     if not s:
         s = "evolver"  # deterministic fallback (worst case: no salt isolation)
     mac = hmac.new(s.encode("utf-8"), identifier.encode("utf-8"), hashlib.sha256)
@@ -78,7 +78,7 @@ def build_heartbeat_anti_abuse(
     """
     env_map: Mapping[str, str] = env if env is not None else os.environ
     fp = env_fingerprint or {}
-    salt = os.environ.get("EVOLVER_ANTI_ABUSE_SALT") or os.environ.get("EVOMAP_DEVICE_ID")
+    salt = os.environ.get("EVOMAP_DEVICE_ID")
 
     # Device + workspace pseudonyms (HMAC, non-reversible).
     device_pseudonym = _pseudonym(fp.get("device_id", "") or "", salt)
@@ -102,14 +102,8 @@ def build_heartbeat_anti_abuse(
         env_map.get("EVOLVER_PROXY_PORT") or env_map.get("EVOMAP_PROXY_PORT")
     )
 
-    # Retention TTL (days) — configurable, default 90.
-    ttl_raw = env_map.get("EVOLVER_ANTI_ABUSE_TTL_DAYS")
-    try:
-        retention_ttl = int(ttl_raw) if ttl_raw else _DEFAULT_RETENTION_TTL_DAYS
-        if retention_ttl < 0:
-            retention_ttl = _DEFAULT_RETENTION_TTL_DAYS
-    except (ValueError, TypeError):
-        retention_ttl = _DEFAULT_RETENTION_TTL_DAYS
+    # Retention TTL (days) — default 90.
+    retention_ttl = _DEFAULT_RETENTION_TTL_DAYS
 
     return {
         "schema_version": _SCHEMA_VERSION,
@@ -118,7 +112,7 @@ def build_heartbeat_anti_abuse(
         "pii_class": "k_anonymity",
         "consent_level": "opt_in",
         "retention_ttl_days": retention_ttl,
-        "policy_version": env_map.get("EVOLVER_ABUSE_POLICY_VERSION", "default"),
+        "policy_version": "default",
         "redaction_version": _REDACTION_VERSION,
         "source": source,
         "generated_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),

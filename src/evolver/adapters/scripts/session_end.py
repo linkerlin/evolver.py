@@ -131,10 +131,10 @@ def detect_signals(text: str) -> list[str]:
 
 def is_cursor_host() -> bool:
     """Detect whether the hook runs inside Cursor (suppress systemMessage)."""
-    verbose = os.environ.get("EVOLVER_HOOK_VERBOSE", "").lower()
+    verbose = os.environ.get("HOOK_VERBOSE", "").lower()
     if verbose in ("1", "true"):
         return False
-    if os.environ.get("EVOLVER_HOOK_HOST", "").lower() == "cursor":
+    if os.environ.get("HOOK_HOST", "").lower() == "cursor":
         return True
     if os.environ.get("TERM_PROGRAM", "").lower() == "cursor":
         return True
@@ -144,7 +144,7 @@ def is_cursor_host() -> bool:
 def _append_evolution_log(line: str) -> None:
     """Best-effort append to ~/.evolver/logs/evolution.log."""
     try:
-        log_dir = Path(os.environ.get("EVOLVER_HOOK_LOG_DIR", Path.home() / ".evolver" / "logs"))
+        log_dir = Path(os.environ.get("EVOLVER_LOGS_DIR", Path.home() / ".evolver" / "logs"))
         log_dir.mkdir(parents=True, exist_ok=True)
         with (log_dir / "evolution.log").open("a", encoding="utf-8") as f:
             f.write(f"{time.strftime('%Y-%m-%dT%H:%M:%S')} {line}\n")

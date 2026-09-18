@@ -240,3 +240,4 @@ memory/evolution/wiki/
 # rollback disposes disposable untracked files; ignored paths are spared.
 .mimosa/
 .video_agent/
+.workbuddy/

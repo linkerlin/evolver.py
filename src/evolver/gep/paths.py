@@ -35,7 +35,7 @@ def get_evolver_settings_dir() -> Path:
 def get_repo_root(cwd: Path | str | None = None, *, _quiet: bool | None = None) -> Path | None:
     """Walk upward from cwd looking for .git directory.
 
-    Honors EVOLVER_REPO_ROOT, EVOLVER_USE_PARENT_GIT, EVOLVER_NO_PARENT_GIT.
+    Honors EVOLVER_REPO_ROOT, EVOLVER_NO_PARENT_GIT.
     """
     if _quiet is None:
         _quiet = os.environ.get("EVOLVER_QUIET_PARENT_GIT") == "1"
@@ -58,9 +58,6 @@ def get_repo_root(cwd: Path | str | None = None, *, _quiet: bool | None = None) 
             return path
         if (path / ".evolver" / "no-parent-git").exists():
             return None
-
-    if os.environ.get("EVOLVER_USE_PARENT_GIT") == "1":
-        return None
 
     return None
 

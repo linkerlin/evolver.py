@@ -4,51 +4,49 @@
 > 长期差距 / Sprint 26–30 回执：[`演进方案_wikiskill对照版.md`](演进方案_wikiskill对照版.md)。
 > Node 对标基线仍是 v1.94.0；Python 线版本见 `pyproject.toml`。
 
-## 当前状态（2026-09-05）
+## 当前状态（2026-09-18，round-30 交付）
 
-- 包版本目标：**1.112.0**（稳定化；上一发布 1.111.0）
-- 测试：3469 passed（`-m "not slow and not llm"`）；ruff / mypy strict 全绿
-- Dogfood：五轮已跑通；验收门 gated_runs=**4**/20，verdict=`collecting`，**不转正**
-- 本阶段不做新的 EvoX 收割、不扩 CLI/MCP 表面
+- 包版本目标：**1.112.0**（稳定化封版中；上一发布 1.111.0）
+- 测试：**3583 passed**（全套件 not llm，0 warnings）；ruff / mypy strict 0 错误
+- 运行态：Dogfood 30 轮实测完成（round-1 ~ round-30）
+- 验收门：`gated_cumulative=28`，滚动窗 `gated_runs=20`，`verdict=false_kill_high`，`verified_true_positives=0`，`shadow_mode=on`（数据不支持转正，保持 shadow 门控）
+- 锚定评测：**Epoch 8**（13 冻结探针，涵盖判据可达性、门校准、遥测不变量、HITL fail-closed、数据入口守卫等）
+- 机制遥测：`ops/meta_report.py` Table-8 六维面板在线
 
-## P0 — 本阶段必须做（稳定化）
+## P0 — 蜂群稳定化闭环（已全部落地）
 
 | # | 项 | 状态 | 说明 |
 |---|---|---|---|
-| 1 | 演进方案 + 本清单 | 完成 | 审阅结论落盘 |
-| 2 | 运行态出仓 | 完成 | gitignore `memory/` 运行文件 + `evolver/.config/`；保留 `LESSONS_LEARNED.md`；`git rm --cached` |
-| 3 | HITL 真门 | 完成 | mode 解析、损坏 fail-closed、skip 需 pending run、审批进 `solidify()`、AUTO_HIJACK 强制 on |
-| 4 | HOTL 包整引擎 | 完成 | pause/veto 在 `_run_single_cycle`；dispatch 前否决；基因 id 再挡 solidify；实例锁；损坏视为暂停 |
-| 5 | MCP 无人值守切断 | 完成 | AUTO_HIJACK 下拒绝 approve/resume/unveto；destructive hint；instrument 资源无副作用 |
+| 1 | 演进方案 + 本清单 | 完成 | 审阅结论落盘（演进方案.md §11） |
+| 2 | 运行态出仓 | 完成 | gitignore `memory/` 运行文件 + `evolver/.config/`；保留 `LESSONS_LEARNED.md`；运行态零提交 |
+| 3 | HITL 真门 | 完成 | mode 解析未知 fail-closed、损坏拒绝、skip 需 pending run、AUTO_HIJACK 强制 on |
+| 4 | HOTL 包整引擎 | 完成 | pause/veto 进 `_run_single_cycle`；dispatch 前否决；solidify 拦截；实例锁；损坏视为暂停 |
+| 5 | MCP 无人值守切断 | 完成 | AUTO_HIJACK 下拒绝 host 转达 approve/resume/unveto；destructive hint |
 | 6 | 反馈机械 repair | 完成 | `swarm_feedback:degraded` / adaptive `repair_bias` → `force_category=repair` |
-| 7 | 基因谱系 | 完成 | `landed_gene_id` 入事件/提交/冷却 |
+| 7 | 基因谱系 | 完成 | `landed_gene_id` 入事件/提交/冷却双罚 |
 | 8 | 工作流门可审计 | 完成 | stdout+cwd+timeout；嵌套 park；模板写真话 |
 | 9 | 杂项契约 | 完成 | skill `os.pathsep`；CLI distill hint；veto `--note`；过泛 veto 拒绝 |
-| 10 | 发布卫生 | 完成 | 1.112.0；单一 Unreleased；`check_changelog.py` 拒绝多个 |
-| 11 | 回归 | 完成 | 3469 passed（not slow/llm）；ruff / mypy 全绿 |
+| 10 | 发布卫生 | 完成 | 1.112.0；单一 Unreleased；`check_changelog.py` 严格校验 |
+| 11 | 回归与补测 | 完成 | 全量 3583 passed；ruff / mypy strict 全绿 |
+| 12 | RSI P0-1 锚定评测 | 完成 | `gep/anchor.py` + 仓外冻结探针（Epoch 6 × 11 探针），闭合自偏好漏洞 |
+| 13 | RSI P0-2 机制遥测 | 完成 | `ops/meta_report.py` Table-8 六维面板 + 后代质量 + structural-L5 审计 |
+| 14 | 退出判据重写 (round-30) | 完成 | 增 `gated_cumulative` + 仓外 `gate-verifications.jsonl`，解除安静期转正死锁 |
 
-## 回执跟进（§9.4 → §9.5，已做）
+## P1 — 演进方案 §11.4 最新清单（收口与硬化）
 
-- DEBUG.md #12 自批自恢、#13 归因错位；#9 标 v1.112.0
-- CHANGELOG Upgrade notes（`HITL_MODE=disabled` 现为 on）
-- `演进方案.md` 移出 gitignore，公开链接可入库
-- soak 运行门写法见 演进方案.md §10
-
-## P1 — 下一阶段（soak，不在 1.112 宣称完成）
-
-| 项 | 说明 |
-|---|---|
-| 外置 EVOLUTION_DIR 把 gated_runs 跑到 20 | 工具已就绪：`evolver soak setup/exports/status`；同一版本 1.112.0 实跑；禁止提交 memory/；人类再决定 SHADOW=0 |
-| S26.5 干净 worktree 跑门 | 引擎已落地（flag 默认关）；soak 时 `EVOLVER_FF_ENABLE_EVAL_WORKTREE=1` |
-| S30.4/30.5 env/flag 退役 | 252 → ≤80 |
-| 拆 `swarm/` 包 | 阻止 `swarm.py`/`cli.py` 继续膨胀 |
-| S29 机械提案作宿主默认路径 | 替代自由编辑 + distill |
-| Validator 安全模型 | 仍约 50% |
-| `enable_event_history` 转默认 | 冷却已不依赖；打开需单独 soak |
+| # | 项 | 状态 | 说明 |
+|---|---|---|---|
+| 1 | **T0 双侧重复** (P0-2) | 完成 | `orchestrator.py` 支持基线多重复与仲裁，触 T0 守卫面已升锚 **Epoch 7**（12/12 PASS） |
+| 2 | `charter-check` 机器化回执 | 完成 | `evolver charter-check [--json]` 落地，全自动断言验收门/漂移/运行态卫生/锚纪元 |
+| 3 | Worktree 默认开 | 完成 | `enable_eval_worktree` 转默认 ON；回退路径加固（脏运行态检测、明确 stderr 告警、strict 模式） |
+| 4 | 仓外运行态强制互锁 | 完成 | 检测到 `inside_repo=true` 且非测试时自动路由至 `$EVOLVER_HOME/evolver.py-soak`；幂等资产种子迁移 + `charter-check --soak` 支持 |
+| 5 | 数据入口清单 (P2) | 完成 | 半信任入口盘点；自由文本按占位符身份裸用即拒；文件通道规范；`enable_llm_template` 注册锚互锁；升锚 **Epoch 8**（13/13 PASS） |
+| 6 | S29 机械提案通道 | 完成 | 结构化 Proposal 替代自由编辑 + distill：`swarm_propose` MCP 工具 + `solidify(proposal=...)` + CLI `--proposal` |
+| 7 | S30.4/30.5 env/flag 退役 | 完成 | `EVOLVER_*` 变量从 180 收敛至 77（<= 80，`charter-check --soak` met=True） |
 
 ## 明确不做
 
 - 再按收割切片 bump minor
-- `chore: runtime state sync` / 产品仓直推 `evolver: gene_*`
-- `EVOLVER_ACCEPTANCE_SHADOW=0`（样本不够）
+- `chore: runtime state sync` / 产品仓直推运行态
+- `EVOLVER_ACCEPTANCE_SHADOW=0`（当前 verdict=false_kill_high，未满足安全转正标准前严禁转正）
 - 本阶段 PyPI / 新 EvoX 切片

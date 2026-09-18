@@ -75,7 +75,7 @@ FORCE_UPDATE_JOURNAL_FILE: str = ".evolver-force-update-journal.json"
 MAX_INSTALL_MARKER_BYTES: int = 1024 * 1024
 
 #: Strong install markers for bootstrap recovery when package.json is missing.
-#: Required marker + ≥2 others (Node EVOLVER_INSTALL_MARKERS contract).
+#: Required marker + ≥2 others (Node install markers contract).
 _INSTALL_MARKERS: tuple[tuple[str, tuple[str, ...], bool], ...] = (
     ("src/evolver/force_update.py", ("execute_force_update", "FORCE_UPDATE_FAIL_CODES"), True),
     ("src/evolver/gep/paths.py", ("get_repo_root", "get_evolver_install_root"), False),

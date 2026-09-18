@@ -152,3 +152,114 @@ def test_roundtrip_from_json_file(ws: Path, tmp_path: Path) -> None:
     proposal = parse_proposal(json.loads(path.read_text(encoding="utf-8")))
     report = apply_proposal(proposal, ws)
     assert report["files_changed"] == ["src/mod.py"]
+
+
+def test_solidify_with_proposal(ws: Path) -> None:
+    import subprocess
+
+    from evolver.gep.solidify import solidify, write_state_for_solidify
+
+    subprocess.run(["git", "init"], cwd=ws, check=True, capture_output=True)
+    subprocess.run(["git", "config", "user.email", "t@t"], cwd=ws, check=True)
+    subprocess.run(["git", "config", "user.name", "t"], cwd=ws, check=True)
+    subprocess.run(["git", "add", "-A"], cwd=ws, check=True)
+    subprocess.run(
+        ["git", "-c", "commit.gpgsign=false", "commit", "-m", "init"], cwd=ws, check=True
+    )
+
+    write_state_for_solidify({"run_id": "run_prop_1", "selected_gene_id": "gene_x"})
+    proposal = _patch()
+
+    res = solidify(skip_validation=True, proposal=proposal)
+    assert res["ok"] is True
+    assert (ws / "src" / "mod.py").read_text(encoding="utf-8").startswith("TIMEOUT = 60")
+    assert res["proposal"]["applied"] is True
+    assert res["proposal"]["files_changed"] == ["src/mod.py"]
+
+
+def test_solidify_with_proposal_anchor_miss_aborts(ws: Path) -> None:
+    import subprocess
+
+    from evolver.gep.solidify import solidify, write_state_for_solidify
+
+    subprocess.run(["git", "init"], cwd=ws, check=True, capture_output=True)
+    subprocess.run(["git", "config", "user.email", "t@t"], cwd=ws, check=True)
+    subprocess.run(["git", "config", "user.name", "t"], cwd=ws, check=True)
+    subprocess.run(["git", "add", "-A"], cwd=ws, check=True)
+    subprocess.run(
+        ["git", "-c", "commit.gpgsign=false", "commit", "-m", "init"], cwd=ws, check=True
+    )
+
+    write_state_for_solidify({"run_id": "run_prop_2", "selected_gene_id": "gene_x"})
+    bad_proposal = _patch(
+        edits=[
+            {
+                "op": "replace",
+                "file": "src/mod.py",
+                "target": "NON_EXISTENT_ANCHOR",
+                "content": "BAD",
+            }
+        ]
+    )
+
+    res = solidify(skip_validation=True, proposal=bad_proposal)
+    assert res["ok"] is False
+    assert res.get("error") == "proposal_rejected"
+    assert "anchor not found" in res.get("message", "")
+    assert (ws / "src" / "mod.py").read_text(encoding="utf-8").startswith("TIMEOUT = 30")
+
+
+def test_solidify_proposal_no_action(ws: Path) -> None:
+    from evolver.gep.solidify import solidify, write_state_for_solidify
+
+    write_state_for_solidify({"run_id": "run_prop_3", "selected_gene_id": "gene_x"})
+    proposal = {"action": "no_action"}
+
+    res = solidify(skip_validation=True, proposal=proposal)
+    assert res["ok"] is True
+    assert res["proposal"]["applied"] is False
+    assert res["proposal"]["action"] == "no_action"
+
+
+def test_swarm_propose_tool(ws: Path) -> None:
+    from evolver.swarm import swarm_propose
+
+    valid_proposal = _patch()
+    res = swarm_propose(valid_proposal)
+    assert res["ok"] is True
+    assert res["action"] == "patch"
+    assert res["files_changed"] == ["src/mod.py"]
+    assert res["next_action"] == "swarm_solidify"
+    assert (ws / "src" / "mod.py").read_text(encoding="utf-8").startswith("TIMEOUT = 60")
+
+    # Subsequent propose with now-outdated anchor gets rejected
+    res2 = swarm_propose(valid_proposal)
+    assert res2["ok"] is False
+    assert res2["error"] == "proposal_rejected"
+    assert "anchor not found" in res2["message"]
+
+
+def test_cli_solidify_proposal(
+    ws: Path, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    import subprocess
+
+    from evolver.cli import main
+    from evolver.gep.solidify import write_state_for_solidify
+
+    subprocess.run(["git", "init"], cwd=ws, check=True, capture_output=True)
+    subprocess.run(["git", "config", "user.email", "t@t"], cwd=ws, check=True)
+    subprocess.run(["git", "config", "user.name", "t"], cwd=ws, check=True)
+    subprocess.run(["git", "add", "-A"], cwd=ws, check=True)
+    subprocess.run(
+        ["git", "-c", "commit.gpgsign=false", "commit", "-m", "init"], cwd=ws, check=True
+    )
+
+    write_state_for_solidify({"run_id": "run_prop_cli", "selected_gene_id": "gene_x"})
+    prop_file = tmp_path / "prop_cli.json"
+    prop_file.write_text(json.dumps(_patch()), encoding="utf-8")
+
+    code = main(["solidify", "--proposal", str(prop_file)])
+    assert code == 0
+    assert (ws / "src" / "mod.py").read_text(encoding="utf-8").startswith("TIMEOUT = 60")
+    assert "Solidify succeeded" in capsys.readouterr().out

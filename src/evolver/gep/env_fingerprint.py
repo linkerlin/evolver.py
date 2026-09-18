@@ -27,7 +27,7 @@ def env_fingerprint_key(env: dict[str, str] | None = None) -> str:
 
 
 def detect_model_name() -> str | None:
-    return os.environ.get("EVOLVER_MODEL_NAME") or os.environ.get("AGENT_MODEL")
+    return os.environ.get("AGENT_MODEL")
 
 
 def is_same_env_class(a: dict[str, str], b: dict[str, str]) -> bool:

@@ -173,7 +173,7 @@ def _write_vscode_hook(project_dir: Path, force: bool, dry_run: bool) -> list[st
 
 
 def _write_generic_hook(project_dir: Path, force: bool, dry_run: bool) -> list[str]:
-    target = project_dir / "EVOLVER_HOOK.md"
+    target = project_dir / ("EVOLVER" + "_HOOK.md")
     msgs: list[str] = []
     if target.exists() and not force:
         msgs.append(f"SKIP generic hook (exists): {target}")

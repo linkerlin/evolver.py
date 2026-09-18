@@ -12,7 +12,9 @@ the live cwd so soak is never blocked by isolation itself.
 from __future__ import annotations
 
 import logging
+import os
 import shutil
+import sys
 import tempfile
 import uuid
 from collections.abc import Iterator
@@ -40,6 +42,15 @@ def is_runtime_rel(rel: str) -> bool:
     norm = rel.replace("\\", "/")
     head = norm.split("/", 1)[0]
     return head in _RUNTIME_HEADS or norm.startswith("evolver/.config/")
+
+
+def check_dirty_runtime(src: Path) -> list[str]:
+    """Return uncommitted untracked runtime files in src that violate hermeticity."""
+    try:
+        untracked = git_list_untracked_files(src)
+        return [u for u in untracked if is_runtime_rel(u)]
+    except Exception:
+        return []
 
 
 def _overlay_mutation(src: Path, dest: Path) -> None:
@@ -76,11 +87,19 @@ def isolated_eval_cwd(src: Path) -> Iterator[tuple[Path, dict[str, Any]]]:
         eval_path = dest
         meta = {"isolated": True, "reason": "worktree", "path": str(dest)}
     except Exception as exc:
-        logger.warning("eval worktree unavailable (%s); using live cwd", exc)
+        if os.getenv("EVOLVER_EVAL_WORKTREE_STRICT") in {"1", "true", "yes"}:
+            raise RuntimeError(f"eval_worktree strict isolation failed: {exc}") from exc
+        dirty = check_dirty_runtime(src)
+        warn_msg = f"[eval_worktree] WARNING: worktree isolation failed ({exc}); using live cwd"
+        if dirty:
+            warn_msg += f" (live tree dirty with {len(dirty)} runtime files)"
+        logger.warning(warn_msg)
+        print(warn_msg, file=sys.stderr)
         meta = {
             "isolated": False,
             "reason": f"fallback:{type(exc).__name__}",
             "error": str(exc)[:200],
+            "dirty_runtime": dirty,
         }
         eval_path = src
     try:
@@ -95,4 +114,4 @@ def isolated_eval_cwd(src: Path) -> Iterator[tuple[Path, dict[str, Any]]]:
             shutil.rmtree(dest, ignore_errors=True)
 
 
-__all__ = ["is_runtime_rel", "isolated_eval_cwd"]
+__all__ = ["check_dirty_runtime", "is_runtime_rel", "isolated_eval_cwd"]

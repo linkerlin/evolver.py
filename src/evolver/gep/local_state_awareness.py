@@ -105,10 +105,7 @@ def _capture_git_status(root: Path) -> dict[str, list[str]]:
 def _capture_env_vars() -> dict[str, str]:
     """Capture a curated subset of environment variables."""
     keys = [
-        "EVOLVER_MODE",
-        "EVOLVER_AGENT_ID",
-        "EVOLVER_PROXY_URL",
-        "EVOLVER_TASK_TYPE",
+        "A2A_NODE_ID",
         "EVOLVER_ROLLBACK_MODE",
         "HOME",
         "USER",

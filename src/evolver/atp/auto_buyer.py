@@ -128,8 +128,8 @@ def _effective_cap() -> float:
     consent = get_consent()
     if not consent or not consent.get("enabled"):
         return 0.0
-    daily = float(os.environ.get("EVOLVER_ATP_DAILY_BUDGET", str(_DAILY_BUDGET_DEFAULT)))
-    per_order = float(os.environ.get("EVOLVER_ATP_PER_ORDER_BUDGET", str(_PER_ORDER_CAP_DEFAULT)))
+    daily = float(_DAILY_BUDGET_DEFAULT)
+    per_order = float(_PER_ORDER_CAP_DEFAULT)
     # Cold-start halving
     ack_time = consent.get("acknowledged_at", "")
     if ack_time:

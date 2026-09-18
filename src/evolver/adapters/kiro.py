@@ -19,7 +19,7 @@ from evolver.adapters.hook_adapter import (
 )
 
 HOOK_SCRIPTS_DIR_NAME = "hooks"
-EVOLVER_MARKER = "<!-- evolver-evolution-memory -->"
+SECTION_MARKER = "<!-- evolver-evolution-memory -->"
 HOOK_FILE_SUFFIX = ".kiro.hook"
 HOOK_FILES = {
     "session_start": "evolver-session-start.kiro.hook",
@@ -85,7 +85,7 @@ def build_hook_config(kind: str, scripts_base: str) -> dict[str, Any]:
 
 
 def build_agents_md_section() -> str:
-    return f"""{EVOLVER_MARKER}
+    return f"""{SECTION_MARKER}
 ## Evolution Memory (Evolver)
 
 This project uses evolver for self-evolution. Hooks automatically:
@@ -173,7 +173,7 @@ def install(
     copied = copy_hook_scripts(hooks_dir, evolver_root)
     print(f"[kiro] Copied {len(copied)} hook scripts to {hooks_dir}")
 
-    injected = _append_section_to_file(agents_md_path, EVOLVER_MARKER, build_agents_md_section())
+    injected = _append_section_to_file(agents_md_path, SECTION_MARKER, build_agents_md_section())
     if injected:
         print(f"[kiro] Injected evolution section into {agents_md_path}")
 
@@ -219,7 +219,7 @@ def uninstall(
     if scripts > 0:
         changed = True
 
-    if remove_marked_section(agents_md_path, EVOLVER_MARKER):
+    if remove_marked_section(agents_md_path, SECTION_MARKER):
         changed = True
 
     print(

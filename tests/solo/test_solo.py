@@ -169,7 +169,6 @@ def _solo_env(tmp: Path) -> dict[str, str]:
             "A2A_HUB_URL": "http://dead.invalid",  # solo must override this
             "EVOMAP_HUB_URL": "",
             "EVOLVER_REPO_ROOT": str(tmp),
-            "EVOLVER_LOCK_DIR": str(tmp),
             "EVOLVER_SETTINGS_DIR": str(tmp / ".evolver-settings"),
             "EVOLVER_NO_PARENT_GIT": "1",
             "GEP_ASSETS_DIR": str(tmp / "gep"),

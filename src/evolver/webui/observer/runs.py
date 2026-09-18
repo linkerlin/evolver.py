@@ -5,7 +5,6 @@ Behavioral port of the portable subset of ``evolver/src/webui/observer/runs.js``
 
 from __future__ import annotations
 
-import os
 import time
 from pathlib import Path
 from typing import Any
@@ -15,7 +14,7 @@ from evolver.webui.observer.jsonl import stream_jsonl
 from evolver.webui.observer.redact import redact_text
 
 # Runs with status=running older than this are reclassified abandoned.
-_STUCK_THRESHOLD_MS = int(os.environ.get("EVOLVER_RUN_STUCK_THRESHOLD_MS", str(30 * 60 * 1000)))
+_STUCK_THRESHOLD_MS = 30 * 60 * 1000
 
 
 def _ts(value: Any) -> float:

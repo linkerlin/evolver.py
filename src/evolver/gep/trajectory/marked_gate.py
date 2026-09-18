@@ -7,8 +7,7 @@ Strict-by-default discovery filter:
 2. Exclude sessions the proxy gateway already captured (hash join against
    proxy-traces.jsonl via ``session_id_sha256``).
 
-Open the gates with ``include_unmarked`` / ``include_gateway_captured``
-(or the matching env vars).
+Open the gates with ``include_unmarked`` / ``include_gateway_captured``.
 """
 
 from __future__ import annotations
@@ -21,9 +20,6 @@ from typing import Any
 
 from evolver.proxy.trace.extractor import hash_trace_value
 
-MARKED_SESSIONS_FILE_ENV = "EVOLVER_MARKED_SESSIONS_FILE"
-INCLUDE_UNMARKED_ENV = "EVOLVER_TRAJECTORY_INCLUDE_UNMARKED"
-INCLUDE_GATEWAY_CAPTURED_ENV = "EVOLVER_TRAJECTORY_INCLUDE_GATEWAY_CAPTURED"
 SESSION_ID_HASH_PREFIX = "session_id_sha256"
 MARK_GATE_HEAD_SCAN_BYTES = 64 * 1024
 UUID_RE = re.compile(
@@ -45,9 +41,6 @@ def resolve_marked_sessions_file(opts: dict[str, Any] | None = None) -> Path:
     explicit = opts.get("markedSessionsFile") or opts.get("marked_sessions_file")
     if explicit:
         return Path(str(explicit))
-    env = os.environ.get(MARKED_SESSIONS_FILE_ENV, "").strip()
-    if env:
-        return Path(env)
     home = opts.get("homedir") or os.environ.get("HOME") or os.environ.get("USERPROFILE") or ""
     evolver_home = os.environ.get("EVOLVER_HOME", "").strip()
     if evolver_home:
@@ -177,11 +170,11 @@ def build_mark_gate_context(opts: dict[str, Any] | None = None) -> dict[str, Any
     opts = opts or {}
     enforce_marked = mark_gate_enabled(
         opts.get("includeUnmarked", opts.get("include_unmarked")),
-        os.environ.get(INCLUDE_UNMARKED_ENV),
+        None,
     )
     exclude_gateway = mark_gate_enabled(
         opts.get("includeGatewayCaptured", opts.get("include_gateway_captured")),
-        os.environ.get(INCLUDE_GATEWAY_CAPTURED_ENV),
+        None,
     )
     return {
         "enforceMarked": enforce_marked,
@@ -275,9 +268,6 @@ def collect_runtime_session_inputs(opts: dict[str, Any] | None = None) -> dict[s
 
 
 __all__ = [
-    "INCLUDE_GATEWAY_CAPTURED_ENV",
-    "INCLUDE_UNMARKED_ENV",
-    "MARKED_SESSIONS_FILE_ENV",
     "SESSION_ID_HASH_PREFIX",
     "build_mark_gate_context",
     "candidate_session_ids_for_file",

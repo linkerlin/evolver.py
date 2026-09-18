@@ -106,7 +106,7 @@ class TestFsWorkspaceRoot:
 class TestFsWorkspaceId:
     def test_creates_and_returns_id(self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
         monkeypatch.delenv("OPENCLAW_WORKSPACE", raising=False)
-        monkeypatch.delenv("EVOLVER_WORKSPACE_ID", raising=False)
+        monkeypatch.delenv("WORKSPACE_ID", raising=False)
         # No git → project dir itself.
         result = runtime_paths._fs_workspace_id(tmp_path)
         assert result is not None
@@ -117,7 +117,7 @@ class TestFsWorkspaceId:
 
     def test_id_stable_across_calls(self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
         monkeypatch.delenv("OPENCLAW_WORKSPACE", raising=False)
-        monkeypatch.delenv("EVOLVER_WORKSPACE_ID", raising=False)
+        monkeypatch.delenv("WORKSPACE_ID", raising=False)
         first = runtime_paths._fs_workspace_id(tmp_path)
         second = runtime_paths._fs_workspace_id(tmp_path)
         assert first == second
@@ -144,7 +144,7 @@ class TestFsWorkspaceId:
 
 class TestResolveWorkspaceId:
     def test_env_override(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        monkeypatch.setenv("EVOLVER_WORKSPACE_ID", "my-custom-id")
+        monkeypatch.setenv("WORKSPACE_ID", "my-custom-id")
         assert runtime_paths.resolve_workspace_id() == "my-custom-id"
 
     def test_fs_fallback(
@@ -152,7 +152,7 @@ class TestResolveWorkspaceId:
         monkeypatch: pytest.MonkeyPatch,
         tmp_path: Path,
     ) -> None:
-        monkeypatch.delenv("EVOLVER_WORKSPACE_ID", raising=False)
+        monkeypatch.delenv("WORKSPACE_ID", raising=False)
         # Pass evolver_root=None to force FS fallback.
         result = runtime_paths.resolve_workspace_id(None, tmp_path)
         assert result is not None
@@ -208,7 +208,7 @@ class TestFindEvolverRoot:
     def test_env_override_invalid_falls_through(
         self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
     ) -> None:
-        monkeypatch.setenv("EVOLVER_ROOT", str(tmp_path / "nonexistent"))
+        monkeypatch.setenv("EVOLVER_REPO_ROOT", str(tmp_path / "nonexistent"))
         # Invalid env root falls through to dev layout, which finds the repo.
         root = runtime_paths.find_evolver_root()
         assert root is not None

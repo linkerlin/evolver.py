@@ -68,3 +68,61 @@ def test_not_git_falls_back(temp_workspace: Path, monkeypatch: pytest.MonkeyPatc
         assert cwd == temp_workspace
         assert meta["isolated"] is False
         assert meta["reason"] == "not_a_git_repo"
+
+
+def test_default_enabled_isolates_in_worktree(
+    temp_workspace: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.delenv("EVOLVER_FF_ENABLE_EVAL_WORKTREE", raising=False)
+    ws = _repo(temp_workspace)
+    with isolated_eval_cwd(ws) as (cwd, meta):
+        assert meta["isolated"] is True
+        assert meta["reason"] == "worktree"
+        assert cwd != ws
+        assert Path(meta["path"]).exists()
+    assert not Path(meta["path"]).exists()
+
+
+def test_fallback_with_dirty_runtime_records_and_warns(
+    temp_workspace: Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    ws = _repo(temp_workspace)
+    # create dirty uncommitted runtime file
+    dirty_file = ws / "memory" / "evolution" / "feedback.jsonl"
+    dirty_file.parent.mkdir(parents=True)
+    dirty_file.write_text('{"dirty": true}\n', encoding="utf-8")
+
+    # simulate worktree command failure
+    import evolver.gep.eval_worktree as ewt
+
+    def _fail_cmd(*_args: object, **_kwargs: object) -> str:
+        raise RuntimeError("git worktree failed deliberately")
+
+    monkeypatch.setattr(ewt, "run_cmd", _fail_cmd)
+
+    with isolated_eval_cwd(ws) as (cwd, meta):
+        assert cwd == ws
+        assert meta["isolated"] is False
+        assert meta["reason"] == "fallback:RuntimeError"
+        assert "git worktree failed deliberately" in meta["error"]
+        assert any("memory/evolution/feedback.jsonl" in p for p in meta["dirty_runtime"])
+
+    captured = capsys.readouterr()
+    assert "[eval_worktree] WARNING: worktree isolation failed" in captured.err
+    assert "live tree dirty with" in captured.err
+
+
+def test_strict_mode_raises(temp_workspace: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    ws = _repo(temp_workspace)
+    monkeypatch.setenv("EVOLVER_EVAL_WORKTREE_STRICT", "1")
+
+    import evolver.gep.eval_worktree as ewt
+
+    def _fail_cmd(*_args: object, **_kwargs: object) -> str:
+        raise RuntimeError("simulated boom")
+
+    monkeypatch.setattr(ewt, "run_cmd", _fail_cmd)
+
+    with pytest.raises(RuntimeError, match="eval_worktree strict isolation failed: simulated boom"):
+        with isolated_eval_cwd(ws):
+            pass

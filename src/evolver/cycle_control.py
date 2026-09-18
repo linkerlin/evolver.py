@@ -69,7 +69,7 @@ def parse_ms_env(value: str | None, fallback: int) -> int:
 
 
 def cycle_timeout_enabled() -> bool:
-    return parse_bool_env(os.environ.get("EVOLVER_CYCLE_TIMEOUT_ENABLED"), True)
+    return True
 
 
 def cycle_timeout_ms() -> int:
@@ -77,7 +77,9 @@ def cycle_timeout_ms() -> int:
 
 
 def progress_update_ms() -> int:
-    return parse_ms_env(os.environ.get("EVOLVER_PROGRESS_UPDATE_MS"), DEFAULT_PROGRESS_UPDATE_MS)
+    from evolver.config import PROGRESS_UPDATE_MS
+
+    return PROGRESS_UPDATE_MS
 
 
 def suicide_enabled() -> bool:

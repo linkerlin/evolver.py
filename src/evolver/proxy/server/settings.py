@@ -24,7 +24,7 @@ _DEFAULTS: dict[str, Any] = {
 
 
 def get_settings_path() -> Path:
-    return Path(os.environ.get("EVOLVER_PROXY_SETTINGS_PATH", DEFAULT_SETTINGS_PATH))
+    return Path(os.environ.get("EVOLVER_PROXY_SETTINGS_FILE", DEFAULT_SETTINGS_PATH))
 
 
 def load_settings() -> dict[str, Any]:

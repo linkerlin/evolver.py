@@ -1,0 +1,7 @@
+{
+  "id": "data-ingress-guard",
+  "title": "Data ingress defense: naked free-text rejected by placeholder identity and anchor interlock enforced",
+  "source": "演进方案.md §11.4 #5 (P2)",
+  "epoch_added": 8,
+  "kind": "python_contract"
+}

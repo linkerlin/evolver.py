@@ -20,7 +20,7 @@ def _reset_table() -> None:
 @pytest.fixture
 def settings_dir(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     path = tmp_path / "proxy-settings.json"
-    monkeypatch.setenv("EVOLVER_PROXY_SETTINGS_PATH", str(path))
+    monkeypatch.setenv("EVOLVER_PROXY_SETTINGS_FILE", str(path))
     monkeypatch.setenv("OPENCLAW_WORKSPACE", str(tmp_path / "ws"))
     monkeypatch.setenv("EVOLVER_REPO_ROOT", str(tmp_path / "repo"))
     (tmp_path / "repo").mkdir()

@@ -16,15 +16,15 @@ SI = idle_scheduler.EvolutionIntensity
 
 class TestIntensityOverride:
     def test_override_deep(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        monkeypatch.setenv("EVOLVER_IDLE_OVERRIDE", "deep")
+        monkeypatch.setenv("IDLE_OVERRIDE", "deep")
         assert idle_scheduler.get_intensity() == SI.deep
 
     def test_override_signal_only(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        monkeypatch.setenv("EVOLVER_IDLE_OVERRIDE", "signal_only")
+        monkeypatch.setenv("IDLE_OVERRIDE", "signal_only")
         assert idle_scheduler.get_intensity() == SI.signal_only
 
     def test_override_invalid_falls_through(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        monkeypatch.setenv("EVOLVER_IDLE_OVERRIDE", "nonsense")
+        monkeypatch.setenv("IDLE_OVERRIDE", "nonsense")
         monkeypatch.setattr(idle_scheduler, "_detect_build_activity", lambda: False)
         monkeypatch.setattr(idle_scheduler, "_idle_time", lambda: 0.0)
         assert idle_scheduler.get_intensity() == SI.signal_only

@@ -55,7 +55,7 @@ def ensure_proxy_alive(*, auto_start: bool = True) -> bool:
             [sys.executable, "-m", "evolver", "proxy"],
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL,
-            env={**os.environ, "EVOLVER_PROXY_DAEMON": "1"},
+            env=dict(os.environ),
         )
         # Wait briefly for startup.
         for _ in range(10):

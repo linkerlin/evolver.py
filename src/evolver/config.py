@@ -87,24 +87,22 @@ def env_bool(key: str, fallback: bool) -> bool:
     return fallback
 
 
-# --- Network & A2A ---
-HELLO_TIMEOUT_MS: Final = env_positive_int("EVOLVER_HELLO_TIMEOUT_MS", 15_000)
-HEARTBEAT_TIMEOUT_MS: Final = env_positive_int("EVOLVER_HEARTBEAT_TIMEOUT_MS", 10_000)
+# --- Network & A2A (S30.4 §11.4 #7: stable constants) ---
+HELLO_TIMEOUT_MS: Final = 15_000
+HEARTBEAT_TIMEOUT_MS: Final = 10_000
 HEARTBEAT_INTERVAL_MS: Final = env_positive_int("HEARTBEAT_INTERVAL_MS", 360_000)
-HEARTBEAT_FIRST_DELAY_MS: Final = env_positive_int("EVOLVER_HEARTBEAT_FIRST_DELAY_MS", 30_000)
-EVENT_POLL_TIMEOUT_MS: Final = env_positive_int("EVOLVER_EVENT_POLL_TIMEOUT_MS", 60_000)
-HTTP_TRANSPORT_TIMEOUT_MS: Final = env_positive_int("EVOLVER_HTTP_TRANSPORT_TIMEOUT_MS", 15_000)
-SECRET_CACHE_TTL_MS: Final = env_positive_int("EVOLVER_SECRET_CACHE_TTL_MS", 60_000)
-HUB_SEARCH_TIMEOUT_MS: Final = env_positive_int("EVOLVER_HUB_SEARCH_TIMEOUT_MS", 8_000)
-# Hub fetch resilience (living-memory friction f001 hub_offline): one short
-# exponential-backoff retry before a cycle degrades to offline/idle.
-HUB_FETCH_RETRIES: Final = env_int("EVOLVER_HUB_FETCH_RETRIES", 1)
-HUB_FETCH_RETRY_BACKOFF_MS: Final = env_positive_int("EVOLVER_HUB_FETCH_RETRY_BACKOFF_MS", 500)
+HEARTBEAT_FIRST_DELAY_MS: Final = 30_000
+EVENT_POLL_TIMEOUT_MS: Final = 60_000
+HTTP_TRANSPORT_TIMEOUT_MS: Final = 15_000
+SECRET_CACHE_TTL_MS: Final = 60_000
+HUB_SEARCH_TIMEOUT_MS: Final = 8_000
+HUB_FETCH_RETRIES: Final = 1
+HUB_FETCH_RETRY_BACKOFF_MS: Final = 500
 
 PUBLIC_DEFAULT_HUB_URL: Final = "https://evomap.ai"
 DEFAULT_PROXY_PORT: Final = 8081
 DEFAULT_WEBUI_PORT: Final = 8080
-PROXY_HOST: Final = env_str("EVOLVER_PROXY_HOST", env_str("EVOMAP_PROXY_HOST", "127.0.0.1"))
+PROXY_HOST: Final = "127.0.0.1"
 
 
 def resolve_proxy_port() -> int:
@@ -211,30 +209,27 @@ def resolve_hub_url() -> str:
     if os.environ.get("EVOLVER_SOLO", "") == "1":
         return ""
     raw = (
-        os.environ.get("A2A_HUB_URL")
-        or os.environ.get("EVOMAP_HUB_URL")
-        or os.environ.get("EVOLVER_DEFAULT_HUB_URL")
-        or PUBLIC_DEFAULT_HUB_URL
+        os.environ.get("A2A_HUB_URL") or os.environ.get("EVOMAP_HUB_URL") or PUBLIC_DEFAULT_HUB_URL
     )
     return enforce_hub_scheme(raw)
 
 
-# --- Solidify & Validation ---
-BLAST_RADIUS_HARD_CAP_FILES: Final = env_int("EVOLVER_HARD_CAP_FILES", 60)
-BLAST_RADIUS_HARD_CAP_LINES: Final = env_int("EVOLVER_HARD_CAP_LINES", 20_000)
-VALIDATION_TIMEOUT_MS: Final = env_int("EVOLVER_VALIDATION_TIMEOUT_MS", 180_000)
-CANARY_TIMEOUT_MS: Final = env_int("EVOLVER_CANARY_TIMEOUT_MS", 30_000)
-CAPSULE_CONTENT_MAX_CHARS: Final = env_int("EVOLVER_CAPSULE_MAX_CHARS", 8_000)
+# --- Solidify & Validation (S30.4 §11.4 #7: stable constants) ---
+BLAST_RADIUS_HARD_CAP_FILES: Final = 60
+BLAST_RADIUS_HARD_CAP_LINES: Final = 20_000
+VALIDATION_TIMEOUT_MS: Final = 180_000
+CANARY_TIMEOUT_MS: Final = 30_000
+CAPSULE_CONTENT_MAX_CHARS: Final = 8_000
 SOLIDIFY_MAX_RETRIES: Final = env_int("SOLIDIFY_MAX_RETRIES", 2)
-SOLIDIFY_RETRY_INTERVAL_MS: Final = env_int("EVOLVER_SOLIDIFY_RETRY_INTERVAL_MS", 1_000)
+SOLIDIFY_RETRY_INTERVAL_MS: Final = 1_000
 
 # --- Self-Harness causal diagnosis (Sprint B1; opt-in, off by default) ---
-DIAGNOSIS_INTERVAL: Final = env_int("EVOLVER_DIAGNOSIS_INTERVAL", 1)
-DIAGNOSIS_MAX_EVENTS: Final = env_int("EVOLVER_DIAGNOSIS_MAX_EVENTS", 20)
+DIAGNOSIS_INTERVAL: Final = 1
+DIAGNOSIS_MAX_EVENTS: Final = 20
 
 # --- Self-Harness acceptance gate (Sprint A1; opt-in, off by default) ---
-ACCEPTANCE_REPEATS: Final = env_int("EVOLVER_ACCEPTANCE_REPEATS", 2)
-ACCEPTANCE_DELTA_EPSILON: Final = env_float("EVOLVER_ACCEPTANCE_DELTA_EPSILON", 0.0)
+ACCEPTANCE_REPEATS: Final = 2
+ACCEPTANCE_DELTA_EPSILON: Final = 0.0
 # Round-25: T0 flake adjudication needs NO spread threshold — the frozen set
 # is deterministic, so any inter-repeat difference triggers adjudication and
 # the majority value anchors the mean (a fixed 0.05 bar let single-test noise
@@ -246,10 +241,10 @@ ACCEPTANCE_DELTA_EPSILON: Final = env_float("EVOLVER_ACCEPTANCE_DELTA_EPSILON", 
 ACCEPTANCE_SHADOW: Final = env_bool("EVOLVER_ACCEPTANCE_SHADOW", True)
 
 # --- Self-Harness multi-proposer (Sprint C2; 1 = existing single-proposal) ---
-MULTI_PROPOSE_ROUTES: Final = env_int("EVOLVER_MULTI_PROPOSE_ROUTES", 1)
+MULTI_PROPOSE_ROUTES: Final = 1
 
 # --- Sprint 22.2 fitness cascade (flag enable_fitness_cascade; assumes Python/uv repo) ---
-FITNESS_PYTEST_TIMEOUT_MS: Final = env_int("EVOLVER_FITNESS_PYTEST_TIMEOUT_MS", 600_000)
+FITNESS_PYTEST_TIMEOUT_MS: Final = 600_000
 FITNESS_CASCADE_COMMANDS: Final[list[dict[str, Any]]] = [
     {"command": ["ruff", "check", "src", "tests"]},
     {"command": ["mypy", "src"]},
@@ -258,34 +253,34 @@ FITNESS_CASCADE_COMMANDS: Final[list[dict[str, Any]]] = [
 # S26.3 strict-improvement gate (r_best ledger): shadow period records verdicts
 # only; set EVOLVER_FITNESS_GATE_ENFORCE=1 to roll back no_improvement
 # mutations (same gray-scale pattern as EVOLVER_ACCEPTANCE_SHADOW).
-FITNESS_GATE_ENFORCE: Final = env_bool("EVOLVER_FITNESS_GATE_ENFORCE", False)
+FITNESS_GATE_ENFORCE: Final = False
 
 # --- Self-Harness external LLM templates (Sprint D) ---
 LLM_CALL_DIR: Final = env_str("EVOLVER_LLM_CALL_DIR", "<GEP_ASSETS_DIR>/llm_calls")
 
-MIN_PUBLISH_SCORE: Final = env_float("EVOLVER_MIN_PUBLISH_SCORE", 0.78)
+MIN_PUBLISH_SCORE: Final = 0.78
 BROADCAST_SCORE_THRESHOLD: Final = 0.7
 BROADCAST_SUCCESS_STREAK: Final = 2
 MAX_REGEX_PATTERN_LEN: Final = 1_024
 
-# --- Evolution Loop ---
-REPAIR_LOOP_THRESHOLD: Final = env_int("EVOLVER_REPAIR_LOOP_THRESHOLD", 3)
-GENE_BAN_PER_KEY_ATTEMPTS: Final = env_int("EVOLVER_GENE_BAN_PER_KEY_ATTEMPTS", 4)
-GENE_BAN_BEST_THRESHOLD: Final = env_float("EVOLVER_GENE_BAN_BEST_THRESHOLD", 0.15)
+# --- Evolution Loop (S30.4 §11.4 #7: stable constants) ---
+REPAIR_LOOP_THRESHOLD: Final = 3
+GENE_BAN_PER_KEY_ATTEMPTS: Final = 4
+GENE_BAN_BEST_THRESHOLD: Final = 0.15
 GENE_INERT_BAN_STREAK: Final = env_int("EVOLVER_GENE_INERT_BAN_STREAK", 8)
 APPLIED_GENE_COOLDOWN_EVENTS: Final = env_int("EVOLVER_APPLIED_GENE_COOLDOWN_EVENTS", 5)
 APPLIED_GENE_COOLDOWN_PENALTY: Final = env_float("EVOLVER_APPLIED_GENE_COOLDOWN_PENALTY", 0.25)
-GENE_EPIGENETIC_HARD_BOOST: Final = env_float("EVOLVER_GENE_EPIGENETIC_HARD_BOOST", -0.3)
-SESSION_ARCHIVE_TRIGGER: Final = env_int("EVOLVER_SESSION_ARCHIVE_TRIGGER", 100)
-SESSION_ARCHIVE_KEEP: Final = env_int("EVOLVER_SESSION_ARCHIVE_KEEP", 50)
-MEMORY_FRAGMENT_MAX_CHARS: Final = env_int("EVOLVER_MEMORY_FRAGMENT_MAX_CHARS", 50_000)
-IDLE_FETCH_INTERVAL_MS: Final = env_int("EVOLVER_IDLE_FETCH_INTERVAL_MS", 600_000)
+GENE_EPIGENETIC_HARD_BOOST: Final = -0.3
+SESSION_ARCHIVE_TRIGGER: Final = 100
+SESSION_ARCHIVE_KEEP: Final = 50
+MEMORY_FRAGMENT_MAX_CHARS: Final = 50_000
+IDLE_FETCH_INTERVAL_MS: Final = 600_000
 # Solo / loop testability: exit the daemon loop after N cycles (0 = unlimited).
 MAX_CYCLES_PER_PROCESS: Final = env_int("EVOLVER_MAX_CYCLES_PER_PROCESS", 0)
 # Issue #19: hard timeout per evolve cycle (default 45 min); 0 disables via ENABLED=false.
 CYCLE_TIMEOUT_MS: Final = env_int("EVOLVER_CYCLE_TIMEOUT_MS", 2_700_000)
-PROGRESS_UPDATE_MS: Final = env_int("EVOLVER_PROGRESS_UPDATE_MS", 60_000)
-PROMPT_MAX_CHARS: Final = env_int("EVOLVER_PROMPT_MAX_CHARS", 24_000)
+PROGRESS_UPDATE_MS: Final = 60_000
+PROMPT_MAX_CHARS: Final = 24_000
 ACTIVE_WINDOW_MS: Final = 24 * 60 * 60 * 1_000
 TARGET_BYTES: Final = 120_000
 PER_FILE_BYTES: Final = 20_000
@@ -303,7 +298,7 @@ NARRATIVE_SUMMARY_MAX_CHARS: Final = 3_000
 SWARM_AUTO_HIJACK: Final = env_bool("EVOLVER_SWARM_AUTO_HIJACK", False)
 # swarm_tick returns the engine's stdout as `engine_log` (tail-truncated to
 # this budget); the dispatch prompt itself is returned untruncated.
-SWARM_TICK_LOG_MAX_CHARS: Final = env_int("EVOLVER_SWARM_TICK_LOG_MAX_CHARS", 8_000)
+SWARM_TICK_LOG_MAX_CHARS: Final = 8_000
 # EvoX concept harvest: a swarm feedback report below this primary_score (or
 # with success=false) is "degraded" and injects repair-bias signals.
 SWARM_FEEDBACK_DEGRADED_THRESHOLD: Final = env_float("EVOLVER_FEEDBACK_DEGRADED_THRESHOLD", 0.5)
@@ -329,9 +324,9 @@ ADAPTIVE_MUTATION_SHIFT: Final = env_float("EVOLVER_ADAPTIVE_MUTATION_SHIFT", 0.
 # Acceptance-gate soak promotion criteria (evolver gate-report readiness
 # verdicts; the actual switch stays a human decision — EVOLVER_ACCEPTANCE_SHADOW=0).
 GATE_SOAK_MIN_RUNS: Final = env_int("EVOLVER_GATE_SOAK_MIN_RUNS", 20)
-GATE_SOAK_MAX_FALSE_KILL: Final = env_float("EVOLVER_GATE_SOAK_MAX_FALSE_KILL", 0.1)
-GATE_SOAK_INTERCEPT_MIN: Final = env_float("EVOLVER_GATE_SOAK_INTERCEPT_MIN", 0.05)
-GATE_SOAK_INTERCEPT_MAX: Final = env_float("EVOLVER_GATE_SOAK_INTERCEPT_MAX", 0.5)
+GATE_SOAK_MAX_FALSE_KILL: Final = 0.1
+GATE_SOAK_INTERCEPT_MIN: Final = 0.05
+GATE_SOAK_INTERCEPT_MAX: Final = 0.5
 # Anchor evaluation (RSI P0-1): mutation paths that may weaken the verification
 # machinery trigger the out-of-tree anchor suite during solidify. Plain
 # constants by charter — no new env knobs during soak (演进方案.md §4).
@@ -340,6 +335,8 @@ ANCHOR_TRIGGER_SURFACES: Final[tuple[str, ...]] = (
     "src/evolver/gep/anchor.py",
     "src/evolver/gep/git_ops.py",
     "src/evolver/gep/hitl.py",
+    # P2 (演进方案.md §11.4 #5): semi-trusted text ingress surface guarded by anchor.
+    "src/evolver/gep/llm_template.py",
     "src/evolver/gep/solidify.py",
     "src/evolver/gep/supervision.py",
     "src/evolver/gep/validation_env.py",
@@ -353,24 +350,24 @@ ANCHOR_TRIGGER_SURFACES: Final[tuple[str, ...]] = (
 )
 ANCHOR_PROBE_TIMEOUT_S: Final = 120.0
 
-# --- Ops ---
-MAX_SILENCE_MS: Final = env_int("EVOLVER_MAX_SILENCE_MS", 30 * 60 * 1_000)
-CLEANUP_MAX_AGE_MS: Final = env_int("EVOLVER_CLEANUP_MAX_AGE_MS", 24 * 60 * 60 * 1_000)
-CLEANUP_MIN_KEEP: Final = env_int("EVOLVER_CLEANUP_MIN_KEEP", 10)
-CLEANUP_MAX_FILES: Final = env_int("EVOLVER_CLEANUP_MAX_FILES", 10)
-LOCK_MAX_AGE_MS: Final = env_int("EVOLVER_LOCK_MAX_AGE_MS", 10 * 60 * 1_000)
+# --- Ops (S30.4 §11.4 #7: stable constants) ---
+MAX_SILENCE_MS: Final = 30 * 60 * 1_000
+CLEANUP_MAX_AGE_MS: Final = 24 * 60 * 60 * 1_000
+CLEANUP_MIN_KEEP: Final = 10
+CLEANUP_MAX_FILES: Final = 10
+LOCK_MAX_AGE_MS: Final = 10 * 60 * 1_000
 
-# --- Self-PR ---
-SELF_PR_MIN_SCORE: Final = env_float("EVOLVER_SELF_PR_MIN_SCORE", 0.85)
-SELF_PR_MIN_STREAK: Final = env_int("EVOLVER_SELF_PR_MIN_STREAK", 3)
-SELF_PR_MAX_FILES: Final = env_int("EVOLVER_SELF_PR_MAX_FILES", 3)
-SELF_PR_MAX_LINES: Final = env_int("EVOLVER_SELF_PR_MAX_LINES", 100)
-SELF_PR_COOLDOWN_MS: Final = env_int("EVOLVER_SELF_PR_COOLDOWN_MS", 24 * 60 * 60 * 1_000)
-SELF_PR_REPO: Final = env_str("EVOLVER_SELF_PR_REPO", "EvoMap/evolver")
-SELF_PR_TIMEOUT_MS: Final = env_int("EVOLVER_SELF_PR_TIMEOUT_MS", 30_000)
+# --- Self-PR (S30.4 §11.4 #7: stable constants) ---
+SELF_PR_MIN_SCORE: Final = 0.85
+SELF_PR_MIN_STREAK: Final = 3
+SELF_PR_MAX_FILES: Final = 3
+SELF_PR_MAX_LINES: Final = 100
+SELF_PR_COOLDOWN_MS: Final = 24 * 60 * 60 * 1_000
+SELF_PR_REPO: Final = "EvoMap/evolver"
+SELF_PR_TIMEOUT_MS: Final = 30_000
 
 # --- Leak Check ---
-LEAK_CHECK_MODE: Final = env_str("EVOLVER_LEAK_CHECK", "strict")
+LEAK_CHECK_MODE: Final = "strict"
 
 # --- Launcher (uv / uvx / python) ---
 # auto | uv | uvx | python — see evolver.uv_runtime
@@ -429,20 +426,20 @@ def anti_abuse_telemetry_mode() -> str:
     return "heartbeat" if v in ("1", "true", "yes", "on", "heartbeat") else "off"
 
 
-# --- Validator mode (opt-out) ---
+# --- Validator mode (opt-out, S30.4 §11.4 #7: stable constants) ---
 def _validator_enabled() -> bool:
     v = (os.environ.get("EVOLVER_VALIDATOR_ENABLED") or "").lower().strip()
     return v in ("1", "true", "yes", "on")
 
 
 VALIDATOR_ENABLED: Final = _validator_enabled()
-VALIDATOR_STAKE_AMOUNT: Final = env_int("EVOLVER_VALIDATOR_STAKE_AMOUNT", 100)
-VALIDATOR_MAX_TASKS_PER_CYCLE: Final = env_int("EVOLVER_VALIDATOR_MAX_TASKS_PER_CYCLE", 2)
-VALIDATOR_FETCH_TIMEOUT_MS: Final = env_int("EVOLVER_VALIDATOR_FETCH_TIMEOUT_MS", 8_000)
-VALIDATOR_REPORT_TIMEOUT_MS: Final = env_int("EVOLVER_VALIDATOR_REPORT_TIMEOUT_MS", 10_000)
-VALIDATOR_STAKE_TIMEOUT_MS: Final = env_int("EVOLVER_VALIDATOR_STAKE_TIMEOUT_MS", 10_000)
-VALIDATOR_CMD_TIMEOUT_MS: Final = env_int("EVOLVER_VALIDATOR_CMD_TIMEOUT_MS", 60_000)
-VALIDATOR_BATCH_TIMEOUT_MS: Final = env_int("EVOLVER_VALIDATOR_BATCH_TIMEOUT_MS", 180_000)
+VALIDATOR_STAKE_AMOUNT: Final = 100
+VALIDATOR_MAX_TASKS_PER_CYCLE: Final = 2
+VALIDATOR_FETCH_TIMEOUT_MS: Final = 8_000
+VALIDATOR_REPORT_TIMEOUT_MS: Final = 10_000
+VALIDATOR_STAKE_TIMEOUT_MS: Final = 10_000
+VALIDATOR_CMD_TIMEOUT_MS: Final = 60_000
+VALIDATOR_BATCH_TIMEOUT_MS: Final = 180_000
 
 __all__ = [
     "ACCEPTANCE_DELTA_EPSILON",

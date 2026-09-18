@@ -878,6 +878,7 @@ def solidify(
     *,
     mutation_override: dict[str, Any] | None = None,
     skip_validation: bool = False,
+    proposal: dict[str, Any] | Path | str | None = None,
 ) -> dict[str, Any]:
     """Run a solidify cycle."""
     state = _read_solidify_state()
@@ -886,6 +887,32 @@ def solidify(
 
     last_run = state["last_run"]
     cwd = get_workspace_root()
+
+    proposal_report: dict[str, Any] | None = None
+    if proposal is not None:
+        from evolver.gep.proposal import apply_proposal, parse_proposal
+
+        try:
+            if isinstance(proposal, (str, Path)):
+                p_path = Path(proposal)
+                p_data = json.loads(p_path.read_text(encoding="utf-8"))
+                parsed_p = parse_proposal(p_data)
+            else:
+                parsed_p = parse_proposal(proposal)
+            proposal_report = apply_proposal(parsed_p, cwd)
+        except Exception as exc:
+            return {
+                "ok": False,
+                "error": "proposal_rejected",
+                "message": str(exc),
+            }
+        if parsed_p.action == "no_action":
+            return {
+                "ok": True,
+                "action": "no_action",
+                "files_changed": [],
+                "proposal": proposal_report,
+            }
 
     # Duplicate-solidify guard (round-12): a re-run on an already-landed run
     # used to burn a full validation cascade (~7 min), succeed with nothing to
@@ -1172,6 +1199,8 @@ def solidify(
         event["acceptance_result"] = payload
     if eval_meta.get("reason") not in ("flag_off", "skipped"):
         event["eval_workspace"] = eval_meta
+    if proposal_report is not None:
+        event["proposal"] = proposal_report
     append_event_jsonl(event)
 
     # S27 wiki layer: evidence never rolls back. Improved/baseline → decision
@@ -1224,7 +1253,10 @@ def solidify(
     tmp.write_text(json.dumps(state, indent=2) + "\n", encoding="utf-8")
     tmp.replace(get_solidify_state_path())
 
-    return {"ok": True, "event_id": event["id"], "blast_radius": blast_radius}
+    result: dict[str, Any] = {"ok": True, "event_id": event["id"], "blast_radius": blast_radius}
+    if proposal_report is not None:
+        result["proposal"] = proposal_report
+    return result
 
 
 __all__ = [

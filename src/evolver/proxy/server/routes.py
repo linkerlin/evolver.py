@@ -13,7 +13,6 @@ The token is read from ``~/.evomap/proxy-token`` or ``EVOMAP_PROXY_TOKEN``.
 from __future__ import annotations
 
 import contextlib
-import os
 import time
 import uuid
 from typing import Any
@@ -902,8 +901,8 @@ async def atp_policy(
     return JSONResponse(
         {
             "policy": "default",
-            "daily_budget": float(os.environ.get("EVOLVER_ATP_DAILY_BUDGET", "10")),
-            "per_order_budget": float(os.environ.get("EVOLVER_ATP_PER_ORDER_BUDGET", "5")),
+            "daily_budget": 10.0,
+            "per_order_budget": 5.0,
             "balance": balance.get("balance", 0.0),
         }
     )

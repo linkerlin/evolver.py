@@ -50,15 +50,40 @@ def load_baseline_payload(path: Path) -> dict[str, object] | None:
     return payload if isinstance(payload, dict) else None
 
 
-def save_baseline(path: Path, t0_pass_rate: float, snapshot_hash: str) -> None:
-    """Persist the new last-known-good T0 rate + snapshot hash."""
+def save_baseline(
+    path: Path,
+    t0_pass_rate: float,
+    snapshot_hash: str,
+    *,
+    repeats: list[RepeatObs] | None = None,
+    adjudication: dict[str, Any] | None = None,
+) -> None:
+    """Persist the new last-known-good T0 rate + snapshot hash + bilateral repeat observations."""
     path.parent.mkdir(parents=True, exist_ok=True)
-    payload = {
+    payload: dict[str, Any] = {
         "format": _BASELINE_FORMAT,
         "t0_pass_rate": t0_pass_rate,
         "t0_snapshot_hash": snapshot_hash,
     }
+    if repeats is not None:
+        payload["t0_repeats"] = [r.model_dump() for r in repeats]
+    if adjudication is not None:
+        payload["t0_adjudication"] = adjudication
     path.write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8")
+
+
+def load_baseline_repeats(path: Path) -> list[RepeatObs] | None:
+    """Read persisted repeat observations of the baseline, None if absent or corrupt."""
+    payload = load_baseline_payload(path)
+    if not payload:
+        return None
+    raw = payload.get("t0_repeats")
+    if not isinstance(raw, list) or not raw:
+        return None
+    try:
+        return [RepeatObs(**r) for r in raw if isinstance(r, dict)]
+    except Exception:
+        return None
 
 
 def _t0_layer_id(snap_label: str) -> str:
@@ -165,6 +190,8 @@ def run_acceptance_gate(
     epsilon: float = 0.0,
     strict_t2: bool = False,
     baseline_t0_snapshot: str | None = None,
+    baseline_repeats: list[RepeatObs] | None = None,
+    baseline_cwd: Path | None = None,
 ) -> AcceptanceResult:
     """Run the gate. Returns the :class:`AcceptanceResult`.
 
@@ -172,6 +199,11 @@ def run_acceptance_gate(
     without gating; caller persists the candidate rate). T0-only degraded mode:
     the gate accepts iff T0 did not regress. (The ``held_in`` layer is attached
     by a later increment once Sprint B1/B2 wire it.)
+
+    Bilateral repeats (RSI P0-2): when *baseline_cwd* is provided, the baseline
+    is measured live across *repeats* runs with flake adjudication. Otherwise,
+    persisted *baseline_repeats* (from previous candidate runs) are used.
+    Falls back to a synthetic single observation from *baseline_t0_rate*.
 
     Soak fix: with a baseline present, the frozen ID set is loaded from the
     BASELINE snapshot (``t0_snapshot_hash``), not re-derived from the current
@@ -194,7 +226,7 @@ def run_acceptance_gate(
         frozen, cwd, _run_t0_repeats(frozen, cwd, repeats=repeats)
     )
 
-    if baseline_t0_rate is None:
+    if baseline_t0_rate is None and baseline_repeats is None and baseline_cwd is None:
         # Establishing mode: record only, no gating. A flake here would poison
         # the baseline low (everything after would read "improved"), so
         # adjudication applies before the rate is recorded/persisted.
@@ -218,20 +250,29 @@ def run_acceptance_gate(
         )
 
     total = len(frozen)
-    baseline_repeats = [RepeatObs(repeat_index=0, score=baseline_t0_rate, denominator=total)]
-    b_mean, c_mean, delta, verdict = classify_rate(
-        baseline_repeats, candidate_repeats, epsilon=epsilon
-    )
+    base_adjudication: dict[str, Any] | None = None
+    if baseline_cwd is not None and baseline_cwd.is_dir():
+        base_obs, base_adjudication = _adjudicate_flakes(
+            frozen, baseline_cwd, _run_t0_repeats(frozen, baseline_cwd, repeats=repeats)
+        )
+    elif baseline_repeats is not None and len(baseline_repeats) > 0:
+        base_obs = baseline_repeats
+    elif baseline_t0_rate is not None:
+        base_obs = [RepeatObs(repeat_index=0, score=baseline_t0_rate, denominator=total)]
+    else:
+        base_obs = []
+
+    b_mean, c_mean, delta, verdict = classify_rate(base_obs, candidate_repeats, epsilon=epsilon)
     t0_layer = LayerMetric(
         layer_id=_t0_layer_id(snap_label),
         kind="T0_frozen",
-        baseline_repeats=baseline_repeats,
+        baseline_repeats=base_obs,
         candidate_repeats=candidate_repeats,
         baseline_mean=b_mean,
         candidate_mean=c_mean,
         delta=delta,
         verdict=verdict,
-        adjudication=adjudication,
+        adjudication=adjudication or base_adjudication,
     )
 
     layers: list[LayerMetric] = [t0_layer]
@@ -243,6 +284,7 @@ def run_acceptance_gate(
 __all__ = [
     "load_baseline",
     "load_baseline_payload",
+    "load_baseline_repeats",
     "run_acceptance_gate",
     "save_baseline",
 ]

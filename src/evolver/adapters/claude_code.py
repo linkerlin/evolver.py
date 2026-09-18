@@ -19,7 +19,7 @@ from evolver.adapters.hook_adapter import (
 )
 
 HOOK_SCRIPTS_DIR_NAME = "hooks"
-EVOLVER_MARKER = "<!-- evolver-evolution-memory -->"
+SECTION_MARKER = "<!-- evolver-evolution-memory -->"
 
 
 def build_hooks(evolver_root: Path) -> dict[str, Any]:
@@ -82,15 +82,15 @@ def build_hooks(evolver_root: Path) -> dict[str, Any]:
 
 
 def build_md_section() -> str:
-    return f"""{EVOLVER_MARKER}
+    return f"""{SECTION_MARKER}
 ## Evolution Memory (Evolver)
 
 This project uses evolver for self-evolution. Hooks automatically:
 1. Inject recent evolution memory at session start
 2. Detect evolution signals during file edits
 3. Record outcomes at session end
-4. (Opt-in) Surface matching distilled capabilities for each prompt — set
-   `EVOLVER_RECALL_MODE=shadow` to preview, `enforce` to inject (default off).
+4. (Opt-in) Surface matching distilled capabilities for each prompt —
+   shadow mode to preview, enforce to inject (default off).
 
 For substantive tasks, call `gep_recall` before work and `gep_record_outcome` after.
 Signals: log_error, perf_bottleneck, user_feature_request, capability_gap,
@@ -129,7 +129,7 @@ def install(
 
     from evolver.adapters.hook_adapter import append_section_to_file
 
-    injected = append_section_to_file(claude_md_path, EVOLVER_MARKER, build_md_section())
+    injected = append_section_to_file(claude_md_path, SECTION_MARKER, build_md_section())
     if injected:
         print(f"[claude-code] Injected evolution section into {claude_md_path}")
 
@@ -223,7 +223,7 @@ def uninstall(
     except OSError:
         pass
 
-    if remove_marked_section(claude_md_path, EVOLVER_MARKER):
+    if remove_marked_section(claude_md_path, SECTION_MARKER):
         changed = True
 
     print(

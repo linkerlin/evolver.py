@@ -141,7 +141,7 @@ def generate_stake_request(
     """Generate an unsigned staking transaction request."""
     import os
 
-    nid = node_id or os.environ.get("EVOLVER_AGENT_ID", "unknown-node")
+    nid = node_id or os.environ.get("A2A_NODE_ID", "unknown-node")
     return StakeRequest(
         node_id=nid,
         amount=amount,
@@ -268,7 +268,7 @@ def bootstrap(
     """
     import os
 
-    nid = node_id or os.environ.get("EVOLVER_AGENT_ID", "unknown-node")
+    nid = node_id or os.environ.get("A2A_NODE_ID", "unknown-node")
     state = load_stake_state()
 
     if state is not None and state.status == "confirmed":

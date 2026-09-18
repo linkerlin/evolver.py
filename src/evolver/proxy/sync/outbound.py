@@ -52,9 +52,7 @@ def _max_body_bytes(store: Any) -> int:
     state_val = store.get_state("outbound_sync_max_body_bytes")
     if isinstance(state_val, (int, float)) and state_val > 0:
         return int(state_val)
-    env_val = os.environ.get("EVOMAP_OUTBOUND_SYNC_MAX_BODY_BYTES") or os.environ.get(
-        "EVOLVER_OUTBOUND_SYNC_MAX_BODY_BYTES"
-    )
+    env_val = os.environ.get("EVOMAP_OUTBOUND_SYNC_MAX_BODY_BYTES")
     if env_val:
         try:
             value = int(env_val)

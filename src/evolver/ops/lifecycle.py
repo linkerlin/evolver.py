@@ -386,7 +386,7 @@ def watch(*, once: bool = False) -> None:
     monotonic clock does not. If the gap exceeds 60 s we skip the stagnation
     check for one tick to give the daemon a grace period.
     """
-    interval_s = env_int("EVOLVER_WATCH_INTERVAL_S", 120)
+    interval_s = 120
     interval_ms = interval_s * 1000
 
     prev_wall = time.time()

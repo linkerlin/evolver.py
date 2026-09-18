@@ -91,7 +91,7 @@ def test_grader_exact_self_consistency(tmp_path: Path) -> None:
     assert grade(task, sandbox) == 0.0  # missing deliverable, no crash
 
 
-def test_grader_contains_json_field_code_stdout(tmp_path: Path) -> Path:
+def test_grader_contains_json_field_code_stdout(tmp_path: Path) -> None:
     contains_t = _valid_task(
         id="contains-1",
         grader={"type": "contains", "file": "out.txt", "expected": "needle"},
@@ -115,7 +115,7 @@ def test_grader_contains_json_field_code_stdout(tmp_path: Path) -> Path:
     )
     s3 = materialize(code_t, tmp_path)
     assert grade(code_t, s3) == 1.0
-    return s3
+    assert s3.is_dir()
 
 
 def test_grader_code_stdout_timeout_scores_zero(

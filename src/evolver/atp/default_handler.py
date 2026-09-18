@@ -3,7 +3,7 @@
 Equivalent to ``evolver/src/atp/defaultHandler.js``.
 Processes incoming ATP orders with a generic response.
 Users can override by providing a custom onOrder callback via
-``EVOLVER_ATP_SERVICES``.
+``ATP_SERVICES``.
 """
 
 from __future__ import annotations
@@ -42,7 +42,7 @@ def resolve_atp_services(
 ) -> list[dict[str, Any]]:
     """Resolve ATP service definitions from env or defaults."""
     effective_env = env if env is not None else dict(os.environ)
-    env_services = effective_env.get("EVOLVER_ATP_SERVICES", "")
+    env_services = effective_env.get("ATP_SERVICES", "")
     if env_services:
         try:
             parsed = json.loads(env_services)
@@ -53,8 +53,8 @@ def resolve_atp_services(
             pass
 
     agent_name = (
-        effective_env.get("EVOLVER_AGENT_NAME", "")
-        or effective_env.get("EVOLVER_MODEL_NAME", "")
+        effective_env.get("AGENT_NAME", "")
+        or effective_env.get("AGENT_MODEL", "")
         or "Evolver Agent"
     ).strip()
 

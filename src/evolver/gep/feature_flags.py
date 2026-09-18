@@ -54,11 +54,11 @@ DEFAULT_FLAGS: dict[str, bool] = {
     # measured (shadow markers on events) but never enforced during the soak
     # window. Enforcement flips on via EVOLVER_ACCEPTANCE_SHADOW=0.
     "enable_acceptance_gate": True,
-    # S26.5: run cascade + acceptance gate in a clean git worktree (HEAD +
-    # non-runtime mutation overlay). Off by default so unit tests stay fast;
-    # soak/dogfood sets EVOLVER_FF_ENABLE_EVAL_WORKTREE=1. Failure falls back
-    # to the live cwd (shadow, non-blocking).
-    "enable_eval_worktree": False,
+    # S26.5 / round-31: run cascade + acceptance gate in a clean git worktree
+    # (HEAD + non-runtime mutation overlay). Enabled by default. Failure falls
+    # back to live cwd with dirty runtime checks (and strict mode via
+    # EVOLVER_EVAL_WORKTREE_STRICT=1).
+    "enable_eval_worktree": True,
     "enable_surface_decouple": False,
     "enable_constrained_genes": False,
     "enable_llm_template": False,
@@ -96,7 +96,7 @@ DEFAULT_FLAGS: dict[str, bool] = {
     # inline scan; ``evolver rebuild-views`` persists derived views.
     "enable_event_projection": False,
     # Sprint 24.4 trigger budget (概念收割 — Node v2 trigger/budget.js):
-    # preflight enforces daily cycle caps (EVOLVER_MAX_CYCLES_PER_DAY et al).
+    # preflight enforces daily cycle caps (trigger engine budget).
     "enable_trigger_budget": False,
     # S26 promotion: terminal failures always land an event — silence is not
     # an honest outcome (wikiskill honest-negative principle).
@@ -233,6 +233,23 @@ def _env_flag_value(name: str) -> bool | None:
 # ---------------------------------------------------------------------------
 
 
+def _check_flag_interlocks(name: str, enabled: bool) -> bool:
+    """Enforce architectural interlocks on sensitive feature flags (§11.4 #5)."""
+    if not enabled:
+        return False
+    if name == "enable_llm_template":
+        from evolver.config import ANCHOR_TRIGGER_SURFACES
+
+        if "src/evolver/gep/llm_template.py" not in ANCHOR_TRIGGER_SURFACES:
+            logger.error(
+                "[FeatureFlags] Refusing to enable %s: entry surface "
+                "'src/evolver/gep/llm_template.py' is not registered in ANCHOR_TRIGGER_SURFACES",
+                name,
+            )
+            return False
+    return enabled
+
+
 def is_enabled(name: str) -> bool:
     """Return whether feature *name* is enabled.
 
@@ -244,15 +261,15 @@ def is_enabled(name: str) -> bool:
     # 1. Env
     env_val = _env_flag_value(name)
     if env_val is not None:
-        return env_val
+        return _check_flag_interlocks(name, env_val)
 
     # 2. Disk
     disk = _load_disk_flags()
     if name in disk:
-        return disk[name]
+        return _check_flag_interlocks(name, disk[name])
 
     # 3. Default
-    return DEFAULT_FLAGS.get(name, False)
+    return _check_flag_interlocks(name, DEFAULT_FLAGS.get(name, False))
 
 
 def get_all_flags() -> dict[str, bool]:
@@ -263,6 +280,7 @@ def get_all_flags() -> dict[str, bool]:
         env_val = _env_flag_value(name)
         if env_val is not None:
             merged[name] = env_val
+        merged[name] = _check_flag_interlocks(name, merged[name])
     return merged
 
 

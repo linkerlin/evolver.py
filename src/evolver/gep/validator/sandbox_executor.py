@@ -7,7 +7,7 @@ Security model
 1. **Command whitelist**: only ``python <script>`` is allowed.
    Explicitly forbidden: ``pip``, ``python -c``, ``eval()``, ``exec()``.
 2. **Shell operator ban**: ``;``, ``&``, ``|``, ``>``, ``$()``, backticks.
-3. **Timeout**: 180 s (configurable via ``EVOLVER_VALIDATION_TIMEOUT_MS``).
+3. **Timeout**: 180 s.
 4. **CWD restriction**: temporary directory, auto-cleaned after execution.
 5. **Resource limits** (Linux only): ``resource.setrlimit`` for CPU/memory.
 6. **Network isolation** (Linux only): best-effort via ``unshare`` or
@@ -38,10 +38,11 @@ import time
 from dataclasses import dataclass
 from pathlib import Path
 
+from evolver.config import VALIDATION_TIMEOUT_MS
+
 logger = logging.getLogger(__name__)
 
-DEFAULT_TIMEOUT = 180.0
-ENV_TIMEOUT = "EVOLVER_VALIDATION_TIMEOUT_MS"
+DEFAULT_TIMEOUT = VALIDATION_TIMEOUT_MS / 1000.0
 
 # Forbidden shell operators
 FORBIDDEN_OPERATORS = re.compile(r"[;&|>`$]|\`")
@@ -268,7 +269,7 @@ def _try_linux_network_isolation() -> None:
     """Best-effort network namespace isolation (Linux + CAP_SYS_ADMIN)."""
     if platform.system() != "Linux":
         return
-    if not _env_flag("EVOLVER_SANDBOX_NETWORK"):
+    if not _env_flag("SANDBOX_NETWORK"):
         return
     try:
         import ctypes
@@ -313,9 +314,7 @@ def execute_in_sandbox(
     Returns :class:`SandboxResult` with stdout, stderr, exit code, and
     timing information.
     """
-    timeout = timeout_seconds or (
-        float(os.environ.get(ENV_TIMEOUT, DEFAULT_TIMEOUT * 1000)) / 1000.0
-    )
+    timeout = timeout_seconds or DEFAULT_TIMEOUT
     if timeout <= 0:
         timeout = DEFAULT_TIMEOUT
 

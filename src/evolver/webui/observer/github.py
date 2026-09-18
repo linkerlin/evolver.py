@@ -53,9 +53,6 @@ def is_feature_enabled() -> bool:
 
 
 def _get_ttl_ms() -> int:
-    raw = os.environ.get("EVOLVER_WEBUI_GITHUB_TTL_MS", "").strip()
-    if raw.isdigit():
-        return max(0, int(raw))
     return 60_000
 
 
@@ -127,8 +124,10 @@ def _resolve_repo_slug() -> str | None:
                 return parsed
     except (OSError, subprocess.SubprocessError):
         pass
-    # Optional SELF_PR_REPO-style env used by some ports.
-    fallback = str(os.environ.get("EVOLVER_SELF_PR_REPO") or "").strip() or None
+    # Optional SELF_PR_REPO fallback.
+    from evolver.config import SELF_PR_REPO
+
+    fallback = SELF_PR_REPO
     _slug_cache = fallback
     return fallback
 

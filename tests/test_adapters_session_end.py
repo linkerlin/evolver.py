@@ -29,11 +29,11 @@ def isolated_home(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     home.mkdir()
     monkeypatch.setenv("HOME", str(home))
     monkeypatch.setenv("USERPROFILE", str(home))
-    monkeypatch.setenv("EVOLVER_HOOK_LOG_DIR", str(home / "logs"))
+    monkeypatch.setenv("EVOLVER_LOGS_DIR", str(home / "logs"))
     monkeypatch.delenv("CURSOR_TRACE_ID", raising=False)
     monkeypatch.delenv("CURSOR_SESSION_ID", raising=False)
-    monkeypatch.delenv("EVOLVER_HOOK_HOST", raising=False)
-    monkeypatch.delenv("EVOLVER_HOOK_VERBOSE", raising=False)
+    monkeypatch.delenv("HOOK_HOST", raising=False)
+    monkeypatch.delenv("HOOK_VERBOSE", raising=False)
     monkeypatch.setenv("TERM_PROGRAM", "xterm")
     return home
 
@@ -88,7 +88,7 @@ class TestCursorSuppression:
         _init_repo_with_diff(repo)
         monkeypatch.setenv("CURSOR_PROJECT_DIR", str(repo))
         monkeypatch.setenv("TERM_PROGRAM", "cursor")
-        monkeypatch.setenv("EVOLVER_HOOK_VERBOSE", "1")
+        monkeypatch.setenv("HOOK_VERBOSE", "1")
         monkeypatch.chdir(repo)
         out = se.build_session_end_output()
         assert isinstance(out.get("systemMessage"), str)
@@ -102,7 +102,7 @@ class TestCursorSuppression:
         _init_repo_with_diff(repo)
         monkeypatch.setenv("CURSOR_PROJECT_DIR", str(repo))
         monkeypatch.setenv("TERM_PROGRAM", "xterm")
-        monkeypatch.setenv("EVOLVER_HOOK_HOST", "cursor")
+        monkeypatch.setenv("HOOK_HOST", "cursor")
         monkeypatch.chdir(repo)
         assert se.build_session_end_output() == {}
 
@@ -199,15 +199,15 @@ class TestCwdTagConsistency:
 class TestIsCursorHost:
     def test_verbose_disables_detection(self, monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.setenv("TERM_PROGRAM", "cursor")
-        monkeypatch.setenv("EVOLVER_HOOK_VERBOSE", "1")
+        monkeypatch.setenv("HOOK_VERBOSE", "1")
         assert se.is_cursor_host() is False
 
     def test_term_program(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        monkeypatch.delenv("EVOLVER_HOOK_VERBOSE", raising=False)
+        monkeypatch.delenv("HOOK_VERBOSE", raising=False)
         monkeypatch.setenv("TERM_PROGRAM", "cursor")
         monkeypatch.delenv("CURSOR_TRACE_ID", raising=False)
         monkeypatch.delenv("CURSOR_SESSION_ID", raising=False)
-        monkeypatch.delenv("EVOLVER_HOOK_HOST", raising=False)
+        monkeypatch.delenv("HOOK_HOST", raising=False)
         assert se.is_cursor_host() is True
 
 
@@ -223,7 +223,7 @@ class TestMainStdin:
         tmp_path: Path,
     ) -> None:
         monkeypatch.delenv("CURSOR_TRACE_ID", raising=False)
-        monkeypatch.delenv("EVOLVER_HOOK_VERBOSE", raising=False)
+        monkeypatch.delenv("HOOK_VERBOSE", raising=False)
         monkeypatch.delenv("CURSOR_PROJECT_DIR", raising=False)
         monkeypatch.setenv("MEMORY_GRAPH_PATH", str(tmp_path / "memory_graph.jsonl"))
 
@@ -246,7 +246,7 @@ class TestMainStdin:
         monkeypatch: pytest.MonkeyPatch,
         tmp_path: Path,
     ) -> None:
-        monkeypatch.delenv("EVOLVER_HOOK_VERBOSE", raising=False)
+        monkeypatch.delenv("HOOK_VERBOSE", raising=False)
         monkeypatch.delenv("CURSOR_TRACE_ID", raising=False)
         monkeypatch.delenv("CURSOR_PROJECT_DIR", raising=False)
         monkeypatch.setenv("MEMORY_GRAPH_PATH", str(tmp_path / "memory_graph.jsonl"))
@@ -263,7 +263,7 @@ class TestMainStdin:
         monkeypatch: pytest.MonkeyPatch,
         tmp_path: Path,
     ) -> None:
-        monkeypatch.delenv("EVOLVER_HOOK_VERBOSE", raising=False)
+        monkeypatch.delenv("HOOK_VERBOSE", raising=False)
         monkeypatch.delenv("CURSOR_TRACE_ID", raising=False)
         monkeypatch.delenv("CURSOR_PROJECT_DIR", raising=False)
         monkeypatch.setenv("MEMORY_GRAPH_PATH", str(tmp_path / "memory_graph.jsonl"))

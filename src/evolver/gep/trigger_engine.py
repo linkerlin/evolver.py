@@ -138,21 +138,9 @@ class DailyBudget:
         per_pattern_cap: int | None = None,
     ) -> None:
         self.path = path or (_budget_dir() / BUDGET_FILENAME)
-        self.max_cycles = (
-            max_cycles_per_day
-            if max_cycles_per_day is not None
-            else _env_int("EVOLVER_MAX_CYCLES_PER_DAY", 0)
-        )
-        self.max_tokens = (
-            max_tokens_per_day
-            if max_tokens_per_day is not None
-            else _env_int("EVOLVER_MAX_TOKENS_PER_DAY", 0)
-        )
-        self.per_pattern_cap = (
-            per_pattern_cap
-            if per_pattern_cap is not None
-            else _env_int("EVOLVER_PER_PATTERN_CAP_PER_DAY", 0)
-        )
+        self.max_cycles = max_cycles_per_day if max_cycles_per_day is not None else 0
+        self.max_tokens = max_tokens_per_day if max_tokens_per_day is not None else 0
+        self.per_pattern_cap = per_pattern_cap if per_pattern_cap is not None else 0
         self._state: dict[str, Any] = {"date": "", "cycles": 0, "tokens": 0, "patterns": {}}
         self._load()
 

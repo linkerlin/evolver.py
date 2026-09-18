@@ -250,17 +250,30 @@ def build_server() -> Any:
 
         return swarm_distill(response_text, dry_run=dry_run)
 
+    def tool_swarm_propose(
+        proposal: dict[str, Any], agent_name: str = "host-agent"
+    ) -> dict[str, Any]:
+        """S29 mechanical mutation application: validate-all-first, exact unique anchor matching."""
+        from evolver.swarm import swarm_propose
+
+        return swarm_propose(proposal=proposal, agent_name=agent_name)
+
     def tool_swarm_solidify(
-        skip_validation: bool = False, agent_name: str = "host-agent"
+        skip_validation: bool = False,
+        agent_name: str = "host-agent",
+        proposal: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
         """Run the solidify gate: validations, acceptance gate, commit/rollback.
 
         skip_validation=True is high-risk: it passes the HITL approval gate
         (blocked → await_human_approval; timeout fails safe to reject).
+        Optionally accepts a proposal to mechanically apply before validation (S29).
         """
         from evolver.swarm import swarm_solidify
 
-        return swarm_solidify(skip_validation=skip_validation, agent_name=agent_name)
+        return swarm_solidify(
+            skip_validation=skip_validation, agent_name=agent_name, proposal=proposal
+        )
 
     def tool_swarm_approvals() -> dict[str, Any]:
         """List pending HITL approval requests awaiting a human decision."""
@@ -521,6 +534,7 @@ def build_server() -> Any:
         ("swarm_boot", tool_swarm_boot, None),
         ("swarm_tick", tool_swarm_tick, None),
         ("swarm_distill", tool_swarm_distill, None),
+        ("swarm_propose", tool_swarm_propose, destructive),
         ("swarm_solidify", tool_swarm_solidify, destructive),
         ("swarm_feedback", tool_swarm_feedback, None),
         ("swarm_report", tool_swarm_report, None),
@@ -545,6 +559,9 @@ def build_server() -> Any:
 
 def main() -> int:
     """Entry point for ``evolver mcp`` — stdio transport."""
+    from evolver.ops.soak_env import maybe_route_to_soak
+
+    maybe_route_to_soak()
     build_server().run(transport="stdio")
     return 0
 

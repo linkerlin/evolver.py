@@ -159,14 +159,14 @@ class TestListModels:
 
 class TestSettings:
     def test_load_defaults(self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
-        monkeypatch.setenv("EVOLVER_PROXY_SETTINGS_PATH", str(tmp_path / "settings.json"))
+        monkeypatch.setenv("EVOLVER_PROXY_SETTINGS_FILE", str(tmp_path / "settings.json"))
         settings = load_settings()
         assert settings["upstream"] == "anthropic"
         assert settings["port"] == 8081
 
     def test_save_and_load(self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
         path = tmp_path / "settings.json"
-        monkeypatch.setenv("EVOLVER_PROXY_SETTINGS_PATH", str(path))
+        monkeypatch.setenv("EVOLVER_PROXY_SETTINGS_FILE", str(path))
         save_settings({"upstream": "gemini", "port": 9090})
         loaded = load_settings()
         assert loaded["upstream"] == "gemini"

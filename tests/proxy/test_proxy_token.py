@@ -20,7 +20,7 @@ from evolver.proxy.server.routes import router
 @pytest.fixture
 def isolated_settings(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     settings_path = tmp_path / "proxy-settings.json"
-    monkeypatch.setenv("EVOLVER_PROXY_SETTINGS_PATH", str(settings_path))
+    monkeypatch.setenv("EVOLVER_PROXY_SETTINGS_FILE", str(settings_path))
     monkeypatch.setenv("EVOLVER_HOME", str(tmp_path / ".evomap"))
     monkeypatch.setenv("HOME", str(tmp_path / "home"))
     monkeypatch.setenv("USERPROFILE", str(tmp_path / "home"))

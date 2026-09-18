@@ -298,7 +298,7 @@ async def dispatch_phase(ctx: dict[str, Any]) -> dict[str, Any]:
 async def dispatch_multi_propose_phase(ctx: dict[str, Any]) -> dict[str, Any]:
     """Self-Harness C2: emit a mechanism-diverse multi-proposal prompt.
 
-    Activated when ``EVOLVER_MULTI_PROPOSE_ROUTES > 1``. Prints the strict
+    Activated when ``MULTI_PROPOSE_ROUTES > 1``. Prints the strict
     multi-slot contract (N distinct mechanisms, decline allowed) instead of
     the single GEP prompt; the external proposer responds with N proposals.
     """

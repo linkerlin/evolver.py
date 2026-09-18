@@ -72,7 +72,11 @@ def _build_parser() -> argparse.ArgumentParser:
     sub.add_parser("check", help="Check daemon health")
     watch_p = sub.add_parser("watch", help="Run the health-watch supervisor")
     watch_p.add_argument("--once", action="store_true", help="Check once and exit")
-    sub.add_parser("solidify", help="Apply pending mutation")
+    solidify_p = sub.add_parser("solidify", help="Apply pending mutation (or proposal)")
+    solidify_p.add_argument(
+        "--proposal",
+        help="Path to a GeneProposal JSON file to mechanically apply before validation",
+    )
     apply_prop_p = sub.add_parser(
         "apply-proposal",
         help="S29: mechanically apply a gene proposal JSON (anchors validated, workspace-safe)",
@@ -94,6 +98,16 @@ def _build_parser() -> argparse.ArgumentParser:
     )
     gate_p.add_argument("--json", action="store_true", help="Output raw JSON")
     gate_p.add_argument("--limit", type=int, default=5000, help="Max events to scan")
+    charter_p = sub.add_parser(
+        "charter-check",
+        help="Machine receipt: verify charter compliance + drift (演进方案.md §11.4 P1)",
+    )
+    charter_p.add_argument("--json", action="store_true", help="Output raw JSON")
+    charter_p.add_argument(
+        "--soak",
+        action="store_true",
+        help="Route to out-of-tree soak environment before evaluating charter receipt",
+    )
     anchor_p = sub.add_parser(
         "anchor",
         help="Out-of-tree anchor suite: frozen verifier contracts (RSI P0-1)",
@@ -510,6 +524,28 @@ def main(argv: Sequence[str] | None = None) -> int:
         activate()
         print_solo_banner()
 
+    # S11.4 / P1 #4: Out-of-tree soak interlock.
+    # When running inside a git repo worktree outside of tests, automatically
+    # route EVOLUTION_DIR and GEP_ASSETS_DIR to $EVOLVER_HOME/evolver.py-soak.
+    _soak_routed_commands = {
+        None,
+        "run",
+        "/evolve",
+        "start",
+        "restart",
+        "mcp",
+        "solidify",
+        "self-report",
+        "review",
+        "supervise",
+        "hitl",
+        "workflow",
+    }
+    if is_loop or command in _soak_routed_commands:
+        from evolver.ops.soak_env import maybe_route_to_soak
+
+        maybe_route_to_soak()
+
     # Default / run / evolve commands -> single cycle or daemon loop.
     if command in (None, "run", "/evolve") or is_loop:
         if is_loop:
@@ -543,6 +579,8 @@ def main(argv: Sequence[str] | None = None) -> int:
 
     if command == "gate-report":
         return _cmd_gate_report(args)
+    if command == "charter-check":
+        return _cmd_charter_check(args)
     if command == "anchor":
         return _cmd_anchor(args)
     if command == "meta-report":
@@ -722,12 +760,13 @@ def _cmd_watch(args: argparse.Namespace) -> int:
     return 0
 
 
-def _cmd_solidify(_args: argparse.Namespace) -> int:
-    """Apply the pending solidify state."""
+def _cmd_solidify(args: argparse.Namespace) -> int:
+    """Apply the pending solidify state (optionally with a GeneProposal)."""
     from evolver.gep.solidify import solidify
 
+    proposal_arg = getattr(args, "proposal", None)
     try:
-        result = solidify()
+        result = solidify(proposal=proposal_arg)
     except Exception as exc:
         print(f"Solidify failed: {exc}", file=sys.stderr)
         return 1
@@ -1077,6 +1116,23 @@ def _cmd_gate_report(args: argparse.Namespace) -> int:
     return 0
 
 
+def _cmd_charter_check(args: argparse.Namespace) -> int:
+    """Charter machine receipt (演进方案.md §11.4 P1)."""
+    if getattr(args, "soak", False):
+        from evolver.ops.soak_env import maybe_route_to_soak
+
+        maybe_route_to_soak(force=True)
+
+    from evolver.ops.charter_check import build_charter_report, format_charter_report
+
+    report = build_charter_report()
+    if args.json:
+        print(json.dumps(report, ensure_ascii=False, indent=2))
+    else:
+        print(format_charter_report(report))
+    return 0
+
+
 def _cmd_soak(args: argparse.Namespace) -> int:
     """Soak layout: setup / exports / status (演进方案.md §10)."""
     from evolver.ops import soak_env
@@ -1103,6 +1159,7 @@ def _cmd_soak(args: argparse.Namespace) -> int:
         print(f"EVOLUTION_DIR : {result['evolution_dir']}")
         print(f"GEP_ASSETS_DIR: {result['gep_assets_dir']}")
         print(f"inside_repo   : {result['inside_repo']}")
+        print(f"interlock     : {'armed' if result.get('interlock_armed') else 'test_mode'}")
         print(f"soak_root     : {result['soak_root']}")
         metrics = result["metrics"]
         rec = result["recommendation"]

@@ -20,7 +20,7 @@ from evolver.adapters.hook_adapter import (
 HOOK_SCRIPTS_DIR_NAME = "hooks"
 PLUGINS_DIR_NAME = "plugins"
 PLUGIN_FILE_NAME = "evolver.js"
-EVOLVER_MARKER = "<!-- evolver-evolution-memory -->"
+SECTION_MARKER = "<!-- evolver-evolution-memory -->"
 PLUGIN_HEADER = "// _evolver_managed: true (do not remove this line)"
 
 
@@ -109,7 +109,7 @@ module.exports.default = Evolver;
 
 
 def build_agents_md_section() -> str:
-    return f"""{EVOLVER_MARKER}
+    return f"""{SECTION_MARKER}
 ## Evolution Memory (Evolver)
 
 This project uses evolver for self-evolution. Hooks automatically:
@@ -179,7 +179,7 @@ def install(
     copied = copy_hook_scripts(hooks_dir, evolver_root)
     print(f"[opencode] Copied {len(copied)} hook scripts to {hooks_dir}")
 
-    injected = _append_section_to_file(agents_md_path, EVOLVER_MARKER, build_agents_md_section())
+    injected = _append_section_to_file(agents_md_path, SECTION_MARKER, build_agents_md_section())
     if injected:
         print(f"[opencode] Injected evolution section into {agents_md_path}")
 
@@ -285,7 +285,7 @@ def verify(*, config_root: Path) -> dict[str, Any]:
     agents_md_has_section = False
     try:
         if agents_md_path.exists():
-            agents_md_has_section = EVOLVER_MARKER in agents_md_path.read_text(encoding="utf-8")
+            agents_md_has_section = SECTION_MARKER in agents_md_path.read_text(encoding="utf-8")
     except OSError:
         pass
 
@@ -356,7 +356,7 @@ def uninstall(
     if scripts > 0:
         changed = True
 
-    if remove_marked_section(agents_md_path, EVOLVER_MARKER):
+    if remove_marked_section(agents_md_path, SECTION_MARKER):
         changed = True
 
     print(

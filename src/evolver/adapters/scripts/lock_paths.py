@@ -28,13 +28,13 @@ LOCK_REFRESH_S: float = 1 * 60 if _IS_WINDOWS else 2 * 60
 def get_lock_file_path(env: dict[str, str] | None = None) -> Path:
     """Return the daemon singleton-lock path.
 
-    ``EVOLVER_LOCK_DIR`` overrides for tests/sandboxed runs (basename
+    ``EVOLVER_SETTINGS_DIR`` overrides for tests/sandboxed runs (basename
     ``evolver.pid``); otherwise defaults to ``~/.evomap/instance.lock``
     (per-user state dir so all install modes converge).
     """
     e = env if env is not None else os.environ
-    if e.get("EVOLVER_LOCK_DIR"):
-        return Path(e["EVOLVER_LOCK_DIR"]) / "evolver.pid"
+    if e.get("EVOLVER_SETTINGS_DIR"):
+        return Path(e["EVOLVER_SETTINGS_DIR"]) / "evolver.pid"
     return Path.home() / ".evomap" / "instance.lock"
 
 

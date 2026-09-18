@@ -629,12 +629,57 @@ def _pending_solidify_run_id() -> str:
     return _pending_solidify_meta()["run_id"] or "unknown"
 
 
-def swarm_solidify(skip_validation: bool = False, agent_name: str = "host-agent") -> dict[str, Any]:
+def swarm_propose(proposal: dict[str, Any], agent_name: str = "host-agent") -> dict[str, Any]:
+    """Apply a GeneProposal mechanically with anchor validation.
+
+    S29 mechanical mutation application: validate-all-first, exact unique anchor
+    matching, fail-safe against hallucinations.
+    """
+    from evolver.gep.paths import get_workspace_root
+    from evolver.gep.proposal import apply_proposal, parse_proposal
+
+    try:
+        parsed = parse_proposal(proposal)
+        report = apply_proposal(parsed, get_workspace_root())
+    except Exception as exc:
+        return {
+            "ok": False,
+            "error": "proposal_rejected",
+            "message": str(exc),
+            "next_action": "swarm_tick",
+        }
+
+    # Track pending proposal in swarm state
+    state = _load_swarm_state()
+    state["last_proposal"] = {
+        "action": parsed.action,
+        "gene_id": parsed.gene_id,
+        "files_changed": report.get("files_changed", []),
+        "agent_name": agent_name,
+        "timestamp": datetime.datetime.now(datetime.UTC).isoformat().replace("+00:00", "Z"),
+    }
+    _save_swarm_state(state)
+
+    return {
+        "ok": True,
+        "action": parsed.action,
+        "gene_id": parsed.gene_id,
+        "files_changed": report.get("files_changed", []),
+        "next_action": "swarm_solidify",
+    }
+
+
+def swarm_solidify(
+    skip_validation: bool = False,
+    agent_name: str = "host-agent",
+    proposal: dict[str, Any] | None = None,
+) -> dict[str, Any]:
     """Run the solidify gate (validations + acceptance gate + commit/rollback).
 
     High-risk calls (``skip_validation=True``) require a pending run and pass
     the HITL gate inside ``solidify()``. ``EVOLVER_HITL_MODE=on`` (or auto-hijack)
     blocks until a human approves; timeout fails safe to reject.
+    Optionally accepts a ``proposal`` to mechanically apply before gating (S29).
     """
     from evolver.config import SWARM_TICK_LOG_MAX_CHARS
     from evolver.gep import supervision
@@ -664,7 +709,7 @@ def swarm_solidify(skip_validation: bool = False, agent_name: str = "host-agent"
 
     with _capture_stdout() as capture:
         try:
-            result = solidify(skip_validation=skip_validation)
+            result = solidify(skip_validation=skip_validation, proposal=proposal)
         except Exception as exc:
             return {
                 "ok": False,
@@ -1044,6 +1089,7 @@ __all__ = [
     "swarm_feedback",
     "swarm_hook_event",
     "swarm_hooks",
+    "swarm_propose",
     "swarm_report",
     "swarm_skills",
     "swarm_solidify",

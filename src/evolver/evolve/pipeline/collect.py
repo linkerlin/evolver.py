@@ -169,7 +169,6 @@ def diagnose_session_source_empty(
     cursor_dir = str(
         opts.get("cursorTranscriptsDir")
         or opts.get("cursor_transcripts_dir")
-        or os.environ.get("EVOLVER_CURSOR_TRANSCRIPTS_DIR")
         or os.environ.get("CURSOR_TRACE_DIR")
         or ""
     ).strip()
@@ -218,7 +217,7 @@ def diagnose_session_source_empty(
     if session_source == "cursor" and not ide_present:
         hints.append(
             "EVOLVER_SESSION_SOURCE=cursor but none of ~/.cursor, ~/.claude, ~/.codex "
-            "(or EVOLVER_CURSOR_TRANSCRIPTS_DIR) exist."
+            "(or CURSOR_TRACE_DIR) exist."
         )
 
     # When every source is absent under auto, ensure the global hint is present.

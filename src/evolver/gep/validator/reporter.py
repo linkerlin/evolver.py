@@ -115,7 +115,7 @@ def _rewrite_queue(entries: list[dict[str, Any]], path: Path | None = None) -> N
 
 
 def _node_id() -> str:
-    return os.environ.get("EVOLVER_AGENT_ID", "unknown")
+    return os.environ.get("A2A_NODE_ID", "unknown")
 
 
 def _submit_single(report: dict[str, Any]) -> bool:

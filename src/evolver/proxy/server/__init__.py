@@ -65,7 +65,9 @@ async def _proxy_lifespan(_app: FastAPI) -> AsyncIterator[None]:
 
     # Token mint/reuse before serving requests (Sprint 15.2).
     port = int(os.environ.get("EVOLVER_PROXY_PORT") or resolve_proxy_port())
-    host = os.environ.get("EVOLVER_PROXY_HOST", "127.0.0.1")
+    from evolver.config import PROXY_HOST
+
+    host = PROXY_HOST
     try:
         token_info = resolve_proxy_token(port=port, host=host, sync_client=True)
         _app.state.proxy_token = token_info["token"]

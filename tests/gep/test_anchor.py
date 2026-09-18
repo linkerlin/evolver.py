@@ -58,6 +58,11 @@ class TestTriggerDetection:
 
         assert "src/evolver/gep/anchor.py" in ANCHOR_TRIGGER_SURFACES
 
+    def test_llm_template_ingress_is_guarded(self) -> None:
+        from evolver.config import ANCHOR_TRIGGER_SURFACES
+
+        assert "src/evolver/gep/llm_template.py" in ANCHOR_TRIGGER_SURFACES
+
     def test_telemetry_instrument_is_guarded(self) -> None:
         # Round-23 (RSI audit 5.3-3): the meter is part of the machinery it
         # audits — mutations to meta_report.py must trigger the anchor and
@@ -90,6 +95,19 @@ class TestRunner:
         _install_seed(anchor_ws)
         ids = {c["id"] for c in anchor_mod.list_anchor_cases()}
         assert "gate-calibration-invariants" in ids
+
+    def test_seed_suite_includes_t0_bilateral_repeats(self, anchor_ws: Path) -> None:
+        # P0-2: baseline preserves multi-repeat observations under round-trip
+        # and gating (RSI P0-2, 演进方案.md §11.4).
+        _install_seed(anchor_ws)
+        ids = {c["id"] for c in anchor_mod.list_anchor_cases()}
+        assert "t0-bilateral-repeats" in ids
+
+    def test_seed_suite_includes_data_ingress_guard(self, anchor_ws: Path) -> None:
+        # P2: data ingress defenses frozen out-of-tree (演进方案.md §11.4 #5).
+        _install_seed(anchor_ws)
+        ids = {c["id"] for c in anchor_mod.list_anchor_cases()}
+        assert "data-ingress-guard" in ids
 
     def test_seed_suite_passes_on_clean_tree(self, anchor_ws: Path) -> None:
         _install_seed(anchor_ws)

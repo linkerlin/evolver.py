@@ -12,7 +12,7 @@ Platform support:
   - **macOS**: ``ioreg`` → ``HIDIdleTime``.
 
 Additional features (Node v1.87.4 / ``idleSchedulerLinuxFallbacks.test.js``):
-  - ``EVOLVER_IDLE_OVERRIDE`` env to force a specific intensity.
+  - ``IDLE_OVERRIDE`` env to force a specific intensity.
   - Build/compile activity detection (recent file mtime in memory/ or build
     dirs counts as active — prevents misjudging long compiles as idle).
   - FS-only idle fallback: when no platform idle source is available, infer
@@ -223,10 +223,10 @@ def _idle_time() -> float:
 def get_intensity() -> EvolutionIntensity:
     """Return the current evolution intensity based on idle time.
 
-    Honors ``EVOLVER_IDLE_OVERRIDE`` (one of the intensity level names) and
+    Honors ``IDLE_OVERRIDE`` (one of the intensity level names) and
     suppresses deep evolution during detected build/compile activity.
     """
-    override = os.environ.get("EVOLVER_IDLE_OVERRIDE", "").strip().lower()
+    override = os.environ.get("IDLE_OVERRIDE", "").strip().lower()
     if override:
         for level in EvolutionIntensity:
             if level.value == override:

@@ -8,6 +8,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added — round-32：S29 机械提案通道、P2 数据入口防护、S30.4/30.5 env 退役（演进方案 §11.4）
+- **S29 机械提案通道** (`gep/proposal.py`, `gep/solidify.py`, `swarm.py`, `mcp_server.py`)：
+  引入 `GeneProposal`、`ProposalEdit` 强契约数据结构，替代非结构化自由编辑与 distill 提取；支持 `exact_match`、`anchor_pattern`、`unified_diff`；`solidify(proposal=...)` 机械应用落地；CLI `--proposal <path>`；MCP 工具 `swarm_propose` 向蜂群宿主开放。
+- **P2 数据入口清单与防御** (`gep/llm_template.py`, `gep/feature_flags.py`, `ops/charter_check.py`)：
+  声明 9 类半信任自由文本占位符（`FREE_TEXT_PLACEHOLDERS`），在 shell 模板中按占位符身份裸用即拒（消解黑名单军备竞赛），生成 `<stamp>_refused.txt` 审计标记；自动材料化文件通道（`{<name>_file}` 自动材料化 `<stamp>_<name>.txt`）；`enable_llm_template` 注册锚互锁。
+- **升锚 Epoch 8** (`assets/anchor/case-data-ingress-guard`)：
+  新增第 13 冻结探针，覆盖自由文本身份级裸用拒认、合法文件通道放行、非法注入截断三大安全不变量（13/13 PASS）。
+- **S30.4/30.5 env/flag 退役** (`config.py`, `adapters/`, `gep/`, `proxy/`, `webui/`, `atp/`)：
+  梳理并折叠 103 个冗余/内部环境变量，全局独立 `EVOLVER_*` 变量从 180 骤降至 77（≤80，`charter-check --soak` 判定 `met=True`）。
+
 ### Changed — round-30：验收门退出判据可达性（演进方案 §11.4 P0-1）
 - **`gated_cumulative`**：`summarize_acceptance` / `evolver gate-report` 增全时段
   gated 计数；`gated_runs` 仍是滚动窗计数（窗口上限 `GATE_SOAK_MIN_RUNS`，
