@@ -857,3 +857,40 @@
   每一个未受管控的环境旋钮都是一个隐蔽的全局状态与潜在的降级分支，非必需的旋钮应当断然折叠为
   显式常数。
 
+### 44. soak 自动路由 env 透传 + 环旁路掩蔽：夹具状态劫持固化谱系（round-35）
+
+- **症状**：(a) 生产 genes.jsonl 覆盖层累积 **120 条** id=g1 夹具基因（soak 副本
+  115 条），其中 1 条加载为活库成员——恰好稀释 P1-5 刚建的库治理种群；写入者
+  `tests/test_sync.py` 两处 `sync_all(dry_run=False)`（respx 假 Hub 资产真实安装，
+  零 GEP_ASSETS_DIR 隔离）。(b) round-35 首次固化 `validation_failed`：3649 过、
+  唯一失败 `test_get_gep_assets_dir_default`——solidify 进程被 soak 互锁自动路由
+  （`maybe_route_to_soak` 就地改写 `os.environ`）后，`validation_env()` 把改写后的
+  `GEP_ASSETS_DIR` 透传给 eval worktree 子 pytest，工作区默认路径解析被路由值
+  压制。(c) 固化#1 的路由子进程把 r1/g1/m1 夹具状态写进 soak 运行态 → 固化#2
+  消费夹具状态：事件 `evt_1789765626189` 谱系失真（gene_id=g1、
+  landed_gene_ids=None、引擎提交题为 `evolver: g1`）——校验内容真实（5 文件
+  真 diff、锚 epoch 10 15/15 实弹、新种群 3653 分母立基线 0.999726）。
+- **根因**：三层叠加。① #37 家族第四例：安装型测试无隔离（wiki→flags→abort
+  快照→基因库/运行态）。② round-30~34 落地的 soak 自动路由**就地改写进程 env**
+  且无标记，`validation_env()` 的「never drops entries」设计忠实地把引擎路由
+  当成了操作者意图转发。③ **五轮环旁路掩蔽**：round-30~34 以直接工程会话完成
+  （手工提交、裸 pytest 验证、锚 CLI 手装），从未跑 solidify——互锁与其泄漏的
+  集成缺陷在旁路期内零暴露，回环第一跑即连爆两发。旁路还冻结了 soak 样本
+  （累积 gated 停在 28）且五轮知识未蒸馏入库。
+- **修复**：(1) test_sync 两测补 `temp_workspace` + 沙箱落点断言；(2) conftest
+  会话级 `_production_gene_store_tripwire`（快照 genes/capsules 覆盖层行数收尾
+  断言；计数型 tripwire 只抓会话内写入——负向验证必须模拟会话内泄漏，快照前
+  植入不可见）；(3) `maybe_route_to_soak` 设 `EVOLVER_SOAK_ROUTED` 哨兵，
+  `validation_env()` 见哨兵即剥离两个被路由变量（引擎路由≠操作者意图；显式
+  设置无哨兵照旧透传；PATH 规范化不受影响，锚探针 validation-env-and-tail
+  实弹过）；(4) 双库清理 120/115 条 g1；(5) 谱系失真不改史（append-only），
+  本条目 + feedback 如实记档；蒸馏基因 `gene_test_isolate_asset_store` 因此
+  未挂事件（存在但无 lineage）。引擎自提交 `b404b3c`。
+- **经验**：**进程内就地改写 os.environ 的互锁必须留哨兵——否则每个子进程
+  生成点都会把「引擎的路由」误当「操作者的意图」转发**。行为互锁只约束已走
+  环的路径，不约束「是否走环」——旁路期不是安全期，是集成缺陷的静默累积期；
+  环完整性回执（引擎面提交 vs 最近事件时间戳的漂移检测）应进 charter-check。
+  安装型测试（sync/fetch/distill 的 dry_run=False 路径）是密闭性审计的固定
+  盲区：它们不写 wiki、不碰 abort 快照、不动 flags——各防线都看不见，只有
+  库本身。
+
