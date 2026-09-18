@@ -115,6 +115,7 @@ def build_gep_prompt(
     hub_lessons: list[Any],
     strategy_policy: dict[str, Any] | None,
     initial_user_prompt: str | None,
+    evidence_pack: str = "",
     max_chars: int = PROMPT_MAX_CHARS,
 ) -> str:
     genes_preview = _compact_or_passthrough(genes_preview)
@@ -179,6 +180,11 @@ def build_gep_prompt(
         "## Context [Execution]",
         context or "(none)",
         "",
+        # RSI P1-4: failure-side evidence precedes the gene suggestion — the
+        # Selected Gene is retrieval-augmented advice, not the only allowed
+        # intervention (see the pack's proposal-channel hint). Absent for
+        # novel families (no prior attempts to report).
+        *([evidence_pack, ""] if evidence_pack else []),
         "## Selected Gene",
         selected_gene_block or "(none)",
         "",

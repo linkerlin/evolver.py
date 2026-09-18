@@ -64,6 +64,24 @@ def test_prompt_has_ethics() -> None:
     assert "HUMAN WELFARE" in p
 
 
+def test_prompt_evidence_pack_section_optional() -> None:
+    """RSI P1-4: pack embedded verbatim when given; absent for novel families."""
+    lean = _build_minimal()
+    assert "## Evidence Pack" not in lean
+    assert "## Selected Gene" in lean
+
+    pack = (
+        "## Evidence Pack — prior attempts in this signal family (do NOT repeat)\n"
+        "Scoreboard: 2 attempts | 0 accepted | 2 rejected\n"
+        "- [failed] evt_x gene=gene_y fp=ab12cd34 | validation_failed"
+    )
+    with_pack = _build_minimal(evidence_pack=pack)
+    assert pack in with_pack
+    # Evidence precedes the gene suggestion (selector = retrieval augmentation).
+    assert with_pack.index("## Evidence Pack") < with_pack.index("## Selected Gene")
+    assert "## Selected Gene" in with_pack
+
+
 def test_compact_preview_strips_bloated_fields() -> None:
     heavy = "a" * 100
     raw = '[{"type": "Capsule", "id": "c1", "summary": "s", "diff": "' + heavy + '"}]'

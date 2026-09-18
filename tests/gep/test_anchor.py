@@ -84,6 +84,14 @@ class TestTriggerDetection:
         assert "src/evolver/gep/gene_lifecycle.py" in ANCHOR_TRIGGER_SURFACES
         assert "src/evolver/gep/selector.py" in ANCHOR_TRIGGER_SURFACES
 
+    def test_evidence_channel_surfaces_are_guarded(self) -> None:
+        # Round-34 (RSI P1-4): the pack builder and the prompt assembly that
+        # embeds it are frozen machinery.
+        from evolver.config import ANCHOR_TRIGGER_SURFACES
+
+        assert "src/evolver/gep/evidence_pack.py" in ANCHOR_TRIGGER_SURFACES
+        assert "src/evolver/gep/prompt.py" in ANCHOR_TRIGGER_SURFACES
+
 
 class TestRunner:
     def test_missing_suite_skips_ok(self, anchor_ws: Path) -> None:
@@ -123,6 +131,14 @@ class TestRunner:
         _install_seed(anchor_ws)
         ids = {c["id"] for c in anchor_mod.list_anchor_cases()}
         assert "gene-lifecycle-governance" in ids
+
+    def test_seed_suite_includes_evidence_pack_honesty(self, anchor_ws: Path) -> None:
+        # P1-4: the failure-side channel to the executor is frozen — dropping
+        # family failures from prompts would re-open the self-preference loop
+        # at the prompt layer (round-34).
+        _install_seed(anchor_ws)
+        ids = {c["id"] for c in anchor_mod.list_anchor_cases()}
+        assert "evidence-pack-honesty" in ids
 
     def test_seed_suite_passes_on_clean_tree(self, anchor_ws: Path) -> None:
         _install_seed(anchor_ws)

@@ -246,6 +246,26 @@ async def dispatch_phase(ctx: dict[str, Any]) -> dict[str, Any]:
         ctx.get("constrained_hook_block", ""),  # Self-Harness C1
         lineage_block,  # Sprint 22.6
     ]
+
+    # RSI P1-4: failure-side evidence pack — what THIS signal family already
+    # tried, outcomes, rejection reasons, and duplicate-edit fingerprints.
+    # Read-only over the event lineage; novel families render empty (no
+    # section). Budget is a module constant, not an env knob.
+    evidence_pack_block = ""
+    try:
+        from evolver.gep.evidence_pack import build_evidence_pack, render_evidence_pack
+
+        pack_events = ctx.get("recent_events")
+        if not isinstance(pack_events, list) or not pack_events:
+            from evolver.gep.asset_store import read_all_events
+
+            pack_events = read_all_events()[-50:]
+        pack = build_evidence_pack(pack_events, ctx.get("signals", []))
+        evidence_pack_block = render_evidence_pack(pack)
+        ctx["evidence_pack"] = pack
+    except Exception as exc:  # prompt assembly must never abort dispatch
+        ctx["evidence_pack_error"] = str(exc)
+
     prompt = build_gep_prompt(
         now_iso=ctx.get("scan_time_iso", ""),
         context="\n".join(part for part in context_parts if part),
@@ -265,6 +285,7 @@ async def dispatch_phase(ctx: dict[str, Any]) -> dict[str, Any]:
         hub_lessons=ctx.get("hub_lessons", []),
         strategy_policy=ctx.get("strategy_policy"),
         initial_user_prompt=ctx.get("initial_user_prompt"),
+        evidence_pack=evidence_pack_block,
     )
 
     # Expose the assembled prompt to in-process callers (MCP swarm_tick) so the

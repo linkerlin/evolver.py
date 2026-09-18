@@ -1,0 +1,7 @@
+{
+  "id": "evidence-pack-honesty",
+  "title": "Evidence pack: family failures reach the executor, budget omissions are counted, prompt embedding is optional",
+  "source": "RSI演进对照.md P1-4 (round-34)",
+  "epoch_added": 10,
+  "kind": "python_contract"
+}

@@ -351,6 +351,12 @@ ANCHOR_TRIGGER_SURFACES: Final[tuple[str, ...]] = (
     # the meter: the machinery that decides is part of what must be frozen.
     "src/evolver/gep/gene_lifecycle.py",
     "src/evolver/gep/selector.py",
+    # RSI P1-4 (round-34): the failure-side channel to the executor. A
+    # mutation that stops forwarding family failures to the prompt re-opens
+    # the RQGM self-preference loop at the prompt layer — guarded from
+    # epoch 10 by the evidence-pack-honesty probe.
+    "src/evolver/gep/evidence_pack.py",
+    "src/evolver/gep/prompt.py",
     "tests/gep/acceptance/",
     "tests/gep/test_solidify.py",
 )

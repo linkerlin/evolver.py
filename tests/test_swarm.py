@@ -92,6 +92,14 @@ class TestInstrumentPrompt:
         assert "tool_mailbox_send" in prompt
         assert "`mailbox_poll`" not in prompt and "`mailbox_send`" not in prompt
 
+    def test_evidence_pack_and_proposal_escape_hatch(self) -> None:
+        """RSI P1-4: the executor is told about the failure-side evidence pack
+        and the mechanical proposal channel as an alternative to re-running
+        listed genes."""
+        prompt = build_instrument_prompt({"agent_name": "a", "workspace_root": "/ws"})
+        assert "Evidence Pack" in prompt
+        assert "swarm_propose" in prompt
+
 
 class TestBootAndStatus:
     def test_boot_returns_prompt_state_and_hello(self, isolated_swarm_env: Path) -> None:

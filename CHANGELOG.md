@@ -8,6 +8,31 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added — round-34：RSI P1-4 证据包派发（L2 策略选择权从启发式移交给证据）
+- **`gep/evidence_pack.py`（新）**：按信号族（head 归一，与 meta-report 同口径）聚合
+  事件谱系，组装**失败侧证据包**——既往干预及其结局（success/failed）、拒绝
+  原因、已试编辑指纹（added-lines sha256 短摘要，重复守卫）、家族记分板；
+  渲染预算 2400 字符硬编码（零新 env 旋钮），超限时**显式计数省略最旧条目**，
+  绝不静默丢证据。
+- **提示词接入** (`gep/prompt.py`)：`build_gep_prompt` 增 `evidence_pack` 节，
+  置于 `## Context [Execution]` 之后、`## Selected Gene` 之前——**证据先于基因
+  建议**，选择器降格为检索增强而非唯一决策路径；新颖族（无既往尝试）不渲染
+  该节。
+- **周期接线** (`evolve/pipeline/dispatch.py`)：dispatch 从事件谱系（ctx
+  `recent_events`，缺省回落 `read_all_events()[-50:]`，与冷却窗口同源）构建
+  证据包并注入提示词；结构化包存 `ctx["evidence_pack"]`；组装失败只记
+  `evidence_pack_error`，绝不中断 dispatch。
+- **干预提议** (`swarm.py` instrument 第二章步骤 2)：宿主执行器获明示决策规则——
+  所选基因属「已固化而信号未消」或族内已接受路径持续失败时，优先经
+  `swarm_propose`（S29 机械提案，GeneProposal 契约）提交新策略，而非重复已试
+  编辑；提案过同一验证门——**策略自主扩权、验收权不动**。
+- **锚 epoch 10**：新增第 15 冻结探针 `case-evidence-pack-honesty`（族内失败
+  必达执行器 / 预算省略有计数 / 提示词嵌入逐字且可选）；`evidence_pack.py`
+  与 `prompt.py` 入 `ANCHOR_TRIGGER_SURFACES`——对执行器隐藏引擎自身失败记录
+  即重开 RQGM 自偏好回路，此通道与米尺同级冻结。
+- 24 个新用例（pack 构建/渲染/预算、prompt 可选节、dispatch 接线与容错、
+  instrument 提示词、锚）；全套 3673 passed；ruff / mypy strict 0 错误。
+
 ### Added — round-33：RSI P1-5 基因全生命周期治理（Library Drift 防治）
 - **`gep/gene_lifecycle.py`**：`active → under_review → retired` 状态机，判据由
   完整事件谱系纯函数推导（同 meta-report 后代语义：落地事件后 K 轮内触发信号

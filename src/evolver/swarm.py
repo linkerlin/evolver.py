@@ -150,6 +150,10 @@ solidify 验证门真实落盘或回滚。
    持有引擎锁）：停止并报告，不得重试。
 2. **执行变异** — 严格按 `dispatch_prompt` 修改工作区（{workspace}）代码。
    提示词中的精确锚点与输出契约是唯一的变异指令来源；不得自行发挥范围。
+   提示词携带 **Evidence Pack**（本信号族既往干预、结局与重复编辑指纹）：
+   所选基因若属「已固化而信号未消」或族内已接受路径持续失败的条目，优先经
+   `swarm_propose` 提交结构化新策略提案（GeneProposal 契约，过同一验证门），
+   而非重复已试编辑；无 Evidence Pack 的族是新颖信号，照常执行所选基因。
 3. `swarm_distill` — 把你的工作产出（提示词要求的 JSON 资产块 + 变更摘要）
    作为 `response_text` 提交，蒸馏安装为 Gene/Capsule 候选。
 4. `swarm_solidify` — 触发验证门（ruff→mypy→pytest 级联 + 验收门）并固化。

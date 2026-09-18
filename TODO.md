@@ -4,13 +4,13 @@
 > 长期差距 / Sprint 26–30 回执：[`演进方案_wikiskill对照版.md`](演进方案_wikiskill对照版.md)。
 > Node 对标基线仍是 v1.94.0；Python 线版本见 `pyproject.toml`。
 
-## 当前状态（2026-09-18，round-33 交付）
+## 当前状态（2026-09-19，round-34 交付）
 
 - 包版本目标：**1.112.0**（稳定化封版中；上一发布 1.111.0）
-- 测试：**3649 passed**（全套件 not llm，0 warnings）；ruff / mypy strict 0 错误
+- 测试：**3673 passed**（全套件 not llm，0 warnings）；ruff / mypy strict 0 错误
 - 运行态：Dogfood 32 轮实测完成（round-1 ~ round-32）
 - 验收门：`gated_cumulative=28`，滚动窗 `gated_runs=20`，`verdict=false_kill_high`，`verified_true_positives=0`，`shadow_mode=on`（数据不支持转正，保持 shadow 门控）
-- 锚定评测：**Epoch 9**（14 冻结探针，涵盖判据可达性、门校准、遥测不变量、HITL fail-closed、数据入口守卫、基因生命周期等）
+- 锚定评测：**Epoch 10**（15 冻结探针，涵盖判据可达性、门校准、遥测不变量、HITL fail-closed、数据入口守卫、基因生命周期、证据包诚实性等）
 - 机制遥测：`ops/meta_report.py` Table-8 六维面板 + `library` 检索质量面板在线
 
 ## P0 — 蜂群稳定化闭环（已全部落地）
@@ -53,7 +53,7 @@
 | # | 项 | 状态 | 说明 |
 |---|---|---|---|
 | 1 | 基因全生命周期治理 (P1-5) | 完成 | `gep/gene_lifecycle.py`：零后效→under_review→retired；选择器禁选/降权；`applicability` 硬门；CLI 人工复活；meta-report `library` 面板；**升锚 Epoch 9**（14/14 PASS） |
-| 2 | 证据包派发 (P1-4) | 未动 | dispatch 失败侧证据包 + 提示词「干预提议」章节；S29 提案通道已就绪，两事合流 |
+| 2 | 证据包派发 (P1-4) | 完成 | `gep/evidence_pack.py`：失败侧证据包（结局/拒绝原因/重复指纹/记分板）入 GEP 提示词；instrument「干预提议」接 `swarm_propose`；**升锚 Epoch 10**（15/15 PASS） |
 | 3 | 候选种群与谱系档案 (P1-3) | 未动 | K=2 worktree 并行（S26.5 桥已默认开）；成本翻倍需先补资源账口径 |
 
 ## 明确不做

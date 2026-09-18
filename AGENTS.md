@@ -76,6 +76,10 @@ gep/                GEP（基因组进化协议）核心
                     零后效证据 active→under_review→retired 状态机；选择器
                     禁选 retired / 降权 under_review；人工 `reinstate` 才可复活；
                     JSON 状态 + JSONL 审计；纯事件推导、幂等、损坏 fail-open
+  evidence_pack.py  证据包派发（RSI P1-4，失败侧证据）：按信号族聚合既往干预/
+                    结局/拒绝原因/已试编辑指纹；2400 字符硬预算、省略显式
+                    计数；注入 GEP 提示词（证据先于基因建议）；配套 instrument
+                    第二章「干预提议」——族内持续失败可经 swarm_propose 提案
   hitl.py           HITL 审批门（EvoX HITLManager 概念收割）：高危操作人类
                     批准，按 subject 幂等，TTL 超时 fail-safe 拒绝，全程审计
   supervision.py    HOTL 人在环上监督：running/paused 状态机 + veto 模式
