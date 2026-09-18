@@ -1,0 +1,7 @@
+{
+  "id": "gene-lifecycle-governance",
+  "title": "Gene lifecycle: zero-work review/retirement reachable, retired genes never selected, review window can revalidate",
+  "source": "RSI演进对照.md P1-5 (round-33)",
+  "epoch_added": 9,
+  "kind": "python_contract"
+}

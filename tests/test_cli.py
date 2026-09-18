@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import subprocess
 from pathlib import Path
 
@@ -87,6 +88,50 @@ def test_cli_supervise_flow(isolated_evolver_env: Path, capsys: pytest.CaptureFi
 
     assert main(["supervise", "resume"]) == 0
     assert '"state": "running"' in capsys.readouterr().out
+
+
+def test_cli_gene_lifecycle_flow(
+    isolated_evolver_env: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """RSI P1-5: gene-lifecycle list/evaluate/reinstate via CLI."""
+    from evolver.gep.asset_store import append_event_jsonl
+
+    for i in range(3):
+        append_event_jsonl(
+            {
+                "id": f"evt_land_{i}",
+                "outcome": {"status": "success"},
+                "mutation": {"landed_gene_ids": ["gene_dead"]},
+                "signals": ["log_error"],
+            }
+        )
+        append_event_jsonl(
+            {"id": f"evt_fail_{i}", "outcome": {"status": "failed"}, "signals": ["log_error"]}
+        )
+    for i in range(5):
+        append_event_jsonl(
+            {"id": f"evt_ok_{i}", "outcome": {"status": "success"}, "signals": ["hub_offline"]}
+        )
+
+    assert main(["gene-lifecycle", "list"]) == 0
+    assert "no records" in capsys.readouterr().out
+
+    assert main(["gene-lifecycle", "evaluate", "--json"]) == 0
+    payload = json.loads(capsys.readouterr().out)
+    assert payload["ok"] is True
+    assert payload["transitions"][0]["gene_id"] == "gene_dead"
+    assert payload["transitions"][0]["to_status"] == "under_review"
+
+    assert main(["gene-lifecycle", "list"]) == 0
+    listing = capsys.readouterr().out
+    assert "gene_dead" in listing
+    assert "under_review" in listing
+
+    assert main(["gene-lifecycle", "reinstate", "gene_dead", "--note", "retry"]) == 0
+    assert "-> active" in capsys.readouterr().out
+
+    assert main(["gene-lifecycle", "reinstate", "gene_dead"]) == 1
+    assert "already_active" in capsys.readouterr().err
 
 
 def test_cli_solidify_after_run_in_git_repo(

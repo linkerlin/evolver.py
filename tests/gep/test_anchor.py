@@ -76,6 +76,14 @@ class TestTriggerDetection:
             "src/evolver/ops/meta_report.py"
         ]
 
+    def test_lifecycle_selection_surfaces_are_guarded(self) -> None:
+        # Round-33 (RSI P1-5): live or die by selection — the lifecycle
+        # evaluator and the selector that enforces it are frozen machinery.
+        from evolver.config import ANCHOR_TRIGGER_SURFACES
+
+        assert "src/evolver/gep/gene_lifecycle.py" in ANCHOR_TRIGGER_SURFACES
+        assert "src/evolver/gep/selector.py" in ANCHOR_TRIGGER_SURFACES
+
 
 class TestRunner:
     def test_missing_suite_skips_ok(self, anchor_ws: Path) -> None:
@@ -108,6 +116,13 @@ class TestRunner:
         _install_seed(anchor_ws)
         ids = {c["id"] for c in anchor_mod.list_anchor_cases()}
         assert "data-ingress-guard" in ids
+
+    def test_seed_suite_includes_gene_lifecycle_governance(self, anchor_ws: Path) -> None:
+        # P1-5: review/retirement reachability + retired-unselectable frozen
+        # out-of-tree (RSI演进对照.md P1-5, round-33).
+        _install_seed(anchor_ws)
+        ids = {c["id"] for c in anchor_mod.list_anchor_cases()}
+        assert "gene-lifecycle-governance" in ids
 
     def test_seed_suite_passes_on_clean_tree(self, anchor_ws: Path) -> None:
         _install_seed(anchor_ws)

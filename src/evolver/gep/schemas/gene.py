@@ -47,6 +47,13 @@ class Gene(BaseModel):
     validation: list[str] = Field(default_factory=list)
     constraints: Constraints = Field(default_factory=Constraints)
     preconditions: list[str] = Field(default_factory=list)
+    # RSI P1-5 (Library Drift): optional machine-readable applicability and
+    # dependency metadata. ``applicability.signal_families`` (list of
+    # pipe-alias patterns) hard-gates selection when declared; a gene that
+    # declares families and matches none is not retrieved for that cycle.
+    # Optional with defaults, so existing on-disk genes stay valid.
+    applicability: dict[str, Any] | None = None
+    dependencies: list[str] = Field(default_factory=list)
     summary: str = ""
     schema_version: str = "1.6.0"
     epigenetic_marks: list[str] = Field(default_factory=list)

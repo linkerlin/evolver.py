@@ -8,6 +8,32 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added — round-33：RSI P1-5 基因全生命周期治理（Library Drift 防治）
+- **`gep/gene_lifecycle.py`**：`active → under_review → retired` 状态机，判据由
+  完整事件谱系纯函数推导（同 meta-report 后代语义：落地事件后 K 轮内触发信号
+  是否在失败中复发）。零后效证据（≥3 次可评估落地、0 次解决）→ 复核；复核窗口
+  内再试仍零后效 → 退役；复核期内出现解决 → 复活。评估幂等，转移写
+  `gene_lifecycle.json` + `gene_lifecycle.jsonl` 审计（actor=engine）。状态文件
+  损坏时评估拒绝写入（不覆盖账本），选择器 fail-open（绝不凭空禁选）。
+- **选择器强制** (`gep/selector.py`)：retired 基因按禁用处理（含 distilled
+  兜底路径）；under_review 基因惩罚 ×0.5 但**仍可选**——复核窗口即可证伪的
+  重验试验；`applicability.signal_families` 声明的信号族为硬门（声明而不匹配
+  即不检索）。
+- **Gene schema** (`gep/schemas/gene.py`)：新增可选 `applicability` 与
+  `dependencies` 字段，向后兼容（现有磁盘基因零迁移）。
+- **周期钩子** (`evolve/post_cycle.py`)：每周期末由事件账本推导生命周期并持久化，
+  转移摘要进 `ctx["gene_lifecycle"]`。
+- **CLI**：`evolver gene-lifecycle list|evaluate|reinstate <gene_id>`——退役永不
+  自动逆转，仅人类可复活（`reinstated_count` 入审计）。
+- **meta-report 增 `library` 面板**：落地基因数、可评估落地数、解决率、
+  零后效候选（退役触发面）、生命周期状态计数；`meta-report` 读取状态映射
+  传入（报告本身仍零 I/O）。
+- **锚 epoch 9**：新增第 14 冻结探针 `case-gene-lifecycle-governance`
+  （复核/退役可达、退役不可选、复核可复活、适用性硬门）；`gene_lifecycle.py`
+  与 `selector.py` 加入 `ANCHOR_TRIGGER_SURFACES`——选择机制与米尺同级受锚治理。
+- 40 个新用例（lifecycle 纯函数/持久化/CLI/选择器/meta 面板/锚）；全套
+  **3649 passed**，ruff / mypy strict 0 错误。
+
 ### Added — round-32：S29 机械提案通道、P2 数据入口防护、S30.4/30.5 env 退役（演进方案 §11.4）
 - **S29 机械提案通道** (`gep/proposal.py`, `gep/solidify.py`, `swarm.py`, `mcp_server.py`)：
   引入 `GeneProposal`、`ProposalEdit` 强契约数据结构，替代非结构化自由编辑与 distill 提取；支持 `exact_match`、`anchor_pattern`、`unified_diff`；`solidify(proposal=...)` 机械应用落地；CLI `--proposal <path>`；MCP 工具 `swarm_propose` 向蜂群宿主开放。

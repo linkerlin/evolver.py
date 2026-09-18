@@ -88,3 +88,43 @@ async def test_post_cycle_persists_atp_spawn_instruction(
 
     payload = json.loads(path.read_text(encoding="utf-8"))
     assert payload["instruction"] == spawn
+
+
+@pytest.mark.asyncio
+async def test_post_cycle_applies_gene_lifecycle(
+    temp_workspace: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """RSI P1-5: post_cycle derives lifecycle verdicts from the event lineage."""
+    from evolver.gep import gene_lifecycle as gl
+    from evolver.gep.asset_store import append_event_jsonl
+
+    monkeypatch.setattr("evolver.atp.atp_task_pickup.pick_one", AsyncMock(return_value=None))
+    monkeypatch.setattr("evolver.gep.issue_reporter.report_recurring_failures", lambda **_: [])
+
+    events: list[dict[str, Any]] = []
+    for i in range(3):
+        events.append(
+            {
+                "id": f"evt_land_{i}",
+                "outcome": {"status": "success"},
+                "mutation": {"landed_gene_ids": ["gene_dead"]},
+                "signals": ["log_error"],
+            }
+        )
+        events.append(
+            {"id": f"evt_fail_{i}", "outcome": {"status": "failed"}, "signals": ["log_error"]}
+        )
+    events.extend(
+        {"id": f"evt_ok_{i}", "outcome": {"status": "success"}, "signals": ["hub_offline"]}
+        for i in range(5)
+    )
+    for event in events:
+        append_event_jsonl(event)
+
+    ctx = await run_post_cycle_hooks({"signals": ["log_error"]})
+    assert ctx["gene_lifecycle"]["transitions"][0]["to_status"] == "under_review"
+    assert gl.load_lifecycle()["gene_dead"].status == "under_review"
+
+    # Idempotent: a second pass with the same lineage applies nothing new.
+    again = await run_post_cycle_hooks({"signals": ["log_error"]})
+    assert "gene_lifecycle" not in again

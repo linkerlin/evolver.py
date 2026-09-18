@@ -123,6 +123,23 @@ async def run_post_cycle_hooks(ctx: dict[str, Any]) -> dict[str, Any]:
     except Exception as exc:
         logger.debug("[post_cycle] issue reporter skipped: %s", exc)
 
+    # RSI P1-5: gene lifecycle governance — derive review/retirement verdicts
+    # from the full event lineage (idempotent; corrupt bookkeeping refuses the
+    # write instead of clobbering). Thresholds are module constants, not env.
+    try:
+        from evolver.gep.asset_store import read_all_events
+        from evolver.gep.gene_lifecycle import evaluate_and_apply
+
+        lifecycle = evaluate_and_apply(read_all_events())
+        if lifecycle.get("transitions"):
+            ctx["gene_lifecycle"] = lifecycle
+            logger.info(
+                "[post_cycle] gene lifecycle applied %s transition(s)",
+                len(lifecycle["transitions"]),
+            )
+    except Exception as exc:
+        logger.debug("[post_cycle] gene lifecycle evaluation skipped: %s", exc)
+
     # Self-Harness C3: merge multiple accepted candidates (contract-driven;
     # no-op unless ctx["accepted_candidates"] is present with >1 entries).
     _merge_accepted_candidates(ctx)

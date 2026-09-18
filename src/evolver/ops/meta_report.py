@@ -13,6 +13,8 @@ Panels (Table-8 of the paper, adapted to available telemetry):
 - stability    : rollbacks (failed events) + degraded feedback counts
 - meta_recursion : structural-L5 audit rows — mutations that touched the
   improvement machinery itself, with their descendants' outcomes
+- library      : RSI P1-5 retrieval quality — landed-gene resolution rate,
+  lifecycle status counts, zero-work candidates (retirement triggers)
 
 Descendant quality: per landed gene, the K rounds after landing — did its
 trigger signals recur (unresolved) or vanish (resolved)?
@@ -20,7 +22,9 @@ trigger signals recur (unresolved) or vanish (resolved)?
 Honesty notes: file-level attribution parses ``diff --git`` headers from the
 truncated ``diff_snapshot`` (first ~2k chars) — a heuristic audit, not a
 complete diff registry; cost accounting is count-based until per-stage
-durations land on events. No Node.js equivalent; self-research addition.
+durations land on events. ``library.lifecycle`` needs the caller to pass the
+lifecycle status map (pure data, no I/O here); absent → all counted active.
+No Node.js equivalent; self-research addition.
 """
 
 from __future__ import annotations
@@ -31,6 +35,7 @@ from pathlib import Path
 from typing import Any
 
 from evolver.config import ANCHOR_TRIGGER_SURFACES
+from evolver.gep.gene_lifecycle import LIFECYCLE_MIN_OBSERVATIONS, landing_stats
 from evolver.gep.git_ops import normalize_rel_path
 
 # Surfaces whose mutation means "the improvement machinery edited itself"
@@ -138,9 +143,16 @@ def _descendant_quality(events: list[dict[str, Any]]) -> list[dict[str, Any]]:
 def build_meta_report(
     events: list[dict[str, Any]],
     feedback: list[dict[str, Any]] | None = None,
+    lifecycle: dict[str, str] | None = None,
 ) -> dict[str, Any]:
-    """Aggregate the improvement-mechanism panel. Read-only."""
+    """Aggregate the improvement-mechanism panel. Read-only.
+
+    *lifecycle* is a plain ``gene_id → status`` map supplied by the caller
+    (``evolver.gep.gene_lifecycle.status_map``); the report itself performs
+    no file reads.
+    """
     feedback = feedback or []
+    lifecycle = lifecycle or {}
     outcomes = [str((e.get("outcome") or {}).get("status") or "") for e in events]
     accepted = [i for i, o in enumerate(outcomes) if o == "success"]
     failed = [i for i, o in enumerate(outcomes) if o == "failed"]
@@ -212,6 +224,23 @@ def build_meta_report(
     unknown = sum(1 for r in dq if r["unknown"])
     mechanism_rows = _mechanism_rows(events)
 
+    # RSI P1-5 retrieval quality: the same lineage evidence the lifecycle
+    # evaluator uses, surfaced read-only.
+    landing = landing_stats(events)
+    evaluable = sum(int(row["observations"]) for row in landing.values())
+    resolved_landings = sum(int(row["resolved"]) for row in landing.values())
+    status_counts = {"active": 0, "under_review": 0, "retired": 0}
+    for gid in landing:
+        status = str(lifecycle.get(gid) or "active")
+        if status not in status_counts:
+            status = "active"
+        status_counts[status] += 1
+    zero_work_candidates = sorted(
+        gid
+        for gid, row in landing.items()
+        if int(row["observations"]) >= LIFECYCLE_MIN_OBSERVATIONS and int(row["resolved"]) == 0
+    )
+
     return {
         "panel": {
             "adaptivity": {
@@ -248,6 +277,14 @@ def build_meta_report(
             },
             "meta_recursion": {
                 "structural_l5_mutations": len(mechanism_rows),
+            },
+            "library": {
+                "landed_genes": len(landing),
+                "landings_tracked": sum(int(row["landings"]) for row in landing.values()),
+                "evaluable_landings": evaluable,
+                "resolution_rate": (round(resolved_landings / evaluable, 3) if evaluable else None),
+                "zero_work_candidates": zero_work_candidates,
+                "lifecycle": status_counts,
             },
         },
         "mechanism_audit": mechanism_rows,

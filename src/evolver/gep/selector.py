@@ -13,6 +13,7 @@ from typing import Any
 from evolver.config import APPLIED_GENE_COOLDOWN_PENALTY, GENE_EPIGENETIC_HARD_BOOST
 from evolver.gep.env_fingerprint import capture_env_fingerprint, env_fingerprint_key
 from evolver.gep.feature_flags import is_enabled
+from evolver.gep.gene_lifecycle import LIFECYCLE_REVIEW_PENALTY
 from evolver.gep.memory_bridge import living_memory_score_adjustment
 
 # In-place (parameter-only) gene blast-radius hard caps — Node INPLACE_* constants.
@@ -65,6 +66,15 @@ def _match_pattern_to_signals(pattern: str, signals: list[str]) -> bool:
 
 
 def _score_gene(gene: dict[str, Any], signals: list[str]) -> float:
+    # RSI P1-5: declared signal-family applicability is a hard gate — a gene
+    # that says "I only apply to log_error|mypy_error" must not be retrieved
+    # for unrelated signals even when `signals_match` scans broadly.
+    applicability = gene.get("applicability")
+    if isinstance(applicability, dict):
+        families = applicability.get("signal_families") or []
+        if families and not any(_match_pattern_to_signals(str(f), signals) for f in families):
+            return 0.0
+
     score = 0.0
     signals_match = gene.get("signals_match") or []
     for pattern in signals_match:
@@ -166,6 +176,11 @@ def select_gene(
 ) -> dict[str, Any]:
     options = options or {}
     banned: set[str] = options.get("bannedGeneIds") or set()
+    # RSI P1-5 lifecycle: retired genes are excluded like banned ones; genes
+    # under review keep a penalized score (the review window is their
+    # re-validation trial — a hard ban would make retirement unfalsifiable).
+    retired: set[str] = set(options.get("retiredGeneIds") or set())
+    under_review: set[str] = set(options.get("underReviewGeneIds") or set())
     preferred = options.get("preferredGeneId")
     # Sprint 22.4: top-k preferred gene ids per signal-key niche.
     preferred_ids: set[str] = set(options.get("preferredGeneIds") or [])
@@ -189,7 +204,7 @@ def select_gene(
         gid = gene.get("id")
         if not gid:
             continue
-        if gid in banned:
+        if gid in banned or gid in retired:
             continue
         if is_epigenetically_suppressed(gene):
             continue
@@ -203,6 +218,8 @@ def select_gene(
         if score > 0:
             if gid in applied_cooldown:
                 score *= APPLIED_GENE_COOLDOWN_PENALTY
+            if gid in under_review:
+                score *= LIFECYCLE_REVIEW_PENALTY
             candidates.append({"gene": gene, "score": score})
 
     # Apply preferred gene multiplier (single anchor + top-k niche elites)
@@ -224,7 +241,7 @@ def select_gene(
         # Distilled gene fallback
         for gene in genes:
             gid = gene.get("id")
-            if not gid or gid in banned:
+            if not gid or gid in banned or gid in retired:
                 continue
             if is_epigenetically_suppressed(gene):
                 continue
@@ -436,11 +453,21 @@ def select_gene_and_capsule(ctx: dict[str, Any]) -> dict[str, Any]:
 
     cooldown_ids = _applied_cooldown_ids(_recent_events_for_cooldown(ctx))
 
+    # RSI P1-5: lifecycle statuses come from the out-of-band state file.
+    # Fail-open on corrupt bookkeeping (load_lifecycle_sets is total) — an
+    # unreadable file must never fabricate bans; retirement is an
+    # optimization, not a safety gate.
+    from evolver.gep.gene_lifecycle import load_lifecycle_sets
+
+    retired_ids, under_review_ids = load_lifecycle_sets()
+
     selector = select_gene(
         genes,
         signals,
         {
             "bannedGeneIds": banned,
+            "retiredGeneIds": retired_ids,
+            "underReviewGeneIds": under_review_ids,
             "preferredGeneId": preferred,
             "preferredGeneIds": memory_advice.get("preferredGeneIds") or [],
             "driftEnabled": drift_enabled,

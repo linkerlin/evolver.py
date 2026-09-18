@@ -131,6 +131,25 @@ def _build_parser() -> argparse.ArgumentParser:
     )
     meta_p.add_argument("--json", action="store_true", help="Output raw JSON")
     meta_p.add_argument("--limit", type=int, default=5000, help="Max events to scan")
+    gl_p = sub.add_parser(
+        "gene-lifecycle",
+        help="RSI P1-5: gene lifecycle governance (active / under_review / retired)",
+    )
+    gl_sub = gl_p.add_subparsers(dest="gene_lifecycle_action")
+    gl_list = gl_sub.add_parser("list", help="Show lifecycle records and status counts")
+    gl_list.add_argument("--json", action="store_true", help="Output raw JSON")
+    gl_eval = gl_sub.add_parser(
+        "evaluate",
+        help="Re-derive lifecycle verdicts from the event lineage and persist them",
+    )
+    gl_eval.add_argument("--json", action="store_true", help="Output raw JSON")
+    gl_reinstate = gl_sub.add_parser(
+        "reinstate",
+        help="Human-only: return a gene to active (retirement is never auto-reversed)",
+    )
+    gl_reinstate.add_argument("gene_id", help="Gene id to reinstate")
+    gl_reinstate.add_argument("--note", default="", help="Audit note")
+    gl_reinstate.add_argument("--json", action="store_true", help="Output raw JSON")
     soak_p = sub.add_parser(
         "soak",
         help="Keep evolution runtime off the git tree (setup / exports / status)",
@@ -540,6 +559,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         "supervise",
         "hitl",
         "workflow",
+        "gene-lifecycle",
     }
     if is_loop or command in _soak_routed_commands:
         from evolver.ops.soak_env import maybe_route_to_soak
@@ -585,6 +605,9 @@ def main(argv: Sequence[str] | None = None) -> int:
         return _cmd_anchor(args)
     if command == "meta-report":
         return _cmd_meta_report(args)
+
+    if command == "gene-lifecycle":
+        return _cmd_gene_lifecycle(args)
 
     if command == "soak":
         return _cmd_soak(args)
@@ -1014,10 +1037,13 @@ def _cmd_anchor(args: argparse.Namespace) -> int:
 def _cmd_meta_report(args: argparse.Namespace) -> int:
     """Improvement-mechanism telemetry (RSI P0-2): the effective-L5 panel."""
     from evolver.gep.asset_store import read_all_events
+    from evolver.gep.gene_lifecycle import load_lifecycle, status_map
     from evolver.ops.meta_report import build_meta_report, load_feedback_events
 
     events = read_all_events()[-max(1, args.limit) :]
-    report = build_meta_report(events, load_feedback_events())
+    report = build_meta_report(
+        events, load_feedback_events(), status_map(load_lifecycle(strict=False))
+    )
     if args.json:
         print(json.dumps(report, ensure_ascii=False, indent=2))
         return 0
@@ -1045,6 +1071,20 @@ def _cmd_meta_report(args: argparse.Namespace) -> int:
     print(
         f"stability: {stab['failed_events']} failed events | {stab['degraded_feedback']} degraded"
     )
+    lib = panel.get("library") or {}
+    if lib:
+        lc = lib.get("lifecycle") or {}
+        rate = lib.get("resolution_rate")
+        rate_s = f"{rate:.0%}" if isinstance(rate, float) else "n/a"
+        print(
+            f"library: {lib.get('landed_genes', 0)} landed genes | "
+            f"resolution {rate_s} over {lib.get('evaluable_landings', 0)} evaluable | "
+            f"active/under_review/retired = "
+            f"{lc.get('active', 0)}/{lc.get('under_review', 0)}/{lc.get('retired', 0)}"
+        )
+        zero_work = lib.get("zero_work_candidates") or []
+        if zero_work:
+            print(f"  zero-work candidates: {', '.join(zero_work[:8])}")
     meta = panel["meta_recursion"]
     print(f"meta-recursion: {meta['structural_l5_mutations']} structural-L5 mutation(s)")
     for row in report["mechanism_audit"][-8:]:
@@ -1054,6 +1094,72 @@ def _cmd_meta_report(args: argparse.Namespace) -> int:
             f"  {str(row.get('timestamp'))[:19]} {row.get('outcome'):<7} "
             f"desc_ok={rate_s:<5} {','.join(row.get('mechanism_files') or [])[:70]}"
         )
+    return 0
+
+
+def _cmd_gene_lifecycle(args: argparse.Namespace) -> int:
+    """RSI P1-5: gene lifecycle governance (list / evaluate / reinstate)."""
+    from evolver.gep.gene_lifecycle import (
+        evaluate_and_apply,
+        load_lifecycle,
+        reinstate_gene,
+        status_map,
+    )
+
+    action = getattr(args, "gene_lifecycle_action", None)
+    if action == "evaluate":
+        from evolver.gep.asset_store import read_all_events
+
+        result = evaluate_and_apply(read_all_events())
+        if getattr(args, "json", False):
+            print(json.dumps(result, ensure_ascii=False, indent=2))
+            return 0 if result.get("ok") else 1
+        if not result.get("ok"):
+            print(f"gene-lifecycle evaluate refused: {result.get('error')}", file=sys.stderr)
+            return 1
+        transitions = result.get("transitions") or []
+        if not transitions:
+            print("gene-lifecycle: no transitions")
+            return 0
+        for t in transitions:
+            print(f"{t['gene_id']}: {t['from_status']} -> {t['to_status']} ({t['reason']})")
+        return 0
+
+    if action == "reinstate":
+        result = reinstate_gene(args.gene_id, note=args.note)
+        if getattr(args, "json", False):
+            print(json.dumps(result, ensure_ascii=False, indent=2))
+            return 0 if result.get("ok") else 1
+        if not result.get("ok"):
+            print(f"gene-lifecycle reinstate failed: {result.get('error')}", file=sys.stderr)
+            return 1
+        record = result["record"]
+        print(
+            f"gene-lifecycle: {args.gene_id} -> active "
+            f"(reinstated_count={record['reinstated_count']})"
+        )
+        return 0
+
+    records = load_lifecycle(strict=False)
+    if getattr(args, "json", False):
+        print(
+            json.dumps(
+                {gid: rec.model_dump() for gid, rec in sorted(records.items())},
+                ensure_ascii=False,
+                indent=2,
+            )
+        )
+        return 0
+    if not records:
+        print("gene-lifecycle: no records")
+        return 0
+    for gid, rec in sorted(records.items()):
+        print(f"{rec.status:<13} {gid} ({rec.reason or 'n/a'})")
+    counts = status_map(records)
+    active = sum(1 for s in counts.values() if s == "active")
+    review = sum(1 for s in counts.values() if s == "under_review")
+    retired = sum(1 for s in counts.values() if s == "retired")
+    print(f"total {len(records)} | active {active} | under_review {review} | retired {retired}")
     return 0
 
 

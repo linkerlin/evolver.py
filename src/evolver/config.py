@@ -345,6 +345,12 @@ ANCHOR_TRIGGER_SURFACES: Final[tuple[str, ...]] = (
     # mutations neither triggered the anchor nor counted as structural-L5.
     # Guarded from epoch 4 by the telemetry-invariants probe.
     "src/evolver/ops/meta_report.py",
+    # RSI P1-5 (round-33): the selection mechanism itself — gene lifecycle
+    # governance and its selector enforcement. Mutations to these surfaces
+    # must run the frozen lifecycle contracts (epoch 9), same doctrine as
+    # the meter: the machinery that decides is part of what must be frozen.
+    "src/evolver/gep/gene_lifecycle.py",
+    "src/evolver/gep/selector.py",
     "tests/gep/acceptance/",
     "tests/gep/test_solidify.py",
 )

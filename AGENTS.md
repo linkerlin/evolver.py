@@ -25,6 +25,7 @@
 | 验收门 soak 报告 | `uv run evolver gate-report [--json]` |
 | 锚定评测（RSI P0-1） | `uv run evolver anchor init\|list\|run`（仓外冻结契约，`$EVOLVER_HOME/anchor/`；验证面变异触发，环内只读） |
 | 改进机制遥测（RSI P0-2） | `uv run evolver meta-report [--json]`（Table-8 六维面板 + 后代质量 + structural-L5 审计） |
+| 基因生命周期（RSI P1-5） | `uv run evolver gene-lifecycle list\|evaluate\|reinstate <gene_id>`（零后效→under_review→retired；人工才可复活） |
 | Soak 外置运行态 | `uv run evolver soak setup\|exports\|status`（`$EVOLVER_HOME/evolver.py-soak`，勿提交 `memory/`） |
 | 评估隔离 worktree | `EVOLVER_FF_ENABLE_EVAL_WORKTREE=1`（S26.5；失败回退 live cwd） |
 | 守护进程生命周期 | `uv run evolver start` / `stop` / `restart` / `status` / `log` |
@@ -71,6 +72,10 @@ gep/                GEP（基因组进化协议）核心
                     textual_gradient 三分离，日志 + repair-bias 信号注入
   adaptive.py       反馈驱动变异偏置（EvoX 自适应变异率收割）：降级连击→
                     repair 权重，收敛平台→novelty 枢转，混合样本中性
+  gene_lifecycle.py 基因全生命周期治理（RSI P1-5，Library Drift 防治）：
+                    零后效证据 active→under_review→retired 状态机；选择器
+                    禁选 retired / 降权 under_review；人工 `reinstate` 才可复活；
+                    JSON 状态 + JSONL 审计；纯事件推导、幂等、损坏 fail-open
   hitl.py           HITL 审批门（EvoX HITLManager 概念收割）：高危操作人类
                     批准，按 subject 幂等，TTL 超时 fail-safe 拒绝，全程审计
   supervision.py    HOTL 人在环上监督：running/paused 状态机 + veto 模式
@@ -233,6 +238,8 @@ instrument prompt 第三章（Hooks 集成）指导宿主择轨。
 - `failed_capsules.json`
 - `pending_signals.json`
 - `autopoiesis_rules.json`——Autopoiesis guard 规则（摩擦自动编码）
+- `gene_lifecycle.json` + `gene_lifecycle.jsonl`——基因生命周期状态（RSI P1-5）
+  与转移审计日志（评估幂等；损坏时评估拒绝写入，选择器 fail-open 不禁选）
 
 活记忆与自检（`<EVOLUTION_DIR>/`，默认 `memory/evolution/`）：
 
