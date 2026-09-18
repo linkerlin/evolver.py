@@ -155,6 +155,12 @@ def maybe_route_to_soak(
 
     os.environ["EVOLUTION_DIR"] = soak_evo
     os.environ["GEP_ASSETS_DIR"] = soak_gep
+    # Sentinel for validation_env(): the two vars above are THIS PROCESS's
+    # runtime routing, not operator intent — spawned validation subprocesses
+    # (cascade pytest / T0 gate) must not inherit them (round-35, DEBUG #41:
+    # the inherited soak routing broke workspace-default path resolution in
+    # the eval worktree's own test suite).
+    os.environ["EVOLVER_SOAK_ROUTED"] = "1"
 
     warn_msg = (
         f"[soak] Notice: in-repo runtime detected (inside_repo=True). "

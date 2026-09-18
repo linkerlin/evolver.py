@@ -21,8 +21,18 @@ def validation_env() -> dict[str, str]:
     Never drops entries; prepends the well-known toolchain dirs (existing
     ones only) so the repo's own toolchain resolves regardless of how the
     engine process was spawned.
+
+    Round-35 (DEBUG #41) exception: when the soak interlock auto-routed this
+    process's runtime (``EVOLVER_SOAK_ROUTED`` sentinel), the routed
+    ``EVOLUTION_DIR`` / ``GEP_ASSETS_DIR`` are ENGINE routing, not operator
+    intent — the validated tree's own tests must resolve paths exactly as
+    they would outside the engine. Explicitly-set values (no sentinel) are
+    forwarded untouched.
     """
     env = dict(os.environ)
+    if env.get("EVOLVER_SOAK_ROUTED"):
+        env.pop("EVOLUTION_DIR", None)
+        env.pop("GEP_ASSETS_DIR", None)
     parts = [p for p in env.get("PATH", "").split(os.pathsep) if p]
     known = [
         str(Path(sys.executable).parent),

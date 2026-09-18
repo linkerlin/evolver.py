@@ -135,6 +135,45 @@ def _phantom_abort_snapshot_tripwire() -> Iterator[None]:
     )
 
 
+@pytest.fixture(autouse=True, scope="session")
+def _production_gene_store_tripwire() -> Iterator[None]:
+    """Round-35 (DEBUG #41): an unisolated sync test installed its fixture
+    gene ("g1") into the PRODUCTION genes.jsonl overlay on every full-suite
+    run — 120 entries by the time it was caught, one loading as a live
+    library member. The suite must never mutate the real asset store:
+    snapshot the overlay line counts (genes + capsules) at session start and
+    assert them unchanged at teardown. A concurrent distill from another
+    process during the session would false-positive — same accepted risk as
+    the wiki tripwire; the daemon does not distill."""
+    import os
+
+    if os.environ.get("EVOLUTION_DIR") or os.environ.get("GEP_ASSETS_DIR"):
+        # An outer harness already isolated (or explicitly targeted) the store.
+        yield
+        return
+    from evolver.gep.paths import get_gep_assets_dir
+
+    store = get_gep_assets_dir()
+
+    def _counts() -> tuple[int, int]:
+        def lines(name: str) -> int:
+            path = store / name
+            if not path.is_file():
+                return 0
+            return sum(1 for _ in path.open(encoding="utf-8", errors="replace"))
+
+        return lines("genes.jsonl"), lines("capsules.jsonl")
+
+    before = _counts()
+    yield
+    after = _counts()
+    assert after == before, (
+        f"production gene store changed during the test session: genes/capsules "
+        f"{before} -> {after} — a test installed assets without isolating "
+        "GEP_ASSETS_DIR (request temp_workspace)"
+    )
+
+
 @pytest.fixture
 def temp_workspace(monkeypatch: pytest.MonkeyPatch) -> Path:
     with tempfile.TemporaryDirectory() as tmp:

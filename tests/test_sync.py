@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from pathlib import Path
+
 import pytest
 import respx
 from httpx import Response
@@ -22,7 +24,10 @@ async def test_sync_all_no_hub(monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 @respx.mock
-async def test_sync_all_tasks_found(monkeypatch: pytest.MonkeyPatch) -> None:
+async def test_sync_all_tasks_found(temp_workspace: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    # dry_run=False installs fetched tasks into the GEP store — without the
+    # sandbox this wrote fixture task "t1" into the production store on every
+    # full-suite run (round-35, DEBUG #41).
     monkeypatch.setenv("A2A_HUB_URL", "https://mock.hub")
     respx.post("https://mock.hub/v1/a2a/tasks").mock(
         return_value=Response(200, json={"tasks": [{"task_id": "t1", "title": "Fix bug"}]})
@@ -36,7 +41,11 @@ async def test_sync_all_tasks_found(monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 @respx.mock
-async def test_sync_all_events_with_asset(monkeypatch: pytest.MonkeyPatch) -> None:
+async def test_sync_all_events_with_asset(
+    temp_workspace: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # Same leak class as above: 120 fixture "g1" genes accumulated in the
+    # production genes.jsonl overlay before isolation (round-35, DEBUG #41).
     monkeypatch.setenv("A2A_HUB_URL", "https://mock.hub")
     respx.post("https://mock.hub/v1/a2a/tasks").mock(return_value=Response(200, json={"tasks": []}))
     respx.post("https://mock.hub/v1/a2a/events").mock(
@@ -50,3 +59,5 @@ async def test_sync_all_events_with_asset(monkeypatch: pytest.MonkeyPatch) -> No
     result = await sync.sync_all(dry_run=False)
     assert result["ok"] is True
     assert any(i.get("id") == "g1" for i in result["installed"])
+    installed = (temp_workspace / ".evolver" / "gep" / "genes.jsonl").read_text("utf-8")
+    assert '"id": "g1"' in installed, "fixture gene must land in the sandbox store"
