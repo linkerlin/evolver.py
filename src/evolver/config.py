@@ -359,6 +359,13 @@ ANCHOR_TRIGGER_SURFACES: Final[tuple[str, ...]] = (
     "src/evolver/gep/prompt.py",
     "tests/gep/acceptance/",
     "tests/gep/test_solidify.py",
+    # Round-37 (DEBUG #44 + RSI §6.6): the charter meter itself — the loop-
+    # integrity receipt is the instrument that detects loop bypass, so a
+    # mutation that quietly disables it must run the frozen contracts. Same
+    # doctrine as meta_report (the machinery that decides is part of what
+    # must be frozen). Advisory-only: no probe semantics changed, no epoch
+    # bump — the receipt holds no rejection authority.
+    "src/evolver/ops/charter_check.py",
 )
 ANCHOR_PROBE_TIMEOUT_S: Final = 120.0
 

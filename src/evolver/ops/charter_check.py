@@ -9,8 +9,9 @@ from __future__ import annotations
 
 import glob
 import re
+from datetime import datetime
 from pathlib import Path
-from typing import Any
+from typing import Any, Final
 
 from evolver.config import (
     ANCHOR_TRIGGER_SURFACES,
@@ -25,6 +26,13 @@ from evolver.gep.asset_store import read_all_events
 from evolver.gep.git_ops import run_cmd
 from evolver.gep.paths import get_repo_root, get_workspace_root
 from evolver.ops.soak_env import evolution_dir_inside_repo, read_gate_verifications, soak_root
+
+#: Engine-surface commits may lag the last ledger event by at most this much
+#: before the loop is considered bypassed. In the healthy flow the solidify
+#: auto-commit lands seconds after its event; drift only GROWS when code
+#: lands through direct-engineering sessions (round-30~34: five rounds, ~30h
+#: drift, zero events — DEBUG #44). Module constant, not an env knob.
+LOOP_STALE_THRESHOLD_S: Final = 3600
 
 
 def _read_version(repo: Path) -> str:
@@ -77,6 +85,58 @@ def get_tracked_runtime_files(repo: Path) -> list[str]:
         return []
 
 
+def _parse_ts(raw: str) -> datetime | None:
+    try:
+        return datetime.fromisoformat(raw.strip())
+    except (ValueError, AttributeError):
+        return None
+
+
+def loop_integrity(
+    events: list[dict[str, Any]],
+    repo: Path,
+) -> dict[str, Any]:
+    """Loop-integrity receipt (round-37, DEBUG #44 + RSI §6.6 finding 1).
+
+    The event ledger only records what happened — it is blind to whether the
+    loop was running at all. Five bypass rounds (round-30~34) landed engine
+    commits with zero events, silently freezing the soak sample and leaving
+    integration defects unvalidated. This compares the newest commit touching
+    the engine surface (``src/`` / ``tests/``) against the newest ledger
+    event: drift beyond :data:`LOOP_STALE_THRESHOLD_S` means code moved
+    without the loop. Advisory only — it does not gate promotion and never
+    blocks; its job is to make bypass visible to the machine.
+    """
+    last_event_dt: datetime | None = None
+    for evt in events:
+        dt = _parse_ts(str(evt.get("timestamp") or ""))
+        if dt is not None and (last_event_dt is None or dt > last_event_dt):
+            last_event_dt = dt
+    try:
+        commit_iso = run_cmd(
+            ["log", "-1", "--format=%cI", "--", "src", "tests"], cwd=repo
+        )
+    except Exception:
+        commit_iso = ""
+    commit_dt = _parse_ts(commit_iso) if commit_iso else None
+
+    receipt: dict[str, Any] = {
+        "last_event": last_event_dt.isoformat() if last_event_dt else None,
+        "last_engine_commit": commit_dt.isoformat() if commit_dt else None,
+        "drift_seconds": None,
+        "threshold_seconds": LOOP_STALE_THRESHOLD_S,
+    }
+    if commit_dt is None:
+        receipt["status"] = "no_engine_commits"
+    elif last_event_dt is None:
+        receipt["status"] = "no_events"
+    else:
+        drift = (commit_dt - last_event_dt).total_seconds()
+        receipt["drift_seconds"] = round(drift)
+        receipt["status"] = "ok" if drift <= LOOP_STALE_THRESHOLD_S else "stale"
+    return receipt
+
+
 def build_charter_report(
     *,
     repo: Path | None = None,
@@ -110,6 +170,7 @@ def build_charter_report(
     runtime_clean = len(tracked_runtime) <= 1 and all(
         "LESSONS_LEARNED.md" in p for p in tracked_runtime
     )
+    loop_receipt = loop_integrity(all_events, repo_root)
 
     epoch_info = load_epoch()
     anchor_installed = epoch_info is not None
@@ -171,6 +232,7 @@ def build_charter_report(
             "tracked_memory_files": tracked_runtime,
             "clean": runtime_clean,
         },
+        "loop_integrity": loop_receipt,
         "anchor": {
             "installed": anchor_installed,
             "epoch": epoch_info.get("epoch") if epoch_info else None,
@@ -190,6 +252,8 @@ def format_charter_report(report: dict[str, Any]) -> str:
     env_v = report["env_vars"]
     git_c = report["git_cleanliness"]
     anc = report["anchor"]
+    loop = report.get("loop_integrity", {})
+    drift_s = loop.get("drift_seconds")
 
     promo = "READY" if report["ready_for_promotion"] else "BLOCKED (Shadow Mode Maintained)"
     lines = [
@@ -207,6 +271,11 @@ def format_charter_report(report: dict[str, Any]) -> str:
         (
             f"  Window Drift          : {drift['drift_runs']} unwindowed historical runs "
             f"({drift['cumulative_gated']} cum vs {drift['rolling_gated']} rolling)"
+        ),
+        (
+            f"  Loop Integrity        : status={loop.get('status')}, "
+            f"drift={drift_s if drift_s is not None else '-'}s "
+            f"(threshold {loop.get('threshold_seconds')}s)"
         ),
         (
             f"  Runtime / Worktree    : inside_repo={report['runtime']['inside_repo']} "
@@ -227,8 +296,10 @@ def format_charter_report(report: dict[str, Any]) -> str:
 
 
 __all__ = [
+    "LOOP_STALE_THRESHOLD_S",
     "build_charter_report",
     "count_unique_evolver_envs",
     "format_charter_report",
     "get_tracked_runtime_files",
+    "loop_integrity",
 ]

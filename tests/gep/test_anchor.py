@@ -76,6 +76,18 @@ class TestTriggerDetection:
             "src/evolver/ops/meta_report.py"
         ]
 
+    def test_charter_meter_is_guarded(self) -> None:
+        # Round-37 (DEBUG #44 + RSI §6.6): the loop-integrity receipt detects
+        # loop bypass — a mutation quietly disabling it must run the frozen
+        # contracts. Advisory-only, so no probe semantics changed (no epoch
+        # bump); the trigger surface alone is the guard.
+        from evolver.config import ANCHOR_TRIGGER_SURFACES
+
+        assert "src/evolver/ops/charter_check.py" in ANCHOR_TRIGGER_SURFACES
+        assert anchor_mod.touches_verifier_surface(["src/evolver/ops/charter_check.py"]) == [
+            "src/evolver/ops/charter_check.py"
+        ]
+
     def test_lifecycle_selection_surfaces_are_guarded(self) -> None:
         # Round-33 (RSI P1-5): live or die by selection — the lifecycle
         # evaluator and the selector that enforces it are frozen machinery.
