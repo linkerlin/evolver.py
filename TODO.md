@@ -2,63 +2,82 @@
 
 > 当前阶段章程：[`演进方案.md`](演进方案.md)（蜂群闭环稳定化，v1.112）。
 > 长期差距 / Sprint 26–30 回执：[`演进方案_wikiskill对照版.md`](演进方案_wikiskill对照版.md)。
+> RSI 分级路线：[`RSI演进对照.md`](RSI演进对照.md)（§五 实况审计、§六 effective-L5 实验）。
 > Node 对标基线仍是 v1.94.0；Python 线版本见 `pyproject.toml`。
 
-## 当前状态（2026-09-19，round-34 交付）
+## 当前状态（2026-09-19，round-37 交付后系统性审阅）
 
-- 包版本目标：**1.112.0**（稳定化封版中；上一发布 1.111.0）
-- 测试：**3673 passed**（全套件 not llm，0 warnings）；ruff / mypy strict 0 错误
-- 运行态：Dogfood 32 轮实测完成（round-1 ~ round-32）
-- 验收门：`gated_cumulative=28`，滚动窗 `gated_runs=20`，`verdict=false_kill_high`，`verified_true_positives=0`，`shadow_mode=on`（数据不支持转正，保持 shadow 门控）
-- 锚定评测：**Epoch 10**（15 冻结探针，涵盖判据可达性、门校准、遥测不变量、HITL fail-closed、数据入口守卫、基因生命周期、证据包诚实性等）
-- 机制遥测：`ops/meta_report.py` Table-8 六维面板 + `library` 检索质量面板在线
+- 包版本：**1.112.0**（soak 封版中；「一阶段一 minor」，阶段切换留人类仪式）
+- Dogfood：**37 轮**（round-30~34 曾五轮环旁路，round-35 对账揭出并回正；
+  round-35~37 三轮连续环内干净运行）
+- 测试：全套件 not-slow 级联全绿（T0 分母 **3653**，基线 0.999726 双重复一致）；
+  ruff / mypy strict（327 文件）0 错误
+- 验收门：`gated_cumulative=31`，滚动窗 20，`verdict=false_kill_high`
+  （窗内 2 历史伪杀待滑出：预计 cumulative ≈40/42），
+  `verified_true_positives=0`（**属实非欠账**：账本中尚无真实 T0 回归被门
+  shadow 拒绝过，无可登记项），shadow_mode=on
+- 锚定评测：**Epoch 10 × 15 探针**，9 次生产运行全绿（round-37 变异自身
+  被实弹审判 15/15）
+- 环完整性：`charter-check` loop_integrity = **ok**（round-37 新仪器；
+  仓内视图 stale 112965s 与 soak 视图 ok 双视图各自如实）
+- 运行态：外置 `~/.evomap/evolver.py-soak`（CLI/MCP/runner 自动路由）；
+  仓内 git 运行态卫生 met=True；env 脚印 78/80
 
-## P0 — 蜂群稳定化闭环（已全部落地）
+## 核对结论（本轮审阅发现，2026-09-19）
 
-| # | 项 | 状态 | 说明 |
+计划文档内部自洽（演进方案 §11.5–11.9 回填至 round-34；RSI §6.6 至
+round-36；TODO P0/P1 全清）。以下为实况漂移与悬置项：
+
+1. **CHANGELOG 按 round 记账中断**：round-30~34 有条目，**round-35~37 缺**
+   （round-35 的三缺陷修复、round-36 复跑 #2、round-37 环完整性回执均未入账）。
+2. **g1 谱系污染未清余波**：round-35 事件 `evt_…ea7446c7`（gene_id=g1
+   劫持）仍在 soak 账本，**已两次传染下游**——round-36/37 tick 的 Recall
+   Hints 出现 `g1 (gene)` 假成功经验，喂给选择器的是假记忆。
+3. **守护进程古老代码仍在循环**：pid 35664（`evolver --loop`，2026-09-07
+   启动=round-7 时代代码）已连续运行 12 天，未吸收此后 30 轮全部互锁。
+4. **MCP server 孤儿进程 ×3**（10:51 / 14:19 / 14:19），其一早于 round-37
+   代码；stdio 管道归属须 `ps` 核对。
+5. **两个悬置人为决策**（引擎只能提示，无法代办）：
+   - soak 转正三条件中 `verified_true_positives ≥1` 需**未来首个真实 T0
+     回归被门拒绝时人工登记** `~/.evomap/anchor/gate-verifications.jsonl`；
+   - v1.112 稳定化阶段的**收尾仪式**（§11.3 判词「阶段从未宣布结束」至今
+     成立）：soak 判定落定后由人宣布阶段切换与下一 minor。
+
+## P0 — 度量闭环与账本卫生（本轮起，均为小-中成本单轮变异）
+
+| # | 项 | 内容与验收 | 依赖/风险 |
 |---|---|---|---|
-| 1 | 演进方案 + 本清单 | 完成 | 审阅结论落盘（演进方案.md §11） |
-| 2 | 运行态出仓 | 完成 | gitignore `memory/` 运行文件 + `evolver/.config/`；保留 `LESSONS_LEARNED.md`；运行态零提交 |
-| 3 | HITL 真门 | 完成 | mode 解析未知 fail-closed、损坏拒绝、skip 需 pending run、AUTO_HIJACK 强制 on |
-| 4 | HOTL 包整引擎 | 完成 | pause/veto 进 `_run_single_cycle`；dispatch 前否决；solidify 拦截；实例锁；损坏视为暂停 |
-| 5 | MCP 无人值守切断 | 完成 | AUTO_HIJACK 下拒绝 host 转达 approve/resume/unveto；destructive hint |
-| 6 | 反馈机械 repair | 完成 | `swarm_feedback:degraded` / adaptive `repair_bias` → `force_category=repair` |
-| 7 | 基因谱系 | 完成 | `landed_gene_id` 入事件/提交/冷却双罚 |
-| 8 | 工作流门可审计 | 完成 | stdout+cwd+timeout；嵌套 park；模板写真话 |
-| 9 | 杂项契约 | 完成 | skill `os.pathsep`；CLI distill hint；veto `--note`；过泛 veto 拒绝 |
-| 10 | 发布卫生 | 完成 | 1.112.0；单一 Unreleased；`check_changelog.py` 严格校验 |
-| 11 | 回归与补测 | 完成 | 全量 3583 passed；ruff / mypy strict 全绿 |
-| 12 | RSI P0-1 锚定评测 | 完成 | `gep/anchor.py` + 仓外冻结探针（Epoch 6 × 11 探针），闭合自偏好漏洞 |
-| 13 | RSI P0-2 机制遥测 | 完成 | `ops/meta_report.py` Table-8 六维面板 + 后代质量 + structural-L5 审计 |
-| 14 | 退出判据重写 (round-30) | 完成 | 增 `gated_cumulative` + 仓外 `gate-verifications.jsonl`，解除安静期转正死锁 |
+| 1 | **library 忠实使用率 + 每次验证成本口径** | `meta_report.py`：(a) 忠实使用率——落地基因在后续事件 `evidence_pack`/`recall` 中被检索且其 strategy 语义被执行器遵循的比例（P1-4 已留同源 `ctx["evidence_pack"]` 数据，检索到≠被遵循，需定义遵循信号：执行 diff 与基因 strategy 步的对应或事件 self-report）；(b) 成本口径——`validation_ms_per_validated_gain` 已有，补「每次固化的墙钟-费用换算表」（cascade+门+锚三段计时已在事件里，纯聚合）。验收：两指标入 `meta-report` 面板 + 单测 + 米尺面已入锚（探针不动即不升 epoch） | 无阻塞；**是 P2-3（P1-3 种群）的硬前置**（TODO P2 表注明的资源账口径即此） |
+| 2 | **g1 事件 recall 隔离** | 谱系卫生：recall/evidence_pack 读事件时跳过已知失真事件（`gene_id` 不在当前基因库且为已知夹具名单，或事件带 `lineage_corrupt` 标注）。**不改账本本身**（append-only），只修消费端。验收：tick Recall Hints 不再出现 g1；evidence pack 记分板同口径；负向单测 | 需同步审视 selector 事件消费路径；避免造「事件白名单」机制过重——最小实现即可 |
+| 3 | **CHANGELOG 补账 round-35~37** | 按 round-30~34 同格式补三条（#44 三缺陷 / 复跑 #2 / 环完整性回执），`check_changelog.py` 过。纯机械 | 无 |
 
-## P1 — 演进方案 §11.4 最新清单（收口与硬化）
+## P1 — soak 转正路径（被动积累 + 挂钟，无需专项变异）
 
-| # | 项 | 状态 | 说明 |
+| # | 项 | 内容与验收 |
+|---|---|---|
+| 1 | **环内继续攒干净样本** | 每轮 dogfood 自然累积 gated 事件；cumulative 31 → **≈42**（两伪杀滑出滚动窗）后 verdict 自动重算。纪律不变：`EVAL_WORKTREE=1`、真实 friction 驱动、feedback 反映级联真分 |
+| 2 | **人工登记首个 verified true positive**（人类动作） | 当首个**真实 T0 回归**被门 shadow 拒绝（cascade 绿、门拒绝、人复核确认回归为真）：`evolver anchor` 旁 `gate-verifications.jsonl` 登记 `event_id -> verdict`。此后 `verified_true_positives ≥1` 条件满足 |
+| 3 | **effective-L5 复跑 #3** | 挂钟 ~round-46（§6.4 协议：每 ~10 轮）；届时跨纪元证据有望 3/3——若达，§2.2 L5 表述升级提案（文档变更走人审） |
+| 4 | **verdict 落定后的转正决策**（人类动作） | 三条件齐后：人决定 `EVOLVER_ACCEPTANCE_SHADOW=0` 与否；同时宣布 v1.112 阶段收尾（§11.3 的「阶段切换仪式」）与下一 minor |
+
+## P2 — RSI P1-3 候选种群（L2 跃迁最后一项，P0-1 完成后启动）
+
+| # | 项 | 内容与验收 | 前置 |
 |---|---|---|---|
-| 1 | **T0 双侧重复** (P0-2) | 完成 | `orchestrator.py` 支持基线多重复与仲裁，触 T0 守卫面已升锚 **Epoch 7**（12/12 PASS） |
-| 2 | `charter-check` 机器化回执 | 完成 | `evolver charter-check [--json]` 落地，全自动断言验收门/漂移/运行态卫生/锚纪元 |
-| 3 | Worktree 默认开 | 完成 | `enable_eval_worktree` 转默认 ON；回退路径加固（脏运行态检测、明确 stderr 告警、strict 模式） |
-| 4 | 仓外运行态强制互锁 | 完成 | 检测到 `inside_repo=true` 且非测试时自动路由至 `$EVOLVER_HOME/evolver.py-soak`；幂等资产种子迁移 + `charter-check --soak` 支持 |
-| 5 | 数据入口清单 (P2) | 完成 | 半信任入口盘点；自由文本按占位符身份裸用即拒；文件通道规范；`enable_llm_template` 注册锚互锁；升锚 **Epoch 8**（13/13 PASS） |
-| 6 | S29 机械提案通道 | 完成 | 结构化 Proposal 替代自由编辑 + distill：`swarm_propose` MCP 工具 + `solidify(proposal=...)` + CLI `--proposal` |
-| 7 | S30.4/30.5 env/flag 退役 | 完成 | `EVOLVER_*` 变量从 180 收敛至 77（<= 80，`charter-check --soak` met=True） |
+| 1 | **K=2 worktree 并行候选** | 同一 run 产出 2 个候选（不同基因/策略），各自在隔离 worktree 过同一验证门，择优固化；谱系记 `sibling_of`。验收：并行跑通 + 择优入账 + 成本换算表显示每增益净成本未劣化（P0-1 的口径）+ 锚 epoch 11 冻结择优语义 | **P0-1 成本口径**（否则翻倍成本不可见）；预算守卫设计（每轮 wall-clock 上限）；S26.5 桥已默认开 |
 
-## P2 — RSI P1 波次（L2 跃迁主体，round-33 起）
+## Ops — 环境卫生（用户决定/顺手）
 
-> 次序依据 `RSI演进对照.md` §5.5：门校准 / effective-L5 对照 / 遥测 / 锚纪元
-> 均已就地，此后按 P1-5 → P1-4 → P1-3 推进（先收束库质量，再交证据，
-> 最后才开种群成本）。
+| # | 项 | 说明 |
+|---|---|---|
+| 1 | 守护进程处置 | pid 35664（round-7 代码）建议 `evolver stop` 后按需 `evolver start`（新代码含 soak 自动路由）。**用户启动的进程，留用户决定** |
+| 2 | MCP 孤儿进程清理 + 重连 | 3 个 mcp_server 进程，杀多余；改引擎源码后重连纪律不变（本轮起含 charter_check 面） |
+| 3 | Mimosa 周期复扫 | 上次深扫 2026-09-17（25 findings 已 triage 于 `docs/mimosa-triage.md`）；锚 epoch/代码大变后建议复扫一次 |
 
-| # | 项 | 状态 | 说明 |
-|---|---|---|---|
-| 1 | 基因全生命周期治理 (P1-5) | 完成 | `gep/gene_lifecycle.py`：零后效→under_review→retired；选择器禁选/降权；`applicability` 硬门；CLI 人工复活；meta-report `library` 面板；**升锚 Epoch 9**（14/14 PASS） |
-| 2 | 证据包派发 (P1-4) | 完成 | `gep/evidence_pack.py`：失败侧证据包（结局/拒绝原因/重复指纹/记分板）入 GEP 提示词；instrument「干预提议」接 `swarm_propose`；**升锚 Epoch 10**（15/15 PASS） |
-| 3 | 候选种群与谱系档案 (P1-3) | 未动 | K=2 worktree 并行（S26.5 桥已默认开）；成本翻倍需先补资源账口径 |
+## 明确不做（本阶段）
 
-## 明确不做
-
-- 再按收割切片 bump minor
+- 再按收割切片 bump minor（阶段切换仪式前版本钉 1.112.0）
 - `chore: runtime state sync` / 产品仓直推运行态
-- `EVOLVER_ACCEPTANCE_SHADOW=0`（当前 verdict=false_kill_high，未满足安全转正标准前严禁转正）
-- 本阶段 PyPI / 新 EvoX 切片
+- `EVOLVER_ACCEPTANCE_SHADOW=0`（三条件未齐，严禁转正）
+- 本阶段 PyPI / 新 EvoX 切片 / RSI P2（多节点种群共享、soak 报告 v2、
+  validator 安全模型深化、S30.3 发布决策——阶段后储备）
