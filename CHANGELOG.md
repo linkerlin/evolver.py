@@ -8,6 +8,38 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added — round-38：RSI P1-3 前置双口径（library 忠实使用率 + 每次验证成本）
+- **`ops/meta_report.py`**：`panel.cost`——计时种群上的中位/均值验证成本、
+  拒绝耗时占比、**K=2 投影**（每周期多一个候选的边际成本=中位全量验证价，
+  P1-3 种群决策的直接输入）；mean 附离群值诚实注记（pre-round-20 睡眠
+  污染不可改史）。
+- **`ops/meta_report.py`**：`panel.library.faithful_use`——落地基因检索率
+  （被后续周期再选中）与忠实使用率（再选中事件的编辑指纹新颖、非重复已试
+  编辑——evidence-pack「勿重复」契约的执行侧度量，RQGM 形状的探测器）。
+- CLI `meta-report` 增两行渲染；纯增量，锚探针（epoch 4/10）语义不动。
+
+### Fixed — round-35：环旁路对账揭出三缺陷同轮闭合（DEBUG #44）
+- **g1 夹具基因污染活库**：`tests/test_sync.py` 两处 `sync_all(dry_run=False)`
+  无隔离，120/115 条夹具基因累积进生产/soak 库——补 `temp_workspace` 隔离
+  + conftest 会话级基因库 tripwire + 双库清理。
+- **soak 自动路由 env 透传泄漏**：`maybe_route_to_soak` 就地改写 env 后
+  `validation_env()` 把引擎路由当操作者意图转发给级联/T0 子进程，worktree
+  套件路径解析破——`EVOLVER_SOAK_ROUTED` 哨兵剥离（引擎路由≠操作者意图，
+  显式设置照旧透传），锚实弹过。
+- **夹具状态劫持固化谱系**：路由子进程把 r1/g1/m1 夹具状态写进 soak 运行态，
+  固化消费夹具状态致事件谱系失真（append-only 不改史，DEBUG #44 记档）。
+
+### Added — round-36：effective-L5 复跑 #2（RSI §6.6，零新代码）
+- 四纪元表新增纪元 D（含五轮旁路零事件窗口——首个由账本沉默划出的边界）；
+  判据 (a) 精化为「环即验证者」；拒绝分型学成熟（B 起精确度 7/8）；
+  跨纪元稳定证据 2/3，判定维持「方向性阳性统计未证」。
+
+### Added — round-37：环完整性回执进 charter-check（DEBUG #44 遗留收口）
+- **`ops/charter_check.py`**：`loop_integrity`——引擎面提交（`%cI`）vs 最新
+  账本事件，drift>3600s 模块常量即 stale；三态不误报；纯观测面不动转正
+  合成。`charter_check.py` 入锚触发面（米尺教义），变异自身被锚 15/15
+  实弹审判。live 双视图自洽：仓内 stale 112965s / soak ok。
+
 ### Added — round-34：RSI P1-4 证据包派发（L2 策略选择权从启发式移交给证据）
 - **`gep/evidence_pack.py`（新）**：按信号族（head 归一，与 meta-report 同口径）聚合
   事件谱系，组装**失败侧证据包**——既往干预及其结局（success/failed）、拒绝

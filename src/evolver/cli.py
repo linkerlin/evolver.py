@@ -1085,6 +1085,28 @@ def _cmd_meta_report(args: argparse.Namespace) -> int:
         zero_work = lib.get("zero_work_candidates") or []
         if zero_work:
             print(f"  zero-work candidates: {', '.join(zero_work[:8])}")
+        fu = lib.get("faithful_use") or {}
+        if fu:
+            fu_rate = fu.get("faithful_use_rate")
+            fu_s = f"{fu_rate:.0%}" if isinstance(fu_rate, float) else "n/a"
+            rr = fu.get("retrieval_rate")
+            rr_s = f"{rr:.0%}" if isinstance(rr, float) else "n/a"
+            print(
+                f"  faithful use: {fu.get('reused_genes', 0)} reused genes "
+                f"(retrieval {rr_s}) | {fu.get('novel_edits', 0)}/"
+                f"{fu.get('reuse_events', 0)} reuse events novel edits "
+                f"= {fu_s}"
+            )
+    cost = panel.get("cost") or {}
+    if cost:
+        med = cost.get("median_ms_per_event")
+        rej = cost.get("rejection_ms_share")
+        rej_s = f"{rej:.0%}" if isinstance(rej, float) else "n/a"
+        if med:
+            print(
+                f"cost: median {med} ms/event (mean {cost.get('mean_ms_per_event')}) | "
+                f"rejection share {rej_s} | K=2 projection +{med} ms/cycle"
+            )
     meta = panel["meta_recursion"]
     print(f"meta-recursion: {meta['structural_l5_mutations']} structural-L5 mutation(s)")
     for row in report["mechanism_audit"][-8:]:

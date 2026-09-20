@@ -241,6 +241,69 @@ def build_meta_report(
         if int(row["observations"]) >= LIFECYCLE_MIN_OBSERVATIONS and int(row["resolved"]) == 0
     )
 
+    # RSI P1-3 prerequisite (round-38): library faithful use. A landed gene is
+    # RETRIEVED when a later cycle selects it again (gene_id match); that
+    # reuse is FAITHFUL when the reuse event's edit digest is novel — not a
+    # repeat of an earlier attempt's digest (the evidence-pack "do NOT
+    # repeat" contract; repeated digests are the RQGM self-preference shape).
+    # Reuse events without editable text carry no digest and count as not
+    # verifiable (never as faithful).
+    from evolver.gep.evidence_pack import _attempt_digest
+
+    first_landing_index: dict[str, int] = {}
+    for i, e in enumerate(events):
+        for g in _landed_genes(e):
+            first_landing_index.setdefault(g, i)
+    seen_digests: set[str] = set()
+    reused_genes: set[str] = set()
+    reuse_events = 0
+    novel_edits = 0
+    for i, e in enumerate(events):
+        gid = str(e.get("gene_id") or "")
+        digest = _attempt_digest(e)
+        if gid in first_landing_index and i > first_landing_index[gid]:
+            reused_genes.add(gid)
+            reuse_events += 1
+            if digest and digest not in seen_digests:
+                novel_edits += 1
+        if digest:
+            seen_digests.add(digest)
+    faithful_use = {
+        "reused_genes": len(reused_genes),
+        "retrieval_rate": (round(len(reused_genes) / len(landing), 3) if landing else None),
+        "reuse_events": reuse_events,
+        "novel_edits": novel_edits,
+        "faithful_use_rate": round(novel_edits / reuse_events, 3) if reuse_events else None,
+    }
+
+    # RSI P1-3 prerequisite (round-38): cost accounting over the same timed
+    # population as efficiency — rejections price in (they burn the same
+    # cascade), and the K=2 projection is the marginal cost of ONE more
+    # candidate per cycle (one more full validation pass at median cost).
+    timed_ms = sorted(int(e["validation_timing"]["total_ms"]) for e in timed_events)
+    timed_failed_ms = sum(
+        int(e["validation_timing"]["total_ms"])
+        for e in timed_events
+        if (e.get("outcome") or {}).get("status") != "success"
+    )
+    total_ms = sum(timed_ms)
+    median_ms = timed_ms[len(timed_ms) // 2] if timed_ms else None
+    mean_ms = round(total_ms / len(timed_ms)) if timed_ms else None
+    cost_panel = {
+        "timed_events": len(timed_ms),
+        "median_ms_per_event": median_ms,
+        "mean_ms_per_event": mean_ms,
+        "total_engine_ms": total_ms if timed_ms else 0,
+        "rejection_ms_share": round(timed_failed_ms / total_ms, 3) if total_ms else None,
+        "k2_extra_ms_per_cycle": median_ms,
+        "note": (
+            "median is the honest central cost — the mean is inflated by "
+            "pre-round-20 sleep-polluted outliers the append-only ledger "
+            "cannot revise (DEBUG #31); K=2 projection prices one more "
+            "candidate per cycle at the median full-validation cost"
+        ),
+    }
+
     return {
         "panel": {
             "adaptivity": {
@@ -285,7 +348,9 @@ def build_meta_report(
                 "resolution_rate": (round(resolved_landings / evaluable, 3) if evaluable else None),
                 "zero_work_candidates": zero_work_candidates,
                 "lifecycle": status_counts,
+                "faithful_use": faithful_use,
             },
+            "cost": cost_panel,
         },
         "mechanism_audit": mechanism_rows,
         "descendant_quality": dq,
