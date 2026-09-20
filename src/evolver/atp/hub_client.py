@@ -31,12 +31,31 @@ def _tls_failure(exc: BaseException) -> dict[str, Any]:
     return {"ok": False, "error": str(exc), "stage": "tls", "code": "tls_refused"}
 
 
+def _endpoint_missing() -> dict[str, Any]:
+    """Round-46: fast-fail while the Hub endpoint is stickily 404-missing.
+
+    The ATP task pickup burned 1.3-1.6s per cycle against the dead endpoint
+    even after the pipeline hub phase got its sticky skip (round-45) — every
+    hub_client consumer now shares one health check. The sticky counter is
+    fed by the hub phase's fetch; pickup runs in the same cycle, so the
+    third 404 protects it immediately.
+    """
+    from evolver.gep.hub_health import endpoint_sticky
+
+    if endpoint_sticky():
+        return {"ok": False, "error": "hub_endpoint_missing", "tasks": []}
+    return {}
+
+
 async def _post(
     path: str,
     payload: dict[str, Any],
     headers: dict[str, str] | None = None,
     timeout_ms: int = HTTP_TRANSPORT_TIMEOUT_MS,
 ) -> dict[str, Any]:
+    sticky = _endpoint_missing()
+    if sticky:
+        return sticky
     try:
         url = _hub_url(path)
     except ValueError as exc:
@@ -68,6 +87,9 @@ async def _get(
     params: dict[str, Any] | None = None,
     timeout_ms: int = HTTP_TRANSPORT_TIMEOUT_MS,
 ) -> dict[str, Any]:
+    sticky = _endpoint_missing()
+    if sticky:
+        return sticky
     try:
         url = _hub_url(path)
     except ValueError as exc:
