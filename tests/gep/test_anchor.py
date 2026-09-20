@@ -88,6 +88,17 @@ class TestTriggerDetection:
             "src/evolver/ops/charter_check.py"
         ]
 
+    def test_population_surface_is_guarded(self) -> None:
+        # Round-41 (RSI P1-3): population adjudication decides which
+        # candidate reaches the frozen landing path — selection authority,
+        # frozen from epoch 11 by the population-adjudication probe.
+        from evolver.config import ANCHOR_TRIGGER_SURFACES
+
+        assert "src/evolver/gep/population.py" in ANCHOR_TRIGGER_SURFACES
+        assert anchor_mod.touches_verifier_surface(["src/evolver/gep/population.py"]) == [
+            "src/evolver/gep/population.py"
+        ]
+
     def test_lifecycle_selection_surfaces_are_guarded(self) -> None:
         # Round-33 (RSI P1-5): live or die by selection — the lifecycle
         # evaluator and the selector that enforces it are frozen machinery.
@@ -130,6 +141,13 @@ class TestRunner:
         _install_seed(anchor_ws)
         ids = {c["id"] for c in anchor_mod.list_anchor_cases()}
         assert "t0-bilateral-repeats" in ids
+
+    def test_seed_suite_includes_population_adjudication(self, anchor_ws: Path) -> None:
+        # Round-41 (RSI P1-3): population selection authority frozen from
+        # epoch 11 — accepted-beats-rejected, total tiebreak, visible skip.
+        _install_seed(anchor_ws)
+        ids = {c["id"] for c in anchor_mod.list_anchor_cases()}
+        assert "population-adjudication" in ids
 
     def test_seed_suite_includes_data_ingress_guard(self, anchor_ws: Path) -> None:
         # P2: data ingress defenses frozen out-of-tree (演进方案.md §11.4 #5).

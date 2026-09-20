@@ -1,0 +1,7 @@
+{
+  "id": "population-adjudication",
+  "title": "population adjudication invariants: accepted-beats-rejected, deterministic tiebreak, visible budget skip",
+  "source": "RSI P1-3 second half + round-38 K=2 cost projection (round-41)",
+  "epoch_added": 11,
+  "kind": "python_contract"
+}

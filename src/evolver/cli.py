@@ -77,6 +77,14 @@ def _build_parser() -> argparse.ArgumentParser:
         "--proposal",
         help="Path to a GeneProposal JSON file to mechanically apply before validation",
     )
+    solidify_p.add_argument(
+        "--population",
+        nargs="+",
+        metavar="PROPOSAL",
+        help="RSI P1-3: evaluate N proposals in fresh worktrees under a budget "
+        "guard, land the winner through the frozen path, archive losers with "
+        "sibling lineage",
+    )
     apply_prop_p = sub.add_parser(
         "apply-proposal",
         help="S29: mechanically apply a gene proposal JSON (anchors validated, workspace-safe)",
@@ -800,6 +808,9 @@ def _cmd_solidify(args: argparse.Namespace) -> int:
     """Apply the pending solidify state (optionally with a GeneProposal)."""
     from evolver.gep.solidify import solidify
 
+    population_paths = getattr(args, "population", None)
+    if population_paths:
+        return _cmd_solidify_population(population_paths)
     proposal_arg = getattr(args, "proposal", None)
     try:
         result = solidify(proposal=proposal_arg)
@@ -814,6 +825,64 @@ def _cmd_solidify(args: argparse.Namespace) -> int:
         return 0
     print(
         f"Solidify failed: {result.get('error')} details={result.get('details')}", file=sys.stderr
+    )
+    return 1
+
+
+def _cmd_solidify_population(proposal_paths: list[str]) -> int:
+    """RSI P1-3: population search then frozen landing of the winner."""
+    import json as _json
+    from pathlib import Path as _Path
+
+    from evolver.config import FITNESS_CASCADE_COMMANDS
+    from evolver.gep.asset_store import append_candidate_jsonl
+    from evolver.gep.evidence_pack import _attempt_digest
+    from evolver.gep.paths import get_workspace_root
+    from evolver.gep.population import run_population
+    from evolver.gep.solidify import solidify
+    from evolver.gep.variant_archive import classify_rejection
+
+    paths = [_Path(p) for p in proposal_paths]
+    judgment = run_population(
+        paths, get_workspace_root(), cascade_commands=FITNESS_CASCADE_COMMANDS
+    )
+    print(_json.dumps(judgment, ensure_ascii=False, indent=2))
+    winner = judgment.get("winner")
+    if not winner:
+        print("population: no admissible candidate — nothing to land", file=sys.stderr)
+        return 1
+    result = solidify(proposal=winner)
+    sibling_run = result.get("run_id") or result.get("event_id") or ""
+    for cand in judgment["candidates"]:
+        if cand["proposal_path"] == winner:
+            continue
+        vr = (cand.get("detail") or {}).get("validation") or {}
+        cls = classify_rejection(vr) if cand["status"] == "rejected" else None
+        fp = _attempt_digest({"diff_snapshot": cand["proposal_path"]})
+        append_candidate_jsonl(
+            {
+                "type": "VariantArchiveEntry",
+                "variant_id": f"var_{fp or cand['index']}",
+                "run_id": sibling_run,
+                "gene_id": None,
+                "signal_heads": [],
+                "rejection_class": cls,
+                "fingerprint": fp,
+                "rejection_reason": f"population_{cand['status']}",
+                "recorded_at": None,
+                "sibling_of": sibling_run,
+                "population_status": cand["status"],
+            }
+        )
+    if result.get("ok"):
+        print(
+            f"population winner landed: event_id={result.get('event_id')} "
+            f"blast_radius={result.get('blast_radius')}"
+        )
+        return 0
+    print(
+        f"population winner rejected by frozen path: {result.get('error')}",
+        file=sys.stderr,
     )
     return 1
 

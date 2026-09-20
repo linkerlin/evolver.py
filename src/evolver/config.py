@@ -366,6 +366,10 @@ ANCHOR_TRIGGER_SURFACES: Final[tuple[str, ...]] = (
     # must be frozen). Advisory-only: no probe semantics changed, no epoch
     # bump — the receipt holds no rejection authority.
     "src/evolver/ops/charter_check.py",
+    # RSI P1-3 (round-41): population adjudication decides WHICH candidate
+    # reaches the frozen landing path — selection authority between
+    # candidates, frozen from epoch 11 by the population-adjudication probe.
+    "src/evolver/gep/population.py",
 )
 ANCHOR_PROBE_TIMEOUT_S: Final = 120.0
 
