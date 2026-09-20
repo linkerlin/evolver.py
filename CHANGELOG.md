@@ -8,6 +8,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added — round-40：RSI P1-3 半场——变体档案（DGM 被拒保留 + 重派资格）
+- **`gep/variant_archive.py`（新）**：`classify_rejection`（环境性
+  timeout/OSError vs 语义性——挂在固化进程内，事件瘦身丢 stderr 前分类）；
+  `variant_entry` 携带 unified_diff replay 形状（S29 `swarm_propose` 通道
+  可直接消费）；`record_variant` 复活休眠的 `candidates.jsonl` API；
+  `re_dispatchable_variants` 纯谓词：环境性 ∧ 信号族头重叠 ∧ 指纹未被
+  后续成功超越（DGM「暂弱变体可成垫脚石」的机械边界；语义性拒绝入档
+  但不自动可派）。锚拒点同挂（try/except，档案故障不断拒绝流）。
+- **CLI `evolver variants [--json] [--signals]`**：列档 + 重派资格标记。
+- K=2 双 worktree 种群半场（触冻结验证语义）留下轮配锚 epoch 11。
+
 ### Fixed — round-39：g1 幽灵基因 recall 隔离（DEBUG #44 谱系失真最后余波）
 - **`gep/cognition.py` + `gep/recall_inject.py`**：recall 提示在库过滤——
   归一化携带 `gene_id`，`search_recalls` 可选 `known_gene_ids` 结构过滤
