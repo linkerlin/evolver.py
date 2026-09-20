@@ -555,6 +555,23 @@ def _apply_acceptance_gate(
     }
 
 
+def _maybe_record_variant(
+    event: dict[str, Any],
+    validation_result: dict[str, Any] | None,
+) -> None:
+    """RSI P1-3 (round-40): archive rejected-but-retained variants (DGM).
+
+    Classifies the rejection where the stage stderr still lives (the
+    persisted event slims it away) and appends to the variant archive.
+    Never raises — archive trouble must not break the rejection flow."""
+    try:
+        from evolver.gep.variant_archive import classify_rejection, record_variant
+
+        record_variant(event, classify_rejection(validation_result))
+    except Exception:
+        logger.warning("[VariantArchive] recording skipped", exc_info=True)
+
+
 def _append_failure_event(
     last_run: dict[str, Any],
     cwd: Path,
@@ -571,16 +588,16 @@ def _append_failure_event(
     v1.94.0 parity behavior."""
     if not is_enabled("enable_failure_events"):
         return
-    append_event_jsonl(
-        _failure_event(
-            last_run,
-            last_run.get("mutation", {}),
-            blast_radius,
-            {"status": "failed", "score": score, "error": error},
-            validation_result=validation_result,
-            eval_meta=eval_meta,
-        )
+    event = _failure_event(
+        last_run,
+        last_run.get("mutation", {}),
+        blast_radius,
+        {"status": "failed", "score": score, "error": error},
+        validation_result=validation_result,
+        eval_meta=eval_meta,
     )
+    append_event_jsonl(event)
+    _maybe_record_variant(event, validation_result)
 
 
 def _is_runtime_state(rel: str) -> bool:
@@ -1088,16 +1105,16 @@ def solidify(
                 failed_blast = _compute_blast_radius()
                 rollback_tracked(cwd=cwd, include_untracked=False)
                 rollback_new_untracked_files(_disposable_untracked(cwd), cwd=cwd)
-                append_event_jsonl(
-                    _failure_event(
-                        last_run,
-                        mutation,
-                        failed_blast,
-                        {"status": "failed", "score": 0.0, "error": "anchor_failed"},
-                        validation_result=validation_result,
-                        eval_meta=eval_meta,
-                    )
+                anchor_event = _failure_event(
+                    last_run,
+                    mutation,
+                    failed_blast,
+                    {"status": "failed", "score": 0.0, "error": "anchor_failed"},
+                    validation_result=validation_result,
+                    eval_meta=eval_meta,
                 )
+                append_event_jsonl(anchor_event)
+                _maybe_record_variant(anchor_event, validation_result)
                 record_solidify_failure(last_run, error="anchor_failed", score=0.0)
                 return {
                     "ok": False,

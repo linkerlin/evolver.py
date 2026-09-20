@@ -98,6 +98,17 @@ def _build_parser() -> argparse.ArgumentParser:
     )
     gate_p.add_argument("--json", action="store_true", help="Output raw JSON")
     gate_p.add_argument("--limit", type=int, default=5000, help="Max events to scan")
+    variants_p = sub.add_parser(
+        "variants",
+        help="Variant archive: rejected-but-retained candidates (RSI P1-3, DGM)",
+    )
+    variants_p.add_argument("--json", action="store_true", help="Output raw JSON")
+    variants_p.add_argument(
+        "--signals",
+        default=None,
+        help="Signal family to test re-dispatch eligibility against "
+        "(comma-separated; default: last dispatch's signals)",
+    )
     charter_p = sub.add_parser(
         "charter-check",
         help="Machine receipt: verify charter compliance + drift (演进方案.md §11.4 P1)",
@@ -599,6 +610,8 @@ def main(argv: Sequence[str] | None = None) -> int:
 
     if command == "gate-report":
         return _cmd_gate_report(args)
+    if command == "variants":
+        return _cmd_variants(args)
     if command == "charter-check":
         return _cmd_charter_check(args)
     if command == "anchor":
@@ -1241,6 +1254,58 @@ def _cmd_gate_report(args: argparse.Namespace) -> int:
     for reason in recommendation["reasons"]:
         print(f"    - {reason}")
     print(f"  enforce               : {recommendation['enforce_hint']}")
+    return 0
+
+
+def _cmd_variants(args: argparse.Namespace) -> int:
+    """Variant archive listing (RSI P1-3: rejected-but-retained, DGM)."""
+    import json as _json
+
+    from evolver.gep.asset_store import read_all_events
+    from evolver.gep.variant_archive import (
+        load_variants,
+        re_dispatchable_variants,
+    )
+
+    entries = load_variants()
+    events = read_all_events()
+    if args.signals:
+        signals = [s.strip() for s in args.signals.split(",") if s.strip()]
+    else:
+        signals = []
+        for ev in reversed(events):
+            if ev.get("signals"):
+                signals = list(ev["signals"])
+                break
+    eligible = {e["variant_id"] for e in re_dispatchable_variants(entries, signals, events)}
+    if args.json:
+        print(
+            _json.dumps(
+                {
+                    "family": signals[:8],
+                    "total": len(entries),
+                    "re_dispatchable": len(eligible),
+                    "variants": entries,
+                },
+                ensure_ascii=False,
+                indent=2,
+            )
+        )
+        return 0
+    print(
+        f"variant archive: {len(entries)} entr{'y' if len(entries) == 1 else 'ies'} "
+        f"| {len(eligible)} re-dispatchable under family {signals[:5]}"
+    )
+    for e in entries[-20:]:
+        mark = "*" if e.get("variant_id") in eligible else " "
+        replay = "replay" in e
+        cls = f"{e.get('rejection_class')!s:>13}"
+        gene = f"{e.get('gene_id')!s:<34.34}"
+        print(
+            f" {mark} {e.get('variant_id')!s:<16.16} cls={cls} "
+            f"gene={gene} diff={replay} "
+            f"@ {e.get('recorded_at')!s:.19}"
+        )
     return 0
 
 
