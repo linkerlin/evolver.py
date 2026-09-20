@@ -8,6 +8,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added — round-43：effective-L5 复跑 #3（RSI §6.7，机制密度触发条款）
+- 五纪元表新增纪元 E（rounds 36-42，7/7 成功零拒绝）；核心判定
+  **「捕获罐全空」**：六项新机制（rounds 37-42）全部自验证通过但零
+  真实捕获——机制落地≠有效证据，判据 (a) 不新增，跨纪元证据维持
+  2/3 不升 §2.2。(c) 历史最强：锚累计 13/13、T0 跨 7 事件持平、
+  「冻结后自审」闭环再添两例。捕获罐悖论与破局路径记档；复跑 #4
+  ~round-52 或捕获入账时。
+
 ### Added — round-42：周期相位计时遥测（tick 侧观测补齐）
 - **`evolve/runner.py`**：九相位（collect→post_cycle）`_timed_phase` 包装
   （monotonic；**失败路径也记录**——最贵的相位常是失败的相位）；
