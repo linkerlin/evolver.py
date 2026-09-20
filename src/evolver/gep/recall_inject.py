@@ -106,10 +106,17 @@ def search_recalls(
     events: list[dict[str, Any]] | None = None,
     top_k: int = DEFAULT_TOP_K,
     min_similarity: float = MIN_SIMILARITY,
+    known_gene_ids: set[str] | None = None,
 ) -> list[RecallMatch]:
     """Search memory for successful attempts similar to *current_signals*.
 
     Returns a list of :class:`RecallMatch` sorted by similarity desc.
+
+    *known_gene_ids* (round-39, DEBUG #44 tail): when supplied, attempts
+    carrying a ``gene_id`` that is not in the set are skipped — recall hints
+    are reusable experience, and a gene absent from the library cannot be
+    reused (fixture-ghost genes from lineage-corrupt events included).
+    Attempts without a ``gene_id`` (legacy records) pass through.
     """
     if not is_enabled("enable_recall_inject"):
         return []
@@ -122,6 +129,9 @@ def search_recalls(
 
     matches: list[RecallMatch] = []
     for ev in candidates:
+        gene_id = str(ev.get("gene_id") or "")
+        if known_gene_ids is not None and gene_id and gene_id not in known_gene_ids:
+            continue
         sim = _score_match(ev, current_keywords)
         if sim < min_similarity:
             continue

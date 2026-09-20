@@ -57,6 +57,7 @@ def as_recall_attempt(ev: dict[str, Any]) -> dict[str, Any] | None:
             "timestamp": _parse_event_timestamp(ev),
             "outcome": "success",
             "signals_snapshot": signals,
+            "gene_id": str(gene.get("id") or ""),
             "mutation_summary": (
                 f"{gene.get('id', 'unknown')} ({gene.get('category', 'gene')})".strip()
             ),
@@ -115,13 +116,19 @@ def build_recall_section(signals: list[str]) -> str:
     if not is_enabled("enable_recall_inject"):
         return ""
     try:
+        from evolver.gep.asset_store import load_genes
         from evolver.gep.memory_graph import try_read_memory_graph_events
         from evolver.gep.recall_inject import format_recall_prompt, search_recalls
         from evolver.gep.recall_verifier import filter_valid_recalls
 
         events = try_read_memory_graph_events()
         recall_events = flatten_recall_events(events)
-        matches = search_recalls(signals, events=recall_events)
+        # Round-39 (DEBUG #44 tail): recall hints are reusable experience; an
+        # attempt whose gene is not in the current library cannot be reused —
+        # and a fixture-hijacked event's ghost gene ("g1") must never surface
+        # as fake success experience. Structural filter, not a denylist.
+        known_gene_ids = {str(g.get("id")) for g in load_genes()}
+        matches = search_recalls(signals, events=recall_events, known_gene_ids=known_gene_ids)
         verified = filter_valid_recalls(matches, events=recall_events)
         return format_recall_prompt(verified)
     except Exception as exc:

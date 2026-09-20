@@ -111,6 +111,58 @@ class TestSearchRecalls:
         assert len(matches) == 3
 
 
+class TestKnownGeneFilter:
+    """Round-39 (DEBUG #44 tail): ghost genes never surface as recall hints."""
+
+    @staticmethod
+    def _outcome(event_id: str, gene_id: str) -> dict[str, object]:
+        return {
+            "type": "MemoryGraphEvent",
+            "kind": "outcome",
+            "id": event_id,
+            "ts": "2026-06-01T00:00:00.000Z",
+            "signal": {"signals": ["refactor", "auth"]},
+            "gene": {"id": gene_id, "category": "repair"},
+            "outcome": {"status": "success"},
+        }
+
+    def test_ghost_gene_filtered_when_known_ids_supplied(self) -> None:
+        events = [self._outcome("e-ghost", "g1"), self._outcome("e-real", "gene_real")]
+        matches = search_recalls(
+            ["refactor", "auth"],
+            events=events,
+            top_k=5,
+            known_gene_ids={"gene_real"},
+        )
+        assert [m.event_id for m in matches] == ["e-real"], (
+            "a gene absent from the library cannot be reused — its attempts "
+            "must not become recall hints"
+        )
+
+    def test_no_filter_without_known_ids(self) -> None:
+        events = [self._outcome("e-ghost", "g1")]
+        matches = search_recalls(["refactor", "auth"], events=events, top_k=5)
+        assert [m.event_id for m in matches] == ["e-ghost"]
+
+    def test_legacy_attempt_without_gene_id_passes(self) -> None:
+        events = [
+            {
+                "type": "attempt",
+                "event_id": "e-legacy",
+                "timestamp": 1000000,
+                "outcome": "success",
+                "signals_snapshot": ["refactor auth"],
+                "mutation_summary": "legacy record",
+            }
+        ]
+        matches = search_recalls(
+            ["refactor", "auth"], events=events, top_k=5, known_gene_ids={"gene_real"}
+        )
+        assert [m.event_id for m in matches] == ["e-legacy"], (
+            "records without a gene id carry no ghost risk and stay searchable"
+        )
+
+
 class TestFormatRecallPrompt:
     def test_empty(self):
         assert format_recall_prompt([]) == ""

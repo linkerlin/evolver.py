@@ -57,13 +57,33 @@ class TestBuildRecallSection:
         # Use a fresh timestamp so the recall never trips the 30-day
         # staleness threshold in recall_verifier.
         recent_ts = datetime.now(UTC).isoformat().replace("+00:00", "Z")
+        # Round-39: recall only surfaces genes present in the library — seed
+        # the (temp) GEP store with the gene this outcome references. The
+        # asset_id must be the REAL content hash (load_genes silently skips
+        # hash-mismatched entries).
+        from evolver.gep.content_hash import compute_asset_id
+
+        gene_record = {
+            "type": "Gene",
+            "id": "gene_fixture",
+            "category": "optimize",
+            "signals_match": ["refactor"],
+            "strategy": [],
+            "validation": [],
+        }
+        gene_record["asset_id"] = compute_asset_id(gene_record)
+        monkeypatch.setenv("GEP_ASSETS_DIR", str(tmp_path / "gep"))
+        (tmp_path / "gep").mkdir()
+        (tmp_path / "gep" / "genes.jsonl").write_text(
+            json.dumps(gene_record) + "\n", encoding="utf-8"
+        )
         event = {
             "type": "MemoryGraphEvent",
             "kind": "outcome",
             "id": "o1",
             "ts": recent_ts,
             "signal": {"signals": ["refactor", "cleanup"]},
-            "gene": {"id": "g1", "category": "optimize"},
+            "gene": {"id": "gene_fixture", "category": "optimize"},
             "outcome": {"status": "success"},
         }
         graph.write_text(json.dumps(event) + "\n", encoding="utf-8")
@@ -71,7 +91,7 @@ class TestBuildRecallSection:
 
         section = build_recall_section(["refactor", "cleanup"])
         assert "Recall Hints" in section
-        assert "g1" in section
+        assert "gene_fixture" in section
 
 
 class TestAugmentSignals:
