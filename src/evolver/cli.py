@@ -117,6 +117,14 @@ def _build_parser() -> argparse.ArgumentParser:
         help="Signal family to test re-dispatch eligibility against "
         "(comma-separated; default: last dispatch's signals)",
     )
+    variants_p.add_argument(
+        "re_dispatch",
+        nargs="?",
+        default=None,
+        metavar="VARIANT_ID",
+        help="Re-dispatch: mechanically re-apply the variant's diff "
+        "(git apply --check first; then run `evolver solidify`)",
+    )
     charter_p = sub.add_parser(
         "charter-check",
         help="Machine receipt: verify charter compliance + drift (演进方案.md §11.4 P1)",
@@ -1327,17 +1335,50 @@ def _cmd_gate_report(args: argparse.Namespace) -> int:
 
 
 def _cmd_variants(args: argparse.Namespace) -> int:
-    """Variant archive listing (RSI P1-3: rejected-but-retained, DGM)."""
+    """Variant archive listing / re-dispatch (RSI P1-3: rejected-but-retained, DGM)."""
     import json as _json
 
     from evolver.gep.asset_store import read_all_events
+    from evolver.gep.paths import get_workspace_root
     from evolver.gep.variant_archive import (
+        apply_variant,
         load_variants,
         re_dispatchable_variants,
     )
 
     entries = load_variants()
     events = read_all_events()
+    if getattr(args, "re_dispatch", None):
+        target_id = args.re_dispatch
+        match = [e for e in entries if str(e.get("variant_id")) == target_id]
+        if not match:
+            print(f"variants: unknown variant_id {target_id}", file=sys.stderr)
+            return 1
+        # Advisory eligibility (family / superseded) — re-dispatch is an
+        # operator decision; mismatches warn, never block.
+        signals = []
+        for ev in reversed(events):
+            if ev.get("signals"):
+                signals = list(ev["signals"])
+                break
+        eligible = {e["variant_id"] for e in re_dispatchable_variants(entries, signals, events)}
+        if match[0].get("variant_id") not in eligible:
+            print(
+                "variants: NOTE — entry is not currently re-dispatchable "
+                "(semantic rejection, family mismatch, or superseded); "
+                "applying anyway per explicit operator request",
+                file=sys.stderr,
+            )
+        result = apply_variant(match[0], get_workspace_root())
+        if result.get("ok"):
+            print(
+                f"variants: re-dispatched {target_id} "
+                f"({result.get('applied_diff_chars')} diff chars applied) — "
+                "run `uv run evolver solidify` to land it through the frozen path"
+            )
+            return 0
+        print(f"variants: re-dispatch failed: {result.get('error')}", file=sys.stderr)
+        return 1
     if args.signals:
         signals = [s.strip() for s in args.signals.split(",") if s.strip()]
     else:

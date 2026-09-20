@@ -12,7 +12,10 @@ into a variant archive:
   semantic rejection, judged where the stage stderr still lives (the solidify
   process; the persisted event slims it away).
 * :func:`variant_entry` — archive entry shape carrying a replayable
-  ``unified_diff`` (directly consumable by the S29 proposal channel).
+  ``unified_diff`` (consumable by :func:`apply_variant` /
+  ``evolver variants re-dispatch``; the S29 proposal channel's edit ops are
+  append/replace/insert_after and take no diffs — round-44 correction of
+  the round-40 claim).
 * :func:`record_variant` — append to ``candidates.jsonl`` (revives the
   existing store API).
 * :func:`re_dispatchable_variants` — pure predicate: an entry is
@@ -191,8 +194,62 @@ def re_dispatchable_variants(
     return out
 
 
+def apply_variant(entry: dict[str, Any], cwd: Path) -> dict[str, Any]:
+    """Mechanically re-apply an archived variant's diff (round-44).
+
+    ``git apply --check`` first: a diff that no longer fits the tree (already
+    landed, tree diverged) fails CLEAN — no partial application, the working
+    tree is untouched. Success returns ``{"ok": True, ...}``; the caller then
+    runs the normal solidify path (gate + anchor judge the landing as usual).
+    """
+    import subprocess
+    import tempfile
+
+    replay = entry.get("replay") or {}
+    if replay.get("kind") != "unified_diff" or not replay.get("diff"):
+        return {"ok": False, "error": "variant carries no replayable diff"}
+    diff = str(replay["diff"])
+    with tempfile.NamedTemporaryFile("w", suffix=".diff", delete=False, encoding="utf-8") as fh:
+        fh.write(diff)
+        diff_path = fh.name
+    try:
+        check = subprocess.run(
+            ["git", "apply", "--check", diff_path],
+            cwd=cwd,
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        if check.returncode != 0:
+            return {
+                "ok": False,
+                "error": f"diff no longer applies: {(check.stderr or '')[:200]}",
+                "hint": "tree diverged or edit already landed — treat as stale",
+            }
+        applied = subprocess.run(
+            ["git", "apply", diff_path],
+            cwd=cwd,
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        if applied.returncode != 0:
+            return {
+                "ok": False,
+                "error": f"apply failed after check passed: {(applied.stderr or '')[:200]}",
+            }
+    finally:
+        Path(diff_path).unlink(missing_ok=True)
+    return {
+        "ok": True,
+        "variant_id": entry.get("variant_id"),
+        "applied_diff_chars": len(diff),
+    }
+
+
 __all__ = [
     "ENVIRONMENTAL_MARKERS",
+    "apply_variant",
     "classify_rejection",
     "load_variants",
     "re_dispatchable_variants",

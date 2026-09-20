@@ -126,3 +126,66 @@ class TestReDispatchable:
             "diff_snapshot": diff,
         }
         assert re_dispatchable_variants(entries, ["log_error"], [success]) == []
+
+
+class TestApplyVariant:
+    """Round-44: the mechanical re-dispatch leg (git apply)."""
+
+    @staticmethod
+    def _git(cwd: Path, *args: str) -> None:
+        import subprocess
+
+        subprocess.run(["git", *args], cwd=cwd, check=True, capture_output=True, text=True)
+
+    def _repo(self, tmp_path: Path) -> Path:
+        repo = tmp_path / "repo"
+        repo.mkdir()
+        self._git(repo, "init")
+        self._git(repo, "config", "user.email", "t@t.com")
+        self._git(repo, "config", "user.name", "T")
+        (repo / "f.txt").write_text("line A\nline B\n", encoding="utf-8")
+        self._git(repo, "add", "-A")
+        self._git(repo, "-c", "commit.gpgsign=false", "commit", "-m", "init")
+        return repo
+
+    @staticmethod
+    def _entry_with_diff() -> dict[str, Any]:
+        # Minimal unified diff against the fixed fixture above.
+        return {
+            "type": "VariantArchiveEntry",
+            "variant_id": "var_x",
+            "replay": {
+                "kind": "unified_diff",
+                "diff": ("--- a/f.txt\n+++ b/f.txt\n@@ -1,2 +1,2 @@\n line A\n-line B\n+line B2\n"),
+            },
+        }
+
+    def test_applies_clean_diff(self, tmp_path: Path) -> None:
+        from evolver.gep.variant_archive import apply_variant
+
+        repo = self._repo(tmp_path)
+        result = apply_variant(self._entry_with_diff(), repo)
+        assert result["ok"], result
+        assert "line B2" in (repo / "f.txt").read_text(encoding="utf-8")
+
+    def test_stale_diff_fails_clean(self, tmp_path: Path) -> None:
+        from evolver.gep.variant_archive import apply_variant
+
+        repo = self._repo(tmp_path)
+        entry = self._entry_with_diff()
+        assert apply_variant(entry, repo)["ok"]
+        before = (repo / "f.txt").read_text(encoding="utf-8")
+        second = apply_variant(entry, repo)
+        assert not second["ok"], "already-landed diff must not re-apply"
+        assert "no longer applies" in second["error"]
+        assert (repo / "f.txt").read_text(encoding="utf-8") == before, (
+            "failed apply must leave the tree untouched"
+        )
+
+    def test_entry_without_replay_rejected(self, tmp_path: Path) -> None:
+        from evolver.gep.variant_archive import apply_variant
+
+        repo = self._repo(tmp_path)
+        result = apply_variant({"variant_id": "var_y"}, repo)
+        assert not result["ok"]
+        assert "no replayable diff" in result["error"]
