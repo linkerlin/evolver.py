@@ -8,6 +8,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed — round-46：post_cycle 燃烧点收口——hub_health 共享层 + hub_client 预检
+- **归因链**：相位遥测三轮纵向 post_cycle 1.334→1.449→1.625s 增长 →
+  逐件计时（ATP buyer 0s——consent 禁用排除；`pick_one()` **1.77s**
+  坐实——`list_my_tasks` 对死端点 HTTP）。round-45 只护住 hub 相位是
+  **覆盖缺口**：hub_client 家族（任务拾取/下单/交付）各烧各的。
+- **`gep/hub_health.py`（新）**：粘性端点健康共享层——常量 + 状态
+  helpers + `endpoint_sticky()` 谓词（损坏态构造性 fail-open）；
+  `pipeline/hub.py` 迁入引用、行为零变化。
+- **`atp/hub_client.py`**：`_post`/`_get` 前置预检——sticky 即快速返回
+  `hub_endpoint_missing`，**不构造 HTTP 客户端**（测试以构造即 raise
+  断言零 HTTP）。计数仍由 hub 相位喂养；拾取同周期运行即受护。
+  post_cycle 预期 ~0.1s。
+
 ### Fixed — round-45：hub 404 粘性跳过（相位遥测驱动的第一笔偿还）
 - **发现升级**：dispatch 时相位再读 hub=**15.714s**（上轮 3.295s——方差
   3.3~15.7s），周期 17.1s 已过 30s MCP 预算一半。**round-40/41 tick
