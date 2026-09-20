@@ -8,6 +8,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added — round-42：周期相位计时遥测（tick 侧观测补齐）
+- **`evolve/runner.py`**：九相位（collect→post_cycle）`_timed_phase` 包装
+  （monotonic；**失败路径也记录**——最贵的相位常是失败的相位）；
+  `swarm_state.json` 增 `last_tick_phase_timings`/`last_tick_total_s`
+  （保留存量字段；损坏状态文件静默吞——观察丢失不致命）；engine_log
+  尾行打印相位耗时。**观测不执法**：无逻辑门建于计时之上。
+- 归因调查记档：round-40/41 两轮 MCP tick 30s 超时的三个引擎侧假设
+  全部实测否定（五相位合计 <0.15s / Hub fetch ~1s 快败 / 实例锁
+  非阻塞）——主嫌陈旧/孤儿 MCP server 进程（连接归用户处置）。
+- Ops：Mimosa 深扫复跑（2026-09-20），25 findings 与 2026-09-17 基线
+  **逐条全同**——rounds 35~42 新代码零新增发现，triage 文档持续有效。
+
 ### Added — round-41：RSI P1-3 后半场——K=2 候选种群（L2 跃迁主体收口，锚 Epoch 11）
 - **`gep/population.py`（新）**：种群搜索作为固化**前置段**——S29 提案在
   fresh worktree（HEAD、无 live 变异 overlay）机械应用 + 级联预选；
