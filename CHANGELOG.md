@@ -8,6 +8,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed — round-48：hub_health 状态测试密闭性防线（#37 家族，预防性）
+- **威胁**：零隔离 hub 测试跑到 404 路径会把粘性计数写进仓内运行态，
+  3 次后 `endpoint_sticky()` 翻真——其它无隔离测试经 hub_client 预检
+  fast-fail 而非走各自 mock（#44 soak 路由泄漏同构形状）。
+- **`tests/conftest.py`**：autouse `_isolate_hub_endpoint_state`——
+  monkeypatch `hub_health.state_path` 指向每测试 tmp，**无条件重定向**
+  （条件分支会与测试自身 monkeypatch.setenv 顺序竞争）；两个 hub 测试
+  文件的状态种子/断言 API 化。
+- **负向验证抓到真泄漏**：全绿后仓内状态文件出现（内容 `not-json`）——
+  by-name `import state_path` 绑定原函数对象绕过模块属性补丁；改模块
+  引用后零泄漏复验。**教训：monkeypatch 模块属性对 by-name 绑定无效，
+  被补丁函数必须经模块引用调用。**
+
 ### Changed — round-47：verdict 翻转边界预演 + unverified reason 可操作化
 - **预演**：合成「两伪杀滑出」账本过 `summarize_acceptance`——翻转机器
   路径= `unverified` 已验证（非猜测）；cumulative ~43 该判定将成为
