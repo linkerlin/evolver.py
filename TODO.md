@@ -43,13 +43,13 @@ round-36；TODO P0/P1 全清）。以下为实况漂移与悬置项：
    - v1.112 稳定化阶段的**收尾仪式**（§11.3 判词「阶段从未宣布结束」至今
      成立）：soak 判定落定后由人宣布阶段切换与下一 minor。
 
-## P0 — 度量闭环与账本卫生（本轮起，均为小-中成本单轮变异）
+## P0 — 度量闭环与账本卫生（2026-09-20 已全部完成）
 
-| # | 项 | 内容与验收 | 依赖/风险 |
+| # | 项 | 状态 | 落点 |
 |---|---|---|---|
-| 1 | **library 忠实使用率 + 每次验证成本口径** | `meta_report.py`：(a) 忠实使用率——落地基因在后续事件 `evidence_pack`/`recall` 中被检索且其 strategy 语义被执行器遵循的比例（P1-4 已留同源 `ctx["evidence_pack"]` 数据，检索到≠被遵循，需定义遵循信号：执行 diff 与基因 strategy 步的对应或事件 self-report）；(b) 成本口径——`validation_ms_per_validated_gain` 已有，补「每次固化的墙钟-费用换算表」（cascade+门+锚三段计时已在事件里，纯聚合）。验收：两指标入 `meta-report` 面板 + 单测 + 米尺面已入锚（探针不动即不升 epoch） | 无阻塞；**是 P2-3（P1-3 种群）的硬前置**（TODO P2 表注明的资源账口径即此） |
-| 2 | **g1 事件 recall 隔离** | 谱系卫生：recall/evidence_pack 读事件时跳过已知失真事件（`gene_id` 不在当前基因库且为已知夹具名单，或事件带 `lineage_corrupt` 标注）。**不改账本本身**（append-only），只修消费端。验收：tick Recall Hints 不再出现 g1；evidence pack 记分板同口径；负向单测 | 需同步审视 selector 事件消费路径；避免造「事件白名单」机制过重——最小实现即可 |
-| 3 | **CHANGELOG 补账 round-35~37** | 按 round-30~34 同格式补三条（#44 三缺陷 / 复跑 #2 / 环完整性回执），`check_changelog.py` 过。纯机械 | 无 |
+| 1 | library 忠实使用率 + 每次验证成本口径 | **完成（round-38）** | `panel.cost`（K=2 投影 +264s/cycle）+ `panel.library.faithful_use`（retrieval 24% / novel 100%）；纯增量过锚 15/15 |
+| 2 | g1 事件 recall 隔离 | **完成（round-39）** | 在库结构过滤（`known_gene_ids`）+ soak 图 1 行清创；live 证伪 Recall Hints 无 g1 |
+| 3 | CHANGELOG 补账 round-35~37 | **完成（round-38 随入库）** | `check_changelog` OK；此后按轮记账 |
 
 ## P1 — soak 转正路径（被动积累 + 挂钟，无需专项变异）
 
