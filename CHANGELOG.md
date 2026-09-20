@@ -8,6 +8,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed — round-44：变体档案重派机械腿（round-40 声明纠偏 + DGM 闭环全通）
+- **发现**：round-40 声称变体 replay「S29 通道可直接消费」——全仓 grep
+  证实 ProposalEdit 仅支持 append/replace/insert_after，**无任何 diff
+  语义**；重派腿实为断点。
+- **`gep/variant_archive.py`**：`apply_variant`——replay diff 经临时文件
+  `git apply --check` 预检后应用；陈旧 diff（树分叉/已落地）净失败、
+  工作树零改动；docstring 同轮纠偏。
+- **CLI `evolver variants re-dispatch <id>`**：资格核查 advisory（族
+  不匹配/被超越仅警告——重派是操作者决策）；应用后提示走冻结路径
+  solidify。DGM 闭环（被拒→入档→资格→重派→接受）自此机械全通。
+- 附带：**周期相位遥测首读**（round-42 仪器实证）——cycle 4.82s 中
+  hub=3.295s（68%，对 404 端点 fetch+重试）、post_cycle=1.449s、余
+  七相位各 <25ms；「30s 超时不在引擎侧」有常驻仪器背书。
+
 ### Added — round-43：effective-L5 复跑 #3（RSI §6.7，机制密度触发条款）
 - 五纪元表新增纪元 E（rounds 36-42，7/7 成功零拒绝）；核心判定
   **「捕获罐全空」**：六项新机制（rounds 37-42）全部自验证通过但零
