@@ -62,6 +62,50 @@ def test_status_flags_in_repo_layout(temp_workspace: Path, monkeypatch: pytest.M
     assert report["metrics"]["gated_runs"] >= 0
 
 
+def test_status_metrics_source_round49(
+    temp_workspace: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Round-49: armed + in-repo shell → metrics read the SOAK ledger.
+
+    The in-repo ledger froze when the interlock moved the runtime out-of-tree;
+    reporting its numbers as current misled operators for 20 rounds."""
+    import json as _json
+
+    from evolver.ops import soak_env as _mod
+
+    monkeypatch.setenv("EVOLVER_NO_PARENT_GIT", "1")
+    monkeypatch.setenv("EVOLVER_REPO_ROOT", str(temp_workspace))
+    monkeypatch.setenv("EVOLUTION_DIR", str(temp_workspace / "memory" / "evolution"))
+    monkeypatch.setattr(_mod, "is_test_environment", lambda: False)  # armed
+    # Seed the SOAK ledger with one gated event; the active (in-repo) ledger
+    # stays empty — metrics must come from the soak root.
+    soak_events = soak_root() / "gep" / "events.jsonl"
+    soak_events.parent.mkdir(parents=True, exist_ok=True)
+    soak_events.write_text(
+        _json.dumps(
+            {
+                "id": "evt_soak_1",
+                "timestamp": "2026-09-20T00:00:00Z",
+                "outcome": {"status": "success"},
+                "acceptance_result": {"accepted": True, "reason": "t0"},
+            }
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    report = status()
+    assert report["metrics_source"] == "soak_root"
+    assert report["metrics"]["gated_cumulative"] == 1
+
+    # Routed/external shell (not in-repo) → metrics from the active env.
+    # The path must be OUTSIDE the fake repo root (temp_workspace).
+    outside = tmp_path / "outside" / "evo"
+    outside.mkdir(parents=True, exist_ok=True)
+    monkeypatch.setenv("EVOLUTION_DIR", str(outside))
+    report2 = status()
+    assert report2["metrics_source"] == "active_env"
+
+
 class TestGateVerificationLedger:
     """Round-30 (演进方案.md §11.4 P0-1): the human adjudication ledger lives
     outside every workspace (anchor dir) and is read-only for the engine. A

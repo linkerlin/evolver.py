@@ -587,6 +587,13 @@ def main(argv: Sequence[str] | None = None) -> int:
         "hitl",
         "workflow",
         "gene-lifecycle",
+        # Round-49: live-ledger READERS. The interlock moved the runtime to
+        # the soak root; reading the frozen in-repo ledger serves nobody —
+        # `evolver report` had been showing round-29-era data for 20 rounds.
+        # (gate-report / charter-check keep their explicit --soak dual views.)
+        "report",
+        "meta-report",
+        "variants",
     }
     if is_loop or command in _soak_routed_commands:
         from evolver.ops.soak_env import maybe_route_to_soak
@@ -1466,7 +1473,11 @@ def _cmd_soak(args: argparse.Namespace) -> int:
         print(f"soak_root     : {result['soak_root']}")
         metrics = result["metrics"]
         rec = result["recommendation"]
-        print(f"gated_runs    : {metrics['gated_runs']}")
+        print(
+            f"gated_runs    : {metrics['gated_runs']} "
+            f"(cumulative {metrics.get('gated_cumulative', '?')}, "
+            f"source {result.get('metrics_source', 'active_env')})"
+        )
         print(f"verdict       : {rec['verdict']}")
         if result["inside_repo"]:
             print(

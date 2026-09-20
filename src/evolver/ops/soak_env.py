@@ -221,7 +221,16 @@ def read_gate_verifications() -> dict[str, str]:
 
 
 def status(*, event_limit: int = 5000) -> dict[str, Any]:
-    """Current path layout + gate-report metrics for the active env."""
+    """Current path layout + gate-report metrics for the active env.
+
+    Round-49: when the interlock is armed but the operator's shell still
+    resolves the in-repo (frozen) ledger, the metrics are computed from the
+    SOAK ledger — the live runtime the interlock maintains — with an explicit
+    ``metrics_source`` marker. Showing stale in-repo numbers as if current
+    misled operators for 20 rounds (same class as the round-47 reason gap).
+    """
+    import json as _json
+
     from evolver.gep.acceptance.report import (
         gate_soak_recommendation,
         summarize_acceptance,
@@ -229,18 +238,38 @@ def status(*, event_limit: int = 5000) -> dict[str, Any]:
     from evolver.gep.asset_store import read_all_events
     from evolver.gep.paths import get_evolution_dir, get_gep_assets_dir
 
+    armed = not is_test_environment()
+    inside = evolution_dir_inside_repo()
+    if armed and inside:
+        soak_events_path = soak_root() / "gep" / "events.jsonl"
+        events: list[dict[str, Any]] = []
+        if soak_events_path.is_file():
+            with soak_events_path.open(encoding="utf-8", errors="replace") as fh:
+                for line in fh:
+                    line = line.strip()
+                    if not line:
+                        continue
+                    try:
+                        events.append(_json.loads(line))
+                    except ValueError:
+                        continue
+        metrics_source = "soak_root"
+    else:
+        events = read_all_events()
+        metrics_source = "active_env"
     metrics = summarize_acceptance(
-        read_all_events()[-max(1, event_limit) :],
+        events[-max(1, event_limit) :],
         verified=read_gate_verifications(),
     )
     return {
         "ok": True,
         "evolution_dir": str(get_evolution_dir()),
         "gep_assets_dir": str(get_gep_assets_dir()),
-        "inside_repo": evolution_dir_inside_repo(),
-        "interlock_armed": not is_test_environment(),
+        "inside_repo": inside,
+        "interlock_armed": armed,
         "soak_root": str(soak_root()),
         "metrics": metrics,
+        "metrics_source": metrics_source,
         "recommendation": gate_soak_recommendation(metrics),
     }
 
