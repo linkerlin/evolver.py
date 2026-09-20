@@ -171,7 +171,10 @@ def gate_soak_recommendation(metrics: dict[str, Any]) -> dict[str, Any]:
         reasons.append(
             f"verified_true_positives={verified_tp} < {PROMOTION_MIN_VERIFIED_TP}: "
             "无人工确认真阳性——零拦截既可能是代码健康，也可能是门从未真正判别过；"
-            "不足以支持转正（登记 gate-verifications.jsonl）"
+            "不足以支持转正。人工登记：向 "
+            "$EVOLVER_HOME/anchor/gate-verifications.jsonl 追加一行 "
+            '{"<event_id>": "confirmed"}（仅当门 shadow 拒绝了一个你复核'
+            "确认为真回归的事件时）"
         )
     elif interception < GATE_SOAK_INTERCEPT_MIN:
         verdict = "collecting_verified"
