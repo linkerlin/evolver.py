@@ -594,6 +594,22 @@ def main(argv: Sequence[str] | None = None) -> int:
         "report",
         "meta-report",
         "variants",
+        # Round-51: full command-affinity audit completion. STORE WRITERS —
+        # bare `evolver distill --response-file` / `fetch` / `sync` install
+        # genes/resources/tasks into the FROZEN in-repo store, splitting
+        # state (MCP paths were safe: the server routes at startup); the
+        # rest are ledger readers of the same class as report.
+        "distill",
+        "fetch",
+        "sync",
+        "reuse",
+        "publish",
+        "asset-log",
+        "rebuild-views",
+        "replay",
+        "exec",
+        "experiment",
+        "bench",
     }
     if is_loop or command in _soak_routed_commands:
         from evolver.ops.soak_env import maybe_route_to_soak
