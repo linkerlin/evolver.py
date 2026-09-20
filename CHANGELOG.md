@@ -8,6 +8,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added — round-41：RSI P1-3 后半场——K=2 候选种群（L2 跃迁主体收口，锚 Epoch 11）
+- **`gep/population.py`（新）**：种群搜索作为固化**前置段**——S29 提案在
+  fresh worktree（HEAD、无 live 变异 overlay）机械应用 + 级联预选；
+  `adjudicate` 全序决胜（accepted>rejected；分降/文件升/索引升，总序
+  可复现）；`POPULATION_BUDGET_S=1500s` 模块常量预算守卫（≈round-38
+  K=2 投影上限；超时候选标 `budget_skipped` 显式降级，绝不静默截断）。
+  **冻结验证者零改动**：胜者仍过 `solidify(proposal=)` 完整路径（T0 门/
+  锚照常执法落地）。
+- **CLI `evolver solidify --population P1 P2 …`**：N 提案→择优→胜者冻结
+  落地→败者以 `population_status` + `sibling_of` 入变体档案（round-40
+  档案成为种群败者之家，DGM 同胞谱系）。
+- **锚 Epoch 11（第 16 探针 `population-adjudication`）**：冻结择优语义
+  ——accepted 击败 rejected、全序决胜可复现、预算跳过可见、无 admissible
+  时种群接受自身不落地任何东西。`population.py` 入锚触发面（候选间选择
+  权=验证者相邻）；本轮变异自身被 epoch 11 实弹审判 16/16。
+- 契约陷阱钉住：`apply_proposal` 成功键=`applied`、失败抛 `ValueError`；
+  `_run_validations` 顶层键=`ok`。
+
 ### Added — round-40：RSI P1-3 半场——变体档案（DGM 被拒保留 + 重派资格）
 - **`gep/variant_archive.py`（新）**：`classify_rejection`（环境性
   timeout/OSError vs 语义性——挂在固化进程内，事件瘦身丢 stderr 前分类）；
