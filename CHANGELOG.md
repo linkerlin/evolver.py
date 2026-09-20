@@ -8,6 +8,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed — round-45：hub 404 粘性跳过（相位遥测驱动的第一笔偿还）
+- **发现升级**：dispatch 时相位再读 hub=**15.714s**（上轮 3.295s——方差
+  3.3~15.7s），周期 17.1s 已过 30s MCP 预算一半。**round-40/41 tick
+  超时主嫌修正为 hub 相位方差**（round-42 的引擎侧否定是部分否定——
+  快 404 日测不出慢 404 日，如实更新）。
+- **`evolve/pipeline/hub.py`**：404 是端点事实非瞬态——连续
+  `HUB_404_STICKY_THRESHOLD=3` 次后相位级短路 fetch
+  （`hub_hit.reason=hub_endpoint_missing` + 重探倒计时），24h TTL 重探；
+  成功/非 404 错误诚实重置（网络错误不证明端点不存在）；损坏态
+  fail-open。模块常量零 env 旋钮。**关键不变量：不设
+  `skip_hub_calls`**——ctx 形状与失败 fetch 完全一致，dispatch 派发
+  语义零变化。sticky 后 hub 相位预期 ~0.03s。
+
 ### Fixed — round-44：变体档案重派机械腿（round-40 声明纠偏 + DGM 闭环全通）
 - **发现**：round-40 声称变体 replay「S29 通道可直接消费」——全仓 grep
   证实 ProposalEdit 仅支持 append/replace/insert_after，**无任何 diff
