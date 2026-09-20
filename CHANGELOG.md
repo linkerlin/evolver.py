@@ -8,6 +8,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed — round-39：g1 幽灵基因 recall 隔离（DEBUG #44 谱系失真最后余波）
+- **`gep/cognition.py` + `gep/recall_inject.py`**：recall 提示在库过滤——
+  归一化携带 `gene_id`，`search_recalls` 可选 `known_gene_ids` 结构过滤
+  （库外基因不可复用故不成提示；无 gene_id 的 legacy 记录透传）；
+  `build_recall_section` 接线传入当前库 id 集。幽灵基因（夹具劫持事件的
+  谱系残渣）自此不再以「100% 相似度成功经验」喂给选择器。
+- 运维：soak memory_graph 剔除 1 行 g1 outcome（派生存储，wiki 清创
+  先例；append-only events 账本不改）；evidence_pack 不动（指纹历史
+  完整性优先于记分板纯度）。live 即时证伪：tick Recall Hints 全为真实基因。
+
 ### Added — round-38：RSI P1-3 前置双口径（library 忠实使用率 + 每次验证成本）
 - **`ops/meta_report.py`**：`panel.cost`——计时种群上的中位/均值验证成本、
   拒绝耗时占比、**K=2 投影**（每周期多一个候选的边际成本=中位全量验证价，
