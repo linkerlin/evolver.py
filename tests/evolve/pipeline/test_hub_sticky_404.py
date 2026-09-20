@@ -1,15 +1,14 @@
-"""Tests for hub-phase sticky 404 short-circuit (round-45)."""
+"""Tests for hub-phase sticky 404 short-circuit (round-45; round-48 API-based)."""
 
 from __future__ import annotations
 
-import json
-from pathlib import Path
 from typing import Any
 
 import pytest
 
 from evolver.evolve.pipeline import hub as hub_mod
 from evolver.evolve.pipeline.hub import HUB_404_STICKY_THRESHOLD, hub_phase
+from evolver.gep.hub_health import load_state, save_state
 
 
 def _ctx() -> dict[str, Any]:
@@ -48,10 +47,7 @@ def _ok() -> dict[str, Any]:
 
 
 class TestSticky404:
-    async def test_three_404s_then_sticky_skip(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
-        monkeypatch.setenv("EVOLUTION_DIR", str(tmp_path))
+    async def test_three_404s_then_sticky_skip(self, monkeypatch: pytest.MonkeyPatch) -> None:
         # Burn the threshold with real fetches.
         for _ in range(HUB_404_STICKY_THRESHOLD):
             out = await _run_with_fetch(monkeypatch, [_err_404()])
@@ -67,53 +63,39 @@ class TestSticky404:
         )
         assert out["active_task"] is None
 
-    async def test_ttl_expiry_reprobes(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
-        monkeypatch.setenv("EVOLUTION_DIR", str(tmp_path))
-        state_path = tmp_path / "hub_endpoint_state.json"
-        state_path.write_text(
-            json.dumps(
-                {
-                    "consecutive_404": HUB_404_STICKY_THRESHOLD,
-                    "last_probe_ts": 0.0,  # ancient → TTL expired
-                    "skipped_cycles": 99,
-                }
-            )
-            + "\n",
-            encoding="utf-8",
+    async def test_ttl_expiry_reprobes(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        save_state(
+            {
+                "consecutive_404": HUB_404_STICKY_THRESHOLD,
+                "last_probe_ts": 0.0,  # ancient → TTL expired
+                "skipped_cycles": 99,
+            }
         )
         out = await _run_with_fetch(monkeypatch, [_ok()])
         assert out["_calls"]["n"] == 1, "expired TTL must re-probe"
         assert out["hub_hit"]["reason"] == "no_tasks"
 
-    async def test_success_resets_counter(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
-        monkeypatch.setenv("EVOLUTION_DIR", str(tmp_path))
-        (tmp_path / "hub_endpoint_state.json").write_text(
-            json.dumps({"consecutive_404": 2, "last_probe_ts": 1.0e12, "skipped_cycles": 0}),
-            encoding="utf-8",
-        )
+    async def test_success_resets_counter(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        save_state({"consecutive_404": 2, "last_probe_ts": 1.0e12, "skipped_cycles": 0})
         await _run_with_fetch(monkeypatch, [_ok()])
-        data = json.loads((tmp_path / "hub_endpoint_state.json").read_text(encoding="utf-8"))
-        assert data["consecutive_404"] == 0
+        assert load_state()["consecutive_404"] == 0
 
     async def test_non_404_error_resets_not_accumulates(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+        self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        monkeypatch.setenv("EVOLUTION_DIR", str(tmp_path))
         await _run_with_fetch(monkeypatch, [_err_404()])
         await _run_with_fetch(monkeypatch, [_err_network()])
-        data = json.loads((tmp_path / "hub_endpoint_state.json").read_text(encoding="utf-8"))
-        assert data["consecutive_404"] == 0, (
+        assert load_state()["consecutive_404"] == 0, (
             "network errors say nothing about the endpoint's existence"
         )
 
-    async def test_corrupt_state_fail_open(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
-        monkeypatch.setenv("EVOLUTION_DIR", str(tmp_path))
-        (tmp_path / "hub_endpoint_state.json").write_text("not-json", encoding="utf-8")
+    async def test_corrupt_state_fail_open(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        # Module-attribute call, NOT a by-name import: the conftest fixture
+        # patches hub_health.state_path, and a by-name binding would bypass
+        # the patch and write the corrupt fixture into the REAL evolution
+        # dir (the exact leak this suite defends against).
+        from evolver.gep import hub_health
+
+        hub_health.state_path().write_text("not-json", encoding="utf-8")
         out = await _run_with_fetch(monkeypatch, [_ok()])
         assert out["_calls"]["n"] == 1, "corrupt state must fail open to fetching"

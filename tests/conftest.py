@@ -47,6 +47,22 @@ def _restore_feature_flags() -> Iterator[None]:
         ff._disk_flags_loaded_at = ff.time.monotonic()
 
 
+@pytest.fixture(autouse=True)
+def _isolate_hub_endpoint_state(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Round-48 (DEBUG #37 family, preventive): hub_health sticky state is
+    PRODUCTION runtime state. An unisolated test hitting a 404 failure path
+    would write the counter into the in-repo evolution dir; three such writes
+    flip endpoint_sticky() and make OTHER unisolated tests fast-fail through
+    the hub_client preflight instead of their own mocks — the same shape as
+    the soak-route leak (#44). Redirect the state path per-test,
+    unconditionally: a conditional skip would race the test's own
+    monkeypatch.setenv ordering."""
+    from evolver.gep import hub_health
+
+    per_test = tmp_path / "hub_endpoint_state.json"
+    monkeypatch.setattr(hub_health, "state_path", lambda: per_test)
+
+
 @pytest.fixture(autouse=True, scope="session")
 def _shield_ambient_load() -> Iterator[None]:
     """Full-cycle tests (run/cli/integration) must not preflight-abort on
