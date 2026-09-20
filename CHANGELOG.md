@@ -8,6 +8,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed — round-47：verdict 翻转边界预演 + unverified reason 可操作化
+- **预演**：合成「两伪杀滑出」账本过 `summarize_acceptance`——翻转机器
+  路径= `unverified` 已验证（非猜测）；cumulative ~43 该判定将成为
+  转正唯一阻塞。
+- **`acceptance/report.py`**：unverified reason 补全操作者三要素——
+  登记全路径（`$EVOLVER_HOME/anchor/gate-verifications.jsonl`）、行
+  格式（`{"<event_id>": "confirmed"}`）、**登记条件**（仅当门 shadow
+  拒绝了人工复核确认为真回归的事件——登记非真阳性会污染证据）。
+  epoch 6 探针不钉 reason 字符串（grep 证实），纯字符串改动锚实弹
+  16/16 放行。
+
 ### Fixed — round-46：post_cycle 燃烧点收口——hub_health 共享层 + hub_client 预检
 - **归因链**：相位遥测三轮纵向 post_cycle 1.334→1.449→1.625s 增长 →
   逐件计时（ATP buyer 0s——consent 禁用排除；`pick_one()` **1.77s**
