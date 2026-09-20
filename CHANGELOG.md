@@ -8,6 +8,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed — round-49：操作者面陈旧读数修复 + **soak verdict 翻转 `unverified`**
+- **里程碑**：cumulative 43——两历史伪杀（round-21/24）全部滑出滚动窗，
+  **verdict 由 `false_kill_high` 翻转为 `unverified`**（round-47 预演的
+  机器路径生产兑现）。转正唯一剩余阻塞=人工 verified TP（reason 已带
+  全路径/行格式/登记条件）。post_cycle 1.662→**0.058s** 归零实证。
+- **`ops/soak_env.py`**：`status()` 互锁武装且仓内 shell 时指标改读
+  soak 根账本并标注 `metrics_source`（仓内账本冻结 20 轮，冻结数字
+  当现况展示误导操作者）；文本行并显 cumulative。
+- **`cli.py`**：`report`/`meta-report`/`variants` 三个活账本读者入
+  soak 路由白名单（`evolver report` 曾展示 round-29 时代数据；
+  gate-report/charter-check 保留显式 `--soak` 双视图）。
+
 ### Fixed — round-48：hub_health 状态测试密闭性防线（#37 家族，预防性）
 - **威胁**：零隔离 hub 测试跑到 404 路径会把粘性计数写进仓内运行态，
   3 次后 `endpoint_sticky()` 翻真——其它无隔离测试经 hub_client 预检
