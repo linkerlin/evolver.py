@@ -125,13 +125,13 @@ async def _run_single_cycle(*, is_loop: bool = False) -> dict[str, Any]:
         ctx["autopoiesis_repair_bias"] = True
         ctx["IS_RANDOM_DRIFT"] = False
 
-    ctx = await collect_phase(ctx)
-    ctx = await signals_phase(ctx)
-    ctx = await diagnosis_phase(ctx)  # Self-Harness B1; no-op when flag off
-    ctx = await hub_phase(ctx)
-    ctx = await enrich_phase(ctx)
-    ctx = await autopoiesis_phase(ctx)
-    ctx = await select_phase(ctx)
+    ctx = await _timed_phase(ctx, "collect", collect_phase)
+    ctx = await _timed_phase(ctx, "signals", signals_phase)
+    ctx = await _timed_phase(ctx, "diagnosis", diagnosis_phase)  # Self-Harness B1
+    ctx = await _timed_phase(ctx, "hub", hub_phase)
+    ctx = await _timed_phase(ctx, "enrich", enrich_phase)
+    ctx = await _timed_phase(ctx, "autopoiesis", autopoiesis_phase)
+    ctx = await _timed_phase(ctx, "select", select_phase)
     gene = ctx.get("selected_gene") or {}
     veto = supervision_mod.check_veto(
         str(gene.get("id") or "") if isinstance(gene, dict) else "",
@@ -143,16 +143,66 @@ async def _run_single_cycle(*, is_loop: bool = False) -> dict[str, Any]:
         ctx["dispatch_prompt"] = ""
         print("Supervision veto; withholding dispatch.")
         return ctx
-    ctx = await dispatch_phase(ctx)
-    ctx = await dispatch_multi_propose_phase(ctx)  # Self-Harness C2; no-op unless ROUTES>1
-    ctx = await run_post_cycle_hooks(ctx)
+    ctx = await _timed_phase(ctx, "dispatch", dispatch_phase)
+    # Self-Harness C2; no-op unless ROUTES>1
+    ctx = await _timed_phase(ctx, "multi_propose", dispatch_multi_propose_phase)
+    ctx = await _timed_phase(ctx, "post_cycle", run_post_cycle_hooks)
     try:
         from evolver.gep.autopoiesis import clear_preflight_abort_report
 
         clear_preflight_abort_report()
     except Exception:
         pass
+    _record_cycle_phase_timings(ctx)
     return ctx
+
+
+async def _timed_phase(ctx: dict[str, Any], name: str, phase: Any) -> dict[str, Any]:
+    """Run one pipeline phase under monotonic timing (round-42).
+
+    The solidify side has had per-stage monotonic durations since round-20;
+    the cycle side had none — a 30s MCP-tick timeout could only be attributed
+    by hand-instrumenting the runner. Durations are observations, never
+    verdicts: they ride in ctx for the tick summary, nothing gates on them.
+    """
+    import time as _time
+    from typing import cast
+
+    t0 = _time.monotonic()
+    try:
+        return cast("dict[str, Any]", await phase(ctx))
+    finally:
+        timings = ctx.setdefault("cycle_phase_timings", {})
+        timings[name] = round(timings.get(name, 0.0) + (_time.monotonic() - t0), 3)
+
+
+def _record_cycle_phase_timings(ctx: dict[str, Any]) -> None:
+    """Persist the cycle's phase timings into the swarm-state tick summary.
+
+    Failure to persist is observation-loss only — never fatal to the cycle.
+    """
+    timings = dict(ctx.get("cycle_phase_timings") or {})
+    if not timings:
+        return
+    total = round(sum(timings.values()), 3)
+    print(f"cycle phases: {total}s " + " ".join(f"{k}={v}" for k, v in timings.items()))
+    try:
+        from evolver.gep.paths import get_evolution_dir
+
+        state_path = get_evolution_dir() / "swarm_state.json"
+        if state_path.is_file():
+            import json as _json
+
+            data = _json.loads(state_path.read_text(encoding="utf-8"))
+            if isinstance(data, dict):
+                data["last_tick_phase_timings"] = timings
+                data["last_tick_total_s"] = total
+                state_path.write_text(
+                    _json.dumps(data, ensure_ascii=False, indent=2) + "\n",
+                    encoding="utf-8",
+                )
+    except Exception:
+        pass
 
 
 async def run() -> None:
