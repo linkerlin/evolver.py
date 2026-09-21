@@ -116,6 +116,33 @@ class TestBootAndStatus:
         hello = [m for m in store.poll(limit=50) if m.type == "swarm.hello"]
         assert hello and hello[0].payload["agent"] == "zcode-1"
 
+    def test_boot_next_action_pending_aware(self, isolated_swarm_env: Path) -> None:
+        """Round-57: the structured field must mirror the prompt's first-action
+        branch — a pending run says solidify-first, and hosts reading the
+        field (not the prose) used to get the wrong instruction."""
+        from evolver.gep.solidify import write_state_for_solidify
+
+        write_state_for_solidify(
+            {
+                "run_id": "run_pending_boot",
+                "signals": ["log_error"],
+                "selected_gene_id": "g_boot",
+                "mutation": {"id": "m_boot", "validation": []},
+            }
+        )
+        result = swarm_boot("zcode-2")
+        assert result["next_action"] == "swarm_solidify", (
+            "pending run must direct solidify-first in the structured field"
+        )
+        assert "swarm_solidify" in result["instrument_prompt"]
+
+    def test_instrument_renders_supervision_and_hitl(self, isolated_swarm_env: Path) -> None:
+        """Round-57: section six carries governance state so a host sees a
+        pause/veto before its first tick is refused."""
+        prompt = swarm_boot("zcode-3")["instrument_prompt"]
+        assert "supervision:" in prompt
+        assert "hitl:" in prompt
+
     def test_status_shape(self, isolated_swarm_env: Path) -> None:
         status = swarm_status()
         assert status["ok"] is True

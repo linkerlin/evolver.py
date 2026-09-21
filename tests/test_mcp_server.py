@@ -230,14 +230,43 @@ class TestResources:
 class TestInstructions:
     def test_default_instructions_advertise_swarm(self) -> None:
         server = build_server()
-        assert "SWARM EVOLUTION" in (server.instructions or "")
+        assert "EVOLVER SWARM" in (server.instructions or "")
 
     def test_auto_hijack_instructions_take_over(self, monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.setattr("evolver.config.SWARM_AUTO_HIJACK", True)
         server = build_server()
         instructions = server.instructions or ""
         assert "TAKEOVER ACTIVE" in instructions
-        assert "SWARM EVOLUTION" in instructions
+        assert "EVOLVER SWARM" in instructions
+
+    def test_instructions_are_self_sufficient_bootstrap(self) -> None:
+        """Round-57: a prompt-less host gets the full capability map inline —
+        first action, loop order, and every tool family by name."""
+        server = build_server()
+        text = server.instructions or ""
+        # Imperative first action pointing at the full instrument.
+        assert "swarm_boot" in text and "FIRST ACTION" in text
+        # The auto-evolution loop order is stated inline.
+        for needle in ("swarm_tick", "swarm_distill", "swarm_solidify", "swarm_feedback"):
+            assert needle in text, needle
+        # Every MCP tool family is mapped.
+        for needle in (
+            "swarm_propose",
+            "swarm_status",
+            "tool_asset_search",
+            "tool_mailbox_send",
+            "swarm_supervise",
+            "swarm_approvals",
+            "swarm_hooks",
+            "swarm_hook_event",
+            "swarm_workflow_run",
+            "swarm_skills",
+        ):
+            assert needle in text, needle
+        # Read-only resources advertised.
+        assert "evolver://" in text
+        # Steady-state guardrail semantics stated.
+        assert "never retry" in text
 
 
 class TestCallToolInProcess:

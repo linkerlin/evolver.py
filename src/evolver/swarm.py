@@ -126,6 +126,10 @@ def build_instrument_prompt(state: dict[str, Any]) -> str:
         if pending
         else "调用 `swarm_tick` 开始第一轮进化"
     )
+    supervision = json.dumps(state.get("supervision") or {"state": "?"}, ensure_ascii=False)
+    hitl = state.get("hitl") or {}
+    hitl_mode = hitl.get("mode", "?")
+    hitl_pending = hitl.get("pending", 0)
     return f"""# EVOLVER SWARM — 宿主接管协议 (instrument v{SWARM_PROTOCOL_VERSION})
 
 > 本提示词由 evolver 引擎经 MCP 注入。自此刻起，你（{agent}）成为 evolver 蜂群的
@@ -205,6 +209,8 @@ solidify 验证门真实落盘或回滚。
 - engine version: {state.get("version", "?")} | protocol: v{SWARM_PROTOCOL_VERSION}
 - tick_count: {tick_count} | genes: {genes_n} | capsules: {capsules_n}
 - pending_solidify: {pending} | bridge: {bridge}
+- supervision: {supervision}
+- hitl: mode={hitl_mode} pending={hitl_pending}
 - mailbox 待处理: inbound={inbound} outbound={outbound}
 
 立即行动：{first_action}"""
@@ -367,7 +373,11 @@ def swarm_boot(agent_name: str = "host-agent") -> dict[str, Any]:
     """Boot a host agent into the swarm: status + instrument prompt + hello.
 
     The MCP prompt ``evolver_swarm`` and the ``swarm_boot`` tool both land
-    here — this is the takeover entry point.
+    here — this is the takeover entry point. ``next_action`` mirrors the
+    instrument prompt's first-action branch (round-57: it was unconditionally
+    ``swarm_tick`` while the prompt said "solidify first" when pending —
+    hosts reading the structured field got the wrong first action; the
+    round-4 fix only covered the prose).
     """
     state = swarm_status()
     prompt = build_instrument_prompt({**state, "agent_name": agent_name})
@@ -378,7 +388,7 @@ def swarm_boot(agent_name: str = "host-agent") -> dict[str, Any]:
         "instrument_prompt": prompt,
         "state": state,
         "mailbox_hello": _announce(agent_name),
-        "next_action": "swarm_tick",
+        "next_action": "swarm_solidify" if state.get("pending_solidify") else "swarm_tick",
     }
 
 

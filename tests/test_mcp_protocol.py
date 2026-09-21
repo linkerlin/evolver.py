@@ -107,7 +107,7 @@ def client(tmp_path: Path) -> _McpClient:
 class TestProtocol:
     def test_instructions_carry_swarm_directive(self, client: _McpClient) -> None:
         instructions = client.init_result["result"]["instructions"]
-        assert "SWARM EVOLUTION" in instructions
+        assert "EVOLVER SWARM" in instructions
         assert "swarm_hook_event" in instructions
         assert "evolver://" in instructions
 

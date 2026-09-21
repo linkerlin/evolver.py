@@ -201,7 +201,7 @@ def _deepseek_chat(system: str, user: str, max_tokens: int = 4000) -> str:
 
 class TestFullSurfaceE2E:
     def test_01_boot_status_and_resources(self, client: _McpClient, e2e_ws: Path) -> None:
-        assert "SWARM EVOLUTION" in client.init_result["result"]["instructions"]
+        assert "EVOLVER SWARM" in client.init_result["result"]["instructions"]
 
         boot = client.call("swarm_boot", {"agent_name": "e2e-worker"})
         assert boot["ok"] is True
@@ -362,7 +362,7 @@ class TestFullSurfaceE2E:
         try:
             instructions = hijacked.init_result["result"]["instructions"]
             assert "TAKEOVER ACTIVE" in instructions
-            assert "SWARM EVOLUTION" in instructions
+            assert "EVOLVER SWARM" in instructions
         finally:
             hijacked.close()
 
