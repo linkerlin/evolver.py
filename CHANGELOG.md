@@ -8,6 +8,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added — round-61：distill→propose 最小桥（S29 通道采用缺口）
+- **诊断**：S29 机械提案通道自 round-32 落地生产仅 2 次调用（测试期）
+  ——**采用缺口而非能力缺口**（门在、锚守卫在、population 消费者在，
+  自由执行→distill 主路径从不途经结构化通道）。
+- **`swarm.py`**：`_extract_proposal_candidates`——distill 的
+  response_text 中 fenced ```json 块若解析为 GeneProposal 形状
+  （action + edits）则作为 `proposal_candidates` 随结果返回（含
+  `proposal_next_step` 指引）；**观察不应用**——重放仍须过同一验证
+  门；格式变体静默跳过（桥不得把格式偏差变成宿主错误）。为 K=2
+  首轮提供机械候选源。
+
 ### Fixed — round-59：cleanup 死接线闭合 + TTL 重探生产实证
 - **发现**：round-56 的 evidence 轮转在生产形态下是**死代码**——唯一
   调用方是守护循环每 10 周期清理，但 CLI 单周期/MCP tick/solidify 从
