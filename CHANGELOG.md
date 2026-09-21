@@ -8,6 +8,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed — round-58：gene-lifecycle 近阈值段（P1-5 生产零转移的操作者面收口）
+- **结构事实**：soak 实测 39 个落地基因 **0 个达到观测阈值 3**（最高
+  2）——每轮蒸馏落地新基因（`landed_gene_ids` 口径），被再选中的旧
+  基因不带 landed（`faithful_use` 的 gene_id 口径）——P1-5 状态机的
+  观测人口=「同一基因作为新知识落地的次数」，本循环形态下结构性
+  罕见（与捕获罐同构：机制落地≠有效证据）。
+- **`cli.py`**：`_lifecycle_approaching()`——`gene-lifecycle list`
+  空记录时渲染 near-miss 段（obs/landings/resolved，与状态机同源
+  `landing_stats`）；JSON 输出增 `approaching` 字段。阈值不调
+  （无证据不调参——章程纪律）。
+- **教训**：阈值门控的状态机生产零转移时必须说 WHY 并展示多近；
+  空态渲染与状态机同源统计。测试夹具注意：无后代的落地观测=0
+  （「沉默不是证据」语义）。
+
 ### Fixed — round-57：MCP 注入提示词三缺口——初始化即可用（用户任务）
 - **审阅结论**：注入三通道按保证级分层——instructions（initialize
   必达）> `evolver_swarm` prompt（宿主选渲染）> `swarm_boot` 工具
