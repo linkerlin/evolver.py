@@ -63,6 +63,19 @@ def _isolate_hub_endpoint_state(tmp_path: Path, monkeypatch: pytest.MonkeyPatch)
     monkeypatch.setattr(hub_health, "state_path", lambda: per_test)
 
 
+@pytest.fixture(autouse=True)
+def _isolate_sniffer_state(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Round-54 (DEBUG #37 family): conversation_sniffer state is PRODUCTION
+    runtime state — enforce-mode sniffs with candidates arm the cooldown and
+    _write_state unconditionally. An unisolated test calling try_sniff with
+    real evidence wrote `last_sniff_ts` into the in-repo evolution dir
+    (caught live: the file's ts incremented across a test run). Redirect
+    unconditionally, same doctrine as the hub-state fixture."""
+    from evolver.gep import conversation_sniffer as cs
+
+    monkeypatch.setattr(cs, "_state_path", lambda: tmp_path / "conv_sniffer_state.json")
+
+
 @pytest.fixture(autouse=True, scope="session")
 def _shield_ambient_load() -> Iterator[None]:
     """Full-cycle tests (run/cli/integration) must not preflight-abort on
