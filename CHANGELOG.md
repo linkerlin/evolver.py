@@ -8,6 +8,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added — round-52：effective-L5 复跑 #4（RSI §6.8，挂钟条款）
+- 纪元 E'（rounds 44-51，8/8 零拒绝）——捕获罐连续第二纪元全空
+  （维持 2/3 不是退化，捕获本就低频）。E' 独有结构事实：**verdict
+  翻转 `unverified` 生产兑现**（round-30 可达性修复从合成预演进入
+  生产到达=「修复-等待-兑现」链路第二例；无捕获动作，不计入判据
+  (a)）。新观察：**unverified 稳态=「评测者自偏好」反面的定性证据**
+  （机器把最终门交还人类）——§2.2 升级辅助论据，不替代捕获要求。
+  相位遥测 MCP 路径第二腿激活（engine_log 尾行）——仪器双通道完成。
+  复跑 #5 ~round-62 或捕获入账。
+
 ### Fixed — round-51：soak 路由白名单存储亲和补全（round-31 互锁完整性收口）
 - **`cli.py`**：`_soak_routed_commands` 补 11 个存储/账本亲和命令——
   **写者** `distill`/`fetch`/`sync`/`reuse`/`publish`（裸 CLI 会装基因/
