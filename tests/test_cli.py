@@ -112,9 +112,28 @@ def test_cli_gene_lifecycle_flow(
         append_event_jsonl(
             {"id": f"evt_ok_{i}", "outcome": {"status": "success"}, "signals": ["hub_offline"]}
         )
+    # Round-58: one extra landing of a DIFFERENT gene — below threshold, so
+    # it must surface as an approaching candidate (gene_dead reaches 3
+    # observations and leaves the near-miss section for the state machine).
+    # A descendant event is required: landings without descendants carry 0
+    # observations ("silence is not evidence of work").
+    append_event_jsonl(
+        {
+            "id": "evt_land_alive",
+            "outcome": {"status": "success"},
+            "mutation": {"landed_gene_ids": ["gene_alive"]},
+            "signals": ["perf_bottleneck"],
+        }
+    )
+    append_event_jsonl(
+        {"id": "evt_desc_alive", "outcome": {"status": "success"}, "signals": ["other"]}
+    )
 
     assert main(["gene-lifecycle", "list"]) == 0
-    assert "no records" in capsys.readouterr().out
+    first_out = capsys.readouterr().out
+    assert "no records" in first_out
+    assert "gene_alive" in first_out, "near-miss section must name the gene"
+    assert "obs=" in first_out
 
     assert main(["gene-lifecycle", "evaluate", "--json"]) == 0
     payload = json.loads(capsys.readouterr().out)

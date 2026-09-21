@@ -1250,6 +1250,35 @@ def _cmd_meta_report(args: argparse.Namespace) -> int:
     return 0
 
 
+def _lifecycle_approaching() -> dict[str, Any]:
+    """Round-58: genes with observations > 0 but below the review threshold.
+
+    The P1-5 state machine needs LIFECYCLE_MIN_OBSERVATIONS landings of the
+    SAME gene before any transition can fire; this loop's shape (each round
+    distills a NOVEL gene) means the threshold is structurally rare — the
+    panel must show how close the population is instead of a dead-end
+    "no records"."""
+    from evolver.gep.asset_store import read_all_events
+    from evolver.gep.gene_lifecycle import (
+        LIFECYCLE_MIN_OBSERVATIONS,
+        landing_stats,
+    )
+
+    stats = landing_stats(read_all_events())
+    candidates: list[dict[str, Any]] = [
+        {
+            "gene_id": gid,
+            "observations": int(row.get("observations", 0)),
+            "landings": int(row.get("landings", 0)),
+            "resolved": int(row.get("resolved", 0)),
+        }
+        for gid, row in stats.items()
+        if 0 < int(row.get("observations", 0)) < LIFECYCLE_MIN_OBSERVATIONS
+    ]
+    candidates.sort(key=lambda r: (-int(r["observations"]), -int(r["landings"])))
+    return {"threshold": LIFECYCLE_MIN_OBSERVATIONS, "candidates": candidates}
+
+
 def _cmd_gene_lifecycle(args: argparse.Namespace) -> int:
     """RSI P1-5: gene lifecycle governance (list / evaluate / reinstate)."""
     from evolver.gep.gene_lifecycle import (
@@ -1297,14 +1326,25 @@ def _cmd_gene_lifecycle(args: argparse.Namespace) -> int:
     if getattr(args, "json", False):
         print(
             json.dumps(
-                {gid: rec.model_dump() for gid, rec in sorted(records.items())},
+                {
+                    "records": {gid: rec.model_dump() for gid, rec in sorted(records.items())},
+                    "approaching": _lifecycle_approaching(),
+                },
                 ensure_ascii=False,
                 indent=2,
             )
         )
         return 0
     if not records:
-        print("gene-lifecycle: no records")
+        print("gene-lifecycle: no records (no gene has reached the observation threshold)")
+        near = _lifecycle_approaching()
+        if near:
+            print(f"  approaching threshold (observations < {near['threshold']}):")
+            for row in near["candidates"][:8]:
+                print(
+                    f"    obs={row['observations']} landings={row['landings']} "
+                    f"resolved={row['resolved']}  {row['gene_id']}"
+                )
         return 0
     for gid, rec in sorted(records.items()):
         print(f"{rec.status:<13} {gid} ({rec.reason or 'n/a'})")
