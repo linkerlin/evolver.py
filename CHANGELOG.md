@@ -8,6 +8,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed — round-56：evidence/ 死写者收编——有界轮转（零读者存储泄漏）
+- **发现**：`gep/evidence.py` 的 `save_evidence` 每次 solidify 落盘
+  ~14KB/run，但 `load_evidence` **全仓零生产消费者**（仅测试引用）；
+  cleanup 轮转不覆盖该目录——只写不读只涨不删（soak 侧 22 目录
+  428K、repo 侧 30 目录，无限增长）。
+- **`ops/cleanup.py`**：`cleanup_run_directories`——mtime 降序保留
+  最新 `CLEANUP_MAX_FILES` 个 run 目录，接进 `run_cleanup`；docstring
+  记录决策依据与重访条件（接读者须重开窗口）。
+- **教训**：零读者的写侧是穿着功能外衣的无限增长——grep 消费者
+  先于尊重写者；三选项显式权衡（接读者/删写入/轮转收编）。
+
 ### Added — round-55：近四周改动回溯测试覆盖（rounds 27-54，13 新测）
 - **`tests/test_recent_rounds_cli.py`（新）**：五类缝钉面——路由白名单
   成员**双侧契约**（写者/读者在集、gate-report/charter-check 双视图
