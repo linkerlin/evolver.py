@@ -140,6 +140,22 @@ async def run_post_cycle_hooks(ctx: dict[str, Any]) -> dict[str, Any]:
     except Exception as exc:
         logger.debug("[post_cycle] gene lifecycle evaluation skipped: %s", exc)
 
+    # Round-59: bounded-retention rotation in the per-cycle path. The daemon
+    # loop's every-10-cycles cleanup was the ONLY caller — and the running
+    # daemon predates the round-56 evidence/ rotation, so single-cycle runs
+    # (CLI/MCP/solidify) never rotated anything: the wired fix was dead in
+    # the production shape. One directory listing per cycle is negligible.
+    try:
+        from evolver.gep.paths import get_gep_assets_dir
+        from evolver.ops.cleanup import cleanup_run_directories
+
+        rotation = cleanup_run_directories(get_gep_assets_dir() / "evidence")
+        if rotation.get("removed"):
+            ctx["evidence_rotation"] = rotation
+            logger.info("[post_cycle] evidence rotation removed %s run dir(s)", rotation["removed"])
+    except Exception as exc:
+        logger.debug("[post_cycle] evidence rotation skipped: %s", exc)
+
     # Self-Harness C3: merge multiple accepted candidates (contract-driven;
     # no-op unless ctx["accepted_candidates"] is present with >1 entries).
     _merge_accepted_candidates(ctx)

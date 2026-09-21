@@ -128,3 +128,30 @@ async def test_post_cycle_applies_gene_lifecycle(
     # Idempotent: a second pass with the same lineage applies nothing new.
     again = await run_post_cycle_hooks({"signals": ["log_error"]})
     assert "gene_lifecycle" not in again
+
+
+async def test_post_cycle_rotates_evidence_dirs(
+    temp_workspace: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Round-59: evidence rotation runs in the PER-CYCLE path — the daemon
+    loop's cleanup was the only caller, and the running daemon predates the
+    rotation, so single-cycle runs never rotated anything (dead wiring)."""
+    import time as _time
+
+    monkeypatch.setattr("evolver.atp.atp_task_pickup.pick_one", AsyncMock(return_value=None))
+    monkeypatch.setattr("evolver.gep.issue_reporter.report_recurring_failures", lambda **_: [])
+    evidence = temp_workspace / ".evolver" / "gep" / "evidence"
+    for i in range(12):
+        run_dir = evidence / f"run_{i:02d}"
+        run_dir.mkdir(parents=True)
+        (run_dir / "evt.json").write_text("{}", encoding="utf-8")
+        stamp = _time.time() + i
+        import os
+
+        os.utime(run_dir, (stamp, stamp))
+
+    ctx = await run_post_cycle_hooks({"signals": ["log_error"]})
+    remaining = sorted(p.name for p in evidence.iterdir())
+    assert len(remaining) == 10, f"rotation keeps CLEANUP_MAX_FILES: {remaining}"
+    assert remaining[-1] == "run_11", "newest kept"
+    assert ctx["evidence_rotation"]["removed"] == 2
