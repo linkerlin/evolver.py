@@ -45,6 +45,52 @@ def _load_dotenv() -> None:
         os.environ["EVOLVER_QUIET_PARENT_GIT"] = prev_quiet
 
 
+#: Out-of-tree soak interlock routing set (S11.4 / P1 #4, rounds 31/49/51).
+#: Module-level so tests can pin membership — an allowlist grown by accretion
+#: is never complete (round-51 lesson); silent REMOVAL must fail a test the
+#: same way silent addition once escaped review. gate-report / charter-check
+#: keep their explicit --soak dual views and stay out of this set.
+SOAK_ROUTED_COMMANDS: frozenset[str | None] = frozenset(
+    {
+        None,
+        "run",
+        "/evolve",
+        "start",
+        "restart",
+        "mcp",
+        "solidify",
+        "self-report",
+        "review",
+        "supervise",
+        "hitl",
+        "workflow",
+        "gene-lifecycle",
+        # Round-49: live-ledger READERS — reading the frozen in-repo ledger
+        # serves nobody (`evolver report` showed round-29-era data for 20
+        # rounds).
+        "report",
+        "meta-report",
+        "variants",
+        # Round-51: full command-affinity audit completion. STORE WRITERS —
+        # bare `evolver distill --response-file` / `fetch` / `sync` install
+        # genes/resources/tasks into the FROZEN in-repo store, splitting
+        # state (MCP paths were safe: the server routes at startup); the
+        # rest are ledger readers of the same class as report.
+        "distill",
+        "fetch",
+        "sync",
+        "reuse",
+        "publish",
+        "asset-log",
+        "rebuild-views",
+        "replay",
+        "exec",
+        "experiment",
+        "bench",
+    }
+)
+
+
 def _build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="evolver",
@@ -118,12 +164,21 @@ def _build_parser() -> argparse.ArgumentParser:
         "(comma-separated; default: last dispatch's signals)",
     )
     variants_p.add_argument(
-        "re_dispatch",
+        "action",
+        nargs="?",
+        default=None,
+        choices=[None, "re-dispatch", "list"],
+        help="'re-dispatch VARIANT_ID' to mechanically re-apply a variant; "
+        "default/no arg lists the archive",
+    )
+    variants_p.add_argument(
+        "variant_id",
         nargs="?",
         default=None,
         metavar="VARIANT_ID",
-        help="Re-dispatch: mechanically re-apply the variant's diff "
-        "(git apply --check first; then run `evolver solidify`)",
+        help="VARIANT_ID for the re-dispatch action (round-54 parser fix: "
+        "the round-44 wiring only accepted the bare-id form; the documented "
+        "'variants re-dispatch <id>' form errored)",
     )
     charter_p = sub.add_parser(
         "charter-check",
@@ -573,44 +628,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     # S11.4 / P1 #4: Out-of-tree soak interlock.
     # When running inside a git repo worktree outside of tests, automatically
     # route EVOLUTION_DIR and GEP_ASSETS_DIR to $EVOLVER_HOME/evolver.py-soak.
-    _soak_routed_commands = {
-        None,
-        "run",
-        "/evolve",
-        "start",
-        "restart",
-        "mcp",
-        "solidify",
-        "self-report",
-        "review",
-        "supervise",
-        "hitl",
-        "workflow",
-        "gene-lifecycle",
-        # Round-49: live-ledger READERS. The interlock moved the runtime to
-        # the soak root; reading the frozen in-repo ledger serves nobody —
-        # `evolver report` had been showing round-29-era data for 20 rounds.
-        # (gate-report / charter-check keep their explicit --soak dual views.)
-        "report",
-        "meta-report",
-        "variants",
-        # Round-51: full command-affinity audit completion. STORE WRITERS —
-        # bare `evolver distill --response-file` / `fetch` / `sync` install
-        # genes/resources/tasks into the FROZEN in-repo store, splitting
-        # state (MCP paths were safe: the server routes at startup); the
-        # rest are ledger readers of the same class as report.
-        "distill",
-        "fetch",
-        "sync",
-        "reuse",
-        "publish",
-        "asset-log",
-        "rebuild-views",
-        "replay",
-        "exec",
-        "experiment",
-        "bench",
-    }
+    _soak_routed_commands = SOAK_ROUTED_COMMANDS
     if is_loop or command in _soak_routed_commands:
         from evolver.ops.soak_env import maybe_route_to_soak
 
@@ -1371,8 +1389,13 @@ def _cmd_variants(args: argparse.Namespace) -> int:
 
     entries = load_variants()
     events = read_all_events()
-    if getattr(args, "re_dispatch", None):
-        target_id = args.re_dispatch
+    # Round-54 parser fix: accept both `variants re-dispatch <id>` and the
+    # bare `variants <id>` legacy form (round-44 shipped only the latter).
+    target_id = getattr(args, "variant_id", None)
+    if getattr(args, "action", None) == "re-dispatch" and not target_id:
+        print("variants: re-dispatch requires a VARIANT_ID", file=sys.stderr)
+        return 1
+    if target_id:
         match = [e for e in entries if str(e.get("variant_id")) == target_id]
         if not match:
             print(f"variants: unknown variant_id {target_id}", file=sys.stderr)
