@@ -5,81 +5,63 @@
 > RSI 分级路线：[`RSI演进对照.md`](RSI演进对照.md)（§五 实况审计、§六 effective-L5 实验）。
 > Node 对标基线仍是 v1.94.0；Python 线版本见 `pyproject.toml`。
 
-## 当前状态（2026-09-19，round-37 交付后系统性审阅）
+## 当前状态（2026-09-22，round-60 里程碑对账）
 
 - 包版本：**1.112.0**（soak 封版中；「一阶段一 minor」，阶段切换留人类仪式）
-- Dogfood：**37 轮**（round-30~34 曾五轮环旁路，round-35 对账揭出并回正；
-  round-35~37 三轮连续环内干净运行）
-- 测试：全套件 not-slow 级联全绿（T0 分母 **3653**，基线 0.999726 双重复一致）；
-  ruff / mypy strict（327 文件）0 错误
-- 验收门：`gated_cumulative=31`，滚动窗 20，`verdict=false_kill_high`
-  （窗内 2 历史伪杀待滑出：预计 cumulative ≈40/42），
-  `verified_true_positives=0`（**属实非欠账**：账本中尚无真实 T0 回归被门
-  shadow 拒绝过，无可登记项），shadow_mode=on
-- 锚定评测：**Epoch 10 × 15 探针**，9 次生产运行全绿（round-37 变异自身
-  被实弹审判 15/15）
-- 环完整性：`charter-check` loop_integrity = **ok**（round-37 新仪器；
-  仓内视图 stale 112965s 与 soak 视图 ok 双视图各自如实）
-- 运行态：外置 `~/.evomap/evolver.py-soak`（CLI/MCP/runner 自动路由）；
-  仓内 git 运行态卫生 met=True；env 脚印 78/80
+- Dogfood：**60 轮**（round-35 回正后 26 轮连续环内干净运行）
+- 测试：全套件 not-slow 级联全绿（~3730 passed；T0 分母 3653、基线
+  0.999726 双重复一致）；ruff / mypy strict（330 文件）0 错误
+- 验收门：`gated_cumulative=53`，滚动窗 20，**`verdict=unverified`**
+  （round-49 两历史伪杀滑出后翻转；round-47 预演路径生产兑现），
+  `verified_true_positives=0`（唯一转正阻塞——见 P1 #2），
+  `interception=0.00`（健康安静期），shadow_mode=on
+- 锚定评测：**Epoch 11 × 16 探针**，生产运行全绿（含「探针审判携带
+  自身的变异」闭环 ×2）
+- 环完整性：loop_integrity ok；周期相位遥测稳态 **0.07-0.11s**
+  （hub 死端点三层修复后 118 倍归零；TTL 24h 重探 live 验证 3.2s
+  落新天花板内）
+- 运行态：外置 soak 根（30 命令路由白名单 + 亲和审计完成）；
+  env 78/80；evidence/ 有界轮转（每周期路径）
 
-## 核对结论（本轮审阅发现，2026-09-19）
+## rounds 38-59 交付速览（自上轮对账）
 
-计划文档内部自洽（演进方案 §11.5–11.9 回填至 round-34；RSI §6.6 至
-round-36；TODO P0/P1 全清）。以下为实况漂移与悬置项：
+- **P1 波次收口**（rounds 38-41）：cost/faithful 双口径 → recall 在库
+  过滤 → 变体档案（DGM）→ K=2 种群前置段 + 锚 Epoch 11
+- **端点健康弧线**（rounds 42-46, 49）：相位遥测 → hub 粘性 404 →
+  hub_health 单咽喉 → 路由白名单（写者+读者 26 命令）→ 周期
+  17.1s→0.145s（**118 倍**，DEBUG #45）
+- **测试密闭性**（rounds 48, 54, 55）：hub 状态 + sniffer 状态 autouse
+  防线（by-name 绑定陷阱）；30 模块运行态盘查；rounds 27-54 回溯
+  覆盖 13 测（抓到 re-dispatch 解析真缺陷）
+- **初始化即可用**（round-57，用户任务）：MCP instructions 自足
+  bootstrap + next_action pending 感知 + supervision/hitl 渲染
+- **死面收编**（rounds 56, 58, 59）：evidence/ 有界轮转（零读者死写者
+  → 每周期路径接线）；lifecycle 近阈值段（39 基因 0 达阈值的结构事实）
+- **effective-L5**：复跑 #3（round-43 捕获罐全空）+ #4（round-52
+  verdict 翻转=修复-等待-兑现第二例）；跨纪元证据 **2/3**
 
-1. **CHANGELOG 按 round 记账中断**：round-30~34 有条目，**round-35~37 缺**
-   （round-35 的三缺陷修复、round-36 复跑 #2、round-37 环完整性回执均未入账）。
-2. **g1 谱系污染未清余波**：round-35 事件 `evt_…ea7446c7`（gene_id=g1
-   劫持）仍在 soak 账本，**已两次传染下游**——round-36/37 tick 的 Recall
-   Hints 出现 `g1 (gene)` 假成功经验，喂给选择器的是假记忆。
-3. **守护进程古老代码仍在循环**：pid 35664（`evolver --loop`，2026-09-07
-   启动=round-7 时代代码）已连续运行 12 天，未吸收此后 30 轮全部互锁。
-4. **MCP server 孤儿进程 ×3**（10:51 / 14:19 / 14:19），其一早于 round-37
-   代码；stdio 管道归属须 `ps` 核对。
-5. **两个悬置人为决策**（引擎只能提示，无法代办）：
-   - soak 转正三条件中 `verified_true_positives ≥1` 需**未来首个真实 T0
-     回归被门拒绝时人工登记** `~/.evomap/anchor/gate-verifications.jsonl`；
-   - v1.112 稳定化阶段的**收尾仪式**（§11.3 判词「阶段从未宣布结束」至今
-     成立）：soak 判定落定后由人宣布阶段切换与下一 minor。
-
-## P0 — 度量闭环与账本卫生（2026-09-20 已全部完成）
-
-| # | 项 | 状态 | 落点 |
-|---|---|---|---|
-| 1 | library 忠实使用率 + 每次验证成本口径 | **完成（round-38）** | `panel.cost`（K=2 投影 +264s/cycle）+ `panel.library.faithful_use`（retrieval 24% / novel 100%）；纯增量过锚 15/15 |
-| 2 | g1 事件 recall 隔离 | **完成（round-39）** | 在库结构过滤（`known_gene_ids`）+ soak 图 1 行清创；live 证伪 Recall Hints 无 g1 |
-| 3 | CHANGELOG 补账 round-35~37 | **完成（round-38 随入库）** | `check_changelog` OK；此后按轮记账 |
-
-## P1 — soak 转正路径（被动积累 + 挂钟，无需专项变异）
+## P1 — soak 转正路径（唯一剩余工作流）
 
 | # | 项 | 内容与验收 |
 |---|---|---|
-| 1 | **环内继续攒干净样本** | 每轮 dogfood 自然累积 gated 事件；cumulative 31 → **≈42**（两伪杀滑出滚动窗）后 verdict 自动重算。纪律不变：`EVAL_WORKTREE=1`、真实 friction 驱动、feedback 反映级联真分 |
-| 2 | **人工登记首个 verified true positive**（人类动作） | 当首个**真实 T0 回归**被门 shadow 拒绝（cascade 绿、门拒绝、人复核确认回归为真）：`evolver anchor` 旁 `gate-verifications.jsonl` 登记 `event_id -> verdict`。此后 `verified_true_positives ≥1` 条件满足 |
-| 3 | **effective-L5 复跑 #3** | 挂钟 ~round-46（§6.4 协议：每 ~10 轮）；届时跨纪元证据有望 3/3——若达，§2.2 L5 表述升级提案（文档变更走人审） |
-| 4 | **verdict 落定后的转正决策**（人类动作） | 三条件齐后：人决定 `EVOLVER_ACCEPTANCE_SHADOW=0` 与否；同时宣布 v1.112 阶段收尾（§11.3 的「阶段切换仪式」）与下一 minor |
-
-## P2 — RSI P1-3 候选种群（**2026-09-20 完成，rounds 40-41，RSI P1 波次全部落地**）
-
-| # | 项 | 状态 |
-|---|---|---|
-| 1 | 变体档案（DGM 被拒保留+重派资格） | **完成（round-40）**：环境/语义分类、unified_diff replay 过 S29 通道、重派谓词、`candidates.jsonl` 复活、CLI `variants` |
-| 2 | K=2 种群前置段 | **完成（round-41）**：fresh worktree 级联预选、全序决胜、预算守卫 1500s（=K2 投影上限）、败者 `sibling_of` 入档、胜者仍过完整冻结路径；**锚 Epoch 11** 16/16（变异自身被实弹审判） |
-| 3 | 首次真实 K=2 轮 | 待两个真实竞争候选同现一轮时启用（`evolver solidify --population A.json B.json`）；机制已沙箱 E2E 验证 |
+| 1 | 环内继续攒干净样本 | cumulative 53 持续增长；纪律不变 |
+| 2 | **人工登记首个 verified true positive**（人类动作·唯一阻塞） | 首个真实 T0 回归被门 shadow 拒绝且人工复核确认为真时：向 `$EVOLVER_HOME/anchor/gate-verifications.jsonl` 追加 `{"<event_id>": "confirmed"}`（verdict reason 已带完整指南） |
+| 3 | 登记后的判定路径 | verified_tp≥1 后 verdict 走 `collecting_verified`（零拦截+人工背书=校准后安静期）；**最终 `ready` 需窗内出现带内拦截**——健康循环下可能长期不达，届时转正是人类对 `EVOLVER_ACCEPTANCE_SHADOW=0` 的直接判断（enforce_hint 一直这么写） |
+| 4 | effective-L5 复跑 #5 | ~round-62 或捕获入账（判据 (a) 第三点仍待首个完整捕获：环境性拒绝→档案→重派→接受） |
+| 5 | v1.112 收尾仪式（人类动作） | soak 判定落定后宣布阶段切换与下一 minor |
 
 ## Ops — 环境卫生（用户决定/顺手）
 
 | # | 项 | 说明 |
 |---|---|---|
-| 1 | 守护进程处置 | pid 35664（round-7 代码）建议 `evolver stop` 后按需 `evolver start`（新代码含 soak 自动路由）。**用户启动的进程，留用户决定** |
-| 2 | MCP 孤儿进程清理 + 重连 | 3 个 mcp_server 进程，杀多余；改引擎源码后重连纪律不变（本轮起含 charter_check 面） |
-| 3 | Mimosa 周期复扫 | 上次深扫 2026-09-17（25 findings 已 triage 于 `docs/mimosa-triage.md`）；锚 epoch/代码大变后建议复扫一次 |
+| 1 | 守护进程处置 | pid 35664（Sep 7 round-7 代码）仍在循环——round-59 证实其存在使 cleanup 死接线（现已绕开）；建议 `evolver stop` 后按需 `evolver start`。**用户启动的进程，留用户决定** |
+| 2 | MCP server 重连 | 重连后宿主即收到 round-57 自足 bootstrap 指令；陈旧孤儿进程清理 |
+| 3 | Mimosa 复扫 | 2026-09-20 复扫 25 findings 与基线逐条全同（零新增）；下次大变更后再扫 |
 
 ## 明确不做（本阶段）
 
 - 再按收割切片 bump minor（阶段切换仪式前版本钉 1.112.0）
 - `chore: runtime state sync` / 产品仓直推运行态
-- `EVOLVER_ACCEPTANCE_SHADOW=0`（三条件未齐，严禁转正）
+- `EVOLVER_ACCEPTANCE_SHADOW=0`（verified TP 未登记，严禁转正）
 - 本阶段 PyPI / 新 EvoX 切片 / RSI P2（多节点种群共享、soak 报告 v2、
   validator 安全模型深化、S30.3 发布决策——阶段后储备）
