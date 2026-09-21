@@ -8,6 +8,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed — round-53：Hub 超时常量实测校准（相位遥测第三笔应用）
+- **实测**：端点 curl 三连 404 全部 **1.41~1.50s 稳定**（floor ~1.5s）。
+- **`config.py`**：`HUB_SEARCH_TIMEOUT_MS` 8s→**5s**（~3x 余量）、
+  `HTTP_TRANSPORT_TIMEOUT_MS` 15s→**10s**（~7x 余量）——旧值只在最坏
+  情形起作用（一次 15s 超时+一次重试 = round-45 观测的 15.7s hub 相位
+  读数 = round-40/41 tick 超时的放大器），新值把最坏情形减半。常量
+  注释内联记录校准依据；消费者只读值零破约；零 env 旋钮。139 相关
+  测试全绿。
+
 ### Added — round-52：effective-L5 复跑 #4（RSI §6.8，挂钟条款）
 - 纪元 E'（rounds 44-51，8/8 零拒绝）——捕获罐连续第二纪元全空
   （维持 2/3 不是退化，捕获本就低频）。E' 独有结构事实：**verdict
