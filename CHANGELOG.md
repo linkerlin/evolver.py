@@ -8,6 +8,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed — round-54：运行态状态盘查——conversation_sniffer 泄漏（#37 家族第五例）
+- **盘查方法**：30 个 `get_evolution_dir()` 写入模块逐个过测试隔离 refs，
+  不等泄漏自曝。坐实：`conversation_sniffer_state.json` 在仓内存在且
+  `last_sniff_ts` 随测试运行递增——try_sniff enforce 模式找到 candidates
+  即无条件 `_write_state`，泄漏测试 161 行 `cs.read_state()`（真实路径）
+  + 真实证据直写仓内。
+- **`tests/conftest.py`**：autouse `_isolate_sniffer_state`——monkeypatch
+  `_state_path` 指向每测试 tmp（round-48 同教义，无条件重定向）；残留
+  清理后零泄漏复验。盘查结论：无第六处（其余写入模块由既有套件覆盖）。
+- **教训**：绿套件对静默状态写入无发言权——按写入模块清单主动盘查，
+  用 mtime/content 变化跨绿跑证明清洁。
+
 ### Changed — round-53：Hub 超时常量实测校准（相位遥测第三笔应用）
 - **实测**：端点 curl 三连 404 全部 **1.41~1.50s 稳定**（floor ~1.5s）。
 - **`config.py`**：`HUB_SEARCH_TIMEOUT_MS` 8s→**5s**（~3x 余量）、
