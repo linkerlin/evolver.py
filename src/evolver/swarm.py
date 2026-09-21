@@ -615,7 +615,43 @@ def swarm_distill(response_text: str, dry_run: bool = False) -> dict[str, Any]:
             from evolver.gep.solidify import record_landed_gene_ids
 
             record_landed_gene_ids(gene_ids)
+    # Round-61 bridge: a GeneProposal embedded in the response text (fenced
+    # json block with action/edits) is surfaced as a replay candidate so the
+    # host's structural work product reaches the S29/population channel's
+    # upstream without a second manual step. Observation-only — nothing is
+    # applied here; the proposal still goes through swarm_propose/solidify
+    # gates if the operator chooses to replay it.
+    proposals = _extract_proposal_candidates(response_text)
+    if proposals:
+        result["proposal_candidates"] = proposals
+        result["proposal_next_step"] = (
+            f"{len(proposals)} GeneProposal block(s) detected — replayable via "
+            "swarm_propose or `evolver solidify --proposal/--population` "
+            "(same validation gates as any mutation)"
+        )
     return result
+
+
+def _extract_proposal_candidates(response_text: str) -> list[dict[str, Any]]:
+    """Fenced ```json blocks that parse as GeneProposal (action + edits).
+
+    Best-effort: invalid shapes are skipped silently (the distill assets are
+    the primary product; the bridge must never turn a format variation into
+    an error for the host).
+    """
+    candidates: list[dict[str, Any]] = []
+    for match in re.finditer(r"```json\s*\n(.*?)```", response_text, re.DOTALL):
+        try:
+            data = json.loads(match.group(1))
+        except ValueError:
+            continue
+        if (
+            isinstance(data, dict)
+            and data.get("action") in ("patch", "create", "no_action")
+            and isinstance(data.get("edits"), list)
+        ):
+            candidates.append(data)
+    return candidates
 
 
 def _pending_solidify_meta() -> dict[str, str]:

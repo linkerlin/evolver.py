@@ -232,6 +232,54 @@ class TestDistillSolidifyReport:
         assert "hint" not in result
         assert result["next_action"] == "swarm_solidify"
 
+    def test_distill_surfaces_proposal_candidates(self, isolated_swarm_env: Path) -> None:
+        """Round-61 bridge: an embedded GeneProposal block (action+edits) is
+        surfaced as a replay candidate — observation only, never applied."""
+        response = (
+            "```json\n"
+            '{"type": "Gene", "id": "gene_bridge", "category": "repair", '
+            '"summary": "x", "signals_match": ["hub"]}\n'
+            "```\n"
+            "```json\n"
+            '{"action": "patch", "edits": [{"op": "append", "file": "docs/x.md", '
+            '"content": "note"}]}\n'
+            "```\n"
+        )
+        result = swarm_distill(response)
+        assert result["genes"] == 1
+        assert len(result["proposal_candidates"]) == 1
+        assert result["proposal_candidates"][0]["action"] == "patch"
+        assert "swarm_propose" in result["proposal_next_step"]
+
+    def test_distill_ignores_non_proposal_json(self, isolated_swarm_env: Path) -> None:
+        # A Gene asset block is json but not a proposal — no false candidate.
+        response = (
+            "```json\n"
+            '{"type": "Gene", "id": "gene_plain", "category": "repair", '
+            '"summary": "x", "signals_match": ["hub"]}\n'
+            "```\n"
+        )
+        result = swarm_distill(response)
+        assert "proposal_candidates" not in result
+
+    def test_distill_malformed_block_never_errors(self, isolated_swarm_env: Path) -> None:
+        # The bridge must never turn a format variation into a host error.
+        response = (
+            "```json\n"
+            '{"action": "patch", "edits": "not-a-list"}\n'
+            "```\n"
+            "```json\n"
+            "not json at all\n"
+            "```\n"
+            "```json\n"
+            '{"type": "Gene", "id": "gene_ok", "category": "repair", '
+            '"summary": "x", "signals_match": ["hub"]}\n'
+            "```\n"
+        )
+        result = swarm_distill(response)
+        assert result["ok"] is True
+        assert "proposal_candidates" not in result
+
     def test_distill_records_landed_gene_ids(self, isolated_swarm_env: Path) -> None:
         from evolver.gep.paths import get_solidify_state_path
         from evolver.gep.solidify import write_state_for_solidify
