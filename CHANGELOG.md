@@ -8,6 +8,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed — round-57：MCP 注入提示词三缺口——初始化即可用（用户任务）
+- **审阅结论**：注入三通道按保证级分层——instructions（initialize
+  必达）> `evolver_swarm` prompt（宿主选渲染）> `swarm_boot` 工具
+  （宿主选调用）；attend 模式下完整协议只经后两者到达，prompt-less
+  宿主只有前者。
+- **`mcp_server.py`**：instructions 从「指针段」升级为**自足
+  bootstrap**——祈使首动作（调用 `swarm_boot` 拿完整协议+实时状态+
+  正确下一步）+ 完整功能地图六组（自动进化闭环五步+propose / 只读
+  状态面 / 治理 supervise+approvals / hooks 双轨 / workflows / 多节点
+  邮箱+skills）+ `evolver://*` 资源 + 稳态守卫语义。AUTO_HIJACK 强制
+  前缀与 attend 建议性保持不变（章程纪律）。
+- **`swarm.py`**：(1) `swarm_boot.next_action` **pending 感知**
+  （`swarm_solidify` if pending——round-4 只修了 prose 漏了结构化
+  字段，读字段的宿主拿错首动作）；(2) instrument 第六节补
+  **supervision / hitl** 行（状态早已返回但从未渲染——宿主首 tick
+  前可见暂停/否决）。
+- 16 needle 钉面（`test_instructions_are_self_sufficient_bootstrap`）；
+  同步三处指令断言（单测/E2E/协议 E2E——级联首拒抓到第三处 stale
+  needle）。**教训：指令按保证级分层，完整指引属最高保证通道；
+  结构化字段与 prose 分支同源派生。**
+
 ### Fixed — round-56：evidence/ 死写者收编——有界轮转（零读者存储泄漏）
 - **发现**：`gep/evidence.py` 的 `save_evidence` 每次 solidify 落盘
   ~14KB/run，但 `load_evidence` **全仓零生产消费者**（仅测试引用）；
