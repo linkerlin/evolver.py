@@ -8,6 +8,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added — round-55：近四周改动回溯测试覆盖（rounds 27-54，13 新测）
+- **`tests/test_recent_rounds_cli.py`（新）**：五类缝钉面——路由白名单
+  成员**双侧契约**（写者/读者在集、gate-report/charter-check 双视图
+  命令留在外）；round-53 超时校准值（10s/5s）+ floor 余量下限 +
+  sticky 常量（3/24h）不变；round-47 unverified reason 四要素
+  （工件/路径/行格式/登记条件）；variants CLI 四测（含 re-dispatch
+  真实应用到沙箱 git 仓库）；round-41 `--population` 接线（胜者传递、
+  败者不落地）；round-49 soak status 渲染行。
+- **`cli.py`**：路由白名单提升为模块级 `SOAK_ROUTED_COMMANDS`
+  （frozenset 26 命令）——静默删除即红。
+- **覆盖测试抓到真缺陷**：round-44 re-dispatch 参数接线只收裸 id
+  形式，文档形式 `variants re-dispatch <id>` argparse 报「多余位置
+  参数」——重接线为 action/variant_id 双位置参数 + 兼容旧裸 id 形式。
+  **教训：测试写不出来时先怀疑接口——文档形式可能根本 parse 不了。**
+
 ### Fixed — round-54：运行态状态盘查——conversation_sniffer 泄漏（#37 家族第五例）
 - **盘查方法**：30 个 `get_evolution_dir()` 写入模块逐个过测试隔离 refs，
   不等泄漏自曝。坐实：`conversation_sniffer_state.json` 在仓内存在且
