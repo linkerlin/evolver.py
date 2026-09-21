@@ -117,6 +117,41 @@ def cleanup_directory(
     return {"dir": str(directory), "removed": removed}
 
 
+def cleanup_run_directories(
+    directory: Path,
+    *,
+    max_dirs: int = CLEANUP_MAX_FILES,
+) -> dict[str, Any]:
+    """Keep only the newest *max_dirs* run sub-directories (round-56).
+
+    ``gep/evidence/`` gets one directory per solidify run (~14KB each) but
+    has ZERO production readers (``load_evidence`` unreferenced outside
+    tests) and no rotation — write-side alive, read-side dead, unbounded
+    growth (22 dirs/428K observed). Bounded retention is the minimal honest
+    fix: no functional loss without readers; if a reader is ever wired, the
+    retention window must be revisited.
+    """
+    if not directory.exists():
+        return {"dir": str(directory), "removed": 0}
+
+    dirs = sorted(
+        (p for p in directory.iterdir() if p.is_dir()),
+        key=lambda p: p.stat().st_mtime,
+        reverse=True,
+    )
+    removed = 0
+    for old in dirs[max_dirs:]:
+        try:
+            import shutil
+
+            shutil.rmtree(old)
+            removed += 1
+        except OSError:
+            pass
+
+    return {"dir": str(directory), "removed": removed}
+
+
 def run_cleanup() -> dict[str, Any]:
     """Run all cleanup tasks and return summary."""
     results: list[dict[str, Any]] = []
@@ -126,6 +161,11 @@ def run_cleanup() -> dict[str, Any]:
     results.append(cleanup_jsonl(evo_dir / "events.jsonl"))
     results.append(cleanup_jsonl(evo_dir / "memory_graph.jsonl"))
     results.append(cleanup_jsonl(evo_dir / "reflection_log.jsonl"))
+
+    # Round-56: per-run evidence directories (no readers; bounded retention)
+    from evolver.gep.paths import get_gep_assets_dir
+
+    results.append(cleanup_run_directories(get_gep_assets_dir() / "evidence"))
 
     # Log files
     logs_dir = get_logs_dir()

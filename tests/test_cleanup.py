@@ -73,6 +73,38 @@ def test_run_cleanup_empty(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> N
     monkeypatch.setenv("EVOLUTION_DIR", str(tmp_path / "evo"))
     monkeypatch.setenv("EVOLVER_LOGS_DIR", str(tmp_path / "logs"))
     monkeypatch.setenv("MEMORY_DIR", str(tmp_path / "memory"))
+    monkeypatch.setenv("GEP_ASSETS_DIR", str(tmp_path / "gep"))
     result = cleanup.run_cleanup()
     assert result["ok"] is True
     assert result["total_removed"] == 0
+
+
+class TestCleanupRunDirectories:
+    """Round-56: evidence/ has zero readers and unbounded growth — bounded
+    retention of the newest N run directories, same doctrine as log cleanup."""
+
+    def test_keeps_newest_n_dirs(self, tmp_path: Path) -> None:
+        for i in range(5):
+            run_dir = tmp_path / f"run_{i}"
+            run_dir.mkdir()
+            (run_dir / "evt_x.json").write_text("{}", encoding="utf-8")
+            # Descending mtimes so run_4 is newest.
+            stamp = time.time() + i
+            import os
+
+            os.utime(run_dir, (stamp, stamp))
+        result = cleanup.cleanup_run_directories(tmp_path, max_dirs=2)
+        assert result["removed"] == 3
+        remaining = sorted(p.name for p in tmp_path.iterdir())
+        assert remaining == ["run_3", "run_4"], remaining
+
+    def test_missing_dir_noop(self, tmp_path: Path) -> None:
+        result = cleanup.cleanup_run_directories(tmp_path / "nope")
+        assert result["removed"] == 0
+
+    def test_files_untouched(self, tmp_path: Path) -> None:
+        (tmp_path / "loose.json").write_text("{}", encoding="utf-8")
+        (tmp_path / "run_0").mkdir()
+        result = cleanup.cleanup_run_directories(tmp_path, max_dirs=0)
+        assert result["removed"] == 1
+        assert (tmp_path / "loose.json").exists(), "loose files stay"
