@@ -8,6 +8,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed — round-59：cleanup 死接线闭合 + TTL 重探生产实证
+- **发现**：round-56 的 evidence 轮转在生产形态下是**死代码**——唯一
+  调用方是守护循环每 10 周期清理，但 CLI 单周期/MCP tick/solidify 从
+  不调 `run_cleanup`，且唯一在跑的守护进程（Sep 7 启动）是 round-7
+  时代代码、没有该函数。
+- **`evolve/post_cycle.py`**：轮转接进每周期路径（与 gene lifecycle
+  同位置，目录列举成本可忽略）。**实证**：接线后首次 dispatch soak
+  evidence 25→**10**（稳态有界）。
+- **附带生产实证**：TTL 24h 重探兑现——重探周期 hub=3.19s（counter
+  3→4，落在 round-53 新 5s/10s 天花板内——超时校准 live 验证），后续
+  周期恢复跳过。
+- **教训**：修好的东西要问谁在生产形态真的执行它（守护的代码年龄、
+  单周期路径覆盖面都是审计对象）；维护性工作接每周期路径当成本可忽略。
+
 ### Changed — round-58：gene-lifecycle 近阈值段（P1-5 生产零转移的操作者面收口）
 - **结构事实**：soak 实测 39 个落地基因 **0 个达到观测阈值 3**（最高
   2）——每轮蒸馏落地新基因（`landed_gene_ids` 口径），被再选中的旧
