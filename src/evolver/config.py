@@ -93,9 +93,15 @@ HEARTBEAT_TIMEOUT_MS: Final = 10_000
 HEARTBEAT_INTERVAL_MS: Final = env_positive_int("HEARTBEAT_INTERVAL_MS", 360_000)
 HEARTBEAT_FIRST_DELAY_MS: Final = 30_000
 EVENT_POLL_TIMEOUT_MS: Final = 60_000
-HTTP_TRANSPORT_TIMEOUT_MS: Final = 15_000
+# Round-53: calibrated from measured endpoint distribution — the Hub answers
+# 404 in a stable 1.4-1.5s (three consecutive curl samples), so the old
+# 15s/8s values only ever mattered as worst-case burn (one 15s timeout + one
+# retry = the 15.7s hub-phase reading that drove the round-40/41 tick
+# timeouts). 10s/5s keep ~7x/3x headroom over the observed floor while
+# halving the worst case. Module constants, not env knobs.
+HTTP_TRANSPORT_TIMEOUT_MS: Final = 10_000
 SECRET_CACHE_TTL_MS: Final = 60_000
-HUB_SEARCH_TIMEOUT_MS: Final = 8_000
+HUB_SEARCH_TIMEOUT_MS: Final = 5_000
 HUB_FETCH_RETRIES: Final = 1
 HUB_FETCH_RETRY_BACKOFF_MS: Final = 500
 
