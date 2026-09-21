@@ -8,6 +8,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed — round-51：soak 路由白名单存储亲和补全（round-31 互锁完整性收口）
+- **`cli.py`**：`_soak_routed_commands` 补 11 个存储/账本亲和命令——
+  **写者** `distill`/`fetch`/`sync`/`reuse`/`publish`（裸 CLI 会装基因/
+  资源/任务进冻结仓内库=状态分裂；MCP 路径不受累，server 启动即路由）
+  + **读者** `asset-log`/`rebuild-views`/`replay`/`exec`/`experiment`/
+  `bench`（同 round-49 report 陈旧读数类）。
+- 冒烟验证：裸 shell 模拟 distill 前路由 `routed=True`。教训：渐进
+  生长的白名单永不完整——修完读者类立即审计整个命令面的写者亲和；
+  安全路径（MCP 自动路由）会掩盖不安全路径（裸 CLI）直到有人跑它。
+
 ### Fixed — round-49：操作者面陈旧读数修复 + **soak verdict 翻转 `unverified`**
 - **里程碑**：cumulative 43——两历史伪杀（round-21/24）全部滑出滚动窗，
   **verdict 由 `false_kill_high` 翻转为 `unverified`**（round-47 预演的
