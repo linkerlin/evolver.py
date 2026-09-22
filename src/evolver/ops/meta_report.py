@@ -316,6 +316,13 @@ def build_meta_report(
                 "landed_genes_tracked": len(dq),
                 "signal_recurrence_free": resolved,
                 "insufficient_descendants": unknown,
+                # Round-64: same underlying count as library.resolution_rate's
+                # numerator — two panels, one number. Named explicitly so
+                # operators don't have to reverse-engineer the alias.
+                "note": (
+                    "signal_recurrence_free == library panel's resolved count "
+                    "(same landing-window statistic, different framing)"
+                ),
             },
             "transfer": {
                 "genes_under_multiple_signal_families": len(transferred),
