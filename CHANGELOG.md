@@ -8,6 +8,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added — round-62：effective-L5 复跑 #5（RSI §6.9，挂钟条款）
+- 纪元 E''（rounds 55-62 尾段，9 事件 8/1）——**首个 near-catch 生产
+  事件**：round-57 stale needle 被**老级联**诚实拒绝（真阳性，非新
+  机制解锁故不计判据 (a)）；「拒绝→修复→重派→接受」与 DGM 同形但
+  经 stash 非档案——修复改变 diff 本身，指纹重派前提不适用（档案
+  语义=同一编辑环境修复后重试）。
+- 拒绝分型学第三类：**文本卫生类**（stale assertion——ruff/mypy
+  覆盖不到，只有 pytest 逮）；精确度 B 起 9/10；零拒绝连续段打破=
+  验证器安静期不沉睡的生产证明。
+- 修复-等待-兑现弧第三例：round-53 超时校准 → round-59 TTL 重探
+  3.2s live 验证。维持 2/3；复跑 #6 ~round-72 或捕获入账。
+
 ### Added — round-61：distill→propose 最小桥（S29 通道采用缺口）
 - **诊断**：S29 机械提案通道自 round-32 落地生产仅 2 次调用（测试期）
   ——**采用缺口而非能力缺口**（门在、锚守卫在、population 消费者在，
