@@ -8,6 +8,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed — round-63：cleanup 触发面补课（#38 教训追溯应用）
+- **`config.py`**：`ops/cleanup.py` 入 `ANCHOR_TRIGGER_SURFACES`——
+  `cleanup_run_directories` 持 evidence/ run 档案的**删除权**：删除权
+  是**否决权的破坏性等价物**（`max_dirs` 改大=无界增长回归；改小=
+  诊断证据过早丢失）。round-56 以「无否决权」跳过守护是判定失误，
+  追溯修正。守卫测试双向钉面。
+- 无探针语义变化故不升 epoch（16 探针不变）；扩面生效的实弹验证
+  留待未来首个触碰 cleanup.py 的变异。
+- 插曲：首次 solidify 被会话取消中断（无 stash 残留、工作树变异
+  完整保留），重新派发后重固化绿；gene_destructive_twin_guard 的
+  lineage 挂在旧 run 的 distill（分裂如实记档）。
+
 ### Added — round-62：effective-L5 复跑 #5（RSI §6.9，挂钟条款）
 - 纪元 E''（rounds 55-62 尾段，9 事件 8/1）——**首个 near-catch 生产
   事件**：round-57 stale needle 被**老级联**诚实拒绝（真阳性，非新
