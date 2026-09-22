@@ -8,6 +8,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed — round-64：跨面板别名注记（retention↔library 同数异名）
+- **发现**：meta-report 中 retention 面板 `signal_recurrence_free`
+  =25/43 与 library 面板 `resolution` =25/45 两数恰等、命名反向
+  （recurrence_free=好 / resolved=好）——查码证实**同源**（landing
+  统计同一 resolved 计数），但操作者无法不查码区分「同口径两措辞」
+  与「两种计算」。
+- **`ops/meta_report.py`**：retention 面板增 note 显式标注别名关系。
+  **加法优于改名**——既有键契约（tests/webui 消费者、锚探针字典
+  精确相等断言）优先于命名优雅；纯增量键实测 40 passed 含 epoch 4
+  探针。
+
 ### Fixed — round-63：cleanup 触发面补课（#38 教训追溯应用）
 - **`config.py`**：`ops/cleanup.py` 入 `ANCHOR_TRIGGER_SURFACES`——
   `cleanup_run_directories` 持 evidence/ run 档案的**删除权**：删除权
