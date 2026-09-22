@@ -8,6 +8,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed — round-65：TTL 重探语义修正——降档+折半递增（round-59 重探暴露）
+- **两处设计缺陷**：(1) sticky 态下的重探 fetch 以**首探完整重试预算**
+  执行（3.9s）——已知 404 端点不该享受首探待遇；(2) 重探失败后 TTL
+  **完全重置 24h**——端点连续 5 次 404 横跨多日，每次重探都把下次
+  重探推后一整天。
+- **`gep/hub_health.py` + `evolve/pipeline/hub.py`**：
+  `HUB_404_REPROBE_FLOOR_S=1h`（折半下限）+ `reprobe_count` 记账 +
+  `endpoint_sticky` 折半等待语义（24h→12h→6h…→1h）——持续死亡的
+  端点重探频率收敛，回归端点仍在一个窗口内被捕获；重探 fetch 降档
+  为单发；成功/非 404 双清零。
+- **教训**：粘性态的重探不该用首探预算；测试引擎正确粘住行为后再
+  断言最终重探（失败的重探会刷新 last_probe_ts，下周期正确粘住——
+  测试需先老化时间戳）。
+
 ### Changed — round-64：跨面板别名注记（retention↔library 同数异名）
 - **发现**：meta-report 中 retention 面板 `signal_recurrence_free`
   =25/43 与 library 面板 `resolution` =25/45 两数恰等、命名反向
