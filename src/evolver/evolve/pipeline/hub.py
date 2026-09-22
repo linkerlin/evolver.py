@@ -15,7 +15,9 @@ from evolver.gep.hub_health import (
     HUB_404_STICKY_THRESHOLD,
     load_state,
     note_404,
+    note_reprobe_failed,
     reset_404,
+    reset_reprobe,
     save_state,
 )
 
@@ -46,11 +48,16 @@ async def hub_phase(ctx: dict[str, Any]) -> dict[str, Any]:
     # Round-45 sticky 404 short-circuit: skip ONLY the fetch. The ctx shape
     # stays identical to a failed fetch — skip_hub_calls is deliberately NOT
     # set, so dispatch behavior (local gene dispatch) is unchanged.
+    # Round-65: the sticky wait HALVES with each failed re-probe (floored
+    # at 1h) — a persistently dead endpoint is re-probed on a converging
+    # schedule instead of waiting a fresh 24h after every failed probe.
     state = load_state()
     now = time.time()
+    reprobe_count = int(state.get("reprobe_count", 0))
+    wait_s = max(HUB_404_REPROBE_S / (reprobe_count + 1), 3600.0 if reprobe_count else 0.0)
     if (
         int(state.get("consecutive_404", 0)) >= HUB_404_STICKY_THRESHOLD
-        and now - float(state.get("last_probe_ts", 0.0)) < HUB_404_REPROBE_S
+        and now - float(state.get("last_probe_ts", 0.0)) < wait_s
     ):
         state["skipped_cycles"] = int(state.get("skipped_cycles", 0)) + 1
         save_state(state)
@@ -60,7 +67,7 @@ async def hub_phase(ctx: dict[str, Any]) -> dict[str, Any]:
             "consecutive_404": state["consecutive_404"],
             "skipped_cycles": state["skipped_cycles"],
             "next_probe_in_s": round(
-                HUB_404_REPROBE_S - (now - float(state.get("last_probe_ts", 0.0)))
+                wait_s - (now - float(state.get("last_probe_ts", 0.0)))
             ),
         }
         ctx["active_task"] = None
@@ -80,7 +87,11 @@ async def hub_phase(ctx: dict[str, Any]) -> dict[str, Any]:
         else:
             # A different failure class (network/DNS) says nothing about the
             # endpoint's existence — reset honestly rather than accumulate.
-            save_state(reset_404(state))
+            save_state(reset_reprobe(reset_404(state)))
+        # Round-65: a fetch that ran while sticky (a TTL re-probe) failed —
+        # halve the next wait. Full resets below clear this too.
+        if int(state.get("consecutive_404", 0)) >= HUB_404_STICKY_THRESHOLD and "404" in error_text:
+            save_state(note_reprobe_failed(state))
         ctx["hub_hit"] = {"reason": "offline", "error": result.get("error")}
         ctx["active_task"] = None
         ctx["hub_lessons"] = []
@@ -88,7 +99,7 @@ async def hub_phase(ctx: dict[str, Any]) -> dict[str, Any]:
         ctx["last_hub_fetch_ms"] = int(time.time() * 1000)
         return ctx
 
-    save_state(reset_404(state))
+    save_state(reset_reprobe(reset_404(state)))
     _apply_hub_payload(ctx, result)
     tasks = result.get("tasks", [])
     if tasks:

@@ -22,11 +22,17 @@ from typing import Any, Final
 HUB_404_STICKY_THRESHOLD: Final = 3
 #: Re-probe cadence once sticky — the endpoint may return or config change.
 HUB_404_REPROBE_S: Final = 24 * 3600.0
+#: Round-65: each failed re-probe HALVES the next wait (24h -> 12h -> 6h
+#: ... floored at 1h). A persistently dead endpoint gets probed more often
+#: over time (cheap single-shot probes), while a returning endpoint is
+#: still caught within one window. Floor constant, not env knob.
+HUB_404_REPROBE_FLOOR_S: Final = 3600.0
 
 _STATE_DEFAULT: Final[dict[str, Any]] = {
     "consecutive_404": 0,
     "last_probe_ts": 0.0,
     "skipped_cycles": 0,
+    "reprobe_count": 0,
 }
 
 
@@ -69,22 +75,45 @@ def endpoint_sticky(*, now: float | None = None) -> bool:
     """True while the endpoint is presumed missing and the TTL hasn't expired.
 
     Fail-open by construction: corrupt/missing state reads as threshold 0.
+    Round-65: the wait HALVES with each failed re-probe (floored at 1h) —
+    a persistently dead endpoint is probed more often over time, so a
+    returning endpoint is caught within one shortened window instead of
+    waiting a full 24h after every failed probe.
     """
     state = load_state()
     current = now if now is not None else time.time()
+    wait = max(
+        HUB_404_REPROBE_S / max(1, int(state.get("reprobe_count", 0)) + 1),
+        HUB_404_REPROBE_FLOOR_S if int(state.get("reprobe_count", 0)) > 0 else 0.0,
+    )
     return (
         int(state.get("consecutive_404", 0)) >= HUB_404_STICKY_THRESHOLD
-        and current - float(state.get("last_probe_ts", 0.0)) < HUB_404_REPROBE_S
+        and current - float(state.get("last_probe_ts", 0.0)) < wait
     )
 
 
+def note_reprobe_failed(state: dict[str, Any]) -> dict[str, Any]:
+    """Record that a sticky-state re-probe ran and failed (round-65)."""
+    state["reprobe_count"] = int(state.get("reprobe_count", 0)) + 1
+    return state
+
+
+def reset_reprobe(state: dict[str, Any]) -> dict[str, Any]:
+    if state.get("reprobe_count"):
+        state["reprobe_count"] = 0
+    return state
+
+
 __all__ = [
+    "HUB_404_REPROBE_FLOOR_S",
     "HUB_404_REPROBE_S",
     "HUB_404_STICKY_THRESHOLD",
     "endpoint_sticky",
     "load_state",
     "note_404",
+    "note_reprobe_failed",
     "reset_404",
+    "reset_reprobe",
     "save_state",
     "state_path",
 ]

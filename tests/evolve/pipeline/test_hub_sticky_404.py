@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import time as _time
 from typing import Any
 
 import pytest
@@ -79,6 +80,52 @@ class TestSticky404:
         save_state({"consecutive_404": 2, "last_probe_ts": 1.0e12, "skipped_cycles": 0})
         await _run_with_fetch(monkeypatch, [_ok()])
         assert load_state()["consecutive_404"] == 0
+
+    async def test_failed_reprobe_halves_next_wait(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """Round-65: each failed sticky-state re-probe halves the next wait
+        (floored at 1h) — a persistently dead endpoint converges to frequent
+        cheap probes instead of a fresh 24h after every failed attempt."""
+        from evolver.gep.hub_health import (
+            HUB_404_REPROBE_S,
+            endpoint_sticky,
+        )
+
+        # Sticky with a fresh re-probe failure: wait must be halved (24h/2),
+        # still sticky because elapsed < halved wait.
+        save_state(
+            {
+                "consecutive_404": HUB_404_STICKY_THRESHOLD + 2,  # includes the re-probe 404
+                "last_probe_ts": _time.time() - (HUB_404_REPROBE_S / 2) + 60,
+                "skipped_cycles": 0,
+                "reprobe_count": 1,
+            }
+        )
+        assert endpoint_sticky() is True, "half-wait must still hold sticky"
+
+        # After the halved wait passes, the re-probe fires again.
+        save_state(
+            {
+                "consecutive_404": HUB_404_STICKY_THRESHOLD + 2,
+                "last_probe_ts": _time.time() - (HUB_404_REPROBE_S / 2) - 120,
+                "skipped_cycles": 0,
+                "reprobe_count": 1,
+            }
+        )
+        out = await _run_with_fetch(monkeypatch, [_err_404()])
+        assert out["_calls"]["n"] == 1, "halved TTL expired → real re-probe"
+        state = load_state()
+        assert state["reprobe_count"] == 2, "failed re-probe increments the counter"
+
+        # A success clears BOTH counters (back to full 24h waits). The failed
+        # re-probe refreshed last_probe_ts, so the next cycle correctly
+        # sticky-skips; age the probe past the halved wait first.
+        state = load_state()
+        state["last_probe_ts"] = _time.time() - (HUB_404_REPROBE_S / 2) - 120
+        save_state(state)
+        await _run_with_fetch(monkeypatch, [_ok()])
+        state = load_state()
+        assert state["consecutive_404"] == 0
+        assert state.get("reprobe_count", 0) == 0
 
     async def test_non_404_error_resets_not_accumulates(
         self, monkeypatch: pytest.MonkeyPatch
