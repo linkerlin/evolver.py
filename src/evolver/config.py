@@ -376,6 +376,13 @@ ANCHOR_TRIGGER_SURFACES: Final[tuple[str, ...]] = (
     # reaches the frozen landing path — selection authority between
     # candidates, frozen from epoch 11 by the population-adjudication probe.
     "src/evolver/gep/population.py",
+    # Round-63 (#38 doctrine, backfilled): cleanup_run_directories holds
+    # DELETION authority over evidence/ run archives — deletion is the
+    # destructive twin of rejection authority (max_dirs too large = the
+    # unbounded-growth regression returns; too small = diagnostic evidence
+    # lost early). round-56 skipped the guard on "no rejection authority";
+    # destructive twins qualify.
+    "src/evolver/ops/cleanup.py",
 )
 ANCHOR_PROBE_TIMEOUT_S: Final = 120.0
 

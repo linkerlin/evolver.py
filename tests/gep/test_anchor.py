@@ -99,6 +99,19 @@ class TestTriggerDetection:
             "src/evolver/gep/population.py"
         ]
 
+    def test_cleanup_surface_is_guarded(self) -> None:
+        # Round-63 (#38 doctrine backfilled): cleanup_run_directories holds
+        # DELETION authority over evidence archives — the destructive twin
+        # of rejection authority. A mutation loosening max_dirs (unbounded
+        # growth returns) or tightening it (evidence lost early) must run
+        # the frozen contracts.
+        from evolver.config import ANCHOR_TRIGGER_SURFACES
+
+        assert "src/evolver/ops/cleanup.py" in ANCHOR_TRIGGER_SURFACES
+        assert anchor_mod.touches_verifier_surface(["src/evolver/ops/cleanup.py"]) == [
+            "src/evolver/ops/cleanup.py"
+        ]
+
     def test_lifecycle_selection_surfaces_are_guarded(self) -> None:
         # Round-33 (RSI P1-5): live or die by selection — the lifecycle
         # evaluator and the selector that enforces it are frozen machinery.
