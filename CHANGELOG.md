@@ -8,6 +8,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added — round-67：population CLI 败者入档契约钉面（round-41 覆盖缺口）
+- **缺口**：`_cmd_solidify_population` 是 5 函数协作组装
+  （run_population→solidify→classify_rejection→append_candidate_jsonl）
+  ——模块级函数各有单测，但**端到端败者路径零覆盖**。
+- **`tests/test_recent_rounds_cli.py`**：
+  `test_loser_archived_with_sibling_lineage`——完整 `--population`
+  流程断言败者条目入 candidates.jsonl：`population_status=rejected`、
+  `sibling_of=胜者 run_id`、`rejection_class=semantic`（夹具的
+  validation detail 形状对齐 `_run_validations` 输出——首版漏 detail
+  即红，正是被测契约的实现细节暴露）。纯测试轮零源码改动。
+
 ### Added — round-66：gene-lifecycle JSON 视图对等（round-58 契约补齐）
 - 文本视图（near-miss 段）有断言但 JSON 视图（webui/脚本消费面）无
   覆盖——`test_cli_gene_lifecycle_flow` 同 fixture 增 JSON 断言
