@@ -221,6 +221,69 @@ class TestSolidifyPopulationWiring:
         assert "population winner landed" in out
         assert "loser" not in seen["solidify_proposal"]
 
+    def test_loser_archived_with_sibling_lineage(
+        self,
+        temp_workspace: Path,
+        capsys: pytest.CaptureFixture[str],
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """Round-67: the population loser lands in candidates.jsonl with
+        sibling_of + population_status — the DGM 'weak now, strong later'
+        archive contract at the CLI wiring level."""
+        from evolver.gep import population as pop_mod
+        from evolver.gep import solidify as sol_mod
+
+        def fake_run_population(paths, src, *, cascade_commands, **kw: Any) -> dict[str, Any]:
+            # The rejected candidate carries a validation detail shaped like
+            # _run_validations output so classify_rejection sees a semantic
+            # failure (no timeout/OSError markers → "semantic").
+            return {
+                "candidates": [
+                    {"proposal_path": str(paths[0]), "status": "accepted", "index": 0},
+                    {
+                        "proposal_path": str(paths[1]),
+                        "status": "rejected",
+                        "index": 1,
+                        "detail": {
+                            "validation": {
+                                "ok": False,
+                                "results": [
+                                    {
+                                        "command": "pytest",
+                                        "ok": False,
+                                        "stdout": "3 failed, 3600 passed",
+                                    }
+                                ],
+                            }
+                        },
+                    },
+                ],
+                "winner": str(paths[0]),
+                "winner_index": 0,
+            }
+
+        def fake_solidify(proposal: Any = None, **kw: Any) -> dict[str, Any]:
+            return {"ok": True, "run_id": "run_sib", "event_id": "evt_sib"}
+
+        monkeypatch.setattr(pop_mod, "run_population", fake_run_population)
+        monkeypatch.setattr(sol_mod, "solidify", fake_solidify)
+
+        p1 = temp_workspace / "a.json"
+        p2 = temp_workspace / "b.json"
+        p1.write_text("{}", encoding="utf-8")
+        p2.write_text("{}", encoding="utf-8")
+        assert main(["solidify", "--population", str(p1), str(p2)]) == 0
+
+        store = temp_workspace / ".evolver" / "gep" / "candidates.jsonl"
+        rows = [
+            json.loads(ln) for ln in store.read_text(encoding="utf-8").splitlines() if ln.strip()
+        ]
+        assert len(rows) == 1
+        row = rows[0]
+        assert row["population_status"] == "rejected"
+        assert row["sibling_of"] == "run_sib"
+        assert row["rejection_class"] == "semantic", "cascade-rejected loser is semantic"
+
 
 class TestOperatorRenderLines:
     """Rounds 38/49: operator-facing lines carry their data source."""
