@@ -134,3 +134,59 @@ class TestRenderEvidencePack:
         # Newest attempt survives the squeeze; the oldest is the one omitted.
         assert "evt_fail_59" in rendered
         assert "evt_fail_0" not in rendered
+
+
+class TestPriorAttribution:
+    """Round-76: the read side of the diagnostic ledger (P2-7)."""
+
+    def _events(self, diff: str) -> list[dict[str, Any]]:
+        return [
+            {
+                "id": "evt_ok_0",
+                "outcome": {"status": "success"},
+                "mutation": {"landed_gene_ids": ["gene_x"]},
+                "signals": ["log_error"],
+            },
+            {
+                "id": "evt_fail",
+                "outcome": {"status": "failed", "error": "KeyError: 'resp'"},
+                "signals": ["log_error"],
+                "diff_snapshot": diff,
+            },
+        ]
+
+    def test_resolved_entry_surfaces_attribution(self) -> None:
+
+        diff = "FAILED tests/x.py - KeyError: 'resp'"
+        entries = [
+            {
+                "type": "DiagnosticEntry",
+                "signature": "abc123",
+                "symptom_tail": diff,
+                "blamed_component": "src/evolver/gep/rename.py",
+                "resolved": True,
+            }
+        ]
+        pack = build_evidence_pack(self._events(diff), ["log_error"], diagnostic_entries=entries)
+        assert pack["prior_attribution"].endswith("src/evolver/gep/rename.py")
+
+    def test_unresolved_entry_stays_silent(self) -> None:
+
+        diff = "FAILED tests/x.py - KeyError: 'resp'"
+        entries = [
+            {
+                "type": "DiagnosticEntry",
+                "signature": "abc123",
+                "symptom_tail": diff,
+                "blamed_component": "src/x.py",
+                "resolved": False,
+            }
+        ]
+        pack = build_evidence_pack(self._events(diff), ["log_error"], diagnostic_entries=entries)
+        assert pack["prior_attribution"] == "", (
+            "unresolved attributions must not surface — blame without a landed fix is speculation"
+        )
+
+    def test_no_entries_empty_attribution(self) -> None:
+        pack = build_evidence_pack(self._events("d"), ["log_error"])
+        assert pack["prior_attribution"] == ""

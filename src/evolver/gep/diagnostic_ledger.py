@@ -73,6 +73,17 @@ def signature_similarity(a: str, b: str) -> float:
     return len(ga & gb) / len(union)
 
 
+def containment(small: str, big: str) -> float:
+    """Round-76: |grams(small) ∩ grams(big)| / |grams(small)| — the right
+    join metric when one side is a truncated excerpt of the other (a
+    failed attempt's one-line reason inside a longer symptom tail would
+    dilute Jaccard, but containment stays 1.0 for a true subset)."""
+    gs, gb = trigrams(small), trigrams(big)
+    if not gs:
+        return 0.0
+    return len(gs & gb) / len(gs)
+
+
 def open_entry(
     *,
     run_id: str,
@@ -166,14 +177,22 @@ def _save_entries(path: Path, entries: list[dict[str, Any]]) -> None:
 
 
 def find_similar(
-    symptom_text: str, *, min_similarity: float = SIGNATURE_MATCH_THRESHOLD
+    symptom_text: str,
+    *,
+    min_similarity: float = SIGNATURE_MATCH_THRESHOLD,
+    entries_override: list[dict[str, Any]] | None = None,
 ) -> list[dict[str, Any]]:
-    """Retrieve historical entries whose signature matches this symptom."""
+    """Retrieve historical entries whose signature matches this symptom.
+
+    ``entries_override`` (round-76): match against the given entries instead
+    of reading the on-disk ledger — keeps evidence_pack a pure function.
+    """
+    rows = entries_override if entries_override is not None else _load_entries(ledger_path())
     signature = symptom_signature(symptom_text)
     if not signature:
         return []
     out: list[dict[str, Any]] = []
-    for row in _load_entries(ledger_path()):
+    for row in rows:
         sim = signature_similarity(row.get("signature", ""), signature)
         if sim >= min_similarity:
             out.append({**row, "similarity": round(sim, 3)})

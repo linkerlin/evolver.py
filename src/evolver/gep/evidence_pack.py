@@ -90,11 +90,16 @@ def build_evidence_pack(
     signals: list[str] | tuple[str, ...] | None,
     *,
     limit: int = EVIDENCE_PACK_MAX_EVENTS,
+    diagnostic_entries: list[dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
     """Assemble the failure-side evidence pack for the current signal family.
 
     Pure function over the event lineage; no I/O. Returns an empty ``attempts``
     list when the family is novel (nothing has been tried yet).
+
+    ``diagnostic_entries`` (round-76, P2-7 read side): prior attributions from
+    the diagnostic ledger — surfaced as ``prior_attribution`` when a rejected
+    attempt's symptom matches a ledger entry that has a blamed component.
     """
     heads = _heads(list(signals or []))
     if not heads:
@@ -142,7 +147,36 @@ def build_evidence_pack(
         "accepted": accepted,
         "rejected": rejected,
         "digests": digests,
+        "prior_attribution": _prior_attribution(attempts, diagnostic_entries or []),
     }
+
+
+def _prior_attribution(
+    family: list[dict[str, Any]],
+    entries: list[dict[str, Any]],
+) -> str:
+    """Most recent resolved attribution matching a family failure (round-76).
+
+    Matches the failed attempt's one-line reason against ledger symptom
+    tails via trigram CONTAINMENT (the reason is a short excerpt of a
+    longer tail — Jaccard would dilute, containment stays 1.0 for a true
+    subset). Empty string when nothing matches.
+    """
+    from evolver.gep.diagnostic_ledger import containment
+
+    for attempt in reversed(family):
+        if attempt.get("status") != "failed":
+            continue
+        reason = str(attempt.get("reason") or "")
+        if not reason:
+            continue
+        for m in entries:
+            if not m.get("resolved"):
+                continue
+            tail = str(m.get("symptom_tail") or "")
+            if tail and containment(reason, tail) >= 0.9:
+                return f"{m.get('signature', '?')} → {m.get('blamed_component', '?')}"
+    return ""
 
 
 def _attempt_line(attempt: dict[str, Any]) -> str:
