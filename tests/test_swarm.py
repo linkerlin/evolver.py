@@ -295,6 +295,39 @@ class TestDistillSolidifyReport:
         assert result["ok"] is True
         assert "proposal_candidates" not in result
 
+
+class TestTickPreservesPhaseTimings:
+    """Round-71: the runner writes phase timings into swarm_state.json; the
+    tick summary rewrite (swarm.py _record_tick) must carry them forward —
+    the timing instrument lives on the same file as the tick bookkeeping."""
+
+    def test_record_tick_preserves_phase_timings(self, isolated_swarm_env: Path) -> None:
+        import json as _json
+
+        from evolver.gep.paths import get_evolution_dir
+        from evolver.swarm import _record_tick
+
+        evo = get_evolution_dir()
+        evo.mkdir(parents=True, exist_ok=True)
+        state_path = evo / "swarm_state.json"
+        state_path.write_text(
+            _json.dumps(
+                {
+                    "ticks": 41,
+                    "last_tick_phase_timings": {"collect": 0.02, "hub": 0.1},
+                    "last_tick_total_s": 0.12,
+                }
+            ),
+            encoding="utf-8",
+        )
+        _record_tick({"run_id": "r", "cycle_id": "c", "next_action": "swarm_tick"})
+        data = _json.loads(state_path.read_text(encoding="utf-8"))
+        assert data["ticks"] == 42, "tick bookkeeping still applies"
+        assert data["last_tick_phase_timings"] == {"collect": 0.02, "hub": 0.1}, (
+            "the timing instrument must survive the tick summary rewrite"
+        )
+        assert data["last_tick_total_s"] == 0.12
+
     def test_distill_records_landed_gene_ids(self, isolated_swarm_env: Path) -> None:
         from evolver.gep.paths import get_solidify_state_path
         from evolver.gep.solidify import write_state_for_solidify

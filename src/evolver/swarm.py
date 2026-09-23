@@ -564,6 +564,11 @@ def _record_tick(result: dict[str, Any]) -> None:
             "next_action",
         )
     }
+    # Round-71: preserve the runner's phase timings across the summary
+    # rewrite — _record_cycle_phase_timings writes them BEFORE this tick's
+    # bookkeeping; the full-dict load/save above carries them forward, and
+    # a regression test pins that (the timing instrument must survive the
+    # tick path that runs it).
     # Bookkeeping only — never fail the tick on state-write errors.
     with contextlib.suppress(Exception):
         _save_swarm_state(state)
