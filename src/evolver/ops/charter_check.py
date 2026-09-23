@@ -113,9 +113,7 @@ def loop_integrity(
         if dt is not None and (last_event_dt is None or dt > last_event_dt):
             last_event_dt = dt
     try:
-        commit_iso = run_cmd(
-            ["log", "-1", "--format=%cI", "--", "src", "tests"], cwd=repo
-        )
+        commit_iso = run_cmd(["log", "-1", "--format=%cI", "--", "src", "tests"], cwd=repo)
     except Exception:
         commit_iso = ""
     commit_dt = _parse_ts(commit_iso) if commit_iso else None
@@ -194,6 +192,14 @@ def build_charter_report(
         and anchor_covers_ingress
     )
 
+    from evolver.ops.capability_trace import capability_trajectory
+
+    trajectory = capability_trajectory(
+        gated_cumulative=gated_cum,
+        anchor_cases=len(epoch_info.get("cases", [])) if epoch_info else 0,
+        env_count=env_count,
+    )
+
     return {
         "version": version,
         "round": dogfood_round,
@@ -228,6 +234,7 @@ def build_charter_report(
             "target": 80,
             "met": env_count <= 80,
         },
+        "capability_trajectory": trajectory,
         "git_cleanliness": {
             "tracked_memory_files": tracked_runtime,
             "clean": runtime_clean,
@@ -254,6 +261,8 @@ def format_charter_report(report: dict[str, Any]) -> str:
     anc = report["anchor"]
     loop = report.get("loop_integrity", {})
     drift_s = loop.get("drift_seconds")
+    traj = report.get("capability_trajectory") or {}
+    traj_dims = traj.get("dimensions") or []
 
     promo = "READY" if report["ready_for_promotion"] else "BLOCKED (Shadow Mode Maintained)"
     lines = [
@@ -292,6 +301,20 @@ def format_charter_report(report: dict[str, Any]) -> str:
         ),
         f"  Promotion Status      : {promo}",
     ]
+    # P2-10 (round-73): capability margin map — normalized 0-100 per axis,
+    # appended after the verdict word so the operator sees HOW FAR along
+    # each axis, not just that an opaque gate is BLOCKED.
+    for d in traj_dims:
+        filled = int(d["pct"] / 10)
+        lines.append(
+            f"  Capability [{d['label']:<20}] {d['now']:>5.0f}/{d['target']:<4.0f} "
+            f"|{'#' * filled:<10}| {d['pct']:.0f}%"
+        )
+    if traj_dims:
+        overall = traj.get("overall_pct", 0)
+        lines.append(
+            f"  Capability Overall    : {overall:.0f}% (margin map, not a promotion signal)"
+        )
     return "\n".join(lines)
 
 
