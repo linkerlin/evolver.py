@@ -42,13 +42,17 @@ class TestStaleIdFiltering:
 
         passed, total = run_pass_rate(frozen_ids, repo_with_tests)
         assert total == 2, "frozen denominator stays stable"
-        assert passed == 2, "the stale ID cannot fail — it scores as passed"
+        assert passed == 1, (
+            "stale (deleted) ID counts as failed — a deleted frozen test is "
+            "itself a regression, preserving the test_gate_missing_ids contract"
+        )
 
     def test_stale_chunk_does_not_zero_survivors(
         self, repo_with_tests: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         # The live failure: a chunk whose FIRST ID is stale made pytest
-        # rc=4 "not found" and scored the WHOLE chunk as 0.
+        # rc=4 "not found" and scored the WHOLE chunk as 0. With rc=4
+        # handling, the survivor is dropped from the dead set and measured.
         frozen_ids = ["tests/dead/test_old.py::test_gone", "tests/test_a.py::test_one"]
         monkeypatch.setattr(
             t0_frozen,
@@ -56,4 +60,5 @@ class TestStaleIdFiltering:
             lambda cwd, **kw: ["tests/test_a.py::test_one"],
         )
         passed, total = run_pass_rate(frozen_ids, repo_with_tests)
-        assert (passed, total) == (2, 2)
+        assert passed == 1, "the surviving test must actually run and count"
+        assert total == 2

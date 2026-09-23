@@ -22,8 +22,12 @@ from evolver.gep.validation_env import validation_env
 _PASSED_RE = re.compile(r"(\d+)\s+passed")
 _FAILED_RE = re.compile(r"(\d+)\s+failed")
 _ERROR_RE = re.compile(r"(\d+)\s+errors?")
+_NOT_FOUND_RE = re.compile(r"not found: (\S+)")
 
 _CHUNK_SIZE = 400
+#: pytest exits with this code on collection/usage errors — notably when a
+#: requested node ID does not exist (stale frozen-snapshot entry).
+_RC_USAGE_ERROR = 4
 
 
 def snapshot_hash(test_ids: list[str]) -> str:
@@ -46,6 +50,11 @@ def load_snapshot(path: Path) -> list[str]:
     if not path.exists():
         return []
     return [ln.strip() for ln in path.read_text(encoding="utf-8").splitlines() if ln.strip()]
+
+
+def _missing_ids(stderr: str) -> list[str]:
+    """Extract node IDs pytest reported as "not found" (round-77)."""
+    return [m.group(1) for m in _NOT_FOUND_RE.finditer(stderr)]
 
 
 def parse_pytest_summary(stdout: str, total: int) -> tuple[int, int]:
@@ -119,16 +128,28 @@ def run_pass_rate(
     budget — every measurement timed out and scored 0 while the baseline
     (requiring ``candidate_mean > 0``) never persisted (round-14). Per-chunk
     failures (timeout / OSError) are retried once (round-22: a transient
-    load spike on one chunk once zeroed 400 IDs into a phantom 0.886
+    load spike on one chunk once zeroed 400 IDs into a phantom 0.8863
     "regression" — soak false_kill_high, DEBUG #32); a second failure still
     counts that chunk's tests as failed (fail-safe, as before).
+
+    Round-77: IDs in the frozen snapshot that no longer exist in the
+    current tree (tests renamed/removed in later rounds) make pytest exit
+    rc=4 "not found" WITHOUT running the rest of the chunk — the whole
+    chunk silently scores 0 and produces a phantom regression (observed
+    live: rounds 73-75 all scored an identical 0.890227 = one dead 400-ID
+    chunk + the baseline's known failure). Handling: on rc=4 the missing
+    IDs are parsed from pytest's stderr, dropped from the chunk, and the
+    remainder re-run ONCE — survivors get measured, dropped IDs count as
+    failed (a deleted frozen test is itself a regression; the
+    pre-round-77 contract in test_gate_missing_ids is preserved). The
+    dropped IDs are NOT re-retried: retrying them reproduces rc=4 exactly.
     """
     total = len(test_ids)
     if total == 0:
         return (0, 0)
-    passed = 0
+    chunk_passed_total = 0
     for start in range(0, total, _CHUNK_SIZE):
-        chunk = test_ids[start : start + _CHUNK_SIZE]
+        chunk = list(test_ids[start : start + _CHUNK_SIZE])
         for _attempt in range(_CHUNK_ATTEMPTS):
             try:
                 proc = subprocess.run(
@@ -141,12 +162,21 @@ def run_pass_rate(
                     shell=False,
                     env=validation_env(),
                 )
+                if proc.returncode == _RC_USAGE_ERROR:
+                    missing = _missing_ids(proc.stderr or "")
+                    if missing:
+                        # Drop nonexistent IDs (deleted tests count as
+                        # failed via the zero below) and re-run the rest.
+                        chunk = [tid for tid in chunk if tid not in missing]
+                        if not chunk:
+                            break
+                        continue
                 chunk_passed, _chunk_total = parse_pytest_summary(proc.stdout or "", len(chunk))
-                passed += chunk_passed
+                chunk_passed_total += chunk_passed
                 break
             except (subprocess.TimeoutExpired, OSError):
                 continue
-    return (passed, total)
+    return (chunk_passed_total, total)
 
 
 __all__ = [
