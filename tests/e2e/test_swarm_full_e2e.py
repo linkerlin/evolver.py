@@ -352,6 +352,14 @@ class TestFullSurfaceE2E:
             == "running"
         )
 
+        # Round-69: AUTO_HIJACK relay-block semantics — an unattended takeover
+        # must not accept host-relayed human acts (the "no escape valve" rule).
+        # unit-level pin: host_relay_blocked mirrors SWARM_AUTO_HIJACK.
+        from evolver.config import SWARM_AUTO_HIJACK
+        from evolver.swarm import host_relay_blocked
+
+        assert host_relay_blocked() == bool(SWARM_AUTO_HIJACK)
+
     def test_07_invalid_input_structured_feedback(self, client: _McpClient) -> None:
         text = client.call_raw_text("swarm_hook_event", {"event": "bogus"})
         assert text.startswith("Error executing tool")
