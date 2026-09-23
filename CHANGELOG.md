@@ -8,6 +8,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed — round-77（续）：stale 冻结 ID 致整 chunk 归零的假杀根因修复
+- **根因**：冻结快照含 6 个 stale ID（round-71 测试改名遗留）→ pytest
+  对含不存在 ID 的 chunk 返回 **rc=4 且整个 chunk 不运行** → 400 测试
+  计零 + 基线已知失败 1 = 401 → candidate 0.890227（rounds 73/74/75
+  三连 identical）。三轮 shadow 假杀全部由此解释。
+- **`acceptance/t0_frozen.py`**：rc=4 时从 stderr 解析 not-found ID、
+  从 chunk 剔除后**重跑一次**——幸存者被测量；stale ID 计 failed
+  （删除冻结测试=回归，保留 test_gate_missing_ids 契约；初版曾错把
+  stale 记 passed，已回滚为 failed 语义）。语义修正：rc=4 重跑不与
+  超时重试混用（stale ID 重试必然复现 rc=4）。
+
 ### Added — round-75：P2-7 写侧接线——失败漏斗自动开诊断条目
 - **`gep/solidify.py`**：`_maybe_open_diagnostic_entry` 接进
   `_append_failure_event` 共享漏斗（与 variant archive 同钩、同
