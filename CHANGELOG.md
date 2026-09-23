@@ -8,6 +8,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added — round-73：P2-10 能力轨迹图——soak 报告 v2 首节（RSI P2 首个交付）
+- **`ops/capability_trace.py`（新）**：`capability_trajectory` 纯函数
+  ——HCI 归一化余量地图：gated_cumulative / anchor_cases /
+  env_headroom（反向：少用 env 预算=进展）三维各自 now/target →
+  0-100（clamp），overall 为均值（无隐藏权重）。目标值镜像章程
+  （40 gated / 16 探针 / 20 env headroom）。
+- **`ops/charter_check.py`**：报告增 `capability_trajectory` 节 +
+  文本条形图渲染（`|##########| 70%`）。**严格分离**：余量图纯观测
+  ——全绿轨迹不得暗示转正就绪，verdict 语义仍由 soak recommender
+  独裁（尾注明示 "not a promotion signal"）。
+- live 渲染：gated 100% / anchor 100% / env headroom 10% → Overall
+  70%。锚实弹 16/16（charter_check 触发面）。
+
 ### Added — round-67：population CLI 败者入档契约钉面（round-41 覆盖缺口）
 - **缺口**：`_cmd_solidify_population` 是 5 函数协作组装
   （run_population→solidify→classify_rejection→append_candidate_jsonl）
