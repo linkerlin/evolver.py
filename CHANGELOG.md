@@ -8,6 +8,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added — round-74：P2-7 跨组件诊断账本——DEBUG.md 方法论代码化（RSI P2 第二交付）
+- **`gep/diagnostic_ledger.py`（新）**：`symptom_signature`（失败末行
+  去易变后缀 sha256 短哈希——同缺陷跨 run 稳定）、`open_entry`
+  （solidify 验证失败自动开条目，**同签名复发递增 recurrence 而非
+  追加重复**——复发即 P1-4 证据包的检索信号）、`backfill_attribution`
+  （修复落地后宿主回填 hypothesis/blamed_component/resolved）、
+  `find_similar`（trigram 相似度检索历史归因，同签名复发不再人工翻
+  DEBUG.md）。
+- **边界厘清**：诊断账本检索**归因记录**（signature/归因组件），
+  变体档案检索**编辑指纹**——互补不重叠。接线（solidify 失败漏斗）
+  留下一轮与消费端同轮设计。
+- 九测：签名稳定性/异缺陷异签名/开条目/复发递增/backfill 语义/
+  未知签名/相似检索/不相干不检索。
+
 ### Added — round-73：P2-10 能力轨迹图——soak 报告 v2 首节（RSI P2 首个交付）
 - **`ops/capability_trace.py`（新）**：`capability_trajectory` 纯函数
   ——HCI 归一化余量地图：gated_cumulative / anchor_cases /
