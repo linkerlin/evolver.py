@@ -8,6 +8,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added — round-66：gene-lifecycle JSON 视图对等（round-58 契约补齐）
+- 文本视图（near-miss 段）有断言但 JSON 视图（webui/脚本消费面）无
+  覆盖——`test_cli_gene_lifecycle_flow` 同 fixture 增 JSON 断言
+  （`approaching.threshold=3` + candidates 含 gene_alive）。**程序化
+  消费面与文本面是一等契约的两面**——只钉文本留下机器可读契约无
+  看守。纯测试轮零源码改动。
+
 ### Fixed — round-65：TTL 重探语义修正——降档+折半递增（round-59 重探暴露）
 - **两处设计缺陷**：(1) sticky 态下的重探 fetch 以**首探完整重试预算**
   执行（3.9s）——已知 404 端点不该享受首探待遇；(2) 重探失败后 TTL
