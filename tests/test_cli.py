@@ -135,6 +135,13 @@ def test_cli_gene_lifecycle_flow(
     assert "gene_alive" in first_out, "near-miss section must name the gene"
     assert "obs=" in first_out
 
+    # Round-65 follow-up: the JSON surface carries the same approaching data.
+    assert main(["gene-lifecycle", "list", "--json"]) == 0
+    payload = json.loads(capsys.readouterr().out)
+    assert payload["approaching"]["threshold"] == 3
+    approaching_ids = [c["gene_id"] for c in payload["approaching"]["candidates"]]
+    assert "gene_alive" in approaching_ids
+
     assert main(["gene-lifecycle", "evaluate", "--json"]) == 0
     payload = json.loads(capsys.readouterr().out)
     assert payload["ok"] is True
