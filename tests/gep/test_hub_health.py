@@ -49,6 +49,27 @@ class TestHubHealth:
         assert state["consecutive_404"] == 0
         assert endpoint_sticky() is False
 
+    def test_floor_caps_wait_after_many_reprobes(self) -> None:
+        """Round-65 doctrine: the halving converges to a 1h floor — after
+        many failed re-probes (naive halving < 1h) the wait must not go
+        below it: probe frequency converges instead of approaching zero."""
+        import time as _time
+
+        # 30 re-probes → naive halving would be 24h/31 (~0.77h), BELOW the
+        # 1h floor — the floor must bind at exactly 1h.
+        state = load_state()
+        state["consecutive_404"] = HUB_404_STICKY_THRESHOLD
+        state["reprobe_count"] = 30
+        state["last_probe_ts"] = _time.time() - 1800  # 0.5h ago < floor
+        save_state(state)
+        assert endpoint_sticky() is True, "floor keeps the wait at 1h minimum"
+
+        # 1.5h later (> floor): sticky must EXPIRE — probes happen at
+        # least hourly no matter how many failures accumulate.
+        state["last_probe_ts"] = _time.time() - 5400
+        save_state(state)
+        assert endpoint_sticky() is False, "floor caps the wait at 1h"
+
 
 class TestHubClientPreflight:
     async def test_sticky_skips_http_entirely(self, monkeypatch: pytest.MonkeyPatch) -> None:
