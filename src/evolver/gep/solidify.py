@@ -572,6 +572,39 @@ def _maybe_record_variant(
         logger.warning("[VariantArchive] recording skipped", exc_info=True)
 
 
+def _maybe_open_diagnostic_entry(
+    event: dict[str, Any],
+    validation_result: dict[str, Any] | None,
+) -> None:
+    """P2-7 (round-75): auto-open a diagnostic-ledger entry on cascade
+    failures, extracting suspect components from the failing stages' names.
+    Same never-raises contract as the variant archive."""
+    try:
+        stages = []
+        if isinstance(validation_result, dict):
+            stages = [
+                s
+                for s in (validation_result.get("results") or [])
+                if isinstance(s, dict) and not s.get("ok")
+            ]
+        suspects = sorted(
+            {str(s.get("command", "")).split()[0] for s in stages if s.get("command")}
+        )
+        symptom = "\n".join(str(s.get("stderr") or s.get("stdout") or "")[-400:] for s in stages)
+        if not symptom.strip():
+            return
+        from evolver.gep.diagnostic_ledger import open_entry
+
+        open_entry(
+            run_id=str(event.get("run_id") or ""),
+            event_id=str(event.get("id") or ""),
+            symptom_text=symptom,
+            suspect_components=suspects,
+        )
+    except Exception:
+        logger.warning("[DiagnosticLedger] entry skipped", exc_info=True)
+
+
 def _append_failure_event(
     last_run: dict[str, Any],
     cwd: Path,
@@ -598,6 +631,7 @@ def _append_failure_event(
     )
     append_event_jsonl(event)
     _maybe_record_variant(event, validation_result)
+    _maybe_open_diagnostic_entry(event, validation_result)
 
 
 def _is_runtime_state(rel: str) -> bool:
