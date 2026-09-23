@@ -232,6 +232,21 @@ class TestDistillSolidifyReport:
         assert "hint" not in result
         assert result["next_action"] == "swarm_solidify"
 
+    def test_proposal_bridge_works_in_dry_run(self, isolated_swarm_env: Path) -> None:
+        """Round-70: the bridge is OBSERVATION — it must fire in dry_run too
+        (dry_run skips installs, not observations; the proposal replay
+        decision belongs to the operator either way)."""
+        response = (
+            "```json\n"
+            '{"action": "patch", "edits": [{"op": "append", "file": "x.md", '
+            '"content": "n"}]}\n'
+            "```\n"
+        )
+        result = swarm_distill(response, dry_run=True)
+        assert result["dry_run"] is True
+        assert len(result["proposal_candidates"]) == 1
+        assert "swarm_propose" in result["proposal_next_step"]
+
     def test_distill_surfaces_proposal_candidates(self, isolated_swarm_env: Path) -> None:
         """Round-61 bridge: an embedded GeneProposal block (action+edits) is
         surfaced as a replay candidate — observation only, never applied."""
