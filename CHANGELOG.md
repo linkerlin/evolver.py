@@ -8,6 +8,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added — round-75：P2-7 写侧接线——失败漏斗自动开诊断条目
+- **`gep/solidify.py`**：`_maybe_open_diagnostic_entry` 接进
+  `_append_failure_event` 共享漏斗（与 variant archive 同钩、同
+  never-raises 契约）——失败阶段命令名 → 嫌疑组件、stderr/stdout
+  尾部 → 症状文本；空症状不开条目。round-74 数据面自此有生产写侧。
+- 两测：失败开条目（suspect_components 含 mypy、hypothesis 空=宿主
+  后填）+ 账本路径损坏不断事件流。
+
 ### Added — round-74：P2-7 跨组件诊断账本——DEBUG.md 方法论代码化（RSI P2 第二交付）
 - **`gep/diagnostic_ledger.py`（新）**：`symptom_signature`（失败末行
   去易变后缀 sha256 短哈希——同缺陷跨 run 稳定）、`open_entry`
