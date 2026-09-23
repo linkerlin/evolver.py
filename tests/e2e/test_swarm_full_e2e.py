@@ -306,6 +306,43 @@ class TestFullSurfaceE2E:
         )
         assert report["ok"] is True
 
+        # S29 mechanical proposal channel at the protocol level: a valid
+        # patch applies through validate-all-first; a hallucinated anchor is
+        # rejected with nothing written.
+        proposal = client.call(
+            "swarm_propose",
+            {
+                "proposal": {
+                    "action": "patch",
+                    "edits": [
+                        {
+                            "op": "append",
+                            "file": "e2e_notes.md",
+                            "content": "s29 applied end-to-end\n",
+                        }
+                    ],
+                }
+            },
+        )
+        assert proposal["ok"] is True, proposal
+        bad = client.call(
+            "swarm_propose",
+            {
+                "proposal": {
+                    "action": "patch",
+                    "edits": [
+                        {
+                            "op": "replace",
+                            "file": "e2e_notes.md",
+                            "target": "WILL_NOT_MATCH",
+                            "content": "x",
+                        }
+                    ],
+                }
+            },
+        )
+        assert bad["ok"] is False
+
         feedback = client.call(
             "swarm_feedback",
             {
