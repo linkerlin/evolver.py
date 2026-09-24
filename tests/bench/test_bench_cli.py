@@ -86,12 +86,38 @@ def test_bench_gate_reports_unarmed(
     bench_env: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     """Round-80: the gate state is readable from the CLI without an MCP
-    session — an unarmed gate says so and points at freeze."""
+    session — an unarmed gate says so and points at freeze (the hint rides
+    stderr; round-81 channel discipline)."""
     monkeypatch.setenv("EVOLVER_HOME", str(bench_env / ".evomap-gate0"))
     assert main(["bench", "gate"]) == 0
-    out = capsys.readouterr().out
-    assert '"armed": false' in out
-    assert "gate inactive" in out
+    captured = capsys.readouterr()
+    assert '"armed": false' in captured.out
+    assert "gate inactive" in captured.err
+
+
+def test_json_verb_stdout_stays_parseable_under_soak_notice(
+    bench_env: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """gene_stderr_channel_discipline, end-to-end pin (round-81): when the
+    in-repo soak routing fires mid-invocation, its notice lands on stderr
+    and the --json verb's stdout remains machine-parseable — diagnostics
+    must never ride the data channel."""
+    from evolver.ops import soak_env as soak_env_mod
+
+    (bench_env / ".git").mkdir()  # in-repo runtime → soak routing fires
+    monkeypatch.setenv("EVOLVER_HOME", str(bench_env / ".evomap-gate2"))
+    # Drop the explicit runtime dirs so the engine computes in-repo defaults,
+    # and un-arm the two interlock guards that would skip routing under
+    # pytest (test-environment short-circuit / traversal ban).
+    monkeypatch.delenv("GEP_ASSETS_DIR", raising=False)
+    monkeypatch.delenv("EVOLUTION_DIR", raising=False)
+    monkeypatch.delenv("EVOLVER_NO_PARENT_GIT", raising=False)
+    monkeypatch.setattr(soak_env_mod, "is_test_environment", lambda: False)
+    assert main(["bench", "gate"]) == 0
+    captured = capsys.readouterr()
+    snapshot = json.loads(captured.out)  # data-only stdout — must parse whole
+    assert isinstance(snapshot, dict)
+    assert "[soak] Notice" in captured.err
 
 
 def test_bench_gate_reports_armed_state(

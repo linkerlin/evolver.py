@@ -2071,7 +2071,12 @@ def _cmd_bench(args: argparse.Namespace) -> int:
         snap = gate_snapshot()
         print(json.dumps(snap, indent=2, ensure_ascii=False))
         if not snap.get("armed"):
-            print("gate inactive — run `evolver bench freeze` to arm (charter 外部适应度)")
+            # Channel discipline (gene_stderr_channel_discipline): the JSON
+            # verb's stdout stays data-only — the human hint rides stderr.
+            print(
+                "gate inactive — run `evolver bench freeze` to arm (charter 外部适应度)",
+                file=sys.stderr,
+            )
         return 0
 
     if args.bench_action == "compare":
