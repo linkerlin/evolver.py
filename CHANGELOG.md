@@ -15,6 +15,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `EVOLVER_ACCEPTANCE_SHADOW` 保持打开。soak `ready` 不再是路线图出口。
 - [`TODO.md`](TODO.md)、[`AGENTS.md`](AGENTS.md)、[`CONTRIBUTING.md`](CONTRIBUTING.md)、四种 README、[`SKILL.md`](SKILL.md) 已同步。[`RSI演进对照.md`](RSI演进对照.md) 与 [`演进方案_wikiskill对照版.md`](演进方案_wikiskill对照版.md) 改为史料，文内旧「下一步」作废。
 
+### Fixed — round-81：包门持平分支首跑 + 通道纪律端到端针逮住真缺陷（外部适应度 #2）
+
+- **周期**：信号族 8 accepted / 0 rejected，无 mandate。选中
+  gene_stderr_channel_discipline——其策略第 1 行（paths/soak 诊断走
+  stderr）round-13 已落地，本轮审计实证：七个 `--json` 动词
+  （gate-report/charter-check/gene-lifecycle/soak status/variants/
+  meta-report/bench gate）stdout 全部机器可解析。策略第 2 行（回归针）
+  是真缺口，本轮补上。
+- **变异**：新增端到端针 `test_json_verb_stdout_stays_parseable_under_
+  soak_notice`——in-repo soak 路由点火（pytest 下 interlock 以
+  test_environment 短路，须 patch `is_test_environment` 放行，同记忆
+  「armed 模拟」条）时，`[soak] Notice` 落 stderr、`bench gate` stdout
+  整体可 `json.loads`。**针落地即逮住真缺陷**：`bench gate` 未布防时
+  的「gate inactive」人读提示打在 stdout，JSON 后挂尾巴（Extra data）
+  ——round-80 自留的通道违规，本轮修复（提示改走 stderr，
+  gene_stderr_channel_discipline 注释钉面）。测试 7→8。
+- **包门持平分支首跑**：val 5/5（bench prompt ×5 重新物化→交付物→
+  `bench run --no-record` 自评 1.0），solidify 包门 **pass**
+  （score 1.0 vs baseline 1.0——持平即过，基线同值重写）。级联 1.0。
+  事件 evt_1790258879151_68db99ca，自动提交 e650b8f。
+  反馈 fb_4673dfdd9fc9。
+
 ### Added — round-80：包门生效后首个正式周期（外部适应度 #1）
 
 - **周期**：92c615043afce17c，0.119s（hub 粘性短路生效）。Evidence Pack
