@@ -89,7 +89,7 @@ Current baseline (2026-06-15): **1331 tests** (`pytest`), **mypy 0 errors**.
 3. Ensure lint passes: `uv run ruff check src tests`
 4. Ensure type check passes: `uv run mypy src`
 5. Update documentation if your change affects user-facing behavior (`README.md`, `AGENTS.md`, `SKILL.md`).
-6. If modifying architecture or adding new modules, update `演进方案_wikiskill对照版.md` and `TODO.md` accordingly.
+6. If modifying architecture or adding new modules, update [`演进方案.md`](演进方案.md) and [`TODO.md`](TODO.md). Do not reopen [`演进方案_wikiskill对照版.md`](演进方案_wikiskill对照版.md) as a roadmap. New work must fit the current charter: external fitness via `swarm_propose` and a frozen bench pack. Do not add RSI P2-6/8/9, validator/ATP/PyPI scope, or another instrument-only dogfood round and call it stage progress.
 7. Open a PR with a clear description of the change and motivation.
 
 ## Architecture Decisions
@@ -116,8 +116,8 @@ When adding or modifying features, update the relevant documentation:
 - User-facing changes → `README.md` and `README.zh.md`
 - Agent integration changes → `AGENTS.md`
 - Skill/capability changes → `SKILL.md`
-- Architecture changes → `演进方案_wikiskill对照版.md`
-- Gap analysis changes → `TODO.md`
+- Architecture or stage changes → `演进方案.md` and `TODO.md`
+- Per-round notes → `CHANGELOG.md` only
 
 ## Security
 
@@ -130,6 +130,6 @@ When adding or modifying features, update the relevant documentation:
 
 When contributing to partially implemented subsystems, please be transparent about the scope:
 
-- If implementing a previously missing module, remove it from the "missing" lists in `TODO.md` and update its status in `演进方案_wikiskill对照版.md`.
+- If a charter item lands, mark it in `TODO.md`. Do not treat `演进方案_wikiskill对照版.md` or `RSI演进对照.md` as the list of missing modules.
 - If adding a stub or placeholder, mark it clearly with `pass` and a `# TODO:` comment referencing the relevant issue or roadmap item.
 - Do not mark features as "complete" in documentation unless they have corresponding tests.

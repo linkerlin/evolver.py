@@ -4,7 +4,7 @@
 
 [`@evomap/evolver`](https://github.com/EvoMap/evolver)의 **Python 3.12+ 포트** — GEP 기반 AI 에이전트 자기 진화 엔진.
 
-Node.js 레퍼런스 구현(v1.89.11)과의 **완전한 동작 동등성**을 목표로 하며, 현대적인 Python 도구 체인을 사용합니다.
+엔진은 LLM을 호출하지 않는다. MCP stdio의 호스트가 실행기다. 현재 단계는 그 루프를 동결된 외부 태스크 팩으로 향하게 한다. 헌장은 [演进方案.md](演进方案.md)(중국어). Node와의 축어적 동등성은 목표가 아니다.
 
 ## 빠른 시작
 
@@ -138,9 +138,10 @@ uv run mypy src                            # 타입 체크 (strict)
 - [SKILL.md](SKILL.md) — AI 에이전트용 스킬 정의
 - [CONTRIBUTING.md](CONTRIBUTING.md) — 기여 가이드
 - [AGENTS.md](AGENTS.md) — AI 에이전트 참조
-- [演进方案_wikiskill对照版.md](演进方案_wikiskill对照版.md) — wikiskill 감사 및 격차 로드맵 (중문)
-- [TODO.md](TODO.md) — 갭 분석과 로드맵
-- [演进方案_wikiskill对照版.md](演进方案_wikiskill对照版.md) — v1.89.11 추적 계획 (중문)
+- [演进方案.md](演进方案.md) — 현재 헌장 (외부 적합도, 중문)
+- [TODO.md](TODO.md) — 그 작업 목록
+- [RSI演进对照.md](RSI演进对照.md) — 논문 대조 (사료, 중문)
+- [演进方案_wikiskill对照版.md](演进方案_wikiskill对照版.md) — 2026-09-01 감사 (사료, 중문)
 
 ## 라이선스
 
@@ -148,14 +149,14 @@ Apache-2.0 — 자세한 내용은 [LICENSE](LICENSE)를 참조하세요.
 
 ## 구현 상태
 
-> **2026-09-05**: 패키지 버전 **1.112.0**. MCP 군집 진화 스택(v1.98–v1.111: 인수 루프, 평가 피드백 E, HITL/HOTL, Hooks/스킬 브리지, 적응적 변이, 인수 게이트 soak, YAML 워크플로 엔진) 완료 및 전면 그린(**3455 테스트 통과**, mypy strict 0 오류). 이 저장소 자체에서 5라운드 dogfood 실주행 — 인수 게이트 gated_runs=4. 잔여 깊이 격차는 [演进方案_wikiskill对照版.md](演进方案_wikiskill对照版.md)(중국어) 참조.
+> **2026-09-24**: 패키지 버전 **1.112.0** (단계가 끝날 때까지 고정). 현재 헌장은 [演进方案.md](演进方案.md)(중국어). 폐루프는 이미 완성되었다. 다음은 외부 적합도: 반복 실패는 `swarm_propose`, 동결된 태스크 팩이 적합도. 수용 게이트는 shadow 유지. 아래 백분율은 2026-09-05 스냅샷이다.
 
 | 하위 시스템 | 상태 | 비고 |
 |---|---|---|
 | GEP 데이터 레이어 | ~90% | 시드 유전자 11×sha256; solidify 직접 테스트 + 학습 헬퍼 |
 | GEP 인지 | ~80% | recall/reflection/distill; explore/curriculum 플래그 제어 |
 | 진화 파이프라인 | ~90% | 7 페이즈 + Autopoiesis + 하드 타임아웃; 적용 완료 유전자 쿨다운(v1.111) |
-| MCP 군집 진화 | ~97% | 인수 루프 + E 피드백 + HITL/HOTL + Hooks/스킬/워크플로 도구; dogfood 5라운드 |
+| MCP 군집 진화 | ~97% | 인수 루프 + E 피드백 + HITL/HOTL + Hooks/스킬/워크플로 도구; dogfood는 round-78까지 |
 | 워크플로 엔진 | ~90% | WAL 영속 스텝(script/foreach/if/agent/approval/gate); YAML + 롤 + 템플릿(v1.110) |
 | 인수 게이트 | ~85% | shadow soak + gate-report 판정; 강제 집행 스위치는 인간 결정 |
 | 프록시 인프라 | ~85% | 멀티 프로바이더, 토큰 재사용, 경로 CLI 플래그, 포트 **8081** |

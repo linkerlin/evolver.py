@@ -1,5 +1,7 @@
 # Self-Harness 演进 — 检查点 (Checkpoint 2026-08-09)
 
+> **档案**。本文的分支、路径和「下一步」都不要执行。现行章程是 [`演进方案.md`](演进方案.md)。
+
 ## 位置与分支
 
 - **Worktree**: 已废弃（被外部清理器摧毁）。**当前工作在主仓库 `C:/GitHub/evolver.py`，分支 `self-harness`**（HEAD 已 checkout）

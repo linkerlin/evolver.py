@@ -4,7 +4,7 @@
 
 [`@evomap/evolver`](https://github.com/EvoMap/evolver) の **Python 3.12+ ポート** — GEP 駆動の AI エージェント自己進化エンジン。
 
-Node.js 参照実装（v1.89.11）との**完全な動作等価性**を目標とし、現代的な Python ツールチェーンを使用します。
+エンジンは LLM を呼ばない。MCP stdio 上のホストが実行器になる。現行段階は、そのループを凍結済み外部タスクパックへ向ける。章程は [演进方案.md](演进方案.md)（中国語）。Node との逐語等価は目標ではない。
 
 ## クイックスタート
 
@@ -138,9 +138,10 @@ uv run mypy src                            # 型チェック（strict）
 - [SKILL.md](SKILL.md) — AI エージェント用スキル定義
 - [CONTRIBUTING.md](CONTRIBUTING.md) — コントリビューションガイド
 - [AGENTS.md](AGENTS.md) — AI エージェント向け参照
-- [演进方案_wikiskill对照版.md](演进方案_wikiskill对照版.md) — wikiskill 監査とギャップロードマップ（中文）
-- [TODO.md](TODO.md) — ギャップ分析とロードマップ
-- [演进方案_wikiskill对照版.md](演进方案_wikiskill对照版.md) — v1.89.11 対追跡計画（中文）
+- [演进方案.md](演进方案.md) — 現行章程（外部適応度、中文）
+- [TODO.md](TODO.md) — その作業リスト
+- [RSI演进对照.md](RSI演进对照.md) — 論文対照（史料、中文）
+- [演进方案_wikiskill对照版.md](演进方案_wikiskill对照版.md) — 2026-09-01 監査（史料、中文）
 
 ## ライセンス
 
@@ -148,14 +149,14 @@ Apache-2.0 — 詳細は [LICENSE](LICENSE) を参照してください。
 
 ## 実装ステータス
 
-> **2026-09-05**: パッケージバージョン **1.112.0**。MCP 群進化スタック（v1.98–v1.111：接管ループ、評価フィードバック E、HITL/HOTL、Hooks / スキルブリッジ、適応的変異、検収ゲート soak、YAML ワークフローエンジン）が完了し全緑（**3455 テスト合格**、mypy strict 0 エラー）。本リポジトリ自身で 5 ラウンドの dogfood を実走——検収ゲート gated_runs=4。残りの深さギャップは [演进方案_wikiskill对照版.md](演进方案_wikiskill对照版.md)（中国語）参照。
+> **2026-09-24**: パッケージバージョン **1.112.0**（段階終了まで据え置き）。現行章程は [演进方案.md](演进方案.md)（中国語）。閉ループは完成済み。次は外部適応度：繰り返し失敗は `swarm_propose`、凍結タスクパックを適応度にする。受容ゲートは shadow のまま。下表の百分率は 2026-09-05 のスナップショット。
 
 | サブシステム | 状態 | 備考 |
 |---|---|---|
 | GEP データ層 | ~90% | シード遺伝子 11×sha256; solidify 直接テスト + 学習ヘルパー |
 | GEP 認知 | ~80% | recall/reflection/distill; explore/curriculum フラグ制御 |
 | 進化パイプライン | ~90% | 7 フェーズ + Autopoiesis + ハードタイムアウト; 適用済み遺伝子クールダウン（v1.111） |
-| MCP 群進化 | ~97% | 接管ループ + E フィードバック + HITL/HOTL + Hooks/スキル/ワークフローツール; dogfood 5 ラウンド |
+| MCP 群進化 | ~97% | 接管ループ + E フィードバック + HITL/HOTL + Hooks/スキル/ワークフローツール; dogfood は round-78 まで |
 | ワークフローエンジン | ~90% | WAL 永続ステップ（script/foreach/if/agent/approval/gate）; YAML + ロール + テンプレート（v1.110） |
 | 検収ゲート | ~85% | shadow soak + gate-report 判定; 強制執行スイッチは人間の決定権 |
 | プロキシ基盤 | ~85% | マルチプロバイダ、トークン再利用、パス CLI フラグ、ポート **8081** |

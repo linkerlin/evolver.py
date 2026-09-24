@@ -5,7 +5,7 @@
 
 **一个基于 GEP（基因组进化协议）的 AI 智能体自进化引擎。**
 
-本项目的目标是使用现代 Python 工具链实现：
+引擎不自建 LLM 调度。宿主 Agent 经 MCP stdio 充当执行器。本阶段把这个环指向一个冻结的外部任务包，见 [演进方案.md](演进方案.md)。实现使用现代 Python 工具链：
 
 - **Python 3.12+** — `asyncio`、类型参数语法（`list[str]`）、`tomllib`
 - **uv** — 高速 Python 包管理
@@ -13,7 +13,7 @@
 - **httpx** — 异步 HTTP 客户端（相当于 Node.js 的 `undici`）
 - **FastAPI + uvicorn** — 本地代理与 WebUI
 
-> **注意**：GEP 核心数据层、进化流水线、Proxy 路由与高级认知编排已基本可用。ATP 商业闭环、部分 Hub 资产路由及生产级验证者沙箱仍待完善。详见下方[实现状态](#实现状态)。
+> **注意**：GEP 核心、进化流水线、Proxy 路由与认知编排已基本可用。ATP 商业闭环和验证者沙箱仍不完整，它们不在本阶段。
 
 ---
 
@@ -191,14 +191,14 @@ memory/                 # 运行时数据（graph JSONL、reviews JSONL）
 
 ## 实现状态
 
-> **总体评估**（2026-09-05）：包版本 **1.112.0**。MCP 蜂群栈（v1.98–v1.111）之后的稳定化（HITL/HOTL 互锁、机械 repair、落地基因谱系、运行态出仓）见 [演进方案.md](演进方案.md)。五轮 dogfood 已跑通；验收门 gated_runs=4，verdict 诚实停在 collecting（需 ≥20）。
+> **总体评估**（2026-09-24）：包版本 **1.112.0**，阶段结束前不发 minor。蜂群闭环、HITL/HOTL 互锁、锚定评测和 RSI 的 P0/P1 已在库内。Dogfood 至 round-78，后半段大多在改引擎自己的测量。现行计划见 [演进方案.md](演进方案.md)：重复失败走 `swarm_propose`，一个冻结的 bench 任务包成为适应度。验收门保持 shadow。下表百分比是 2026-09-05 的快照，不是工作清单。
 
 | 子系统 | 状态 | 说明 |
 |---|---|---|
 | **GEP 数据层** | ~90% | 种子基因 11×sha256；solidify 直测 + 学习助手 |
 | **GEP 高级认知** | ~80% | 回忆/反思/蒸馏；探索/课程由 feature flag 控制 |
 | **进化流水线** | ~90% | 7 阶段 + Autopoiesis + 硬超时；已应用基因冷却（v1.111） |
-| **MCP 蜂群** | ~97% | 接管闭环 + E 反馈 + HITL/HOTL + Hooks/技能桥 + 工作流工具；五轮 dogfood 实测 |
+| **MCP 蜂群** | ~97% | 接管闭环 + E 反馈 + HITL/HOTL + Hooks/技能桥 + 工作流工具；dogfood 至 round-78 |
 | **工作流引擎** | ~90% | WAL 持久化步骤（script/foreach/if/agent/approval/gate）；YAML + 角色 + 模板（v1.110） |
 | **验收门** | ~85% | shadow soak + gate-report 判定；执法开关留人类 |
 | **Proxy 基础设施** | ~85% | 路由前缀 `/v1/a2a`；默认端口 8081；SSE LLM 中继 |
@@ -209,7 +209,7 @@ memory/                 # 运行时数据（graph JSONL、reviews JSONL）
 | **验证者** | ~50% | 沙箱框架存在；生产级网络隔离待完善 |
 | **文档/发布** | ~90% | CHANGELOG + 版本 **1.112.0**；多 OS CI 提示 |
 
-详细差距分析见 [`演进方案_wikiskill对照版.md`](演进方案_wikiskill对照版.md)（单一真相源）与 [`TODO.md`](TODO.md)。
+现行计划见 [`演进方案.md`](演进方案.md) 与 [`TODO.md`](TODO.md)。wikiskill 对照版是档案。
 
 ## 示例
 
@@ -297,8 +297,11 @@ python scripts/validate_modules.py
 
 ## 文档
 
-- [`演进方案_wikiskill对照版.md`](演进方案_wikiskill对照版.md) — wikiskill 对照审计与差距路线图
-- [`TODO.md`](TODO.md) — 详细差距分析与路线图
+- [`演进方案.md`](演进方案.md) — 现行章程（外部适应度）
+- [`TODO.md`](TODO.md) — 该章程的工作清单
+- [`CHANGELOG.md`](CHANGELOG.md) — 按 round 记账
+- [`RSI演进对照.md`](RSI演进对照.md) — 论文对照与 effective-L5 记录（档案）
+- [`演进方案_wikiskill对照版.md`](演进方案_wikiskill对照版.md) — 2026-09-01 审计（档案）
 - [`AGENTS.md`](AGENTS.md) — Agent 集成指南、编码规范、常见陷阱
 - [`CONTRIBUTING.md`](CONTRIBUTING.md) — 贡献指南
 - [`SKILL.md`](SKILL.md) — Skill 使用参考

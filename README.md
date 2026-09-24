@@ -5,7 +5,7 @@
 
 **A GEP-powered self-evolution engine for AI agents.**
 
-This project aims for **full behavioral equivalence**  while using modern Python tooling:
+The engine does not call an LLM. A host agent on MCP stdio is the executor. The current stage points that loop at an external frozen task pack; see [演进方案.md](演进方案.md). This tree is a behavioral Python port of `@evomap/evolver`, using:
 
 - **Python 3.12+** — `asyncio`, type parameter syntax (`list[str]`), `tomllib`
 - **uv** — fast Python package management
@@ -13,7 +13,7 @@ This project aims for **full behavioral equivalence**  while using modern Python
 - **httpx** — async HTTP client (equivalent to Node `undici`)
 - **FastAPI + uvicorn** — local Proxy and WebUI
 
-> **Note**: Core GEP data layer, evolution pipeline, Proxy routes, and advanced cognition orchestration are largely implemented. ATP commercial loops, some Hub asset routes, and production-grade validator sandboxing remain partial. See [Implementation Status](#implementation-status) below.
+> **Note**: Core GEP, the evolution pipeline, Proxy routes, and cognition are largely implemented. ATP commerce and the validator sandbox remain partial, and they are outside the current stage.
 
 ---
 
@@ -292,21 +292,20 @@ memory/                 # Runtime data (graph JSONL, reviews JSONL)
 
 ## Implementation Status
 
-> **Overall** (2026-09-05): package version **1.112.0**. The MCP swarm stack
-> (v1.98–v1.111: takeover loop, evaluation feedback E, HITL/HOTL safety,
-> hooks bridge, skill bridge, feedback-adaptive mutation, acceptance-gate
-> soak, YAML workflow engine with role nodes + cascade gates) is complete and
-> green (**3455 tests passing**, mypy strict 0 errors). Five dogfood rounds
-> ran the full loop on this repo itself — 4 gated runs accumulated on the
-> acceptance gate (verdict honestly `collecting`, needs ≥20). Node-parity
-> baseline v1.94.0 retained; remaining depth gaps: [演进方案_wikiskill对照版.md](演进方案_wikiskill对照版.md).
+> **Overall** (2026-09-24): package version **1.112.0**, pinned until a human
+> closes the stage. The swarm loop, HITL/HOTL interlock, anchor eval, and
+> RSI P0/P1 mechanisms are in tree. Dogfood has run through round-78, mostly
+> on the engine's own instruments. The live plan is [演进方案.md](演进方案.md):
+> repeated failures go through `swarm_propose`, and one frozen bench pack
+> becomes the fitness signal. The acceptance gate stays in shadow.
+> Percentages below are the 2026-09-05 snapshot, not the work list.
 
 | Subsystem | Status | Notes |
 |---|---|---|
 | **GEP Data Layer** | ~90% | seed genes 11×sha256; solidify direct tests + learning helpers |
 | **GEP Cognition** | ~80% | recall/reflection/distill; explore/curriculum flag-gated |
 | **Evolution Pipeline** | ~90% | 7 phases + Autopoiesis + hard timeout; applied-gene cooldown (v1.111) |
-| **MCP Swarm** | ~97% | takeover loop + E feedback + HITL/HOTL + hooks/skill bridges + workflow tools (run/act/status); 5 dogfood rounds live |
+| **MCP Swarm** | ~97% | takeover loop + E feedback + HITL/HOTL + hooks/skill bridges + workflow tools; dogfood through round-78 |
 | **Workflow Engine** | ~90% | WAL durable steps (script/foreach/if/agent/approval/gate); YAML specs + roles + templates (v1.110) |
 | **Acceptance Gate** | ~85% | shadow-mode soak + gate-report verdicts; enforcement switch stays human |
 | **Proxy Infrastructure** | ~85% | multi-provider, token reuse, path CLI flags, port **8081** |
@@ -317,7 +316,7 @@ memory/                 # Runtime data (graph JSONL, reviews JSONL)
 | **Validator** | ~50% | sandbox framework; prod network isolation pending |
 | **Docs / Release** | ~90% | CHANGELOG + version **1.112.0**; multi-OS CI advisory |
 
-See [演进方案_wikiskill对照版.md](演进方案_wikiskill对照版.md) for the live gap roadmap.
+Live plan: [演进方案.md](演进方案.md) and [TODO.md](TODO.md). The wikiskill audit is an archive.
 
 ## Examples
 
@@ -493,12 +492,13 @@ A2A_HUB_URL=https://your-hub.example.com uv run evolver proxy
 
 ## Documentation
 
-- [`CHANGELOG.md`](CHANGELOG.md) — Release history (v1.98–v1.111 swarm arc)
-- [`演进方案_wikiskill对照版.md`](演进方案_wikiskill对照版.md) — Audit vs wikiskill + live gap roadmap (Chinese)
-- [`TODO.md`](TODO.md) — Roadmap pointers (frozen; details in the audit doc)
+- [`演进方案.md`](演进方案.md) — Current charter: external fitness (Chinese)
+- [`TODO.md`](TODO.md) — Work list for that charter
+- [`CHANGELOG.md`](CHANGELOG.md) — Per-round notes (v1.98 through round-78, still unreleased on 1.112.0)
 - [`AGENTS.md`](AGENTS.md) — Agent integration guide, coding standards, pitfalls
-- [`DEBUG.md`](DEBUG.md) — Debugging playbook: dogfood + v1.112 interlock bugs, with root causes and transferable lessons
-- [`演进方案.md`](演进方案.md) — Current-stage charter (swarm interlock stabilization, Chinese)
+- [`DEBUG.md`](DEBUG.md) — Debugging playbook: dogfood and interlock bugs, with root causes and transferable lessons
+- [`RSI演进对照.md`](RSI演进对照.md) — Archived paper comparison and effective-L5 log (Chinese)
+- [`演进方案_wikiskill对照版.md`](演进方案_wikiskill对照版.md) — Archived 2026-09-01 audit (Chinese)
 - [`CONTRIBUTING.md`](CONTRIBUTING.md) — Contribution guidelines
 - [`SKILL.md`](SKILL.md) — Skill usage reference
 

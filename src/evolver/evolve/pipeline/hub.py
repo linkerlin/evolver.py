@@ -66,9 +66,7 @@ async def hub_phase(ctx: dict[str, Any]) -> dict[str, Any]:
             "sticky": True,
             "consecutive_404": state["consecutive_404"],
             "skipped_cycles": state["skipped_cycles"],
-            "next_probe_in_s": round(
-                wait_s - (now - float(state.get("last_probe_ts", 0.0)))
-            ),
+            "next_probe_in_s": round(wait_s - (now - float(state.get("last_probe_ts", 0.0)))),
         }
         ctx["active_task"] = None
         ctx["hub_lessons"] = []

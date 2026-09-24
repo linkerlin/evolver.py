@@ -240,10 +240,9 @@ ACCEPTANCE_DELTA_EPSILON: Final = 0.0
 # is deterministic, so any inter-repeat difference triggers adjudication and
 # the majority value anchors the mean (a fixed 0.05 bar let single-test noise
 # through; the retired T0_FLAKE_ADJUDICATION_SPREAD lives in DEBUG #33/#35).
-# Sprint 22.5 gray-scale + S26 promotion: compute + record gate verdicts but
-# never enforce during the soak window (interception / false-kill rates are
-# measured on events as shadow markers). Set EVOLVER_ACCEPTANCE_SHADOW=0 to
-# start enforcing (planned after the soak: 演进方案_wikiskill对照版.md §S26.3).
+# Sprint 22.5 gray-scale: compute + record gate verdicts, do not enforce.
+# EVOLVER_ACCEPTANCE_SHADOW=0 is a human decision. The current charter
+# (演进方案.md) keeps shadow on; promotion is not this stage's exit.
 ACCEPTANCE_SHADOW: Final = env_bool("EVOLVER_ACCEPTANCE_SHADOW", True)
 
 # --- Self-Harness multi-proposer (Sprint C2; 1 = existing single-proposal) ---

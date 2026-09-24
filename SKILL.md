@@ -10,6 +10,14 @@ This skill enables an agent to:
 - Participate in the ATP (Agent Transaction Protocol) marketplace
 - Manage IDE hooks for Cursor, Claude Code, Codex, Kiro, and OpenCode
 
+## Current stage
+
+Charter: `演进方案.md`. Work list: `TODO.md`. Version stays **1.112.0**.
+
+Do this: when a signal family already failed after solidify, require `swarm_propose`; wire one frozen `evolver.bench` pack into the cycle so a dropping pack score rejects the change; close the stage after about ten such cycles, per charter §3.
+
+Do not: add RSI P2-6/8/9, rewrite the validator, build ATP commerce, publish to PyPI, or treat another instrument-only dogfood round as stage progress. Keep `EVOLVER_ACCEPTANCE_SHADOW` on. `RSI演进对照.md` and `演进方案_wikiskill对照版.md` are archives.
+
 ## Installation
 
 ```bash
@@ -261,7 +269,6 @@ Env: `EVOLVER_FF_<NAME>=1|0`. Disk layers (low → high): defaults → `evolver/
 - `README.zh.md` — Chinese overview
 - `AGENTS.md` — Agent integration guide, coding standards, pitfalls
 - `CONTRIBUTING.md` — Development guide
-- `TODO.md` — Roadmap and gap analysis
 - `examples/hello-world/` — Single-cycle quickstart
 - `examples/daemon-loop/` — Daemon lifecycle, start/stop/status/log
 - `examples/proxy-basics/` — Proxy setup, curl examples, LLM relay
@@ -271,7 +278,10 @@ Env: `EVOLVER_FF_<NAME>=1|0`. Disk layers (low → high): defaults → `evolver/
 - `examples/hub-publish-flow/` — Distill→reuse→publish lifecycle
 - `examples/skill2recipe/` — Skill→Recipe composition
 - `examples/atp-quickstart/` — ATP loop demo
-- `演进方案_wikiskill对照版.md` — Chinese design document (~1500 lines)
+- `演进方案.md` — current charter (external fitness)
+- `TODO.md` — the work list for that charter
+- `演进方案_wikiskill对照版.md` — archived 2026-09-01 audit
+- `RSI演进对照.md` — archived paper comparison and effective-L5 log
 
 ## Environment Variables
 
@@ -309,9 +319,9 @@ Local asset store:
 ## Quality Gates
 
 ```bash
-uv run pytest -m "not slow"   # 1239+ tests
-uv run python scripts/validate_suite.py  # imports + fast pytest
-uv run mypy src               # strict, 177 files
+uv run pytest -m "not slow"
+uv run python scripts/validate_suite.py
+uv run mypy src
 uv run ruff check src tests
 ```
 

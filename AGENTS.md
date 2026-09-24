@@ -2,6 +2,16 @@
 
 > 以 GEP 为驱动之 AI 智能体自进化引擎。
 
+## 演进篇
+
+现行章程：[`演进方案.md`](演进方案.md)。工作清单：[`TODO.md`](TODO.md)。
+
+本阶段做外部适应度，三步：重复失败时 instrument 要求 `swarm_propose`；把 `evolver.bench` 的一个冻结任务包接进周期，包分下降则拒绝；约十个周期后按章程第 3 节收口。版本保持 **1.112.0**。`EVOLVER_ACCEPTANCE_SHADOW` 保持打开。运行态不进产品 git。
+
+本阶段不做：RSI P2-6/8/9、validator 重写、ATP 商业闭环、PyPI、为拆 `cli.py` 单独立项、把 soak `ready` 当出口。只修测量仪器或测试针的一轮，不算阶段进度。
+
+[`RSI演进对照.md`](RSI演进对照.md) 与 [`演进方案_wikiskill对照版.md`](演进方案_wikiskill对照版.md) 是史料。两文里的「下一步」不得当作当前排期。
+
 ## 命令篇
 
 | 操作 | 命令 |
@@ -27,7 +37,7 @@
 | 改进机制遥测（RSI P0-2） | `uv run evolver meta-report [--json]`（Table-8 六维面板 + 后代质量 + structural-L5 审计） |
 | 基因生命周期（RSI P1-5） | `uv run evolver gene-lifecycle list\|evaluate\|reinstate <gene_id>`（零后效→under_review→retired；人工才可复活） |
 | Soak 外置运行态 | `uv run evolver soak setup\|exports\|status`（`$EVOLVER_HOME/evolver.py-soak`，勿提交 `memory/`） |
-| 评估隔离 worktree | `EVOLVER_FF_ENABLE_EVAL_WORKTREE=1`（S26.5；失败回退 live cwd） |
+| 评估隔离 worktree | 默认开启（`enable_eval_worktree`）。失败回退 live cwd 并告警；`EVOLVER_EVAL_WORKTREE_STRICT=1` 时回退改为失败 |
 | 守护进程生命周期 | `uv run evolver start` / `stop` / `restart` / `status` / `log` |
 | 健康检查 | `uv run evolver check` / `watch` |
 | Recipe Hub | `uv run evolver recipe list|show|apply|…` |
