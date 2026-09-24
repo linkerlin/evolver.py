@@ -15,6 +15,33 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `EVOLVER_ACCEPTANCE_SHADOW` 保持打开。soak `ready` 不再是路线图出口。
 - [`TODO.md`](TODO.md)、[`AGENTS.md`](AGENTS.md)、[`CONTRIBUTING.md`](CONTRIBUTING.md)、四种 README、[`SKILL.md`](SKILL.md) 已同步。[`RSI演进对照.md`](RSI演进对照.md) 与 [`演进方案_wikiskill对照版.md`](演进方案_wikiskill对照版.md) 改为史料，文内旧「下一步」作废。
 
+### Added — round-80：包门生效后首个正式周期（外部适应度 #1）
+
+- **周期**：92c615043afce17c，0.119s（hub 粘性短路生效）。Evidence Pack
+  8 attempts / 8 accepted / 0 rejected——最新 attempt 为接受，mandate
+  判定不触发（软提示原样渲染，PROPOSAL REQUIRED 未出现，与新语义一致）。
+  选中 gene_gep_innovate_from_opportunity（intent=innovate）。
+- **变异**：`evolver bench gate` 只读子命令——CLI 操作者不进 MCP 会话即可
+  查包门状态（armed/pack/digest/val_tasks/baseline/baseline_digest，
+  未布防时提示 freeze）。本轮 diff（cli.py + 测试针）落在章程收口判据
+  点名的仪器面（acceptance/、meta_report、charter_check、
+  capability_trace、测试针）**之外**——第一笔候选环外交付，是否计为
+  环外增益由人在收口时判断。
+- **包门首轮实跑**：宿主按新协议逐题完成冻结包 val 任务（`bench prompt`
+  ×5 → 沙箱交付物 → `bench grade` 自评 5/5 满分），solidify 包门
+  **established**：score 1.0，基线 1.0 持久化至 soak 根
+  acceptance/bench_pack_baseline.json（绑定 digest 42bc0fcb5771bccb）。
+  级联分 1.0；T0 门 shadow 判 `T0_frozen_regressed`（冻结快照滞后于
+  round-79 新增测试的仪器漂移，shadow 如实记录不拦截）；锚未触发
+  （本轮未触碰验证面）。事件 evt_1790257560393_65d16848，自动提交
+  45fedff。反馈 fb_51e6fe843905（primary_score=1.0）。
+- **发现（包缺陷，留待人工重冻）**：内建包 spec-pipe 族题面欠定——
+  prompt 只说「Format product N per the pipe spec」，沙箱只有格式条款
+  的 spec.txt，产品数量/状态既不在题面也不在沙箱，答案只能从包定义源码
+  得知（自洽性测试直接写期望答案，绕过了可解性）。修包模板须改
+  builtin_pack.py 后由人 `bench freeze --force`（改 digest=重key基线，
+  章程规定为人工决定）。
+
 ### Added — round-79：外部适应度 step 1+2 落地（重复失败走提案 + 冻结任务包门）
 
 - **Step 1（重复失败走提案）**：`gep/evidence_pack.py` 增机械判定
