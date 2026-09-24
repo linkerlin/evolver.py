@@ -10,6 +10,7 @@ from __future__ import annotations
 import json
 from collections.abc import Iterator
 from pathlib import Path
+from typing import Any
 
 import pytest
 
@@ -143,6 +144,25 @@ class TestBootAndStatus:
         assert "supervision:" in prompt
         assert "hitl:" in prompt
 
+    def test_instrument_carries_mandate_and_bench_gate(self) -> None:
+        """Charter round-79: the repeat-failure mandate is a MUST (not a
+        preference), and the frozen bench-pack protocol is spelled out with
+        its gate state from section six."""
+        prompt = build_instrument_prompt(
+            {
+                "agent_name": "zcode-9",
+                "workspace_root": "/ws",
+                "bench_pack_gate": {"armed": True, "baseline": 1.0},
+            }
+        )
+        assert "PROPOSAL REQUIRED" in prompt
+        assert "必须" in prompt and "swarm_propose" in prompt
+        assert "自由编辑仅限新颖信号与结构性" in prompt
+        assert "冻结任务包门" in prompt
+        assert "evolver bench prompt" in prompt
+        assert "evolver bench freeze" in prompt
+        assert "bench_pack_gate" in prompt
+
     def test_status_shape(self, isolated_swarm_env: Path) -> None:
         status = swarm_status()
         assert status["ok"] is True
@@ -152,6 +172,8 @@ class TestBootAndStatus:
         assert status["genes"] >= 1
         assert status["pending_solidify"] is False
         assert set(status["mailbox_pending"]) == {"inbound", "outbound"}
+        # Fresh env: no frozen pack → the charter gate reports unarmed.
+        assert status["bench_pack_gate"]["armed"] is False
 
 
 class TestTick:
@@ -185,6 +207,51 @@ class TestTick:
         result = await swarm_tick(include_prompt=False)
         assert result["ok"] is True
         assert result["dispatch_prompt"] is None
+
+    async def test_fresh_tick_carries_no_proposal_mandate(self, isolated_swarm_env: Path) -> None:
+        """Charter step 1: the field exists on every dispatched tick; a novel
+        family (fresh store, no prior attempts) leaves free editing intact."""
+        result = await swarm_tick(agent_name="mandate-fresh")
+        assert result["ok"] is True
+        assert result["dispatch_reason"] == "dispatched"
+        assert result["proposal_required"] is False
+
+    async def test_tick_result_carries_proposal_mandate(self, isolated_swarm_env: Path) -> None:
+        """Charter step 1 (round-79): a repeat-failure family must surface
+        structurally (``proposal_required=true``), not only as prompt prose
+        — hosts reading fields must not parse blocks to learn the rule."""
+        from evolver import swarm as swarm_mod
+
+        async def fake_cycle(is_loop: bool = False) -> dict[str, Any]:
+            _ = is_loop
+            return {
+                "run_id": "run_mandate",
+                "cycle_id": "0042",
+                "dispatch_prompt": "# GENOME EVOLUTION PROTOCOL (GEP)\nPROPOSAL REQUIRED",
+                "selected_gene": {"id": "gene_g", "name": "G"},
+                "evidence_pack": {"mandate": {"required": True, "reasons": ["repeated_failure"]}},
+            }
+
+        class _Supervision:
+            @staticmethod
+            def supervision_summary() -> dict[str, Any]:
+                return {"state": "running"}
+
+        result = await swarm_mod._swarm_tick_locked(
+            agent_name="mandate-test",
+            include_prompt=True,
+            tripwire={},
+            run_cycle=fake_cycle,
+            log_budget=2000,
+            supervision=_Supervision,
+        )
+        assert result["ok"] is True
+        assert result["dispatch_reason"] == "dispatched"
+        assert result["proposal_required"] is True
+        # The persisted tick summary carries it too (allowlist, round-71).
+        state_file = isolated_swarm_env / "evolution" / "swarm_state.json"
+        data = json.loads(state_file.read_text(encoding="utf-8"))
+        assert data["last_tick"]["proposal_required"] is True
 
 
 class TestDistillSolidifyReport:

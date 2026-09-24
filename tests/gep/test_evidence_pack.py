@@ -190,3 +190,59 @@ class TestPriorAttribution:
     def test_no_entries_empty_attribution(self) -> None:
         pack = build_evidence_pack(self._events("d"), ["log_error"])
         assert pack["prior_attribution"] == ""
+
+
+class TestProposalMandate:
+    """Charter 外部适应度 step 1 (round-79): repeat failure → proposal mandate.
+
+    Two triggers: ``solidified_unresolved`` (landed genes, failures newer
+    than the newest acceptance) and ``repeated_failure`` (2+ rejections,
+    nothing ever accepted). Novel and healed families stay on free editing.
+    """
+
+    def test_failure_after_acceptance_is_solidified_unresolved(self) -> None:
+        pack = build_evidence_pack([_ok_event(1), _fail_event(2)], ["log_error"])
+        assert pack["mandate"]["required"] is True
+        assert pack["mandate"]["reasons"] == ["solidified_unresolved"]
+
+    def test_repeated_failure_without_acceptance(self) -> None:
+        pack = build_evidence_pack([_fail_event(1), _fail_event(2)], ["log_error"])
+        assert pack["mandate"]["required"] is True
+        assert pack["mandate"]["reasons"] == ["repeated_failure"]
+
+    def test_single_failure_no_mandate(self) -> None:
+        pack = build_evidence_pack([_fail_event(1)], ["log_error"])
+        assert pack["mandate"] == {"required": False, "reasons": []}
+
+    def test_healed_family_newest_attempt_accepted(self) -> None:
+        # Landing resolved it: the only failure predates the acceptance.
+        pack = build_evidence_pack([_fail_event(1), _ok_event(2)], ["log_error"])
+        assert pack["mandate"] == {"required": False, "reasons": []}
+
+    def test_novel_family_no_mandate(self) -> None:
+        pack = build_evidence_pack([], ["fresh_family"])
+        assert pack["mandate"] == {"required": False, "reasons": []}
+        assert pack["attempts"] == []
+
+    def test_no_signals_carries_mandate_shape(self) -> None:
+        pack = build_evidence_pack([_fail_event(1)], [])
+        assert pack["mandate"] == {"required": False, "reasons": []}
+
+    def test_render_carries_required_block_and_reasons(self) -> None:
+        rendered = render_evidence_pack(
+            build_evidence_pack([_ok_event(1), _fail_event(2)], ["log_error"])
+        )
+        assert "PROPOSAL REQUIRED" in rendered
+        assert "MUST go through the mechanical proposal channel" in rendered
+        assert "Reasons: solidified_unresolved" in rendered
+
+    def test_render_keeps_soft_hint_without_mandate(self) -> None:
+        rendered = render_evidence_pack(build_evidence_pack([_fail_event(1)], ["log_error"]))
+        assert "PROPOSAL REQUIRED" not in rendered
+        assert "prefer a NEW strategy" in rendered
+
+    def test_mandate_block_within_budget(self) -> None:
+        events = [_fail_event(i, added=f"+edit {i} " + "y" * 150 + "\n") for i in range(60)]
+        rendered = render_evidence_pack(build_evidence_pack(events, ["log_error"], limit=60))
+        assert len(rendered) <= EVIDENCE_PACK_MAX_CHARS
+        assert "PROPOSAL REQUIRED" in rendered

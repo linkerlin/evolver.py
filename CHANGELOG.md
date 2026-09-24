@@ -8,6 +8,45 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed — 章程切换：外部适应度
+
+- [`演进方案.md`](演进方案.md) 改为现行短章程。蜂群互锁视为已完成，版本仍钉 1.112.0。
+- 下一阶段：重复失败走 `swarm_propose`；把 `evolver.bench` 的一个冻结任务包接进周期；约十个周期后收口。
+- `EVOLVER_ACCEPTANCE_SHADOW` 保持打开。soak `ready` 不再是路线图出口。
+- [`TODO.md`](TODO.md)、[`AGENTS.md`](AGENTS.md)、[`CONTRIBUTING.md`](CONTRIBUTING.md)、四种 README、[`SKILL.md`](SKILL.md) 已同步。[`RSI演进对照.md`](RSI演进对照.md) 与 [`演进方案_wikiskill对照版.md`](演进方案_wikiskill对照版.md) 改为史料，文内旧「下一步」作废。
+
+### Added — round-79：外部适应度 step 1+2 落地（重复失败走提案 + 冻结任务包门）
+
+- **Step 1（重复失败走提案）**：`gep/evidence_pack.py` 增机械判定
+  `mandate`——`solidified_unresolved`（族内已落地基因但存在晚于最近
+  接受的失败）或 `repeated_failure`（≥2 拒绝且零接受）时，渲染
+  **PROPOSAL REQUIRED** 区块（替代原软提示，附判定原因）；instrument
+  第二章同步升级为「**必须**经 swarm_propose」（自由编辑仅限新颖信号与
+  结构性改动）；`swarm_tick` 结果新增 `proposal_required` 结构字段并进
+  tick 摘要 allowlist（宿主不必解析提示词块即可知规则）。固化事件级联分
+  原已记录（`outcome.score`，S26 诚实分），本轮把 solidify 成功返回面
+  也暴露 `score`——「宿主 primary_score 来自级联或门」的机器来源闭合。
+- **Step 2（冻结任务包门）**：新增 `evolver/bench/frozen_gate.py`——
+  内建 12 题包经 `evolver bench freeze` 冻结至锚侧
+  `$EVOLVER_HOME/anchor/bench/charter-pack.tasks.json`（环内只读；
+  无 `--force` 幂等，重冻=人工决定且还原内建模板）；solidify 在验收门
+  之后追加**包分门**：val 分片沙箱确定性评分，低于基线（上次接受分）
+  即拒绝回滚（`bench_pack_rejected`；failure_mode=soft/retryable，
+  循环继续换路）；持平或上升通过并推进基线；首轮 establish；
+  unmeasured（沙箱缺位）不表态不推进；基线绑定包 digest（改规则=
+  rekey，记录在案）；门侧故障降级 inactive 绝不碰 solidify。失败路径
+  单次追加事件并显式挂 DGM 变体档案与诊断条目钩子（不 replicate
+  fitness 拒绝路径在 `enable_failure_events` 默认开时的双写）。
+  事件与返回面均携 `bench_pack` 证据。锚种子新增
+  `case-bench-pack-gate` 探针冻结门语义。
+- **Fixed（存量，DEBUG #46）**：round-77 契约变更未同步锚探针模板
+  （`case-gate-calibration-invariants` 假 subprocess 缺 `returncode`），
+  种子套件在干净树上红并被带过两轮；本轮补齐并以新探针冻结包门契约。
+- **测试**：mandate +9、冻结门 +12、solidify 接线 +7、CLI freeze +2、
+  swarm 字段/instrument +3；全量 3793 passed（25 slow deselected），
+  ruff/mypy 归零。真机已 `bench freeze`（digest `42bc0fcb5771bccb`，
+  5 个 val 任务），下一轮固化起门生效。
+
 ### Fixed — round-77（续）：stale 冻结 ID 致整 chunk 归零的假杀根因修复
 - **根因**：冻结快照含 6 个 stale ID（round-71 测试改名遗留）→ pytest
   对含不存在 ID 的 chunk 返回 **rc=4 且整个 chunk 不运行** → 400 测试

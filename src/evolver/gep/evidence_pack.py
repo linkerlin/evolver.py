@@ -48,6 +48,43 @@ _PROPOSAL_HINT = (
     "re-running a listed gene — proposals pass the same verification gates."
 )
 
+_PROPOSAL_REQUIRED = (
+    "## PROPOSAL REQUIRED for this family (repeat-failure rule)\n"
+    "MANDATORY: the next intervention in this family MUST go through the mechanical "
+    "proposal channel — swarm_propose / `solidify --proposal` (GeneProposal contract, "
+    "same verification gates). Do NOT re-run a listed attempt; free-form gene edits "
+    "are reserved for novel signals and structural engine changes."
+)
+
+
+def _mandate(attempts: list[dict[str, Any]], accepted: int, rejected: int) -> dict[str, Any]:
+    """Charter 外部适应度 step 1 (2026-09-24): repeat failure → proposal mandate.
+
+    Two mechanical triggers over the family window (attempts are oldest
+    first, newest last):
+
+    - ``solidified_unresolved`` — the family landed genes before (已固化)
+      yet a failure is newer than the newest acceptance (未消): the accepted
+      path did not heal the family, so the next intervention must be a
+      strategy change through the proposal channel;
+    - ``repeated_failure`` — two or more rejected attempts and nothing ever
+      accepted: free editing already burned those cycles on this family.
+
+    Novel families (no attempts) and healed families (newest attempt
+    accepted) stay on free editing; structural engine changes are exempt by
+    charter. Pure data judgment — no env, no I/O.
+    """
+    reasons: list[str] = []
+    last_accepted = -1
+    for i, attempt in enumerate(attempts):
+        if attempt["status"] == "success":
+            last_accepted = i
+    if last_accepted >= 0 and any(a["status"] == "failed" for a in attempts[last_accepted + 1 :]):
+        reasons.append("solidified_unresolved")
+    if accepted == 0 and rejected >= 2:
+        reasons.append("repeated_failure")
+    return {"required": bool(reasons), "reasons": reasons}
+
 
 def _heads(raw: list[Any] | tuple[Any, ...] | None) -> set[str]:
     out: set[str] = set()
@@ -109,6 +146,7 @@ def build_evidence_pack(
             "accepted": 0,
             "rejected": 0,
             "digests": [],
+            "mandate": {"required": False, "reasons": []},
         }
     family = [e for e in events if isinstance(e, dict) and _event_heads(e) & heads][
         -max(1, limit) :
@@ -147,6 +185,7 @@ def build_evidence_pack(
         "accepted": accepted,
         "rejected": rejected,
         "digests": digests,
+        "mandate": _mandate(attempts, accepted, rejected),
         "prior_attribution": _prior_attribution(attempts, diagnostic_entries or []),
     }
 
@@ -219,7 +258,11 @@ def render_evidence_pack(
         if pack.get("digests")
         else ""
     )
-    footer = [line for line in (digest_line, _PROPOSAL_HINT) if line]
+    mandate = pack.get("mandate") or {}
+    closing = _PROPOSAL_REQUIRED if mandate.get("required") else _PROPOSAL_HINT
+    if mandate.get("required"):
+        closing += "\nReasons: " + ", ".join(str(r) for r in (mandate.get("reasons") or []))
+    footer = [line for line in (digest_line, closing) if line]
 
     fixed = len("\n".join(header + footer)) + 8  # separators + omission note room
     budget = max(200, max_chars - fixed)

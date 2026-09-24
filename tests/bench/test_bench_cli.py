@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import sys
 from pathlib import Path
 
@@ -45,3 +46,37 @@ def test_bench_run_no_record_leaves_ledger(
     assert main(["bench", "run", "--no-record"]) == 0
     ledger = bench_env / "memory" / "evolution" / "evolution_fitness_state.json"
     assert not ledger.exists()
+
+
+def test_bench_freeze_is_idempotent(
+    bench_env: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """Charter round-79: freeze lands the pack anchor-side, outside the
+    workspace; a second freeze is a no-op that refuses to overwrite."""
+    home = bench_env / ".evomap-freeze"
+    monkeypatch.setenv("EVOLVER_HOME", str(home))
+    assert main(["bench", "freeze"]) == 0
+    frozen = home / "anchor" / "bench" / "charter-pack.tasks.json"
+    assert frozen.exists()
+    first = capsys.readouterr().out
+    assert "froze 12 tasks" in first
+    bytes_before = frozen.read_bytes()
+    assert main(["bench", "freeze"]) == 0
+    assert "unchanged" in capsys.readouterr().out
+    assert frozen.read_bytes() == bytes_before
+
+
+def test_bench_freeze_force_refreezes(
+    bench_env: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    home = bench_env / ".evomap-freeze2"
+    monkeypatch.setenv("EVOLVER_HOME", str(home))
+    assert main(["bench", "freeze"]) == 0
+    frozen = home / "anchor" / "bench" / "charter-pack.tasks.json"
+    data = json.loads(frozen.read_text(encoding="utf-8"))
+    data["tasks"][0]["title"] = "human-refreeze"
+    frozen.write_text(json.dumps(data, indent=2), encoding="utf-8")
+    assert main(["bench", "freeze", "--force"]) == 0
+    out = capsys.readouterr().out
+    assert "froze 12 tasks" in out
+    assert "human-refreeze" not in frozen.read_text(encoding="utf-8")

@@ -922,3 +922,24 @@
   monkeypatch 模块属性对 by-name 绑定无效。周期计时仪器（round-42）
   是整条弧线的使能器——先有仪器，才有归因，才有 118 倍。
 
+### 46. 锚探针模板漂移：契约变更未同步冻结面（round-79 逮住 round-77 遗留）
+
+- **症状**：`test_seed_suite_passes_on_clean_tree` 在干净树上红——
+  `case-gate-calibration-invariants` 探针在 `t0_frozen.run_pass_rate`
+  内炸 `AttributeError: SimpleNamespace has no returncode`。round-77
+  （1eebaab）落地 rc=4 stale-ID 处理（run_pass_rate 先读
+  `proc.returncode` 再解析 summary）时只更新了仓内测试，锚探针模板的
+  假 subprocess 返回没跟上；红被带过两轮才被全量套件逮住。
+- **根因**：**契约变更的消费者清单漏了「冻结面」**——锚探针是 in-repo
+  模板的仓外拷贝，改被测函数对输入对象形状的要求时，只扫了 `tests/`
+  没扫 `assets/anchor/`。假桩的形状本身就是被测契约的一部分（#45 的
+  「stale needle 只有 pytest 逮」同型重演：这次是 stale fake，不是
+  stale assertion）。
+- **修复**：探针 `flaky_run` 假对象补 `returncode=0` 并注释来历；
+  顺手以新增 `case-bench-pack-gate` 探针把 round-79 包门语义（降拒/
+  平过/基线绑 digest/unmeasured 不表态）一并冻结进种子套件。
+- **经验**：**改「被测系统」时，锚模板与测试针是同一张消费者清单上的
+  两行**——契约变更的横扫面必须含锚模板。假桩形状漂移 = 契约漂移的
+  延迟暴露；全量套件是提交前最后闸门，最终提交后不复跑等于把红灯
+  发给下一轮。
+

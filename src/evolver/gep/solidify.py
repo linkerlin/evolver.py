@@ -555,6 +555,67 @@ def _apply_acceptance_gate(
     }
 
 
+def _apply_bench_pack_gate(
+    last_run: dict[str, Any],
+    cwd: Path,
+    *,
+    validation_result: dict[str, Any] | None = None,
+) -> tuple[dict[str, Any] | None, dict[str, Any] | None]:
+    """Charter 外部适应度 (2026-09-24): the frozen bench pack as an additional
+    acceptance condition — a pack-score drop rejects this mutation; flat or
+    up passes. Scoring rules live anchor-side, read-only in-cycle; an absent
+    or unusable pack leaves the gate inactive (solidify unchanged). Returns
+    ``(rejection, verdict)`` — the verdict (when armed) rides onto the event
+    either way. Gate-side trouble degrades to inactive, never breaks
+    solidify."""
+    try:
+        from evolver.bench.frozen_gate import gate_verdict
+
+        verdict = gate_verdict()
+    except Exception:
+        logger.warning("[bench-pack-gate] inactive (gate error)", exc_info=True)
+        return None, None
+    if verdict is None:
+        return None, None
+    if verdict.get("verdict") != "reject":
+        return None, verdict
+
+    score = verdict.get("score")
+    failed_blast = _compute_blast_radius()
+    rollback_tracked(cwd=cwd, include_untracked=False)
+    rollback_new_untracked_files(_disposable_untracked(cwd), cwd=cwd)
+    record_solidify_failure(last_run, error="bench_pack_rejected", score=score)
+    _wiki_rejection("bench_pack_rejected", last_run, score=score)
+    failure = _failure_event(
+        last_run,
+        last_run.get("mutation", {}),
+        failed_blast,
+        {
+            "status": "failed",
+            "score": score,
+            "error": "bench_pack_rejected",
+        },
+        validation_result=validation_result,
+        bench_pack=verdict,
+    )
+    # Single append (the rich event, not the flag-gated skeleton) — the DGM
+    # variant archive and the diagnostic ledger still see the rejection.
+    append_event_jsonl(failure)
+    _maybe_record_variant(failure, validation_result)
+    _maybe_open_diagnostic_entry(failure, validation_result)
+    rejection: dict[str, Any] = {
+        "ok": False,
+        "error": "bench_pack_rejected",
+        # A fitness floor is not a crash: the mutation is rolled back and the
+        # loop continues with repair bias (structured field mirrors prose —
+        # round-57 lesson; the swarm wrapper only fills absent keys).
+        "failure_mode": {"mode": "soft", "reasonClass": "bench_pack", "retryable": True},
+        "next_action": "swarm_tick",
+        "details": {"bench_pack": verdict},
+    }
+    return rejection, verdict
+
+
 def _maybe_record_variant(
     event: dict[str, Any],
     validation_result: dict[str, Any] | None,
@@ -1172,6 +1233,13 @@ def solidify(
     ) is not None:
         return rejected
 
+    # Charter 外部适应度: frozen bench pack — an enforced fitness floor.
+    pack_rejection, bench_pack_verdict = _apply_bench_pack_gate(
+        last_run, cwd, validation_result=validation_result
+    )
+    if pack_rejection is not None:
+        return pack_rejection
+
     blast_radius = _compute_blast_radius()
     diff_snapshot = capture_diff_snapshot(cwd)
 
@@ -1248,6 +1316,13 @@ def solidify(
             payload["shadow"] = True
             payload["would_accept"] = False
         event["acceptance_result"] = payload
+    if bench_pack_verdict is not None:
+        # Compact record: which frozen pack ruled, its digest, and the
+        # per-task val scores the acceptance rested on (external fitness).
+        event["bench_pack"] = {
+            key: bench_pack_verdict.get(key)
+            for key in ("pack", "digest", "split", "score", "baseline", "verdict", "per_task")
+        }
     if eval_meta.get("reason") not in ("flag_off", "skipped"):
         event["eval_workspace"] = eval_meta
     if proposal_report is not None:
@@ -1304,7 +1379,21 @@ def solidify(
     tmp.write_text(json.dumps(state, indent=2) + "\n", encoding="utf-8")
     tmp.replace(get_solidify_state_path())
 
-    result: dict[str, Any] = {"ok": True, "event_id": event["id"], "blast_radius": blast_radius}
+    result: dict[str, Any] = {
+        "ok": True,
+        "event_id": event["id"],
+        "blast_radius": blast_radius,
+        # Charter: the host's primary_score sources from the cascade-or-gate
+        # result — expose the measured cascade score on the return surface,
+        # not only inside the persisted event (round-79).
+        "score": outcome_score,
+    }
+    if bench_pack_verdict is not None:
+        result["bench_pack"] = {
+            "score": bench_pack_verdict.get("score"),
+            "baseline": bench_pack_verdict.get("baseline"),
+            "verdict": bench_pack_verdict.get("verdict"),
+        }
     if proposal_report is not None:
         result["proposal"] = proposal_report
     return result

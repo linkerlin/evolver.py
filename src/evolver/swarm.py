@@ -127,6 +127,7 @@ def build_instrument_prompt(state: dict[str, Any]) -> str:
         else "调用 `swarm_tick` 开始第一轮进化"
     )
     supervision = json.dumps(state.get("supervision") or {"state": "?"}, ensure_ascii=False)
+    bench_gate = json.dumps(state.get("bench_pack_gate") or {"armed": False}, ensure_ascii=False)
     hitl = state.get("hitl") or {}
     hitl_mode = hitl.get("mode", "?")
     hitl_pending = hitl.get("pending", 0)
@@ -154,14 +155,22 @@ solidify 验证门真实落盘或回滚。
    持有引擎锁）：停止并报告，不得重试。
 2. **执行变异** — 严格按 `dispatch_prompt` 修改工作区（{workspace}）代码。
    提示词中的精确锚点与输出契约是唯一的变异指令来源；不得自行发挥范围。
-   提示词携带 **Evidence Pack**（本信号族既往干预、结局与重复编辑指纹）：
-   所选基因若属「已固化而信号未消」或族内已接受路径持续失败的条目，优先经
-   `swarm_propose` 提交结构化新策略提案（GeneProposal 契约，过同一验证门），
-   而非重复已试编辑；无 Evidence Pack 的族是新颖信号，照常执行所选基因。
+   提示词携带 **Evidence Pack**（本信号族既往干预、结局与重复编辑指纹）。
+   当其标注 **PROPOSAL REQUIRED**（同一信号族重复失败，或已固化未消——
+   tick 结果的 `proposal_required=true` 与提示词区块任一出现即成立）时，
+   本轮干预**必须**经 `swarm_propose` 提交结构化新策略提案（GeneProposal
+   契约，过同一验证门），不得重复已试编辑；自由编辑仅限新颖信号与结构性
+   改动。无 Evidence Pack 的族是新颖信号，照常执行所选基因。
 3. `swarm_distill` — 把你的工作产出（提示词要求的 JSON 资产块 + 变更摘要）
    作为 `response_text` 提交，蒸馏安装为 Gene/Capsule 候选。
-4. `swarm_solidify` — 触发验证门（ruff→mypy→pytest 级联 + 验收门）并固化。
-   失败时阅读返回的 `failure_mode`（`mode`/`reasonClass`/`retryable`）：
+4. `swarm_solidify` — 触发验证门（ruff→mypy→pytest 级联 + 锚 + 验收门 +
+   **冻结任务包门**）并固化。冻结包门（状态见第六章 `bench_pack_gate`）：
+   `armed=true` 时，固化前逐题完成冻结包 `val` 任务——对每题调用
+   `evolver bench prompt <task-id> --pack <frozen 路径>`，在题面沙箱内写出
+   交付物（评分规则在仓外锚侧，环内只读，不得改动冻结包或其沙箱以外的
+   评分面）；包分低于基线，本轮变异即被拒绝回滚。`armed=false` 时先执行
+   一次 `evolver bench freeze`（确定性安装动作，非变异），下一轮起门即
+   生效。失败时阅读返回的 `failure_mode`（`mode`/`reasonClass`/`retryable`）：
    `retryable=true` 时 repair bias 已自动注入下一轮选择，直接回到步骤 1；
    `retryable=false` 则停止并报告，不得重试同一变异。
 5. `swarm_feedback` — 每轮执行后诚实上报统一评估信号 E：
@@ -210,6 +219,7 @@ solidify 验证门真实落盘或回滚。
 - tick_count: {tick_count} | genes: {genes_n} | capsules: {capsules_n}
 - pending_solidify: {pending} | bridge: {bridge}
 - supervision: {supervision}
+- bench_pack_gate: {bench_gate}
 - hitl: mode={hitl_mode} pending={hitl_pending}
 - mailbox 待处理: inbound={inbound} outbound={outbound}
 
@@ -311,6 +321,17 @@ def _pending_solidify_state() -> bool:
     return bool(last_run_id) and last_run_id != last_done_id
 
 
+def _bench_gate_snapshot() -> dict[str, Any]:
+    """Frozen bench-pack gate state for status/boot/instrument (never raises —
+    an unusable gate is ``armed: false``, not a crash)."""
+    try:
+        from evolver.bench.frozen_gate import gate_snapshot
+
+        return gate_snapshot()
+    except Exception:
+        return {"armed": False}
+
+
 def swarm_status() -> dict[str, Any]:
     """Summarize engine state for swarm agents (cheap, no cycle side effects)."""
     from evolver import __version__
@@ -365,6 +386,7 @@ def swarm_status() -> dict[str, Any]:
             "pending": len(list_pending()),
         },
         "supervision": supervision_summary(),
+        "bench_pack_gate": _bench_gate_snapshot(),
         "mailbox_pending": mailbox,
     }
 
@@ -502,6 +524,13 @@ async def _swarm_tick_locked(
     prompt = ctx.get("dispatch_prompt") if isinstance(ctx.get("dispatch_prompt"), str) else ""
     gene = ctx.get("selected_gene") or None
 
+    # Charter step 1 (round-79): the evidence pack's repeat-failure mandate,
+    # surfaced structurally so the host doesn't have to parse the prompt
+    # block to know this family must go through swarm_propose.
+    pack_ctx = ctx.get("evidence_pack")
+    mandate = pack_ctx.get("mandate") if isinstance(pack_ctx, dict) else None
+    proposal_required = bool(isinstance(mandate, dict) and mandate.get("required"))
+
     veto: dict[str, Any] | None = (
         ctx.get("supervision_veto") if isinstance(ctx.get("supervision_veto"), dict) else None
     )
@@ -535,6 +564,7 @@ async def _swarm_tick_locked(
             {"id": gene.get("id"), "name": gene.get("name")} if isinstance(gene, dict) else None
         ),
         "supervision_veto": veto,
+        "proposal_required": proposal_required,
         "dispatch_prompt": (prompt or None) if include_prompt else None,
         "engine_log": _tail(log, log_budget),
         "next_action": (
@@ -561,6 +591,7 @@ def _record_tick(result: dict[str, Any]) -> None:
             "abort_reason",
             "dispatch_reason",
             "selected_gene",
+            "proposal_required",
             "next_action",
         )
     }

@@ -401,6 +401,18 @@ def _build_parser() -> argparse.ArgumentParser:
         help="Write the built-in deterministic task pack (12 tasks) to <dir>/tasks.json",
     )
     bench_init.add_argument("dir", nargs="?", default=".", help="Target directory")
+    bench_freeze = bench_sub.add_parser(
+        "freeze",
+        help=(
+            "Freeze the built-in pack to the anchor-side gate path "
+            "($EVOLVER_HOME/anchor/bench/) — the solidify pack gate reads it"
+        ),
+    )
+    bench_freeze.add_argument(
+        "--force",
+        action="store_true",
+        help="Re-freeze over an existing frozen pack (human decision; voids the baseline)",
+    )
     bench_run = bench_sub.add_parser(
         "run", help="Run health tasks (or a task pack) and record R into the fitness ledger"
     )
@@ -2030,6 +2042,23 @@ def _cmd_bench(args: argparse.Namespace) -> int:
             splits[str(t["split"])] = splits.get(str(t["split"]), 0) + 1
         print(f"wrote {len(tasks)} tasks to {path} ({splits})")
         print("next: evolver bench prompt <task-id> --pack <path> | run --pack <path> --split val")
+        return 0
+
+    if args.bench_action == "freeze":
+        from evolver.bench.frozen_gate import freeze_charter_pack
+
+        report = freeze_charter_pack(force=bool(args.force))
+        if not report["frozen"]:
+            print(f"frozen pack already present (digest {report['digest']}) — unchanged")
+            print(f"  {report['path']}")
+            print(
+                "re-freezing is a human decision: `evolver bench freeze --force` voids the baseline"
+            )
+            return 0
+        print(f"froze {report['tasks']} tasks to {report['path']} (digest {report['digest']})")
+        print(
+            "gate armed: solidify now grades this pack's val split against the last-accepted score"
+        )
         return 0
 
     if args.bench_action == "compare":

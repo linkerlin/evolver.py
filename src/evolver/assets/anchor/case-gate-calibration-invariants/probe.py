@@ -163,7 +163,9 @@ def _check_chunk_retry() -> None:
         state["calls"] += 1
         if state["calls"] == 1:
             raise subprocess.TimeoutExpired("pytest", 1)
-        return SimpleNamespace(stdout="2 passed in 0.01s")
+        # returncode rides along since round-77: run_pass_rate reads it
+        # (rc=4 stale-ID handling) before parsing the summary.
+        return SimpleNamespace(stdout="2 passed in 0.01s", returncode=0)
 
     t0_frozen.subprocess.run = flaky_run
     try:
