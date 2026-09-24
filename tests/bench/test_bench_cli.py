@@ -80,3 +80,29 @@ def test_bench_freeze_force_refreezes(
     out = capsys.readouterr().out
     assert "froze 12 tasks" in out
     assert "human-refreeze" not in frozen.read_text(encoding="utf-8")
+
+
+def test_bench_gate_reports_unarmed(
+    bench_env: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """Round-80: the gate state is readable from the CLI without an MCP
+    session — an unarmed gate says so and points at freeze."""
+    monkeypatch.setenv("EVOLVER_HOME", str(bench_env / ".evomap-gate0"))
+    assert main(["bench", "gate"]) == 0
+    out = capsys.readouterr().out
+    assert '"armed": false' in out
+    assert "gate inactive" in out
+
+
+def test_bench_gate_reports_armed_state(
+    bench_env: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    monkeypatch.setenv("EVOLVER_HOME", str(bench_env / ".evomap-gate1"))
+    assert main(["bench", "freeze"]) == 0
+    capsys.readouterr()
+    assert main(["bench", "gate"]) == 0
+    out = capsys.readouterr().out
+    assert '"armed": true' in out
+    assert '"val_tasks": 5' in out
+    assert '"baseline": null' in out
+    assert len(json.loads(out)["digest"]) == 16

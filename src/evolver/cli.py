@@ -413,6 +413,10 @@ def _build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Re-freeze over an existing frozen pack (human decision; voids the baseline)",
     )
+    bench_sub.add_parser(
+        "gate",
+        help="Show the frozen bench-pack gate state (armed / digest / baseline) — read-only",
+    )
     bench_run = bench_sub.add_parser(
         "run", help="Run health tasks (or a task pack) and record R into the fitness ledger"
     )
@@ -2059,6 +2063,15 @@ def _cmd_bench(args: argparse.Namespace) -> int:
         print(
             "gate armed: solidify now grades this pack's val split against the last-accepted score"
         )
+        return 0
+
+    if args.bench_action == "gate":
+        from evolver.bench.frozen_gate import gate_snapshot
+
+        snap = gate_snapshot()
+        print(json.dumps(snap, indent=2, ensure_ascii=False))
+        if not snap.get("armed"):
+            print("gate inactive — run `evolver bench freeze` to arm (charter 外部适应度)")
         return 0
 
     if args.bench_action == "compare":
