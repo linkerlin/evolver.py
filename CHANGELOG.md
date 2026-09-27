@@ -8,6 +8,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed — 库即尺子第 3 步设计修正：条款来自 train，不许抄写 Accept（round-92，裁决）
+
+round-91 落进章程的第 3 步（「家规只在写库人脑子里」）经裁决废止，未开工即改。版本保持 **1.113.0**（已按「协议落地、没有适应度胜利」切过，不再切）。
+
+- **为什么废**：那套设计测的是抄写，不是进化。家规不在题面里、也不在 train 的前后观察里，正确句子只存在于评分器和写库的人脑子里——空库把 Parent 钉在 0，第一份把句子写进快照的候选再被求解抄进答卷，就白得一次 Accept。这和上一阶段把 bar 顶在 1.0 是同一类导演，只是方向朝下；round-85 不许候选给自己写及格线，这条路是出题人给候选写及格线。
+- **第 3 步改写（`演进方案.md` §5）**：决定性条款必须能从 train 的前后观察里唯一收回来，val 题面里不出现。Parent 求解只看 Parent 快照和 val 题面；候选求解只看候选快照和同一批 val 题面；写候选的宿主看 train，不看 val，也不看 grader。空库 Parent 拿不到那条从 train 里蒸馏出来的约定。若这样测出的 Parent 仍满分——宿主不读库也能猜中——这次测量结束，不改题面再测。
+- **第 2 步入口分家**：形状对（不带变异的首写、solidify 碰不到），入口不对。移动 active 的只有 `publish()`、文档写明 Accept-only；首写是另一个函数（`establish_*` 族）带自己的命令行入口，**不给 `publish()` 加入口**——否则首写和 Accept 合用一条路。函数就位之前不写 Parent 库。
+- **第 4 步按快照 id 读**：不复用 enrich 的 `_consult_library()`（读 active；对比期间 active 指 Parent，候选草稿条款不在那里）。求解入口按 id 注入——Parent 求解放 Parent 快照 id，候选求解放候选快照 id，都走 `load_version()`，都不移动 active。
+- **完成判据收窄（`演进方案.md` §4）**：「库里有句子、答卷里有句子」的 Accept 只证明求解路径读了快照，不算。本阶段的 Accept：候选快照里的条款只来自 train 观察，val 求解只靠这份快照，两遍都严格高于只持有 Parent 快照的 Parent。
+- **禁令**：第 3 步按新句落地之前，不写 Parent 库，不出新题。历史那 16 条空 `hypothesis` 不回填——d0cd927 已修焚毁顺序并钉死拒绝轮必须带正文，旧账保持原样。
+- **对账确认**：八场 incomplete / `unreliable_evaluation`、各 2 轮、16 Reject、0 Accept；产品树改动只有 c2b1b10 的 15 个 mypy 修复；作废「收窄说法、关臂」维持；Evolver.php 与 EvoScientists 不进这个门。
+
 ## [1.113.0] — 2026-09-27
 
 配对会话门已落地；没有候选在密封 val 上优于 Parent。这是本版的发行说明全部——不写适应度胜利。同轮开启下一阶段「库即尺子」。

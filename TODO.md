@@ -9,14 +9,16 @@
 
 配对会话阶段已收束（round-90）：八次会话、16 Reject、0 Accept，门证明的是治理机器能拒绝发布。版本切 **1.113.0**。本阶段叫**库即尺子**：被进化的对象本身成为评分对象——被评分的是库快照，不是宿主的细心程度，也不是再写一份更难的微任务。
 
-账上的两个洞：八场 `parent_snapshot` 全 null（没有 Parent 库首写，「active 不动的 Parent/Candidate val 评分」从未发生，跑过的只是仓库 diff 对宿主微任务）；16 条 `hypothesis` 全空串（周期先焚毁、折账后读——round-91 已修，卫生账）。
+账上的两个洞：八场 `parent_snapshot` 全 null（没有 Parent 库首写，「active 不动的 Parent/Candidate val 评分」从未发生，跑过的只是仓库 diff 对宿主微任务）；16 条 `hypothesis` 全空串（周期先焚毁、折账后读——round-91 已修，卫生账；历史空串**不回填**）。
 
 | # | 项 | 完成时 |
 |---|---|---|
 | 1 | ~~补账本~~ | 已完成（round-91 卫生账，不算阶段进度）：`solidify()` 在 `_solidify_cycle()` 之前取假说正文交给 `begin_round` |
-| 2 | Parent 库首写 | 由人写，与 `evolver bench baseline` 同型：不带变异的首写，solidify 碰不到 |
-| 3 | 决定性条款入库 | 密封题的决定性条款只放库里不放题面；条款用约定不用推导（「平局取较早 id」类家规）。Parent 只查 Parent 快照，候选只查候选快照，同一宿主同一批题。空库 Parent 写不出家规 → bar 低于满分；候选写进库且求解真的读到 → 才可能严格优于 |
-| 4 | 求解入口带库 | `bench prompt` 把查阅到的快照放进 prompt（现在只有题面和沙箱，库不在场，内容维发布了也不改变分数） |
+| 2 | Parent 库首写，入口独立 | 引擎先落新函数（`establish_*` 族，`evolver bench baseline` 同一纪律：不带变异、solidify 调用不到），带自己的命令行入口；**不给 `publish()` 加入口**（首写和 Accept 不得合用一条路，publish 保持 Accept-only）。函数就位后由人写第一份 Parent 库 |
+| 3 | 条款来自 train，val 题面不含条款 | 决定性条款必须能从 train 的前后观察里唯一收回，val 题面不出现。Parent 求解只看 Parent 快照 + val 题面；候选求解只看候选快照 + 同一批 val 题面；写候选的宿主看 train，不看 val、不看 grader。空库 Parent 拿不到 train 蒸馏的约定；若 Parent 仍满分 → 宿主不读库也能猜中，测量结束，不改题面再测。「家规只在写库人脑子里」的旧设计已废（round-92：空库钉 Parent 于 0、首份候选靠抄写白得 Accept，是出题人给候选写及格线） |
+| 4 | 按快照 id 读 | 求解入口按 id 注入：Parent 求解放 Parent 快照 id，候选求解放候选快照 id，都走 `load_version()`，都不动 active。不复用 enrich `_consult_library()`（读 active；候选草稿条款不在那里）。现在 `bench prompt` 只有题面和沙箱，库不在场 |
+
+第 3 步按上表修正之前**不写 Parent 库、不出新题**。完成判据同步收窄：「库里有句子、答卷里有句子」的 Accept 只证明求解路径读了快照，不算；本阶段的 Accept 是候选快照条款只来自 train 观察、val 求解只靠这份快照、两遍严格高于只持有 Parent 快照的 Parent。
 
 不开第三份「把宿主难住」的包。Evolver.php（2026-04 / v1.69）与 EvoScientists 分叉不追这次协议。
 
