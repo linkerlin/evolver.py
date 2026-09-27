@@ -12,11 +12,11 @@ This skill enables an agent to:
 
 ## Current stage
 
-Charter: `演进方案.md`. Work list: `TODO.md`. Version stays **1.112.0**.
+Charter: `演进方案.md`. Work list: `TODO.md`. Version **1.113.0** (paired-session stage closed 2026-09-27: 8 sessions, 16 rejects, 0 accepts — the gate proved it can refuse publication).
 
 Do this: follow `演进方案.md` §5 and `TODO.md`. The parent val bar is written only by `evolver bench baseline`. A candidate measurement that finds no bar rejects as `no_baseline` and does not write one. A replicate with any pending val task is unmeasured. The host that writes the candidate does not solve val. A hypothesis `mechanism_check` entry is `{"id","before","after"}` on a train task. `session accept` requires a persisted `accept: true` gate record.
 
-Wired in the working tree (see `TODO.md`): solidify `begin_round`s before scoring, so `session accept` sees a candidate id and the round budget actually advances; big packs (val > 6) publish via the `compare.py` paired test; `session hypothesize` stamps the solidify cycle id when one is pending and falls back to the session round id — the gate accepts both scopes. What remains is the closure item, which needs real run data, not code.
+This stage is **library-as-ruler**: the evolved object itself becomes the scored object. What is scored is the library snapshot — not the host's carefulness, not another harder micro-task pack. The decisive clauses of the sealed tasks live only in the library (conventions, not derivations); the Parent solves consulting only the Parent snapshot, the candidate only the candidate snapshot, same host, same tasks; the solve entry puts the consulted snapshot into the prompt. The first Parent library is a human-written, mutation-free first write solidify cannot touch. The hypothesis-ledger hygiene fix landed (round-91): solidify captures the hypothesis text before the cycle burns it.
 
 Do not: port the ontology record schema, add an LLM judge, add RSI P2-6/8/9, rewrite the validator, build ATP commerce, publish to PyPI, or treat another instrument-only dogfood round as stage progress. Keep `EVOLVER_ACCEPTANCE_SHADOW` on. `RSI演进对照.md` and `演进方案_wikiskill对照版.md` are archives.
 

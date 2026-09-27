@@ -1,25 +1,24 @@
 # evolver.py 工作清单
 
-> 章程：[`演进方案.md`](演进方案.md)（配对会话，版本钉 **1.112.0**）。
+> 章程：[`演进方案.md`](演进方案.md)（库即尺子，版本 **1.113.0**）。
 > 按轮记账：[`CHANGELOG.md`](CHANGELOG.md)。
 > [`RSI演进对照.md`](RSI演进对照.md) 与 [`演进方案_wikiskill对照版.md`](演进方案_wikiskill对照版.md) 是史料。不要从史料里的「下一步」开工。
 > 2026-09-24 外部适应度的两步（重复失败走 `swarm_propose`、冻结任务包）已落地，继续有效。下表是新的发布规则。
 
 ## 现在做
 
-round-87 闭了第 3、4、5 项：大包（val > 6）发布走 `bench/compare.py` 配对检验（α = 0.05，discordant ≥ 8，raw-score floors 让位于配对检验、自报 declaration 仍绑定）；enrich 把已发布库快照作只读设计上下文注入 prompt、run record 记查阅 id（active 对比期间仍指 Parent）；无会话的 `--loop` tick 返回 `stop_and_report` 不写基因，守护循环即停。机器部分全部接完，只剩第 6 项收口——它要真实运行数据，不是代码。
+配对会话阶段已收束（round-90）：八次会话、16 Reject、0 Accept，门证明的是治理机器能拒绝发布。版本切 **1.113.0**。本阶段叫**库即尺子**：被进化的对象本身成为评分对象——被评分的是库快照，不是宿主的细心程度，也不是再写一份更难的微任务。
 
-round-88 把仪器装上了（真机，仓外 soak 根）：锚纪元 13 全绿、章程包冻结（12 题，digest `721a33d8de3a0b6e`）、Parent 基线 1.0（5 题 val × 2 遍，per_task 地板与 epoch 绑定齐全）。全量回归 3967 通过，首次有全量数字。
-
-round-89 点名收口路线：**换包**。现行 12 题的 Parent 是 1.0，第 4 节第 1 条没有可上升的分数，第 2 条要等搜索真的跑完才成立。下一步是把另一份 tasks 写到锚侧 `anchor/bench/charter-pack.tasks.json`。`evolver bench freeze`（含 `--force`）的写入源是内置 12 题，会把这份文件盖回去；digest 不变时 `rekeyed_void` 也不作废基线。评分只有 0 和 1：val ≤ 6 时新 Parent 至少错一题，val > 6 时至少错 8 题（`COMPARE_MIN_DISCORDANT`），「严格优于」才有格。顺序是先放包、由不写候选的测量解完 val、再单独 `evolver bench baseline`。新 Parent 仍是满分，就改走八会话，并且不再准备第三份包。新基线低于满分之后才 `evolver session start`。换包这一步不算第 6 项进度。
-
-round-89 执行完毕：v2 包（4 train + 5 val，digest `dfd9f8cada3740b4`）字节拷贝上岗，5 道 val 由不写候选的本上下文解两遍（未读 grader；预注册失手点 `val-ledger-posted` 被双解释器逐字落地解对，230 两遍一致）。新 bar 仍 **1.0**，地板与 epoch 13 绑定齐全。按预注册决策树**转入八会话分支，不再写第三份包**：`evolver session start` 由人点名，之后八次会话（预算耗尽或 ≥2 Reject 后合法 Incomplete）无 Accept 即按章程第 4 节收窄说法并关闭从未赢过的臂。
-
-round-90 八会话收束：run_1..run_8 全部合法结束（每场 2 轮真周期 + `unreliable_evaluation` 判停），`rounds.jsonl` 在案 **16 轮、16 Reject、0 Accept**。会话 1 第 1 轮被级联抓到 15 个真实 mypy strict 错误，已修复（c2b1b10）；其余 15 轮全级联通过、包门一律 flat。**第 6 项完成条件按章程第 4 节第 2 条达成**。步子哥裁决：**说法不改**（README/AGENTS 保持原样，「受治理的仓库自维护」是章程 §4 的预注册措辞、从未落任何文件，该条款作废）；**关臂为空操作**（种群 K=2、bandit、niche、ATP bridge 开赛前本就关闭，无臂可关）；minor 切不切由人定。引擎行为无任何变化，shadow 与全部安全门维持原状。
+账上的两个洞：八场 `parent_snapshot` 全 null（没有 Parent 库首写，「active 不动的 Parent/Candidate val 评分」从未发生，跑过的只是仓库 diff 对宿主微任务）；16 条 `hypothesis` 全空串（周期先焚毁、折账后读——round-91 已修，卫生账）。
 
 | # | 项 | 完成时 |
 |---|---|---|
-| 6 | 收口 | 协议生效后：若有一次章程第 4 节定义的 Accept，提请人切 minor。若八次会话结束仍没有这样的 Accept，把说法收窄为「受治理的仓库自维护」，并关掉从未赢过的臂 |
+| 1 | ~~补账本~~ | 已完成（round-91 卫生账，不算阶段进度）：`solidify()` 在 `_solidify_cycle()` 之前取假说正文交给 `begin_round` |
+| 2 | Parent 库首写 | 由人写，与 `evolver bench baseline` 同型：不带变异的首写，solidify 碰不到 |
+| 3 | 决定性条款入库 | 密封题的决定性条款只放库里不放题面；条款用约定不用推导（「平局取较早 id」类家规）。Parent 只查 Parent 快照，候选只查候选快照，同一宿主同一批题。空库 Parent 写不出家规 → bar 低于满分；候选写进库且求解真的读到 → 才可能严格优于 |
+| 4 | 求解入口带库 | `bench prompt` 把查阅到的快照放进 prompt（现在只有题面和沙箱，库不在场，内容维发布了也不改变分数） |
+
+不开第三份「把宿主难住」的包。Evolver.php（2026-04 / v1.69）与 EvoScientists 分叉不追这次协议。
 
 ## 已完成（round-87）
 
@@ -38,7 +37,7 @@ round-90 八会话收束：run_1..run_8 全部合法结束（每场 2 轮真周�
 
 这些不是待办，是本阶段的边界。
 
-- 版本保持 1.112.0，直到人宣布阶段结束。
+- 版本 1.113.0（配对会话阶段收束，2026-09-27）。下一阶段结束由人再切。
 - `EVOLVER_ACCEPTANCE_SHADOW` 保持打开。真阳性仍由人登记到 `$EVOLVER_HOME/anchor/gate-verifications.jsonl`。
 - 产品仓不提交 `memory/` 运行态，也不提交已发布的库快照。快照在仓外，按内容哈希保留。
 - 宿主上报的 `primary_score` 来自级联或门的结果。

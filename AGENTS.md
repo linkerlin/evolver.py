@@ -6,9 +6,9 @@
 
 现行章程：[`演进方案.md`](演进方案.md)。工作清单：[`TODO.md`](TODO.md)。
 
-本阶段做配对会话。Parent 的 val 分数只由 `evolver bench baseline` 建立；没有基线、持平、缺题、门异常都拒绝发布，候选测量不写第一条基线。写下候选的宿主不解 val。第 1–5 步接线已入工作区（solidify 评分前 `begin_round`、大包走 `compare.py` 配对检验、假说门认周期 id／会话轮 id 两种 scope、enrich 只读查阅、`--loop` 无会话即停），见 [`TODO.md`](TODO.md)；只剩第 6 项收口，要真实运行数据。版本保持 **1.112.0**。`EVOLVER_ACCEPTANCE_SHADOW` 保持打开。运行态不进产品 git。
+上一阶段（配对会话）已收束：八次会话、16 Reject、0 Accept，门证明的是能拒绝发布，不是仓库被进化改好了。版本 **1.113.0**。本阶段叫**库即尺子**，只做一件事：让被进化的对象本身成为评分对象——被评分的是库快照，不是宿主的细心程度。假说账本的卫生账已补：`solidify()` 在进周期前取假说正文交给 `begin_round`。`EVOLVER_ACCEPTANCE_SHADOW` 保持打开。运行态不进产品 git。
 
-本阶段不做：移植本体图式、LLM Judge、RSI P2-6/8/9、validator 重写、ATP 商业闭环、PyPI、为拆 `cli.py` 单独立项、把 soak `ready` 当出口。只修测量仪器或测试针的一轮，不算阶段进度。
+本阶段不做：移植本体图式、LLM Judge、RSI P2-6/8/9、validator 重写、ATP 商业闭环、PyPI、为拆 `cli.py` 单独立项、把 soak `ready` 当出口、开第三份「把宿主难住」的任务包。Evolver.php（停在 2026-04 / v1.69）与 EvoScientists 分叉不追这次协议。只修测量仪器或测试针的一轮，不算阶段进度。
 
 [`RSI演进对照.md`](RSI演进对照.md) 与 [`演进方案_wikiskill对照版.md`](演进方案_wikiskill对照版.md) 是史料。两文里的「下一步」不得当作当前排期。
 

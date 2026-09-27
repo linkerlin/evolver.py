@@ -292,7 +292,7 @@ memory/                 # Runtime data (graph JSONL, reviews JSONL)
 
 ## Implementation Status
 
-> **Overall** (2026-09-26): package version **1.112.0**, pinned until a human
+> **Overall** (2026-09-27): package version **1.113.0** — the paired-session gate has landed; no candidate beat Parent on the sealed val. The library-as-ruler stage opens.
 > closes the stage. The swarm loop, HITL/HOTL interlock, anchor eval, and
 > RSI P0/P1 mechanisms are in tree. The live plan is [演进方案.md](演进方案.md):
 > a paired evolution session over the frozen bench pack. A candidate publishes

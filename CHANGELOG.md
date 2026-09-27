@@ -8,6 +8,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.113.0] — 2026-09-27
+
+配对会话门已落地；没有候选在密封 val 上优于 Parent。这是本版的发行说明全部——不写适应度胜利。同轮开启下一阶段「库即尺子」。
+
+### Changed — 阶段收束 + 假说账本卫生账 + 库即尺子开阶段（round-91）
+
+- **配对会话阶段收束**。八次会话（run_1..run_8）全部 `incomplete`（`unreliable_evaluation` 判停，各 2 轮），`rounds.jsonl` 16 Reject、0 Accept。它证明的是治理机器能拒绝发布，不是仓库被进化改好了：0/1 满分标尺分辨不了候选，门停在 flat 是对的。原 §4 第 2 条的两条结局措辞（说法收窄、关臂）经裁决作废——无臂可关（种群、bandit、niche、ATP bridge 开赛前就是关的），产品说法不动（README/AGENTS 从未改过）。
+- **版本切 1.113.0**（pyproject / `__init__` / 三处 MCP 状态测试钉）。README 总评行改为：配对会话门已落地，没有候选在密封 val 上优于 Parent；库即尺子阶段开启。
+- **账上的两个洞（下一阶段的开工理由）**。其一，八场 `run.json` 的 `parent_snapshot` 全是 null——没有已发布库，会话冻进的是空，「active 不动做 Parent/Candidate 的 val 评分」（章程 §5 第 4 步）一次都没发生；跑过的是仓库 diff，裁判是宿主微任务，这些题宿主已经会做，基因与代码 diff 都推不动分数（v2 包预注册失手点被逐字做对、两遍 230，说明的是同一件事：规则写在题里，库帮不上忙）。其二，16 条 `rounds.jsonl` 的 `hypothesis` 全是空串——`solidify()` 先跑 `_solidify_cycle()`，周期末尾 `clear_hypothesis()` 焚毁假说，返回后才 `_pending_cycle_context()` 去读；函数自己的说明写的是焚毁前读。八场在程序上合法，在假说层无法复盘。
+- **卫生账（已修，不算阶段进度）**：`solidify()` 现在在调用 `_solidify_cycle()` **之前**取出假说正文，交给 `begin_round` 写进账本。钉：`test_the_ledger_remembers_the_burned_hypothesis_text`——拒绝路径的 `rounds.jsonl` 必须携带声明过的假说正文。
+- **下一阶段章程（「库即尺子」，已写入 `演进方案.md` §4/§5）**：只做一件事——让被进化的对象本身成为评分对象。顺序：① 补账本（本轮已完成）；② 人写第一份 Parent 库，与 `evolver bench baseline` 同型的不带变异首写，solidify 碰不到；③ 密封题的决定性条款只放库里不放题面，条款用约定不用推导（「平局取较早 id」类家规），Parent 只查 Parent 快照、候选只查候选快照、同一宿主同一批题——空库 Parent 写不出家规，bar 低于满分，候选写进库且求解真的读到才可能严格优于；④ 求解入口把查阅到的快照放进 prompt（现在 `bench prompt` 只有题面和沙箱，库不在场，内容维发布了也不改变分数）。
+- **边界**：不开第三份「把宿主难住」的包；不开 LLM Judge；不移植本体五类记录；K=2、bandit、niche 维持关闭；PHP 端口（Evolver.php，停在 2026-04 / v1.69）不追这次协议，EvoScientists 是研究代理的文档分叉，与本门不是同一个实验。
+- **旁边两条线不拉进来补课**：Evolver.php 与 EvoScientists 见上条。
+
+**测试**：`test_paired_session_solidify.py` 15 过（含新钉）；ruff / mypy strict（339 文件）全绿；版本钉随切。
+
 ### Changed — 八会话收束，章程第 4 节第 2 条达成（round-90，收口）
 
 TODO #6 的完成条件按第 2 条达成。版本保持 **1.112.0**（阶段结束由人切 minor）。`EVOLVER_ACCEPTANCE_SHADOW` 保持打开，T0 soak 门仍只记录。
