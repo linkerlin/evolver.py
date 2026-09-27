@@ -292,13 +292,12 @@ memory/                 # Runtime data (graph JSONL, reviews JSONL)
 
 ## Implementation Status
 
-> **Overall** (2026-09-24): package version **1.112.0**, pinned until a human
+> **Overall** (2026-09-26): package version **1.112.0**, pinned until a human
 > closes the stage. The swarm loop, HITL/HOTL interlock, anchor eval, and
-> RSI P0/P1 mechanisms are in tree. Dogfood has run through round-78, mostly
-> on the engine's own instruments. The live plan is [演进方案.md](演进方案.md):
-> repeated failures go through `swarm_propose`, and one frozen bench pack
-> becomes the fitness signal. The acceptance gate stays in shadow.
-> Percentages below are the 2026-09-05 snapshot, not the work list.
+> RSI P0/P1 mechanisms are in tree. The live plan is [演进方案.md](演进方案.md):
+> a paired evolution session over the frozen bench pack. A candidate publishes
+> only when sealed val strictly beats the parent. The acceptance gate stays in
+> shadow. Percentages below are the 2026-09-05 snapshot, not the work list.
 
 | Subsystem | Status | Notes |
 |---|---|---|
@@ -492,7 +491,7 @@ A2A_HUB_URL=https://your-hub.example.com uv run evolver proxy
 
 ## Documentation
 
-- [`演进方案.md`](演进方案.md) — Current charter: external fitness (Chinese)
+- [`演进方案.md`](演进方案.md) — Current charter: paired session (Chinese)
 - [`TODO.md`](TODO.md) — Work list for that charter
 - [`CHANGELOG.md`](CHANGELOG.md) — Per-round notes (v1.98 through round-78, still unreleased on 1.112.0)
 - [`AGENTS.md`](AGENTS.md) — Agent integration guide, coding standards, pitfalls

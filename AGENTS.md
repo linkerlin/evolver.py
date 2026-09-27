@@ -6,9 +6,9 @@
 
 现行章程：[`演进方案.md`](演进方案.md)。工作清单：[`TODO.md`](TODO.md)。
 
-本阶段做外部适应度，三步：重复失败时 instrument 要求 `swarm_propose`；把 `evolver.bench` 的一个冻结任务包接进周期，包分下降则拒绝；约十个周期后按章程第 3 节收口。版本保持 **1.112.0**。`EVOLVER_ACCEPTANCE_SHADOW` 保持打开。运行态不进产品 git。
+本阶段做配对会话。Parent 的 val 分数只由 `evolver bench baseline` 建立；没有基线、持平、缺题、门异常都拒绝发布，候选测量不写第一条基线。写下候选的宿主不解 val。第 1–5 步接线已入工作区（solidify 评分前 `begin_round`、大包走 `compare.py` 配对检验、假说门认周期 id／会话轮 id 两种 scope、enrich 只读查阅、`--loop` 无会话即停），见 [`TODO.md`](TODO.md)；只剩第 6 项收口，要真实运行数据。版本保持 **1.112.0**。`EVOLVER_ACCEPTANCE_SHADOW` 保持打开。运行态不进产品 git。
 
-本阶段不做：RSI P2-6/8/9、validator 重写、ATP 商业闭环、PyPI、为拆 `cli.py` 单独立项、把 soak `ready` 当出口。只修测量仪器或测试针的一轮，不算阶段进度。
+本阶段不做：移植本体图式、LLM Judge、RSI P2-6/8/9、validator 重写、ATP 商业闭环、PyPI、为拆 `cli.py` 单独立项、把 soak `ready` 当出口。只修测量仪器或测试针的一轮，不算阶段进度。
 
 [`RSI演进对照.md`](RSI演进对照.md) 与 [`演进方案_wikiskill对照版.md`](演进方案_wikiskill对照版.md) 是史料。两文里的「下一步」不得当作当前排期。
 
@@ -37,6 +37,9 @@
 | 改进机制遥测（RSI P0-2） | `uv run evolver meta-report [--json]`（Table-8 六维面板 + 后代质量 + structural-L5 审计） |
 | 基因生命周期（RSI P1-5） | `uv run evolver gene-lifecycle list\|evaluate\|reinstate <gene_id>`（零后效→under_review→retired；人工才可复活） |
 | Soak 外置运行态 | `uv run evolver soak setup\|exports\|status`（`$EVOLVER_HOME/evolver.py-soak`，勿提交 `memory/`） |
+| 配对会话（§5.1） | `uv run evolver session start\|resume\|status\|round\|reject\|accept\|incomplete\|extend\|finalize\|hypothesize`（running/accepted/incomplete；预算默认 8 且开局冻结，只有 `extend --by=<人>` 能调高） |
+| 父代基线（§5.2） | `uv run evolver bench baseline`（不带变异的唯一首写；solidify 写不到这条基线） |
+| 配对会话（§5.3） | `uv run evolver session hypothesize --json='{...}'`（宿主声明本轮唯一假说；`--stdin` 或 `@file` 亦可。无假说则门拒，引擎不代笔） |
 | 评估隔离 worktree | 默认开启（`enable_eval_worktree`）。失败回退 live cwd 并告警；`EVOLVER_EVAL_WORKTREE_STRICT=1` 时回退改为失败 |
 | 守护进程生命周期 | `uv run evolver start` / `stop` / `restart` / `status` / `log` |
 | 健康检查 | `uv run evolver check` / `watch` |

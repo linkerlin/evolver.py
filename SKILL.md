@@ -14,9 +14,11 @@ This skill enables an agent to:
 
 Charter: `演进方案.md`. Work list: `TODO.md`. Version stays **1.112.0**.
 
-Do this: when a signal family already failed after solidify, require `swarm_propose`; wire one frozen `evolver.bench` pack into the cycle so a dropping pack score rejects the change; close the stage after about ten such cycles, per charter §3.
+Do this: follow `演进方案.md` §5 and `TODO.md`. The parent val bar is written only by `evolver bench baseline`. A candidate measurement that finds no bar rejects as `no_baseline` and does not write one. A replicate with any pending val task is unmeasured. The host that writes the candidate does not solve val. A hypothesis `mechanism_check` entry is `{"id","before","after"}` on a train task. `session accept` requires a persisted `accept: true` gate record.
 
-Do not: add RSI P2-6/8/9, rewrite the validator, build ATP commerce, publish to PyPI, or treat another instrument-only dogfood round as stage progress. Keep `EVOLVER_ACCEPTANCE_SHADOW` on. `RSI演进对照.md` and `演进方案_wikiskill对照版.md` are archives.
+Wired in the working tree (see `TODO.md`): solidify `begin_round`s before scoring, so `session accept` sees a candidate id and the round budget actually advances; big packs (val > 6) publish via the `compare.py` paired test; `session hypothesize` stamps the solidify cycle id when one is pending and falls back to the session round id — the gate accepts both scopes. What remains is the closure item, which needs real run data, not code.
+
+Do not: port the ontology record schema, add an LLM judge, add RSI P2-6/8/9, rewrite the validator, build ATP commerce, publish to PyPI, or treat another instrument-only dogfood round as stage progress. Keep `EVOLVER_ACCEPTANCE_SHADOW` on. `RSI演进对照.md` and `演进方案_wikiskill对照版.md` are archives.
 
 ## Installation
 
@@ -278,7 +280,7 @@ Env: `EVOLVER_FF_<NAME>=1|0`. Disk layers (low → high): defaults → `evolver/
 - `examples/hub-publish-flow/` — Distill→reuse→publish lifecycle
 - `examples/skill2recipe/` — Skill→Recipe composition
 - `examples/atp-quickstart/` — ATP loop demo
-- `演进方案.md` — current charter (external fitness)
+- `演进方案.md` — current charter (paired session)
 - `TODO.md` — the work list for that charter
 - `演进方案_wikiskill对照版.md` — archived 2026-09-01 audit
 - `RSI演进对照.md` — archived paper comparison and effective-L5 log

@@ -8,12 +8,169 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed — 仪器武装 + 全量回归首次全绿（round-88，round-86/87 遗留清账）
+
+收口序列真机执行完毕，配对会话的测量仪器从此在线。版本保持 1.112.0。
+
+- **锚纪元 13（须步子哥执行的那一步）**。`anchor init --epoch 13` 装入 17 cases，`anchor run` 全 PASS。epoch-12 的 `bench-pack-gate` 探针仍断言首次武装原因是 `baseline_established`，与新契约（`no_baseline` 且不写基线）失配——重播种即为换约，这是 epoch 机制的设计用途。
+- **Parent 基线写入：1.0**。`bench freeze` 冻结 12 题内置包（7 train / 5 val，digest `721a33d8de3a0b6e`），5 道 val 沙箱由本上下文求解 × 2 遍（本上下文不写候选，§5.2 的独立测量约束由构造满足），`bench baseline` 两遍均 1.0。基线 v1 记录带 per_task 地板与 `anchor_epoch: 13` 绑定，落在仓外 soak 根（`$EVOLVER_HOME/evolver.py-soak/gep/acceptance/`），运行态不进产品 git。
+- **重要事实：bar 在天花板**。Parent 1.0 意味着此包下任何候选 ≤ 1.0，第 4 节的「严格优于」不可能打穿。往后两条路由人点名：换更难的包（`bench freeze --force`，作废基线重测 Parent），或走「八次会话无 Accept」分支收窄说法。这是诚实测量的结果，不是仪器的缺陷。
+- **全量回归首次有数字**：3967 passed，0 failed（8m42s）。round-87 之前的「全量回归见下」一直欠着，这次补上——代价是暴露了 8 处失败，全部当轮修掉。
+- **一处真引擎缺陷（Windows）**：`get_fitness_cascade_commands` 的 venv-bin 回退用裸 `bin_dir / "ruff"` 的 `is_file()` 探测，而 Windows 工具是 `ruff.exe`——裸 venv + 洗净 PATH 的真实 dogfood 场景下整个级联被静默跳过。现在先试精确文件名（POSIX 布局），再退 `shutil.which(path=bin_dir)`（尊重 PATHEXT）。
+- **conftest 跟上 round-86**：`armed_pack` 的 `rearm()` 重写基线时补 per_task 地板（v0 形状现在被回归守卫以 `baseline_without_per_task` 拒绝——守卫按设计工作，fixture 是旧契约的遗留）；新增 `rebind()`，测试体内重播种锚之后把现有 bar 重绑新纪元（否则 `protocol_drift` 拒绝）。
+- **三枚冻结探针更新（epoch-13 契约的一部分）**：`dup-solidify-refused` 在首个 solidify 前声明假说并武装最小包门（无包即拒之后，探针必须自带仪器）；`rollback-cwd-alignment` 清理前把进程 cwd 移出沙箱（Windows 不能删除任何进程的 cwd，WinError 32）；`validation-env-and-tail` 的继承断言改子串判存活（Windows pathsep 是 `;`，POSIX 风格继承值整串成单元素）。
+- **测试的平台适配**：`test_validation_env_prepends_tool_dirs` / `test_path_prepend_survives_sentinel` 同样改子串断言，homebrew 断言按平台收窄（该目录仅 macOS 存在，`validation_env` 只前置实际存在的目录）；`test_e2e_sprint14` 的 CLI 全链路测试补 §5.3 假说声明 + §5.2 包门武装（假说引用包内 train 题 id）。
+- **文档对齐**：`AGENTS.md` 演进篇、`SKILL.md` Current stage、`演进方案.md` §2 三行与 §5 步骤 1–3 不再派发已接完的接线；章程如实记录假说 id 双 scope（周期 id ∪ 会话轮 id，`require_for_gate` 的 `also_accept`）为既定设计，比原稿「只能是周期 id」宽。
+
+**测试**：全量 3967 通过。8 处修复的钉：`test_acceptance_shadow_lineage`（rearm 地板）、`test_anchor` 种子套件（三探针）、`test_anchor` 锚钩子（rebind）、`test_solidify` / `test_validation_env`（平台适配）、`test_solidify_dogfood_fixes`（引擎 which 回退 + 假件签名）、`test_sprint26_promotion`（rearm 地板）、`test_e2e_sprint14`（假说 + 包门）。
+
+**遗留（须步子哥裁决）**：TODO #6 收口的两条路——换更难的包重测基线，或点起首次配对会话走八会话分支。仪器已就位：epoch 13 全绿、包 digest `721a33d8de3a0b6e`、bar 1.0。
+
+### Changed — 大包配对检验 + 环内查阅 + 游标停止语义（round-87，TODO #3/#4/#5 闭账）
+
+TODO 表第 3、4、5 项落地，协议的机器部分全部接完。版本保持 1.112.0。
+
+- **大包发布走配对检验（TODO #3）**。人换上的冻结包 val 题数 > 6 时，发布改由 `bench/compare.py` 的精确二项配对检验裁决（α = 0.05）：候选每轮 per-task 对阵 Parent 的 `per_task` 记录，**每一轮**都须「候选赢方向 + discordant ≥ 8」才发布（`paired_improvement`）。原 raw-score floors 在大包上不跑——Parent 原始分为地板时配对候选一题都输不起，检验将永远打不穿；大包的「不退化」由配对检验本身承载（每塌一题就是一张反对票，计入显著性）。候选自报 `declaration` 仍绑定且先于配对检验断言；基线缺 `per_task`（`baseline_without_per_task`）、任务集对不上（`task_set_mismatch`）、Parent 更优（`parent_better`）、discordant 不足（`not_enough_discordant`）、无显著差异（`no_significant_difference`）分别诚实拒绝，一律不动基线。5 题小包保持两遍独立求解严格高于 Parent 的旧规则不变。
+- **环内查阅（TODO #4）**。enrich 阶段把 `library.load_active()` 的已发布快照渲染为只读设计上下文（`library_block`，4000 字符截断带标记）注入 dispatch prompt；候选据此查阅 Parent 线内容，而 `active` 在对比期间仍指向 Parent——只有 Accept 发布。dispatch 的 solidify state 新增 `library_snapshot` 记录本轮查阅的快照 id，对比时可证明「候选建在哪个库之上」。
+- **游标接上循环（TODO #5）**。无运行中会话的 `--loop` tick 现返回 `next_action = "stop_and_report"`（`loop_stop_reason = "no_running_session"`），不写基因、不进管线；守护循环收到该判定即 break 停转，不再空转烧周期。游标提醒到期时照旧随停机报告捎带（reminder 只提醒，绝不开会话）。MCP `swarm_tick`（`is_loop=False`）不受影响。
+
+**测试**：`test_frozen_gate.py` 增 `TestBigPackPairedCompare` 八钉（配对胜发布并推 bar、discordant 不足拒、配对回归按 `parent_better` 拒、无显著差异拒、无 per_task 拒、任务集错位拒、val id 声明保持封印、declaration 绑定）；`test_library.py` 增环内查阅四钉（enrich 挂块且不动 active、空库无块、超长截断、run record 记查阅 id）；`test_runner_loop.py` 拔「循环至少跑满一轮 GEP」旧钉（循环门后无会话 tick 根本不进管线），换「无会话 tick stop_and_report 不写基因 + 守护循环即停」与「到期提醒随停机报告捎带但仍停」两钉。受影响面 189 通过；全量回归见下。
+
+**遗留（须步子哥执行）**：TODO #6 收口须真实运行数据——一次章程第 4 节的 Accept（提请切 minor）或八次会话无 Accept（收窄说法并关闭从未赢过的臂）；以及 round-86 遗留的 `uv run evolver anchor init --epoch 13`、真机 `evolver bench freeze` + `evolver bench baseline`。
+
+### Changed — 焊死机器边缘 + 闭两条接缝（round-86，EvoOntology 收割）
+
+三路侦察 EvoOntology 后落两批：**不许退化项断言**、**门入参有限性**、**验收协议冻结** 三件新机制，外加步子哥指出的两条接缝缝合。版本保持 1.112.0。
+
+- **不许退化项断言**（收割自 EvoOntology `unacceptable_regressions`）。总分涨了但某道 val 题塌了，过去照样发布——均值看不见单题崩塌。新增 `bench/regression_guard.py`：基线现携带 `per_task`（Parent 各题自己的分，v1 格式），门在均值通过后逐题断言「候选不得低于 Parent 该题的最低复测水位」；候选可经假说的 `no_regressions` **追加**地板（只许收紧、只许引 train 题），声明格式坏、地板非有限、任一任务未测量，一律拒绝且不移动基线。
+- **门入参有限性**。NaN 均值会对比任何基线都得 False，悄悄落进「持平」分支冒充惜败——现在非有限分数记 `non_finite_score` 拒绝；`load_baseline` 同样拒 NaN 标尺。
+- **验收协议冻结**。基线现绑定 `anchor_epoch`（连同既有的 pack digest）：锚套件重播种（`anchor init --epoch N`）后旧标尺不得再裁判，`protocol_drift` 拒绝，Parent 须由人重测。
+- **接缝一（begin_round 未接线）**。solidify 判定了候选却从未开轮：`current_candidate` 恒空、`session accept` 在门已 `accept:true` 时仍因「没有候选」失败、8 轮预算永不被消耗。现 `_settle_session` 在折账前先 `begin_round(hypothesis, candidate)`（候选 id 取 pending 周期的 mutation id，假说文本在周期焚毁前由 wrapper 先读）；轮次以 `cycle_ref`（周期 id）幂等——同一候选重试多少次只烧一轮；`rounds.jsonl` 条目新增 `cycle_ref`，`EvolutionSession.has_round_for()` 供查询。
+- **接缝二（两套 id 对不上）**。`session hypothesize` 盖会话轮 id（`run_1`），solidify 核对周期 id（`run_<毫秒>_<hex>`），CLI 声明的假说必被拒。`require_for_gate` 增 `also_accept`：周期 id 与当前运行中会话的轮 id 都算「本轮」，上一周期的残留记录两条都不匹配、依旧拒绝；CLI 打印 `round scope` 帮助人确认归属。
+- **E/F 批接线（步子哥解禁第 4、5 步）**。新增 `gep/library.py`（内容寻址库快照：`active.json` 只是指针、`publish` 绝不覆盖、按 id 读取不碰 active、目录名转义 `:` 以合 Windows）与 `gep/cursor.py`（`(recorded_at, session_id)` 元组比较，修对方同秒丢序之洞；**只在 Accept 推进**；reminder 只提醒绝不开会话）。会话开跑即冻结 `parent_snapshot`；`session accept` 可注入 `--snapshot` 发布快照；`--loop` 无运行中会话时不开新周期，只按 §5.5 提醒（轨迹数 ≥8 或距上次 Accept ≥7 天）。
+
+**测试**：新增 `tests/bench/test_regression_guard.py`（14 钉）、`tests/gep/test_cursor.py`（11 钉）、`tests/gep/test_library.py`（10 钉，含 Windows 目录名冲突）；`test_frozen_gate.py` 增「单题塌了均值涨也拒」「锚重播种作废标尺」两钉；`test_paired_session_solidify.py` 增 `TestSessionLedgerFold` 五钉（拒绝开轮烧预算、重试不重烧、发布后 `session accept` 落地、会话作用域假说通行、残留记录仍拒）；CLI 拔「未装仪器即算测过」的旧钉（未冻结包 → `pack_absent` 拒绝），补「无假说拒绝」新钉。round-85 复核指出的两条接缝（`TODO.md` 第 1、2 项）就此闭账。
+
+**遗留（须步子哥执行）**：`uv run evolver anchor init --epoch 13`（本批再触 bench/solidify 面，前值 12 仍作废）+ `anchor list` / `anchor run` 核验；真机首跑前须 `evolver bench freeze` + `evolver bench baseline` 装备标尺。
+
+### Changed — 复核 round-85：四处已落地，两条接缝未闭
+
+对照 `gep/frozen_gate` 实为 `bench/frozen_gate.py`、`solidify._settle_session`、`hypothesis.require_for_gate`、`evolution_session.accept` 与 instrument 第二章：
+
+- 无基线不再自铸：`gate_verdict` 返回 `no_baseline` 且不调用 `save_baseline`。Parent 分只由 `establish_parent_baseline` / `evolver bench baseline` 写入。
+- `grade_split` 在任一 val 题缺沙箱时整遍记未测量。
+- instrument 已删「本场对话逐题 `bench prompt`」。评分只读已有沙箱。
+- 开局预算冻在 8；`extend_budget` 拒绝 `host-agent` 及其前缀。`mechanism_check` 必须带 `before` / `after`。裸 `session accept` 没有 `accept: true` 的 `gate.json` 会拒绝。
+
+未闭，已写进 [`TODO.md`](TODO.md) 第 1、2 项：
+
+- solidify 记账时不调用 `begin_round`，`current_candidate` 保持空串。门已 `accept: true` 时，`evolver session accept` 仍先因「没有候选」失败，8 轮预算也不被这次固化消耗。
+- `session hypothesize` 在已有会话时把 `run_id` 设成会话 id（`run_1`）。solidify 核对的是周期 id（`run_<毫秒>_<hex>`）。两条 id 对不上，这条 CLI 会把本轮假说拒掉。`swarm_hypothesis` 盖的是周期 id，那条路径是通的。
+
+`gep/library.py` 与 `gep/cursor.py` 已经在树上，分别能存内容哈希快照、只在 Accept 时推进游标。循环还没用它们决定是否开周期。第 4、5 步仍按章程排在上面两条接缝之后。
+
+### Changed — 配对会话治理修正（round-85，步子哥裁决后）
+
+B′ 把门装上了，但步子哥复核出四处治理漏洞——最重的一处是**引擎在给自己发及格线**：
+
+- **首次测量不再自铸基线**。`gate_verdict()` 无基线时 `no_baseline` 拒绝且**不写基线**；换包 `rekeyed_void` 只作废、不重建，作废的基线留在磁盘上仍绑旧 digest。旧行为的两条死局：强候选把基线抬到自己，同一改进从此永远持平；弱候选把基线压到 Parent 之下，此后回归读作「严格变好」。Parent 的分数由**不带变异的独立测量**建立——新增 `establish_parent_baseline()` 与 `evolver bench baseline`，solidify 触不到它，候选永远无法把自己写进标尺。`frozen_gate.py` 模块说明里残留的旧规则（「持平即过、未测量放行」）一并清除，免得下次修改被带回老路。
+- **部分求解即未测量**。`grade_split` 改 all-or-nothing：该 replicate 里任何 val 题沙箱缺失，整遍即 `None`，不再拿已评题的平均分冒充整遍。5 题只交 1 题且恰好高于基线，过去能过，现在是未测量。返回新增 `pending_tasks`。
+- **写下候选的宿主不再解 val**。密封本身早已做了（提案拒 val 题面、dispatch 与 Evidence Pack 打码），但 instrument 第二章却要求同一宿主固化前逐题 `evolver bench prompt`——题面就这么回到候选诞生的那场对话，密封与这条指令写在同一段。已删。评分只读已写好的沙箱；val 求解归属另一上下文，在那个上下文就位之前，未测量即拒绝，这是章程要的结果。
+- **会话机接上 solidify**。solidify 收口时统一折账：拒绝写入运行中会话的 `rounds.jsonl` 并保持 `running`（返回体新增 `session` 字段：run_id/round/rejects/预算/状态），成功则把 `accept: true` 的门决定落盘到 `gate.json`。`session accept` 无注入门时回读该决定，**没有一份 accept:true 的门记录就拒绝**——裸 `accept` 是主张，不是测量。`test_accept_publishes_and_closes` 原先把「没有门也能 Accept」钉成成功，这颗钉子已拔。
+- **假说归属本轮，且须是前后观察**。solidify 现在核对假说的 `run_id` 与本轮一致，且**门过即焚**（`clear_hypothesis()`）——上一轮的记录放行不了下一次变异。`mechanism_check` 只给题 id 不再放行：每条引用必须是 `{"id", "before", "after"}` 的重放观察（数字也认，`before: 0.0` 是真测量），裸 id 可以从包头抄来，证明不了跑过任何东西。
+- **开局预算冻在 8**。`start_run` 不再收 `max_rounds`（传入即拒），CLI 撤 `--rounds`；`extend_budget` 黑名单补上实际在用的 `host-agent`（及其下划线拼写），并拒一切 host/agent/swarm/loop/evolver 前缀。instrument 不写预算调高路径。
+- **锚种子探针随新契约第三次改写**（epoch 13）：no_baseline 不留痕、Parent 基线只出自独立入口、作废基线不重建、部分求解即未测量。升纪元仍须人跑 `uv run evolver anchor init --epoch 13`（前值 12 因本批再改契约而作废，**不可省 `--epoch`**）。
+
+**测试**：`test_paired_session_gate.py` 的首测钉子改钉新契约（no_baseline 且 `load_baseline() is None`），新增 Parent 基线入口与裸 Accept 拒绝的钉子；conftest 夹具改用 `establish_parent_baseline()`，`declared_hypothesis` 增 `redeclare`；CLI 冒烟三处（预算冻 8、裸 accept 拒绝、裸 id 假说拒绝）皆按章行事。
+
+**遗留（须步子哥执行）**：`uv run evolver anchor init --epoch 13` + `anchor list` / `anchor run` 核验。
+
+**未动（步子哥明示）**：第 4 步内容维库快照与第 5 步游标——基线若错，快照会把错误的 Accept 发布出去，故等基线语义站稳再动。
+
+### Changed — 配对会话 B′ 收口（round-84）
+
+B 批把假说门与包门做对了，却漏了装门闩的另一半：**没有任何生产代码写入假说记录**。三路侦察后 `grep -rn record_hypothesis src/` 确认——生产侧只有 `memory_graph.py` 那个同名异函数（`select.py` 导入的是它），新写的 `gep/hypothesis.py::record_hypothesis` 零调用点。后果不是「无包环境停摆」，是**全环境停摆**：真实 solidify 必然 `hypothesis_missing` 被拒。本批收口：
+
+- **宿主侧假说写入点**（§5.3）。新增闭环工具 `swarm_hypothesis`；`swarm_propose` / `swarm_solidify` 增可选 `hypothesis` 参数，记录在变异**生效之前**落盘；CLI 增 `evolver session hypothesize`（`--json` / `--stdin` / `@file`）。宿主不给假说则门照拒，**不做 fail-open**——本仓是宿主接管协议，候选「要改什么」只有宿主知晓，引擎无从代笔。
+- **门序修正**：solidify 里 novelty 门与假说门对调，先验否决（这个突变根本不新）先跑，语义要求（本轮声明了什么）随后。恢复 `test_sprint23_bandit_novelty.py` 三个用例对「近重复突变不得消耗 cascade」的覆盖，顺带省掉一次 cascade 开销。
+- **章程 val 题数 4 → 5**。`builtin_pack.py` 自 `3cacf45` 创建后 `git log` 零改动，val 从来是 5；漏数之由是 `spec-pipe-2` 由推导式生成（`builtin_pack.py:33`）、id 不带 `-val` 后缀，肉眼 grep 只数得 4。改文档不动包（动包会改 digest → `rekeyed_void` → 基线作废，且犯 §3/§6）。
+- **锚触发面补全**：`src/evolver/bench/`、`gep/hypothesis.py`、`gep/val_seal.py` 纳入 `ANCHOR_TRIGGER_SURFACES`。此前这三个文件**从头到尾不触发锚**（config.py 清单里没有），改冻结包门全无冻结契约看守。合于仓库既有 doctrine：裁决之器亦须冻结。
+- **锚种子探针改写**：`case-bench-pack-gate/probe.py` 对齐新契约（无包→`pack_absent`；首次武装→`baseline_established` 且 verdict 仍 reject；`worst>bar`→accept；flat/drop/unmeasured→reject；换包→`rekeyed_void`），`epoch_added` 提到 12。探针改用**移开**而非 `rmtree` 制造 unmeasured——冻结契约不该依赖宿主是否允许批量删除。**升纪元须人跑 `uv run evolver anchor init --epoch 12`**（不可省 `--epoch`，省略会倒挂为 1）。
+- **测试侧共用夹具**：`tests/conftest.py` 增 `armed_pack`（2 val + 1 train 合成包，先答错钉基线 0.0 再答对，使下一次判定 accept）与 `declared_hypothesis`（引用 `fixture-train-1`）。`armed_pack` 返回 `rearm()` 回调——accept 会把基线抬到候选分，同一测试内第二次 solidify 否则必判 `flat`；`rearm` 只压线不判分（早先版本顺手调了 `gate_verdict()`，把本该留出的 accept 先消费了）。
+
+**测试**：修 45 个过时断言，新增 4 个 `swarm_hypothesis` 用例。全部遵循同一判定——测成功侧的加夹具让它继续测原目标，测门本身的改断言到新契约；无删除断言、无放宽断言、无 skip/xfail。
+
+**遗留（须步子哥执行，非代码可代）**：跑 `uv run evolver anchor init --epoch 12` 升锚纪元，再 `anchor list` / `anchor run` 核验。本机 `$EVOLVER_HOME` 未设、`anchor/` 不存在，锚当下处于「完全不跑、零保护、永远绿」状态。
+
+**遗留（未动手，供裁决）**：Worker 报 `sqlite_store` 各函数用 `with sqlite3.connect(...)` 并不关闭连接，Windows 下 teardown 撞 WinError 32；测试侧已用 `gc.collect()` 绕过，产品侧改 `contextlib.closing` 更稳。属测试环境保健，不计入本阶段进度。
+
+### Changed — 章程切换：配对会话
+
+- [`演进方案.md`](演进方案.md) 改为现行章程。依据是与 EvoOntology 1.1.0 的源码对照：版本化候选、冻结会话、密封验证池、严格优于 Parent 才发布。
+- 2026-09-24 外部适应度已落地的 `swarm_propose` 与冻结任务包继续有效。包门从「降分才拒绝」收紧为「未测量、持平、门异常都拒绝发布」。
+- 版本仍钉 1.112.0。`EVOLVER_ACCEPTANCE_SHADOW` 保持打开。
+- [`TODO.md`](TODO.md)、[`AGENTS.md`](AGENTS.md)、[`CONTRIBUTING.md`](CONTRIBUTING.md)、[`SKILL.md`](SKILL.md) 与 README 状态段已同步。
+
 ### Changed — 章程切换：外部适应度
 
 - [`演进方案.md`](演进方案.md) 改为现行短章程。蜂群互锁视为已完成，版本仍钉 1.112.0。
 - 下一阶段：重复失败走 `swarm_propose`；把 `evolver.bench` 的一个冻结任务包接进周期；约十个周期后收口。
 - `EVOLVER_ACCEPTANCE_SHADOW` 保持打开。soak `ready` 不再是路线图出口。
 - [`TODO.md`](TODO.md)、[`AGENTS.md`](AGENTS.md)、[`CONTRIBUTING.md`](CONTRIBUTING.md)、四种 README、[`SKILL.md`](SKILL.md) 已同步。[`RSI演进对照.md`](RSI演进对照.md) 与 [`演进方案_wikiskill对照版.md`](演进方案_wikiskill对照版.md) 改为史料，文内旧「下一步」作废。
+
+### Added — round-82：配对会话机落地（配对会话 §5.1）
+
+- **依据**：EvoOntology 1.1.0 `evoontology/evolution/session.py` 的会话规则。
+  迁协议，不迁五类记录：会话机只认字符串 id（内容维是库快照 id，工具/图式维
+  是 diff 引用）。门与发布器做成注入参数，好让状态机先独立成型。
+- **新增** `src/evolver/gep/evolution_session.py`：`running` / `accepted` /
+  `incomplete` 三态。预算默认 8，开局即冻结；`begin_round` 在预算用尽时把会话
+  自己封成 `incomplete / budget_exhausted` 并抛
+  `EvolutionBudgetExhaustedError`。Reject 只追加 `rounds.jsonl`，会话仍是
+  `running`。判断性停止（`missing_data` / `unreliable_evaluation` /
+  `external_block`）在 Reject 少于 2 次时拒绝封口——「还没想到新假说」不是「不
+  能继续」；`user_interrupted` 与 `missing_permissions` 可立即封口。
+- **只有人能加预算**：`extend_budget` 要求 `confirmed_by`，宿主侧 actor
+  （host / agent / swarm / loop / evolver）一律拒绝；每次调高进
+  `budget_history`（谁、何时、从几到几），可审计。
+- **CLI** `evolver session start|resume|status|round|reject|accept|incomplete|
+  extend|finalize`。会话目录落 `<EVOLUTION_DIR>/sessions/run_N/`，即仓外 soak
+  根，产品仓不留运行态。
+- **测试** `tests/test_gep_evolution_session.py` 30 项，挡住全部非法终态：已结束
+  会话不可 resume / 不可开轮 / 不可决断；`finalize` 在 running 时抛；预算耗尽
+  自动封口；判断性停止的 Reject 门槛；宿主加预算被拒；`accept` 无候选或门不过
+  时拒绝。
+- **未动**：密封 val 与包门（§5.2）、一假说（§5.3）、库快照（§5.4）、游标
+  （§5.5）留给后续批次。`swarm_propose` 与冻结任务包继续有效。版本仍钉
+  1.112.0，`EVOLVER_ACCEPTANCE_SHADOW` 保持打开。
+
+### Added — round-83：密封 val 与一假说（配对会话 §5.2 / §5.3）
+
+- **包门语义翻转**（`bench/frozen_gate.py`）：只有 val 严格高于 Parent 才
+  `accept`。降分、持平、未测量、门异常、包缺失、基线作废，一律 `reject`，且
+  基线不动。round-79 的「持平或提升通过」与「门不可用时降级为失效」两条作废
+  ——正是这两条放过了「改测量仪器」的变异。首次 armed 只建立基线，不发布
+  （第一次测量不构成「更优」）。
+- **小包两轮独立求解**：val 题数 ≤ 6 时要求宿主把 val 独立做两遍
+  （`--replicate=1` / `--replicate=2`），两遍均严格优于才放行。槽位落在
+  `sandboxes/r1/`、`sandboxes/r2/`；`bench prompt|grade|run` 均加 `--replicate`。
+- **一假说**（新增 `gep/hypothesis.py`）：每轮候选必须记录一条假说，维度限
+  `content` / `tool` / `schema`（内容 / 工具 / 图式），含 `mechanism_family`、
+  作用点 `target_hook`，`mechanism_check` 只许引用 train 题 id。缺记录或混入
+  val id 时 solidify 在**包门之前**拒绝（`hypothesis_missing`，soft/可重试）。
+- **密封**（新增 `gep/val_seal.py`）：val 题面与期望答案不得进 dispatch、
+  Evidence Pack、提案回合。输出侧（dispatch / pack）计数净化并声明，输入侧
+  （提案）直接拒绝（`val_seal_breach`）。train 也有的共享材料不算秘密；
+  短于 6 字符的答案标 weak，不参与判定。
+- **测试**：新增 `tests/test_paired_session_gate.py` 38 项、
+  `tests/test_paired_session_solidify.py` 9 项。翻写
+  `tests/bench/test_frozen_gate.py`（13 项）与
+  `tests/gep/test_solidify_bench_pack.py`（7 项）到新契约。
+- ~~**遗留待裁决**~~（三项，**已于 round-84 全部裁决并收口**）：① 包未冻结时
+  solidify 一律拒绝 —— 维持严格语义、不作分层放行，45 个受影响用例改用
+  `armed_pack` / `declared_hypothesis` 共用夹具回归原测目标；② 锚探针已改写
+  对齐新契约，`bench/` 等三处已纳入触发面，纪元升到 12 须人跑 `anchor init`；
+  ③ val 题数以源码为准改章程为 5，包一字未动。
 
 ### Fixed — round-81：包门持平分支首跑 + 通道纪律端到端针逮住真缺陷（外部适应度 #2）
 
