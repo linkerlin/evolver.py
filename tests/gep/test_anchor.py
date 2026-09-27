@@ -226,7 +226,11 @@ class TestSolidifyHook:
         )
 
     def test_verifier_mutation_rejected_on_anchor_failure(
-        self, anchor_ws: Path, monkeypatch: pytest.MonkeyPatch
+        self,
+        anchor_ws: Path,
+        armed_pack: dict[str, Any],
+        declared_hypothesis: dict[str, Any],
+        monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         _install_seed(anchor_ws)
         # A mutation touching a verifier surface (this file edit mimics one).
@@ -250,11 +254,20 @@ class TestSolidifyHook:
         assert result["details"]["touched"] == ["src/evolver/gep/solidify.py"]
 
     def test_passing_anchor_records_on_event(
-        self, anchor_ws: Path, monkeypatch: pytest.MonkeyPatch
+        self,
+        anchor_ws: Path,
+        armed_pack: dict[str, Any],
+        declared_hypothesis: dict[str, Any],
+        monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         from evolver.gep.paths import get_gep_assets_dir
 
         _install_seed(anchor_ws)
+        # The bar was measured with no suite installed (epoch None); the seed
+        # install re-seeds the protocol, so re-bind the bar or the gate
+        # refuses the round as protocol_drift (§5.2 — re-measure under the
+        # protocol that will judge).
+        armed_pack["rebind"]()
         target = anchor_ws / "src" / "evolver" / "gep" / "solidify.py"
         target.parent.mkdir(parents=True)
         target.write_text("# mutated\n", encoding="utf-8")
@@ -276,7 +289,11 @@ class TestSolidifyHook:
         assert evt["anchor_result"]["cases"] == [{"id": "x", "ok": True}]
 
     def test_ordinary_mutation_skips_anchor(
-        self, anchor_ws: Path, monkeypatch: pytest.MonkeyPatch
+        self,
+        anchor_ws: Path,
+        armed_pack: dict[str, Any],
+        declared_hypothesis: dict[str, Any],
+        monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         called = {"n": 0}
 

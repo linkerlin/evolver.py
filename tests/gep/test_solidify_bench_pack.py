@@ -1,12 +1,14 @@
-"""Tests for the frozen bench-pack gate inside solidify (round-79).
+"""Tests for the frozen bench-pack gate inside solidify (charter 配对会话 §5.2).
 
-Charter 外部适应度 step 2: the pack is an additional acceptance condition —
-a drop rejects (rollback + ``bench_pack_rejected`` failure event), flat or
-up passes and rides onto the event, an absent pack (or gate trouble)
-degrades to inactive with solidify byte-identical. The T0 acceptance hook
-is mocked to ``None`` here (its own contract lives in
-``test_solidify_acceptance_hook.py``); the pack gate is exercised through
-its ``gate_verdict`` seam.
+Only a strict improvement publishes: a drop, a flat score, an unmeasured
+split, an absent pack and a damaged gate all reject (rollback +
+``bench_pack_rejected`` failure event). This supersedes round-79, where flat
+or up passed and gate trouble degraded to inactive.
+
+Every round here also records a hypothesis — §5.3 refuses any candidate that
+has not stated one. The T0 acceptance hook is mocked to ``None`` (its own
+contract lives in ``test_solidify_acceptance_hook.py``); the pack gate is
+exercised through its ``gate_verdict`` seam.
 """
 
 from __future__ import annotations
@@ -72,6 +74,25 @@ def git_ws(temp_workspace: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     )
     # T0 acceptance hook inert here — the pack gate is under test.
     monkeypatch.setattr(hook_mod, "gate_for_solidify", lambda _r, _c: None)
+    # §5.3: a round with no hypothesis is refused before the pack gate, and
+    # the check must be a replayed observation, not a bare id.
+    from evolver.gep import hypothesis as hypothesis_mod
+
+    hypothesis_mod.record_hypothesis(
+        {
+            "hypothesis": "the executor misreads the spec clause",
+            "dimension": "content",
+            "mechanism_family": "spec-literal",
+            "target_hook": "dispatch prompt section 2",
+            "mechanism_check": [
+                {
+                    "id": "spec-pipe-0",
+                    "before": "the train task's sandbox showed the old reading",
+                    "after": "replayed after the change — the deliverable differs",
+                }
+            ],
+        }
+    )
     _init_git_repo(temp_workspace)
     return temp_workspace
 
@@ -85,7 +106,10 @@ def _uncommitted_change(ws: Path) -> Path:
     return p
 
 
-def _verdict(overrides: dict[str, Any] | None = None) -> dict[str, Any]:
+def _verdict(overrides: dict[str, Any] | None = None, **_extra: Any) -> dict[str, Any]:
+    """Pack-gate stub. ``_extra`` swallows newer gate arguments (the candidate's
+    regression declaration) so these tests keep asserting solidify's behaviour
+    rather than the gate's signature."""
     verdict: dict[str, Any] = {
         "armed": True,
         "pack": "/frozen/charter-pack.tasks.json",
@@ -93,7 +117,9 @@ def _verdict(overrides: dict[str, Any] | None = None) -> dict[str, Any]:
         "split": "val",
         "score": 1.0,
         "baseline": 1.0,
-        "verdict": "pass",
+        "verdict": "accept",
+        "accept": True,
+        "reason": "strict_improvement",
         "per_task": [{"id": "t1", "status": "graded", "score": 1.0}],
     }
     verdict.update(overrides or {})
@@ -101,26 +127,29 @@ def _verdict(overrides: dict[str, Any] | None = None) -> dict[str, Any]:
 
 
 class TestInactiveGate:
-    def test_absent_pack_solidify_unchanged(self, git_ws: Path) -> None:
-        """Fresh env: no frozen pack → gate inactive, no event field, no
-        rejection — solidify behaves exactly as before the charter."""
+    def test_absent_pack_rejects(self, git_ws: Path) -> None:
+        """Fresh env: no frozen pack means no score, and no score means no
+        publish — §5.2 retired the "gate inactive" pass-through."""
         _ = git_ws
         write_state_for_solidify(_last_run())
         result = solidify(skip_validation=True)
-        assert result["ok"] is True
-        assert "bench_pack" not in result
-        ev = read_all_events()[-1]
-        assert "bench_pack" not in ev
+        assert result["ok"] is False
+        assert result["error"] == "bench_pack_rejected"
+        assert result["details"]["bench_pack"]["reason"] == "pack_absent"
 
-    def test_gate_error_degrades_to_inactive(
+    def test_gate_error_rejects_rather_than_passing(
         self, git_ws: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         _ = git_ws
-        monkeypatch.setattr(gate_mod, "gate_verdict", lambda: (_ for _ in ()).throw(OSError("x")))
+        monkeypatch.setattr(
+            gate_mod, "gate_verdict", lambda **_kw: (_ for _ in ()).throw(OSError("x"))
+        )
         write_state_for_solidify(_last_run())
         result = solidify(skip_validation=True)
-        assert result["ok"] is True
-        assert "bench_pack" not in read_all_events()[-1]
+        # A broken instrument means "we measured nothing", never "all clear".
+        assert result["ok"] is False
+        assert result["error"] == "bench_pack_rejected"
+        assert result["details"]["bench_pack"]["reason"] == "gate_error"
 
 
 class TestGatePass:
@@ -132,9 +161,9 @@ class TestGatePass:
         write_state_for_solidify(_last_run())
         result = solidify(skip_validation=True)
         assert result["ok"] is True
-        assert result["bench_pack"] == {"score": 1.0, "baseline": 1.0, "verdict": "pass"}
+        assert result["bench_pack"]["verdict"] == "accept"
         ev = read_all_events()[-1]
-        assert ev["bench_pack"]["verdict"] == "pass"
+        assert ev["bench_pack"]["verdict"] == "accept"
         assert ev["bench_pack"]["digest"] == "abc123"
         assert ev["bench_pack"]["per_task"] == [{"id": "t1", "status": "graded", "score": 1.0}]
 
@@ -160,7 +189,7 @@ class TestGateReject:
         monkeypatch.setattr(
             gate_mod,
             "gate_verdict",
-            lambda: _verdict({"score": 0.6, "baseline": 1.0, "verdict": "reject"}),
+            lambda **_kw: _verdict({"score": 0.6, "baseline": 1.0, "verdict": "reject"}),
         )
         write_state_for_solidify(_last_run())
         result = solidify(skip_validation=True)
@@ -181,7 +210,7 @@ class TestGateReject:
         monkeypatch.setattr(
             gate_mod,
             "gate_verdict",
-            lambda: _verdict({"score": 0.6, "baseline": 1.0, "verdict": "reject"}),
+            lambda **_kw: _verdict({"score": 0.6, "baseline": 1.0, "verdict": "reject"}),
         )
         patched = _uncommitted_change(git_ws)
         write_state_for_solidify(_last_run())
@@ -196,7 +225,7 @@ class TestGateReject:
         monkeypatch.setattr(
             gate_mod,
             "gate_verdict",
-            lambda: _verdict({"score": 0.6, "baseline": 1.0, "verdict": "reject"}),
+            lambda **_kw: _verdict({"score": 0.6, "baseline": 1.0, "verdict": "reject"}),
         )
         write_state_for_solidify(_last_run())
         solidify(skip_validation=True)

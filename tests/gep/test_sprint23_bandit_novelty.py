@@ -22,6 +22,32 @@ def _git(cwd: Path, *args: str) -> None:
     subprocess.run(["git", *args], cwd=cwd, check=True, capture_output=True, text=True)
 
 
+def _hypothesis() -> dict[str, Any]:
+    """A round may only be measured after stating one claim (演进方案.md §5.3).
+
+    These cases exercise the novelty / cascade / rollback path, not the
+    hypothesis contract, so the fixture declares one and the gate stays out of
+    what is under test. The frozen pack is unarmed here — ref provenance
+    defers and only the field discipline binds.
+    """
+    return {
+        "hypothesis": "the mutation under test behaves as this case asserts",
+        "dimension": "content",
+        "mechanism_family": "sprint23-regression-fixture",
+        "target_hook": "tests/gep/test_sprint23_bandit_novelty.py",
+        # With the pack armed the ref check is live, so this must name a train
+        # id as a replayed observation; "fixture-train-1" is the synthetic
+        # pack's train task (see conftest).
+        "mechanism_check": [
+            {
+                "id": "fixture-train-1",
+                "before": "the train sandbox showed the pre-change behaviour",
+                "after": "replayed after the change — the deliverable differs",
+            }
+        ],
+    }
+
+
 @pytest.fixture
 def git_ws(temp_workspace: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     monkeypatch.setenv("EVOLVER_REPO_ROOT", str(temp_workspace))
@@ -36,6 +62,9 @@ def git_ws(temp_workspace: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     (temp_workspace / "README.md").write_text("init\n", encoding="utf-8")
     _git(temp_workspace, "add", "-A")
     _git(temp_workspace, "-c", "commit.gpgsign=false", "commit", "-m", "init")
+    from evolver.gep import hypothesis as hypothesis_mod
+
+    hypothesis_mod.record_hypothesis(_hypothesis())
     return temp_workspace
 
 
@@ -114,7 +143,9 @@ class TestNoveltyGate:
         assert ev["outcome"]["error"] == "novelty_duplicate"
         assert not (git_ws / "feature.txt").exists()  # rolled back (cwd-correct)
 
-    def test_novel_diff_proceeds(self, git_ws: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    def test_novel_diff_proceeds(
+        self, git_ws: Path, armed_pack: dict[str, Any], monkeypatch: pytest.MonkeyPatch
+    ) -> None:
         monkeypatch.setenv("EVOLVER_FF_ENABLE_FITNESS_CASCADE", "true")
         monkeypatch.setenv("EVOLVER_FF_ENABLE_NOVELTY_GATE", "true")
         self._apply_change(git_ws)
@@ -136,7 +167,7 @@ class TestNoveltyGate:
         assert ran == [True]
 
     def test_flag_off_runs_cascade_anyway(
-        self, git_ws: Path, monkeypatch: pytest.MonkeyPatch
+        self, git_ws: Path, armed_pack: dict[str, Any], monkeypatch: pytest.MonkeyPatch
     ) -> None:
         monkeypatch.setenv("EVOLVER_FF_ENABLE_FITNESS_CASCADE", "true")
         self._apply_change(git_ws)
@@ -347,7 +378,7 @@ class TestNoveltyContainment:
 
 class TestSoakFixes:
     def test_cascade_success_commits_mutation(
-        self, git_ws: Path, monkeypatch: pytest.MonkeyPatch
+        self, git_ws: Path, armed_pack: dict[str, Any], monkeypatch: pytest.MonkeyPatch
     ) -> None:
         monkeypatch.setenv("EVOLVER_FF_ENABLE_FITNESS_CASCADE", "true")
         (git_ws / "feature.txt").write_text("accepted change\n", encoding="utf-8")
@@ -378,7 +409,7 @@ class TestSoakFixes:
         assert "feature.txt" not in status  # committed clean
 
     def test_no_commit_when_cascade_off(
-        self, git_ws: Path, monkeypatch: pytest.MonkeyPatch
+        self, git_ws: Path, armed_pack: dict[str, Any], monkeypatch: pytest.MonkeyPatch
     ) -> None:
         (git_ws / "feature.txt").write_text("change\n", encoding="utf-8")
         monkeypatch.setattr(solidify_mod, "post_solidify_hooks", lambda *a, **k: {})

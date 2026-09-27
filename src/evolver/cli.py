@@ -242,6 +242,53 @@ def _build_parser() -> argparse.ArgumentParser:
     soak_status = soak_sub.add_parser("status", help="Paths + gate-report for the active env")
     soak_status.add_argument("--json", action="store_true", help="Output raw JSON")
     soak_status.add_argument("--limit", type=int, default=5000, help="Max events to scan")
+    sess_p = sub.add_parser(
+        "session",
+        help="Paired evolution session: running / accepted / incomplete",
+    )
+    sess_sub = sess_p.add_subparsers(dest="session_action")
+    sess_start = sess_sub.add_parser("start", help="Open a session; the budget freezes at 8 (§5.1)")
+    sess_start.add_argument("--parent", required=True, help="Parent ref (library snapshot id)")
+    sess_start.add_argument("--adapter", default="", help="Adapter name")
+    sess_sub.add_parser("resume", help="Resume the running session")
+    sess_status = sess_sub.add_parser("status", help="Show the current session")
+    sess_status.add_argument("--json", action="store_true", help="Output raw JSON")
+    sess_round = sess_sub.add_parser("round", help="Open the next round for one Candidate")
+    sess_round.add_argument("--hypothesis", required=True, help="The one hypothesis")
+    sess_round.add_argument("--candidate", required=True, help="Candidate ref")
+    sess_hyp = sess_sub.add_parser(
+        "hypothesize", help="Declare this Candidate's one structured hypothesis (§5.3)"
+    )
+    sess_hyp.add_argument(
+        "--json",
+        default="",
+        help=(
+            "JSON object with hypothesis / dimension (content|tool|schema) / "
+            "mechanism_family / target_hook / mechanism_check; '@path' reads a file"
+        ),
+    )
+    sess_hyp.add_argument("--stdin", action="store_true", help="Read the JSON object from stdin")
+    sess_reject = sess_sub.add_parser("reject", help="Record a Reject; the session continues")
+    sess_reject.add_argument("--notes", default="", help="Why it was rejected")
+    sess_reject.add_argument("--metrics", default="", help="JSON object of metrics")
+    sess_sub.add_parser("accept", help="Accept the current Candidate and end the session")
+    sess_incomplete = sess_sub.add_parser(
+        "incomplete", help="External stop: no publish, no checkpoint advance"
+    )
+    sess_incomplete.add_argument(
+        "--reason",
+        required=True,
+        help=(
+            "budget_exhausted | user_interrupted | missing_data | "
+            "missing_permissions | unreliable_evaluation | external_block"
+        ),
+    )
+    sess_extend = sess_sub.add_parser("extend", help="Raise the round budget (human only)")
+    sess_extend.add_argument("--rounds", type=int, required=True, help="New max_rounds")
+    sess_extend.add_argument(
+        "--by", required=True, help="Confirming human; host/agent/swarm/loop refused"
+    )
+    sess_sub.add_parser("finalize", help="Terminal-state check before reporting")
     sr_p = sub.add_parser("self-report", help="Autopoiesis self-report and rule evolution")
     sr_p.add_argument(
         "--capture",
@@ -417,6 +464,15 @@ def _build_parser() -> argparse.ArgumentParser:
         "gate",
         help="Show the frozen bench-pack gate state (armed / digest / baseline) — read-only",
     )
+    bench_baseline = bench_sub.add_parser(
+        "baseline",
+        help=(
+            "Measure the CURRENT val sandboxes as the Parent bar (§5.2). "
+            "The only first-baseline writer — unreachable from solidify, so a "
+            "candidate can never measure itself into the bar it is judged by"
+        ),
+    )
+    bench_baseline.add_argument("--json", action="store_true", help="Output raw JSON")
     bench_run = bench_sub.add_parser(
         "run", help="Run health tasks (or a task pack) and record R into the fitness ledger"
     )
@@ -435,11 +491,27 @@ def _build_parser() -> argparse.ArgumentParser:
     )
     bench_prompt_p.add_argument("task_id")
     bench_prompt_p.add_argument("--pack", required=True, help="Path to a tasks.json task pack")
+    bench_prompt_p.add_argument(
+        "--replicate",
+        type=int,
+        default=None,
+        help=(
+            "Independent solve slot (r1 / r2) — §5.2 needs two independent "
+            "val solves, run in a context SEPARATE from the one writing the "
+            "candidate (the candidate-writing host must not see val prompts)"
+        ),
+    )
     bench_grade_p = bench_sub.add_parser(
         "grade", help="Grade one pack task's deliverable (single score, no ledger write)"
     )
     bench_grade_p.add_argument("task_id")
     bench_grade_p.add_argument("--pack", required=True, help="Path to a tasks.json task pack")
+    bench_grade_p.add_argument(
+        "--replicate", type=int, default=None, help="Independent solve slot (r1 / r2) to grade"
+    )
+    bench_run.add_argument(
+        "--replicate", type=int, default=None, help="Grade this independent solve slot (r1 / r2)"
+    )
     bench_run.add_argument(
         "--output", default=None, help="Write per-task results JSON (for bench compare)"
     )
@@ -697,6 +769,9 @@ def main(argv: Sequence[str] | None = None) -> int:
 
     if command == "soak":
         return _cmd_soak(args)
+
+    if command == "session":
+        return _cmd_session(args)
 
     if command == "fetch":
         return asyncio.run(_cmd_fetch(args))
@@ -1585,6 +1660,181 @@ def _cmd_soak(args: argparse.Namespace) -> int:
     return 2
 
 
+def _cmd_session(args: argparse.Namespace) -> int:
+    """Paired evolution session (演进方案.md §5.1).
+
+    A Reject never ends the session; the budget is frozen; raising it needs a
+    named human and is refused for host actors. Sessions live under the
+    external soak root - the product repo keeps no runtime state.
+    """
+    from evolver.gep.evolution_session import (
+        EvolutionBudgetExhaustedError,
+        EvolutionError,
+        EvolutionSession,
+        active_session,
+        session_root,
+    )
+
+    action = getattr(args, "session_action", None) or "status"
+
+    def _emit(payload: dict) -> None:
+        print(json.dumps(payload, ensure_ascii=False, indent=2, default=str))
+
+    try:
+        if action == "start":
+            ev = EvolutionSession()
+            run = ev.start_run(
+                args.parent,
+                adapter=args.adapter,
+            )
+            print(f"session       : {run['run_id']}")
+            print(f"parent        : {run['parent']}")
+            budget = run["budget"]["max_rounds"]
+            print(f"budget rounds : {budget} (frozen; `session extend` is human-only)")
+            print(f"session root  : {session_root()}")
+            return 0
+
+        if action == "status":
+            run = active_session()
+            if run is None:
+                latest = EvolutionSession().latest_run()
+                if latest is None:
+                    print("no session yet — `evolver session start --parent=<ref>`")
+                    return 0
+                run = latest
+            if getattr(args, "json", False):
+                _emit(run)
+                return 0
+            print(f"session       : {run['run_id']}")
+            print(f"status        : {run['status']}")
+            print(f"parent        : {run['parent']}")
+            print(f"round         : {run['round']} / {run['budget']['max_rounds']}")
+            print(f"candidate     : {run.get('current_candidate') or '-'}")
+            print(f"rejects       : {EvolutionSession().rejected_count()}")
+            print(f"end reason    : {run.get('end_reason') or '-'}")
+            return 0
+
+        if action == "resume":
+            run = EvolutionSession().resume()
+            print(
+                f"resumed       : {run['run_id']} (round {run['round']}, "
+                f"budget {run['budget']['max_rounds']})"
+            )
+            return 0
+
+        if action == "round":
+            ev = EvolutionSession()
+            ev.resume()
+            number = ev.begin_round(args.hypothesis, args.candidate)
+            print(f"round         : {number} / {ev.run['budget']['max_rounds']}")
+            print(f"candidate     : {args.candidate}")
+            return 0
+
+        if action == "hypothesize":
+            from evolver.gep import hypothesis as hypothesis_mod
+
+            raw = args.json
+            if getattr(args, "stdin", False):
+                raw = sys.stdin.read()
+            elif raw.startswith("@"):
+                from pathlib import Path
+
+                raw = Path(raw[1:]).read_text(encoding="utf-8")
+            try:
+                payload = json.loads(raw)
+            except (json.JSONDecodeError, TypeError) as exc:
+                print(f"hypothesis rejected: not a JSON object ({exc})", file=sys.stderr)
+                return 2
+            if not isinstance(payload, dict):
+                print("hypothesis rejected: top level must be a JSON object", file=sys.stderr)
+                return 2
+            run = active_session()
+            # The record must carry the round it belongs to. The swarm cycle
+            # id is the primary scope (same stamp as swarm_hypothesis); the
+            # session's own round id is the fallback when no cycle is pending
+            # yet. Both count as "this round" at the gate — a leftover record
+            # from another cycle matches neither and is refused.
+            cycle_id = ""
+            try:
+                from evolver.gep.paths import get_solidify_state_path
+
+                state_path = get_solidify_state_path()
+                if state_path.is_file():
+                    state = json.loads(state_path.read_text(encoding="utf-8"))
+                    last = state.get("last_run")
+                    if isinstance(last, dict):
+                        cycle_id = str(last.get("run_id") or "")
+            except Exception:
+                cycle_id = ""
+            scope = cycle_id or str((run or {}).get("run_id") or "")
+            if scope:
+                payload.setdefault("run_id", scope)
+            try:
+                path = hypothesis_mod.record_hypothesis(payload)
+            except hypothesis_mod.HypothesisError as exc:
+                print(f"hypothesis rejected: {exc}", file=sys.stderr)
+                return 2
+            ok, _reason, detail = hypothesis_mod.validate_for_gate(hypothesis_mod.load_hypothesis())
+            print(f"recorded      : {path}")
+            print(f"dimension     : {detail.get('dimension')} ({detail.get('dimension_label')})")
+            print(f"ref check     : {detail.get('ref_check') or 'deferred'}")
+            scope = str(payload.get("run_id") or "")
+            if scope.startswith("run_") and scope == cycle_id:
+                print(f"round scope   : {scope} (swarm cycle — same stamp as swarm_hypothesis)")
+            elif scope:
+                print(f"round scope   : {scope} (session round — solidify accepts this)")
+            else:
+                print("round scope   : unbound (consumed by the next solidify once)")
+            print("declaring is not passing — the gate re-reads this record")
+            return 0 if ok else 2
+
+        if action == "reject":
+            ev = EvolutionSession()
+            ev.resume()
+            metrics = json.loads(args.metrics) if args.metrics else {}
+            entry = ev.record_round(decision="reject", metrics=metrics, notes=args.notes)
+            print(f"rejected      : round {entry['round']} ({entry['candidate']})")
+            print(f"session       : still {ev.status} — design the next Candidate")
+            return 0
+
+        if action == "accept":
+            ev = EvolutionSession()
+            ev.resume()
+            ref = ev.accept()
+            print(f"accepted      : {ref}")
+            print(f"session       : {ev.status}")
+            return 0
+
+        if action == "incomplete":
+            ev = EvolutionSession()
+            ev.resume()
+            run = ev.mark_incomplete(args.reason)
+            print(f"incomplete    : {run['run_id']} ({run['end_reason']})")
+            print("no publish, no checkpoint advance")
+            return 0
+
+        if action == "extend":
+            ev = EvolutionSession()
+            ev.resume()
+            run = ev.extend_budget(args.rounds, confirmed_by=args.by)
+            print(f"budget        : {run['budget']['max_rounds']} (raised by {args.by})")
+            return 0
+
+        if action == "finalize":
+            run = EvolutionSession().finalize()
+            print(f"final         : {run['run_id']} = {run['status']}")
+            return 0
+    except EvolutionBudgetExhaustedError as exc:
+        print(f"budget exhausted: {exc}", file=sys.stderr)
+        return 3
+    except EvolutionError as exc:
+        print(f"session error: {exc}", file=sys.stderr)
+        return 2
+
+    print(f"Unknown session action: {action}", file=sys.stderr)
+    return 2
+
+
 def _cmd_report(args: argparse.Namespace) -> int:
     """S27.4: honest run report — verdicts, r_best ledger, negatives as-is.
     Also refreshes the wiki patterns projection (S27.2) unless --no-project."""
@@ -2079,6 +2329,31 @@ def _cmd_bench(args: argparse.Namespace) -> int:
             )
         return 0
 
+    if args.bench_action == "baseline":
+        from evolver.bench.frozen_gate import establish_parent_baseline
+
+        report = establish_parent_baseline()
+        if getattr(args, "json", False):
+            print(json.dumps(report, indent=2, ensure_ascii=False))
+        if not report.get("ok"):
+            print(
+                f"parent baseline NOT written: {report.get('reason')}"
+                + (
+                    f" (pending: {', '.join(report['pending_tasks'])})"
+                    if report.get("pending_tasks")
+                    else ""
+                ),
+                file=sys.stderr,
+            )
+            return 2
+        if not getattr(args, "json", False):
+            print(f"parent baseline  : {report['score']} (digest {report['digest']})")
+            print(f"val tasks        : {report['val_tasks']} × {report['replicates']} replicate(s)")
+            if report.get("previous_baseline") is not None:
+                print(f"previous baseline: {report['previous_baseline']} (overwritten)")
+            print("solidify now judges candidates strictly above this bar")
+        return 0
+
     if args.bench_action == "compare":
         from evolver.bench.compare import compare_runs
 
@@ -2098,7 +2373,7 @@ def _cmd_bench(args: argparse.Namespace) -> int:
 
     if args.bench_action == "prompt":
         try:
-            print(pack_prompt(Path(args.pack), args.task_id))
+            print(pack_prompt(Path(args.pack), args.task_id, replicate=args.replicate))
         except (ValueError, OSError, json.JSONDecodeError) as exc:
             print(f"bench prompt failed: {exc}")
             return 1
@@ -2106,7 +2381,7 @@ def _cmd_bench(args: argparse.Namespace) -> int:
 
     if args.bench_action == "grade":
         try:
-            score = grade_pack_task(Path(args.pack), args.task_id)
+            score = grade_pack_task(Path(args.pack), args.task_id, replicate=args.replicate)
         except (ValueError, OSError, json.JSONDecodeError) as exc:
             print(f"bench grade failed: {exc}")
             return 1
@@ -2120,6 +2395,7 @@ def _cmd_bench(args: argparse.Namespace) -> int:
                 split=args.split,
                 record=not args.no_record,
                 output=Path(args.output) if args.output else None,
+                replicate=args.replicate,
             )
         except (ValueError, OSError, json.JSONDecodeError) as exc:
             print(f"bench run failed: {exc}")

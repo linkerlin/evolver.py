@@ -248,7 +248,11 @@ class TestSolidifyFlagIntegration:
         )
 
     def test_flag_on_ignores_mutation_validation(
-        self, git_ws: Path, monkeypatch: pytest.MonkeyPatch
+        self,
+        git_ws: Path,
+        armed_pack: dict[str, Any],
+        declared_hypothesis: dict[str, Any],
+        monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         monkeypatch.setenv("EVOLVER_FF_ENABLE_FITNESS_CASCADE", "true")
         self._prepare(git_ws)
@@ -270,7 +274,11 @@ class TestSolidifyFlagIntegration:
         assert captured["cascade"] is True
 
     def test_flag_off_keeps_mutation_validation(
-        self, git_ws: Path, monkeypatch: pytest.MonkeyPatch
+        self,
+        git_ws: Path,
+        armed_pack: dict[str, Any],
+        declared_hypothesis: dict[str, Any],
+        monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         from evolver.gep.feature_flags import set_flag
 

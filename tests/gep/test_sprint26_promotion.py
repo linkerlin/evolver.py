@@ -63,6 +63,17 @@ def _last_run(**overrides: Any) -> dict[str, Any]:
     return base
 
 
+def _rearm_pack_bar(armed: dict[str, Any]) -> None:
+    """Put the frozen pack's bar back at the Parent's 0.0 (§5.2).
+
+    An accepted round moves the bar to its own score, so a second round in the
+    same workspace would be judged ``flat`` — a pack-gate veto, not the ledger
+    verdict these cases pin. Re-arming keeps the pack gate's answer ("the
+    candidate cleared the external bar") constant across rounds.
+    """
+    armed["rearm"]()
+
+
 def _last_event() -> dict[str, Any]:
     lines = [
         ln
@@ -127,7 +138,12 @@ def test_cascade_commands_all_missing_returns_empty(
     assert solidify_mod.get_fitness_cascade_commands() == []
 
 
-def test_cascade_success_measured_score(git_ws: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_cascade_success_measured_score(
+    git_ws: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    armed_pack: dict[str, Any],
+    declared_hypothesis: dict[str, Any],
+) -> None:
     set_flag("enable_acceptance_gate", False, persist=False)
     monkeypatch.setattr(
         solidify_mod,
@@ -142,7 +158,9 @@ def test_cascade_success_measured_score(git_ws: Path, monkeypatch: pytest.Monkey
     assert "unvalidated" not in evt["outcome"]
 
 
-def test_unvalidated_success_score_is_none(git_ws: Path) -> None:
+def test_unvalidated_success_score_is_none(
+    git_ws: Path, armed_pack: dict[str, Any], declared_hypothesis: dict[str, Any]
+) -> None:
     set_flag("enable_acceptance_gate", False, persist=False)
     write_state_for_solidify(_last_run())
     assert solidify(skip_validation=True)["ok"] is True
@@ -153,7 +171,9 @@ def test_unvalidated_success_score_is_none(git_ws: Path) -> None:
 
 
 def test_cascade_failure_score_partial_and_lineage(
-    git_ws: Path, monkeypatch: pytest.MonkeyPatch
+    git_ws: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    declared_hypothesis: dict[str, Any],
 ) -> None:
     set_flag("enable_acceptance_gate", False, persist=False)
     set_flag("enable_lineage_lessons", True, persist=False)
@@ -186,7 +206,12 @@ def _fitness_state() -> dict[str, Any]:
     return load_domain("cascade")
 
 
-def test_solidify_records_fitness_verdict(git_ws: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_solidify_records_fitness_verdict(
+    git_ws: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    armed_pack: dict[str, Any],
+    declared_hypothesis: dict[str, Any],
+) -> None:
     set_flag("enable_acceptance_gate", False, persist=False)
     write_state_for_solidify(_last_run())
     assert solidify()["ok"] is True
@@ -195,6 +220,10 @@ def test_solidify_records_fitness_verdict(git_ws: Path, monkeypatch: pytest.Monk
     assert _fitness_state()["r_best"] == 1.0
 
     # Second run, same score: strict > means no improvement — SHADOW: still ok.
+    # The §5.3 gate consumes the hypothesis record on the first pass, so this
+    # round must re-declare its own claim before re-solidifying.
+    declared_hypothesis["redeclare"]()
+    _rearm_pack_bar(armed_pack)
     write_state_for_solidify(_last_run(run_id="run_s26_2"))
     assert solidify()["ok"] is True
     evt = _last_event()
@@ -202,7 +231,10 @@ def test_solidify_records_fitness_verdict(git_ws: Path, monkeypatch: pytest.Monk
 
 
 def test_fitness_gate_enforce_rolls_back_no_improvement(
-    git_ws: Path, monkeypatch: pytest.MonkeyPatch
+    git_ws: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    armed_pack: dict[str, Any],
+    declared_hypothesis: dict[str, Any],
 ) -> None:
     from evolver.gep.fitness_state import record_measurement
 
@@ -223,7 +255,9 @@ def test_fitness_gate_enforce_rolls_back_no_improvement(
 
 
 def test_harmful_mutation_rejected_end_to_end(
-    git_ws: Path, monkeypatch: pytest.MonkeyPatch
+    git_ws: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    declared_hypothesis: dict[str, Any],
 ) -> None:
     """S26.3 acceptance #2: inject a HARMFUL mutation (one that breaks the
     validation cascade), the gate must veto it, roll the workspace back, and

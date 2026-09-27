@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import subprocess
 from pathlib import Path
+from typing import Any
 
 import pytest
 
@@ -196,7 +197,10 @@ def test_prompt_has_no_wiki_section_when_wiki_empty(evo_dir: Path) -> None:
 
 
 def test_solidify_shadow_rejection_lands_impact_entry(
-    temp_workspace: Path, monkeypatch: pytest.MonkeyPatch
+    temp_workspace: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    armed_pack: dict[str, Any],
+    declared_hypothesis: dict[str, Any],
 ) -> None:
     """Shadow-rejected (no_improvement) mutations land wiki evidence even
     though solidify itself returns ok (shadow period)."""

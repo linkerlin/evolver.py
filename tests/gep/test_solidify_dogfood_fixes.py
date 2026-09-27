@@ -73,7 +73,7 @@ class TestCascadeVenvBinFallback:
             "FITNESS_CASCADE_COMMANDS",
             [{"command": ["ruff", "check", "src"]}],
         )
-        monkeypatch.setattr(solidify.shutil, "which", lambda name: None)
+        monkeypatch.setattr(solidify.shutil, "which", lambda name, path=None: None)
         monkeypatch.setattr(
             solidify, "sys", types.SimpleNamespace(executable=str(bin_dir / "python"))
         )
@@ -90,7 +90,7 @@ class TestCascadeVenvBinFallback:
             "FITNESS_CASCADE_COMMANDS",
             [{"command": ["definitely-missing-tool-xyz", "--version"]}],
         )
-        monkeypatch.setattr(solidify.shutil, "which", lambda name: None)
+        monkeypatch.setattr(solidify.shutil, "which", lambda name, path=None: None)
         monkeypatch.setattr(
             solidify, "sys", types.SimpleNamespace(executable=str(tmp_path / "python"))
         )

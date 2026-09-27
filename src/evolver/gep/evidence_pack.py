@@ -280,7 +280,20 @@ def render_evidence_pack(
     if omitted:
         rows.append(f"... (+{omitted} older family attempts omitted for budget — see events.jsonl)")
 
-    return "\n".join(header + rows + footer)[:max_chars]
+    rendered = "\n".join(header + rows + footer)[:max_chars]
+
+    # 配对会话 §5.2: this text is executor-facing, so the sealed val split
+    # must never ride along. Redaction follows the same honesty rule as the
+    # budget above — counted and announced, never a silent edit.
+    from evolver.gep.val_seal import redact
+
+    rendered, seal_report = redact(rendered, where="evidence_pack")
+    if seal_report.get("redacted"):
+        rendered = (
+            f"{rendered}\n(+{seal_report['redacted']} sealed val string(s) redacted — "
+            "the validation reserve is not design context)"
+        )[:max_chars]
+    return rendered
 
 
 __all__ = [

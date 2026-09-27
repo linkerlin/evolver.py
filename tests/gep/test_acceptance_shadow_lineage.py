@@ -62,7 +62,11 @@ def _accepted() -> AcceptanceResult:
 
 class TestShadowMode:
     def test_shadow_reject_still_solidifies(
-        self, git_ws: Path, monkeypatch: pytest.MonkeyPatch
+        self,
+        git_ws: Path,
+        armed_pack: dict[str, Any],
+        declared_hypothesis: dict[str, Any],
+        monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         monkeypatch.setenv("EVOLVER_FF_ENABLE_ACCEPTANCE_GATE", "true")
         # ACCEPTANCE_SHADOW is an import-time config Final — patch the module
@@ -82,7 +86,11 @@ class TestShadowMode:
         assert acc["reason"] == "T0_frozen_regressed"
 
     def test_enforcing_reject_still_rejects(
-        self, git_ws: Path, monkeypatch: pytest.MonkeyPatch
+        self,
+        git_ws: Path,
+        armed_pack: dict[str, Any],
+        declared_hypothesis: dict[str, Any],
+        monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         monkeypatch.setenv("EVOLVER_FF_ENABLE_ACCEPTANCE_GATE", "true")
         monkeypatch.setattr(solidify_mod, "ACCEPTANCE_SHADOW", False)
@@ -96,7 +104,11 @@ class TestShadowMode:
         assert result["error"] == "acceptance_gate_rejected"
 
     def test_shadow_accept_has_no_shadow_marker(
-        self, git_ws: Path, monkeypatch: pytest.MonkeyPatch
+        self,
+        git_ws: Path,
+        armed_pack: dict[str, Any],
+        declared_hypothesis: dict[str, Any],
+        monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         monkeypatch.setenv("EVOLVER_FF_ENABLE_ACCEPTANCE_GATE", "true")
         monkeypatch.setattr(solidify_mod, "ACCEPTANCE_SHADOW", True)
@@ -187,7 +199,11 @@ class TestLineageLessons:
         assert _build_lineage_lessons("", [{"gene_id": "g1"}]) == ""
 
     def test_event_carries_parent_event_id_when_enabled(
-        self, git_ws: Path, monkeypatch: pytest.MonkeyPatch
+        self,
+        git_ws: Path,
+        armed_pack: dict[str, Any],
+        declared_hypothesis: dict[str, Any],
+        monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         monkeypatch.setenv("EVOLVER_FF_ENABLE_LINEAGE_LESSONS", "true")
         write_state_for_solidify(_last_run())
@@ -196,6 +212,13 @@ class TestLineageLessons:
         # Production lineage chains across runs: every tick writes a fresh
         # run_id, and the duplicate-solidify guard refuses a re-solidify of
         # the same run — so the chained event comes from a new run.
+        # The pack gate publishes only on a strict improvement, so the first
+        # publish raised the bar to 1.0; re-arm the fixture's 0.0 bar to let
+        # the second round publish too (§5.2 — two runs, two bars). The
+        # hypothesis gate consumed the first record, so round two must
+        # re-declare its own claim (§5.3 — one Candidate, one hypothesis).
+        declared_hypothesis["redeclare"]()
+        armed_pack["rearm"]()
         second_run = dict(_last_run(), run_id="run_shadow_2")
         write_state_for_solidify(second_run)
         solidify(skip_validation=True)

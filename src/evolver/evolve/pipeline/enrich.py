@@ -6,13 +6,59 @@ Equivalent to evolver/src/evolve/pipeline/enrich.js.
 from __future__ import annotations
 
 import contextlib
-from typing import Any
+import json
+from typing import Any, Final
 
 from evolver.gep.asset_store import read_recent_failed_capsules
 from evolver.gep.cognition import enrich_cycle_context
 from evolver.gep.hub_gate import enrich_hub_quality
 from evolver.gep.memory_bridge import bidirectional_memory_sync
 from evolver.gep.memory_graph import get_memory_advice, record_signal_snapshot
+
+#: Budget for the library block rendered into the dispatch context. A
+#: snapshot is reference material, not the whole prompt; anything larger is
+#: truncated with an explicit marker rather than silently clipped.
+LIBRARY_BLOCK_MAX_CHARS: Final = 4000
+
+
+def _render_library_block(snap: str, payload: dict[str, Any]) -> str:
+    body = json.dumps(payload, ensure_ascii=False, indent=2, sort_keys=True)
+    if len(body) > LIBRARY_BLOCK_MAX_CHARS:
+        body = body[:LIBRARY_BLOCK_MAX_CHARS] + "\n... (truncated — full text in the library store)"
+    return (
+        "## Published library (read-only design context)\n"
+        f"- active snapshot: `{snap}`\n"
+        "- This is the Parent line's published content. Consult it as design "
+        "context; do NOT edit it and do not treat it as your own draft. The "
+        "comparison runs while `active` still points here — only an Accept "
+        "publishes a new snapshot.\n"
+        f"```json\n{body}\n```"
+    )
+
+
+def _consult_library(ctx: dict[str, Any]) -> None:
+    """Charter §5.4 — the cycle consults the published library.
+
+    The active snapshot rides into the dispatch context as read-only design
+    context for the candidate. Loading never moves ``active`` (only an
+    Accept publishes), and the consulted id lands in ctx so the run record
+    can show WHICH library a candidate was built against while ``active``
+    still pointed at Parent. A missing or damaged library is context loss,
+    never a gate — the block is simply absent.
+    """
+    try:
+        from evolver.gep import library
+
+        snap = library.active_snapshot_id()
+        if not snap:
+            return
+        payload = library.load_active()
+        if payload is None:
+            return
+        ctx["library_active_id"] = snap
+        ctx["library_block"] = _render_library_block(snap, payload)
+    except Exception as exc:  # consultation is context, never a gate
+        ctx["library_block_error"] = str(exc)
 
 
 async def enrich_phase(ctx: dict[str, Any]) -> dict[str, Any]:
@@ -62,6 +108,10 @@ async def enrich_phase(ctx: dict[str, Any]) -> dict[str, Any]:
         ctx["recent_failed_capsules"] = read_recent_failed_capsules(limit=20)
     except Exception:
         ctx["recent_failed_capsules"] = []
+
+    # Charter §5.4: in-cycle consultation of the published library — the
+    # candidate reads the Parent line's snapshot as design context.
+    _consult_library(ctx)
 
     # Capability candidates (Sprint 15.5) — problem:*/action:* expansion + candidates
     try:

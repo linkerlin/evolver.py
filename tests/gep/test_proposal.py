@@ -154,7 +154,7 @@ def test_roundtrip_from_json_file(ws: Path, tmp_path: Path) -> None:
     assert report["files_changed"] == ["src/mod.py"]
 
 
-def test_solidify_with_proposal(ws: Path) -> None:
+def test_solidify_with_proposal(ws: Path, armed_pack: dict, declared_hypothesis: dict) -> None:
     import subprocess
 
     from evolver.gep.solidify import solidify, write_state_for_solidify
@@ -240,7 +240,11 @@ def test_swarm_propose_tool(ws: Path) -> None:
 
 
 def test_cli_solidify_proposal(
-    ws: Path, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+    ws: Path,
+    armed_pack: dict,
+    declared_hypothesis: dict,
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
 ) -> None:
     import subprocess
 

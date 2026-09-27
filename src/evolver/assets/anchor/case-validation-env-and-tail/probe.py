@@ -44,7 +44,10 @@ def main() -> int:
     if parts[0] != str(Path(sys.executable).parent):
         print(f"FAIL: venv bin not prepended: {parts[0]}")
         return 1
-    if "/usr/bin" not in parts:
+    # The inherited PATH string must survive verbatim. Split-membership is
+    # wrong cross-platform: os.pathsep is ";" on Windows, so a POSIX-style
+    # inherited value ("'/usr/bin:/bin'") stays one element there.
+    if "/usr/bin" not in env["PATH"]:
         print("FAIL: inherited entries dropped")
         return 1
 

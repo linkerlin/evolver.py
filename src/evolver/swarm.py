@@ -163,16 +163,36 @@ solidify 验证门真实落盘或回滚。
    改动。无 Evidence Pack 的族是新颖信号，照常执行所选基因。
 3. `swarm_distill` — 把你的工作产出（提示词要求的 JSON 资产块 + 变更摘要）
    作为 `response_text` 提交，蒸馏安装为 Gene/Capsule 候选。
-4. `swarm_solidify` — 触发验证门（ruff→mypy→pytest 级联 + 锚 + 验收门 +
-   **冻结任务包门**）并固化。冻结包门（状态见第六章 `bench_pack_gate`）：
-   `armed=true` 时，固化前逐题完成冻结包 `val` 任务——对每题调用
-   `evolver bench prompt <task-id> --pack <frozen 路径>`，在题面沙箱内写出
-   交付物（评分规则在仓外锚侧，环内只读，不得改动冻结包或其沙箱以外的
-   评分面）；包分低于基线，本轮变异即被拒绝回滚。`armed=false` 时先执行
-   一次 `evolver bench freeze`（确定性安装动作，非变异），下一轮起门即
-   生效。失败时阅读返回的 `failure_mode`（`mode`/`reasonClass`/`retryable`）：
+4. `swarm_solidify` — 触发验证门（假说→密封→ruff→mypy→pytest 级联 + 锚 +
+   验收门 + **冻结 val 包门**）并固化。
+   **先交假说**：`solidify` 之前调用 `swarm_hypothesis` 记录本轮候选的唯一
+   一条假说（字段：`hypothesis` 叙述、`dimension` 限 `content`/`tool`/`schema`
+   即内容 / 工具 / 图式、`mechanism_family`、`target_hook` 作用点、
+   `mechanism_check` 只引用 **train** 题 id）。`swarm_propose` 与
+   `swarm_solidify` 亦可带 `hypothesis` 参数就地记录——无论如何，记录发生在
+   变异生效之前。没有假说的候选不会进入 val 门，直接拒绝；引擎不代写假说，
+   因为「要改什么」只有宿主知道。
+   **密封**：`val` 的题面与期望答案是禁用材料。它们不得出现在
+   `dispatch_prompt`、Evidence Pack、任何提案（含 `swarm_propose`）或本轮
+   讨论里；`train` 是诊断池，可以看。
+   **val 包门**（状态见第六章 `bench_pack_gate`）：`armed=true` 时，固化前
+   该冻结包 `val` 题须被**独立求解两遍**（`sandboxes/r1`、`sandboxes/r2`）。
+   **不得由你（写下本轮候选的这场对话）来解 val**——题面一旦回到候选
+   诞生的上下文，密封就失效了；求解在另一上下文完成，评分只读已经写好的
+   沙箱。在那个上下文就位之前，`val` 沙箱不全即是 `unmeasured`，门拒绝、
+   基线不动——这是符合章程的结果，不是故障。**基线不由候选书写**：首轮
+   没有 Accept 之前没有基线，任何测量都拒绝（`no_baseline`）；Parent 的
+   分数由不带变异的独立测量建立（`evolver bench baseline`），solidify
+   触不到它。两遍分数都必须**严格高于**基线才放行；持平、降分、任一遍
+   没做完、门异常，一律拒绝回滚，基线不动。
+   `armed=false` 时先执行一次 `evolver bench freeze`（确定性安装动作，非
+   变异），下一轮起门即生效。失败时阅读返回的 `failure_mode`（`mode`/`reasonClass`/`retryable`）：
    `retryable=true` 时 repair bias 已自动注入下一轮选择，直接回到步骤 1；
    `retryable=false` 则停止并报告，不得重试同一变异。
+   **会话账本**：每次固化的结果（含拒绝）都写入配对会话（§5.1）——拒绝
+   是一条 Reject，会话保持 `running`；返回里的 `session` 字段是当前轮次、
+   累计 Reject 与剩余预算。会话的 Accept 只在门给出 `accept: true` 后由
+   人执行 `evolver session accept` 成立。
 5. `swarm_feedback` — 每轮执行后诚实上报统一评估信号 E：
    `primary_score`（0-1）、`metrics`（可选多维诊断）、`textual_gradient`
    （自然语言方向——什么有效/什么没用）。低分或失败会自动注入下轮
@@ -715,14 +735,105 @@ def _pending_solidify_run_id() -> str:
     return _pending_solidify_meta()["run_id"] or "unknown"
 
 
-def swarm_propose(proposal: dict[str, Any], agent_name: str = "host-agent") -> dict[str, Any]:
+def _hypothesis_payload(payload: dict[str, Any], run_id: str) -> dict[str, Any]:
+    """Stamp the pending run id onto a host-supplied hypothesis."""
+    stored = dict(payload)
+    if run_id and run_id != "unknown":
+        stored.setdefault("run_id", run_id)
+    return stored
+
+
+def _record_host_hypothesis(payload: dict[str, Any]) -> dict[str, Any]:
+    """Persist the host's hypothesis (演进方案.md §5.3).
+
+    Soft failure by contract: a malformed record is a host fixable error, not
+    an engine crash. The host learns the shape here, before paying for a round.
+    Recording never passes the gate - the gate re-reads what landed on disk.
+    """
+    from evolver.gep import hypothesis as hypothesis_mod
+
+    try:
+        path = hypothesis_mod.record_hypothesis(payload)
+    except hypothesis_mod.HypothesisError as exc:
+        return {
+            "ok": False,
+            "error": "hypothesis_rejected",
+            "message": str(exc),
+            "failure_mode": {
+                "mode": "soft",
+                "reasonClass": "hypothesis_rejected",
+                "retryable": True,
+            },
+            "next_action": "swarm_tick",
+        }
+    except Exception as exc:
+        return {
+            "ok": False,
+            "error": "hypothesis_unwritable",
+            "message": str(exc),
+            "failure_mode": {
+                "mode": "soft",
+                "reasonClass": "hypothesis_unwritable",
+                "retryable": True,
+            },
+            "next_action": "swarm_tick",
+        }
+    return {"ok": True, "hypothesis_path": str(path), "next_action": "swarm_solidify"}
+
+
+def swarm_hypothesis(hypothesis: dict[str, Any], agent_name: str = "host-agent") -> dict[str, Any]:
+    """Declare this Candidate's one primary hypothesis (演进方案.md §5.3).
+
+    The host owns the hypothesis: only the executor knows what it intends to
+    change, so the engine never invents one on its behalf. Fields are
+    ``hypothesis`` / ``dimension`` (content|tool|schema) / ``mechanism_family``
+    / ``target_hook`` / ``mechanism_check`` (train refs only - the validation
+    reserve is sealed).
+
+    Declaring is not passing: the gate re-reads the record and can still refuse.
+    """
+    if not isinstance(hypothesis, dict):
+        return {
+            "ok": False,
+            "error": "hypothesis_rejected",
+            "message": "hypothesis must be a JSON object",
+            "failure_mode": {
+                "mode": "soft",
+                "reasonClass": "hypothesis_rejected",
+                "retryable": True,
+            },
+            "next_action": "swarm_tick",
+        }
+    result = _record_host_hypothesis(
+        _hypothesis_payload(hypothesis, _pending_solidify_meta()["run_id"])
+    )
+    if result.get("ok"):
+        result["agent_name"] = agent_name
+    return result
+
+
+def swarm_propose(
+    proposal: dict[str, Any],
+    agent_name: str = "host-agent",
+    hypothesis: dict[str, Any] | None = None,
+) -> dict[str, Any]:
     """Apply a GeneProposal mechanically with anchor validation.
 
     S29 mechanical mutation application: validate-all-first, exact unique anchor
     matching, fail-safe against hallucinations.
+
+    ``hypothesis`` (§5.3) is recorded *before* the proposal is applied: the
+    claim about what changes must exist before the change itself.
     """
     from evolver.gep.paths import get_workspace_root
     from evolver.gep.proposal import apply_proposal, parse_proposal
+
+    if hypothesis is not None:
+        recorded = _record_host_hypothesis(
+            _hypothesis_payload(hypothesis, _pending_solidify_meta()["run_id"])
+        )
+        if not recorded.get("ok"):
+            return recorded
 
     try:
         parsed = parse_proposal(proposal)
@@ -759,6 +870,7 @@ def swarm_solidify(
     skip_validation: bool = False,
     agent_name: str = "host-agent",
     proposal: dict[str, Any] | None = None,
+    hypothesis: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Run the solidify gate (validations + acceptance gate + commit/rollback).
 
@@ -766,6 +878,8 @@ def swarm_solidify(
     the HITL gate inside ``solidify()``. ``EVOLVER_HITL_MODE=on`` (or auto-hijack)
     blocks until a human approves; timeout fails safe to reject.
     Optionally accepts a ``proposal`` to mechanically apply before gating (S29).
+    ``hypothesis`` (§5.3) is recorded before gating; the host that declines to
+    state a claim is refused by the gate rather than measured anyway.
     """
     from evolver.config import SWARM_TICK_LOG_MAX_CHARS
     from evolver.gep import supervision
@@ -773,6 +887,12 @@ def swarm_solidify(
 
     meta = _pending_solidify_meta()
     run_id = meta["run_id"]
+
+    if hypothesis is not None:
+        recorded = _record_host_hypothesis(_hypothesis_payload(hypothesis, run_id))
+        if not recorded.get("ok"):
+            return recorded
+
     if skip_validation and (not run_id or run_id == "unknown"):
         return {
             "ok": False,

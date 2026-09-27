@@ -19,6 +19,7 @@ import time
 from pathlib import Path
 from typing import Any
 
+from evolver.bench.frozen_gate import sandbox_root
 from evolver.bench.prompts import inference_prompt
 from evolver.bench.scoring import grade
 from evolver.bench.tasks import materialize, validate_tasks
@@ -125,29 +126,40 @@ def load_pack(path: Path) -> list[dict[str, Any]]:
     return tasks
 
 
-def _pack_sandbox_root(pack_path: Path) -> Path:
-    """Sandboxes live next to the pack: <pack-dir>/sandboxes/<task-id>/."""
-    return pack_path.resolve().parent / "sandboxes"
+def _pack_sandbox_root(pack_path: Path, *, replicate: int | None = None) -> Path:
+    """Sandboxes live next to the pack: ``<pack-dir>/sandboxes[/r<N>]/<task-id>/``.
+
+    ``replicate`` selects an independent solve slot (演进方案.md §5.2). The
+    small-pack gate scores the host's val work twice, into ``r1`` and ``r2``,
+    so a single lucky run cannot carry a publication.
+    """
+    return sandbox_root(pack_path, replicate=replicate)
 
 
-def pack_prompt(pack_path: Path, task_id: str) -> str:
+def pack_prompt(pack_path: Path, task_id: str, *, replicate: int | None = None) -> str:
     """Materialize the task sandbox (force — stale artifacts deleted) and
     return the inference prompt for an external agent. The engine never runs
-    an agent; the prompt is the interface (bridge-mode contract)."""
+    an agent; the prompt is the interface (bridge-mode contract).
+
+    Solve the same task once per replicate: each slot is materialized afresh
+    and scored independently.
+    """
     tasks = {str(t["id"]): t for t in load_pack(pack_path)}
     if task_id not in tasks:
         raise ValueError(f"task {task_id!r} not in pack")
-    sandbox = materialize(tasks[task_id], _pack_sandbox_root(pack_path), force=True)
+    sandbox = materialize(
+        tasks[task_id], _pack_sandbox_root(pack_path, replicate=replicate), force=True
+    )
     return inference_prompt(tasks[task_id], sandbox)
 
 
-def grade_pack_task(pack_path: Path, task_id: str) -> float:
+def grade_pack_task(pack_path: Path, task_id: str, *, replicate: int | None = None) -> float:
     """Grade one pack task's deliverable (no ledger write — single 0/1 scores
     never move r_best; use run_pack for the aggregated measurement)."""
     tasks = {str(t["id"]): t for t in load_pack(pack_path)}
     if task_id not in tasks:
         raise ValueError(f"task {task_id!r} not in pack")
-    sandbox = _pack_sandbox_root(pack_path) / task_id
+    sandbox = _pack_sandbox_root(pack_path, replicate=replicate) / task_id
     if not sandbox.exists():
         raise ValueError(f"sandbox missing: {sandbox} (run 'bench prompt' first)")
     return grade(tasks[task_id], sandbox)
@@ -160,6 +172,7 @@ def run_pack(
     record: bool = True,
     source: str = "bench",
     output: Path | None = None,
+    replicate: int | None = None,
 ) -> dict[str, Any]:
     """Grade every task in the pack for *split* (S26.4: gate ONLY on val) and
     feed the aggregated R into the fitness ledger.
@@ -167,9 +180,10 @@ def run_pack(
     Tasks whose sandbox does not exist yet are reported as ``pending`` (their
     prompt has not been run by an agent) and excluded from the score.
     ``output`` persists the per-task results for ``bench compare``.
+    ``replicate`` selects which independent solve slot to grade.
     """
     tasks = [t for t in load_pack(pack_path) if t["split"] == split]
-    root = _pack_sandbox_root(pack_path)
+    root = _pack_sandbox_root(pack_path, replicate=replicate)
     per_task: list[dict[str, Any]] = []
     earned = 0.0
     counted = 0

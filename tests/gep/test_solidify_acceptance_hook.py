@@ -125,8 +125,11 @@ class TestFlagOff:
         self,
         git_ws: Path,
         monkeypatch: pytest.MonkeyPatch,
+        armed_pack: dict[str, Any],
+        declared_hypothesis: dict[str, Any],
     ) -> None:
         _ = git_ws  # fixture side-effects (env + git repo) only
+        _ = armed_pack, declared_hypothesis
         monkeypatch.setenv("EVOLVER_FF_ENABLE_ACCEPTANCE_GATE", "0")
         called: list[bool] = []
         _patch_gate(monkeypatch, _accepted(), called=called)
@@ -141,10 +144,19 @@ class TestFlagOff:
 
 
 class TestGateReject:
-    """Enforcement path — shadow mode (S26 default) must be off here."""
+    """Enforcement path — shadow mode (S26 default) must be off here.
 
-    def test_reject_returns_error(self, git_ws: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    These cases assert the ACCEPTANCE gate, not the §5.2/§5.3 gates, so they
+    declare a hypothesis (the hypothesis gate sits upstream of the acceptance
+    gate and would otherwise veto before the gate under test is reached) but
+    deliberately do not arm a pack — the acceptance gate is evaluated first.
+    """
+
+    def test_reject_returns_error(
+        self, git_ws: Path, monkeypatch: pytest.MonkeyPatch, declared_hypothesis: dict[str, Any]
+    ) -> None:
         _ = git_ws
+        _ = declared_hypothesis
         monkeypatch.setenv("EVOLVER_FF_ENABLE_ACCEPTANCE_GATE", "1")
         monkeypatch.setattr(solidify_mod, "ACCEPTANCE_SHADOW", False)
         _patch_gate(monkeypatch, _rejected())
@@ -155,8 +167,9 @@ class TestGateReject:
         assert result["details"]["acceptance"]["accepted"] is False
 
     def test_reject_rolls_back_working_tree(
-        self, git_ws: Path, monkeypatch: pytest.MonkeyPatch
+        self, git_ws: Path, monkeypatch: pytest.MonkeyPatch, declared_hypothesis: dict[str, Any]
     ) -> None:
+        _ = declared_hypothesis
         monkeypatch.setenv("EVOLVER_FF_ENABLE_ACCEPTANCE_GATE", "1")
         monkeypatch.setattr(solidify_mod, "ACCEPTANCE_SHADOW", False)
         _patch_gate(monkeypatch, _rejected())
@@ -164,15 +177,21 @@ class TestGateReject:
         write_state_for_solidify(_last_run())
         result = solidify(skip_validation=True)
         assert result["ok"] is False
+        assert result["error"] == "acceptance_gate_rejected"
         # rollback_tracked (stash) restored the committed version
         assert patched.read_text(encoding="utf-8") == "patched\n"
 
 
 class TestGateAccept:
     def test_accept_attaches_result_to_event(
-        self, git_ws: Path, monkeypatch: pytest.MonkeyPatch
+        self,
+        git_ws: Path,
+        monkeypatch: pytest.MonkeyPatch,
+        armed_pack: dict[str, Any],
+        declared_hypothesis: dict[str, Any],
     ) -> None:
         _ = git_ws
+        _ = armed_pack, declared_hypothesis
         monkeypatch.setenv("EVOLVER_FF_ENABLE_ACCEPTANCE_GATE", "1")
         _patch_gate(monkeypatch, _accepted())
         write_state_for_solidify(_last_run())

@@ -22,11 +22,13 @@ from evolver.swarm import (
     swarm_feedback,
     swarm_hook_event,
     swarm_hooks,
+    swarm_hypothesis,
     swarm_report,
     swarm_solidify,
     swarm_status,
     swarm_tick,
 )
+from tests.conftest import SYNTHETIC_TRAIN_ID, synth_hypothesis
 
 
 @pytest.fixture
@@ -158,8 +160,20 @@ class TestBootAndStatus:
         assert "PROPOSAL REQUIRED" in prompt
         assert "必须" in prompt and "swarm_propose" in prompt
         assert "自由编辑仅限新颖信号与结构性" in prompt
-        assert "冻结任务包门" in prompt
-        assert "evolver bench prompt" in prompt
+        # §5.2 renamed the gate in the instrument when the val reserve was
+        # sealed: it is the frozen **val** pack that gates, and its protocol
+        # (two independent solves, both strictly above the bar) is spelled out
+        # here rather than left to the host's imagination.
+        assert "冻结 val 包门" in prompt
+        # §5.2 round-85: the candidate-writing host must NOT solve val — the
+        # instrument must not hand it the per-task prompt command any more.
+        # Val solving lives in a separate context; scoring reads the
+        # sandboxes as they stand, and an unsolved split is `unmeasured`.
+        assert "evolver bench prompt" not in prompt
+        assert "另一上下文" in prompt
+        assert "unmeasured" in prompt
+        assert "no_baseline" in prompt
+        assert "evolver bench baseline" in prompt
         assert "evolver bench freeze" in prompt
         assert "bench_pack_gate" in prompt
 
@@ -174,6 +188,71 @@ class TestBootAndStatus:
         assert set(status["mailbox_pending"]) == {"inbound", "outbound"}
         # Fresh env: no frozen pack → the charter gate reports unarmed.
         assert status["bench_pack_gate"]["armed"] is False
+
+
+class TestSwarmHypothesis:
+    """演进方案 §5.3 — the host declares this Candidate's one hypothesis.
+
+    The tool is a recorder, not a judge: it enforces the record's SHAPE and
+    leaves the ref-provenance verdict to the gate, which re-reads what landed
+    on disk. Declaring is not passing, and a malformed declaration is a
+    host-fixable soft failure — never a crash that kills the round.
+    """
+
+    def test_valid_record_lands_on_disk(self, temp_workspace: Path) -> None:
+        from evolver.gep import hypothesis as hypothesis_mod
+
+        result = swarm_hypothesis(synth_hypothesis())
+        assert result["ok"] is True
+        assert result["next_action"] == "swarm_solidify"
+        # Landed, not merely accepted: the gate re-reads this file.
+        stored = hypothesis_mod.load_hypothesis()
+        assert stored is not None
+        assert stored["dimension"] == "content"
+        assert [ref["id"] for ref in stored["mechanism_check"]] == [SYNTHETIC_TRAIN_ID]
+        assert Path(result["hypothesis_path"]) == hypothesis_mod.hypothesis_path()
+
+    def test_bad_dimension_soft_rejected(self, temp_workspace: Path) -> None:
+        result = swarm_hypothesis(synth_hypothesis(dimension="vibes"))
+        assert result["ok"] is False
+        assert result["error"] == "hypothesis_rejected"
+        # Soft + retryable: the host fixes the record and declares again.
+        assert result["failure_mode"]["mode"] == "soft"
+        assert result["failure_mode"]["retryable"] is True
+        assert result["next_action"] == "swarm_tick"
+
+    def test_non_dict_rejected(self, temp_workspace: Path) -> None:
+        from evolver.gep import hypothesis as hypothesis_mod
+
+        result = swarm_hypothesis("a bare claim is not a record")
+        assert result["ok"] is False
+        assert result["error"] == "hypothesis_rejected"
+        assert "JSON object" in result["message"]
+        assert hypothesis_mod.load_hypothesis() is None
+
+    def test_mechanism_check_citing_val_is_refused(
+        self, temp_workspace: Path, armed_pack: dict[str, Any]
+    ) -> None:
+        """The record is field-valid, so recording succeeds — but the gate
+        re-reads it and refuses: the validation reserve is sealed, so a val id
+        is not evidence a round may cite."""
+        from evolver.gep import hypothesis as hypothesis_mod
+
+        result = swarm_hypothesis(
+            synth_hypothesis(
+                mechanism_check=[
+                    {"id": "fixture-val-1", "before": 0.0, "after": 1.0}  # a val id
+                ]
+            )
+        )
+        assert result["ok"] is True  # declaring is not passing
+        ok, reason, detail = hypothesis_mod.validate_for_gate(hypothesis_mod.load_hypothesis())
+        assert ok is False
+        assert reason == hypothesis_mod.REASON_VAL_REF
+        assert detail["val_refs"] == ["fixture-val-1"]
+        # Same refusal through the exception path solidify actually hits.
+        with pytest.raises(hypothesis_mod.HypothesisError, match="fixture-val-1"):
+            hypothesis_mod.require_for_gate(hypothesis_mod.load_hypothesis())
 
 
 class TestTick:

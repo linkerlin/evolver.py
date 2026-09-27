@@ -37,4 +37,6 @@ class TestSoakRoutingNotInherited:
         env = validation_env()
         parts = env["PATH"].split(os.pathsep)
         assert parts[0] == str(Path(sys.executable).parent), "PATH normalization is untouched"
-        assert "/usr/bin" in parts, "inherited PATH entries are never dropped"
+        # Substring, not split membership: os.pathsep is ";" on Windows, so a
+        # POSIX-style inherited value stays one element there.
+        assert "/usr/bin" in env["PATH"], "inherited PATH entries are never dropped"

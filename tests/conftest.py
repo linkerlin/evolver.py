@@ -216,3 +216,174 @@ def temp_workspace(monkeypatch: pytest.MonkeyPatch) -> Path:
         monkeypatch.setenv("EVOLVER_SETTINGS_DIR", str(ws / ".evolver_settings"))
         monkeypatch.setenv("EVOLVER_HOME", str(ws / ".evomap"))
         yield ws
+
+
+#: Two synthetic val tasks (exact graders, no subprocess) — enough for the
+#: replicate rule, since a small val split needs two independent solves — plus
+#: one train task. The train task is not decoration: with the pack armed, a
+#: §5.3 hypothesis may only cite train ids, so a val-only pack would make
+#: every hypothesis unprovable.
+SYNTHETIC_VAL_PACK: dict[str, Any] = {
+    "pack_version": 1,
+    "tasks": [
+        {
+            "id": "fixture-val-1",
+            "split": "val",
+            "title": "fixture val task 1",
+            "prompt": "Write x to out.txt.",
+            "sandbox": {"in.txt": "seed\n"},
+            "grader": {"type": "exact", "file": "out.txt", "expected": "x"},
+        },
+        {
+            "id": "fixture-val-2",
+            "split": "val",
+            "title": "fixture val task 2",
+            "prompt": "Write x to out.txt.",
+            "sandbox": {"in.txt": "seed\n"},
+            "grader": {"type": "exact", "file": "out.txt", "expected": "x"},
+        },
+        {
+            "id": "fixture-train-1",
+            "split": "train",
+            "title": "fixture train task 1",
+            "prompt": "Write x to out.txt.",
+            "sandbox": {"in.txt": "seed\n"},
+            "grader": {"type": "exact", "file": "out.txt", "expected": "x"},
+        },
+    ],
+}
+
+SYNTHETIC_TRAIN_ID: str = "fixture-train-1"
+
+
+def synth_hypothesis(**overrides: Any) -> dict[str, Any]:
+    """A well-formed §5.3 hypothesis citing the synthetic pack's train task.
+
+    The mechanism check must be a *replayed observation*, not a shopping list
+    of ids: each citation names the train task, what was run (``before``) and
+    what changed (``after``). With the pack armed the ids must be train ids;
+    without one the ref check defers and only the field discipline binds.
+    """
+    payload: dict[str, Any] = {
+        "hypothesis": "the change under test behaves as this case asserts",
+        "dimension": "content",
+        "mechanism_family": "test-fixture",
+        "target_hook": "tests/",
+        "mechanism_check": [
+            {
+                "id": SYNTHETIC_TRAIN_ID,
+                "before": "fixture train task graded 0 in its sandbox",
+                "after": "replayed after the change — the sandbox deliverable changed",
+            }
+        ],
+    }
+    payload.update(overrides)
+    return payload
+
+
+@pytest.fixture
+def declared_hypothesis(temp_workspace: Path) -> dict[str, Any]:
+    """Record one valid hypothesis for this round (演进方案.md §5.3).
+
+    Separate from ``armed_pack`` on purpose: the two gates are genuinely
+    different contracts — one says "there is an external bar", the other says
+    "this round stated a claim".
+
+    The gate CONSUMES the record (solidify clears it once it passes), so a
+    test that solidifies a second time must call ``payload["redeclare"]()``
+    first — one Candidate, one hypothesis, and a leftover claim from the
+    previous round must not clear this round's bar.
+    """
+    from evolver.gep import hypothesis as hypothesis_mod
+
+    def declare(**overrides: Any) -> dict[str, Any]:
+        payload = synth_hypothesis(**overrides)
+        hypothesis_mod.record_hypothesis(payload)
+        return payload
+
+    payload = declare()
+    payload["redeclare"] = declare  # type: ignore[assignment]
+    return payload
+
+
+@pytest.fixture
+def armed_pack(temp_workspace: Path) -> dict[str, Any]:
+    """Arm the frozen val pack with a Parent bar the candidate can clear (§5.2).
+
+    The gate publishes ONLY on a strict improvement over the last ACCEPTED
+    score, and a measurement never writes its own result into the bar. So
+    this fixture writes a two-task synthetic pack, fills both replicate slots
+    deliberately wrong, and sets the Parent bar at 0.0 through the ONLY
+    first-baseline writer — :func:`establish_parent_baseline`, the separate
+    mutation-free measurement solidify cannot reach. It then fills both slots
+    correctly so the next verdict accepts at 1.0.
+
+    Tests asserting the gate's OWN behaviour must not request this fixture —
+    they need the unarmed or unmeasured state to say anything.
+    """
+    import json
+
+    from evolver.bench import frozen_gate
+
+    pack_path = frozen_gate.frozen_pack_path()
+    pack_path.parent.mkdir(parents=True, exist_ok=True)
+    pack_path.write_text(json.dumps(SYNTHETIC_VAL_PACK, indent=2) + "\n", encoding="utf-8")
+
+    def _fill(text: str) -> None:
+        for index in (1, 2):
+            root = frozen_gate.sandbox_root(pack_path, replicate=index)
+            for task in SYNTHETIC_VAL_PACK["tasks"]:
+                slot = root / str(task["id"])
+                slot.mkdir(parents=True, exist_ok=True)
+                (slot / "out.txt").write_text(text, encoding="utf-8")
+
+    _fill("wrong")
+    parent = frozen_gate.establish_parent_baseline()
+    assert parent.get("ok") is True, parent
+    _fill("x")
+
+    def rearm(bar: float = 0.0) -> dict[str, Any] | None:
+        """Re-lower the bar so another publish is possible in one test.
+
+        Accepting raises the baseline to the candidate's score, so a second
+        ``solidify()`` in the same test would otherwise be judged ``flat``.
+        Only re-set the bar - never the pack - so the digest still binds.
+
+        The v1 baseline carries the Parent's per-task floors; saving without
+        them reads as ``baseline_without_per_task`` and the no-regression
+        assertion refuses the round. Floors ride along at the re-armed bar,
+        which is exactly as permissive as the pre-round-86 shape was.
+
+        Deliberately does NOT call ``gate_verdict()``: that would consume the
+        accept this re-arm exists to make possible.
+        """
+        val_ids = [str(t["id"]) for t in SYNTHETIC_VAL_PACK["tasks"] if t.get("split") == "val"]
+        frozen_gate.save_baseline(
+            bar, frozen_gate.pack_digest(pack_path), per_task=dict.fromkeys(val_ids, bar)
+        )
+        return frozen_gate.load_baseline()
+
+    def rebind() -> dict[str, Any] | None:
+        """Re-write the current bar under the CURRENTLY installed protocol.
+
+        ``anchor init`` re-seeds the suite inside a test; a bar measured
+        before the re-seed is refused as ``protocol_drift``. A human answers
+        by re-measuring the Parent; the fixture equivalent is re-saving the
+        same bar so it binds the freshly installed epoch.
+        """
+        current = frozen_gate.load_baseline()
+        score = float(current["score"]) if current else 0.0
+        per_task = dict(current.get("per_task") or {}) if current else {}
+        if not per_task:
+            per_task = {
+                str(t["id"]): 0.0 for t in SYNTHETIC_VAL_PACK["tasks"] if t.get("split") == "val"
+            }
+        frozen_gate.save_baseline(score, frozen_gate.pack_digest(pack_path), per_task=per_task)
+        return frozen_gate.load_baseline()
+
+    return {
+        "pack": str(pack_path),
+        "parent": parent,
+        "rearm": rearm,
+        "rebind": rebind,
+    }

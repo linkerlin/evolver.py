@@ -16,7 +16,7 @@ import subprocess
 import sys
 import time
 from pathlib import Path
-from typing import Any
+from typing import Any, Final
 
 from evolver.config import (
     ACCEPTANCE_SHADOW,
@@ -555,45 +555,100 @@ def _apply_acceptance_gate(
     }
 
 
-def _apply_bench_pack_gate(
+def _hypothesis_rejection(
     last_run: dict[str, Any],
     cwd: Path,
-    *,
-    validation_result: dict[str, Any] | None = None,
-) -> tuple[dict[str, Any] | None, dict[str, Any] | None]:
-    """Charter 外部适应度 (2026-09-24): the frozen bench pack as an additional
-    acceptance condition — a pack-score drop rejects this mutation; flat or
-    up passes. Scoring rules live anchor-side, read-only in-cycle; an absent
-    or unusable pack leaves the gate inactive (solidify unchanged). Returns
-    ``(rejection, verdict)`` — the verdict (when armed) rides onto the event
-    either way. Gate-side trouble degrades to inactive, never breaks
-    solidify."""
-    try:
-        from evolver.bench.frozen_gate import gate_verdict
+    reason: str,
+) -> dict[str, Any]:
+    """配对会话 §5.3: refuse a Candidate that never stated one hypothesis.
 
-        verdict = gate_verdict()
-    except Exception:
-        logger.warning("[bench-pack-gate] inactive (gate error)", exc_info=True)
-        return None, None
-    if verdict is None:
-        return None, None
-    if verdict.get("verdict") != "reject":
-        return None, verdict
-
-    score = verdict.get("score")
+    Checked before the val gate and before the expensive cascade: a Candidate
+    that cannot say what it is testing does not get to be measured, and its
+    absence of a claim must never be laundered into a publish by scoring.
+    """
     failed_blast = _compute_blast_radius()
     rollback_tracked(cwd=cwd, include_untracked=False)
     rollback_new_untracked_files(_disposable_untracked(cwd), cwd=cwd)
-    record_solidify_failure(last_run, error="bench_pack_rejected", score=score)
-    _wiki_rejection("bench_pack_rejected", last_run, score=score)
+    record_solidify_failure(last_run, error="hypothesis_missing", score=None)
+    failure = _failure_event(
+        last_run,
+        last_run.get("mutation", {}),
+        failed_blast,
+        {"status": "failed", "error": "hypothesis_missing", "detail": reason},
+        validation_result=None,
+    )
+    append_event_jsonl(failure)
+    return {
+        "ok": False,
+        "error": "hypothesis_missing",
+        # Same soft-failure contract as the pack gate: the round is over but
+        # the loop keeps running with repair bias.
+        "failure_mode": {"mode": "soft", "reasonClass": "hypothesis", "retryable": True},
+        "next_action": "swarm_tick",
+        "details": {"hypothesis": reason},
+    }
+
+
+def _seal_rejection(
+    last_run: dict[str, Any],
+    cwd: Path,
+    where: str,
+    reason: str,
+) -> dict[str, Any]:
+    """配对会话 §5.2: a Candidate whose context carried val material."""
+    failed_blast = _compute_blast_radius()
+    rollback_tracked(cwd=cwd, include_untracked=False)
+    rollback_new_untracked_files(_disposable_untracked(cwd), cwd=cwd)
+    record_solidify_failure(last_run, error="val_seal_breach", score=None)
     failure = _failure_event(
         last_run,
         last_run.get("mutation", {}),
         failed_blast,
         {
             "status": "failed",
-            "score": score,
+            "error": "val_seal_breach",
+            "where": where,
+            "detail": reason,
+        },
+        validation_result=None,
+    )
+    append_event_jsonl(failure)
+    return {
+        "ok": False,
+        "error": "val_seal_breach",
+        "failure_mode": {"mode": "soft", "reasonClass": "val_seal", "retryable": True},
+        "next_action": "swarm_tick",
+        "details": {"val_seal": {"where": where, "detail": reason}},
+    }
+
+
+def _bench_pack_rejection(
+    last_run: dict[str, Any],
+    cwd: Path,
+    verdict: dict[str, Any],
+    validation_result: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    """Roll back and build the rejection for a Candidate that missed the bar.
+
+    Shared by every non-accept outcome (drop, flat, unmeasured, a damaged
+    gate, an absent pack) — one code path so none of them can quietly differ
+    in whether it rolls back or records a failure.
+    """
+    failed_blast = _compute_blast_radius()
+    rollback_tracked(cwd=cwd, include_untracked=False)
+    rollback_new_untracked_files(_disposable_untracked(cwd), cwd=cwd)
+    reason = str(verdict.get("reason") or "unknown")
+    record_solidify_failure(last_run, error="bench_pack_rejected", score=verdict.get("score"))
+    _wiki_rejection("bench_pack_rejected", last_run, score=verdict.get("score"))
+    failure = _failure_event(
+        last_run,
+        last_run.get("mutation", {}),
+        failed_blast,
+        {
+            "status": "failed",
+            "score": verdict.get("score"),
             "error": "bench_pack_rejected",
+            "pack_reason": reason,
         },
         validation_result=validation_result,
         bench_pack=verdict,
@@ -603,17 +658,64 @@ def _apply_bench_pack_gate(
     append_event_jsonl(failure)
     _maybe_record_variant(failure, validation_result)
     _maybe_open_diagnostic_entry(failure, validation_result)
-    rejection: dict[str, Any] = {
+    return {
         "ok": False,
         "error": "bench_pack_rejected",
-        # A fitness floor is not a crash: the mutation is rolled back and the
-        # loop continues with repair bias (structured field mirrors prose —
+        # A failed fitness bar is not a crash: the mutation is rolled back and
+        # the loop continues with repair bias (structured field mirrors prose —
         # round-57 lesson; the swarm wrapper only fills absent keys).
         "failure_mode": {"mode": "soft", "reasonClass": "bench_pack", "retryable": True},
         "next_action": "swarm_tick",
         "details": {"bench_pack": verdict},
     }
-    return rejection, verdict
+
+
+def _apply_bench_pack_gate(
+    last_run: dict[str, Any],
+    cwd: Path,
+    *,
+    validation_result: dict[str, Any] | None = None,
+    declaration: dict[str, Any] | None = None,
+) -> tuple[dict[str, Any] | None, dict[str, Any] | None]:
+    """Charter 配对会话 (2026-09-26 §5.2): the frozen val pack decides.
+
+    ONLY a strict improvement over the Parent publishes. Drop, flat,
+    unmeasured, an absent pack, a voided baseline, and a damaged gate are all
+    rejections — and a rejection never moves the baseline. The previous rule
+    ("flat or up passes; an unusable pack degrades to inactive") is precisely
+    what allowed a mutation that merely retuned the measuring instrument to
+    ship. Returns ``(rejection, verdict)``; the verdict rides onto the event
+    either way.
+
+    Gate-side trouble no longer means "the experiment may proceed": if the
+    instrument is broken the honest answer is "we measured nothing", not
+    "we measured fine".
+    """
+    try:
+        from evolver.bench.frozen_gate import gate_verdict
+
+        verdict = gate_verdict(declaration=declaration)
+    except Exception:
+        logger.warning("[bench-pack-gate] evaluation failed — rejecting", exc_info=True)
+        verdict = {
+            "armed": False,
+            "accept": False,
+            "verdict": "reject",
+            "reason": "gate_error",
+        }
+
+    if verdict is None or not isinstance(verdict, dict):
+        verdict = {
+            "armed": False,
+            "accept": False,
+            "verdict": "reject",
+            "reason": "gate_error",
+        }
+
+    if verdict.get("verdict") == "accept" and verdict.get("accept") is True:
+        return None, verdict
+
+    return _bench_pack_rejection(last_run, cwd, verdict, validation_result), verdict
 
 
 def _maybe_record_variant(
@@ -741,7 +843,13 @@ def get_fitness_cascade_commands() -> list[dict[str, Any]]:
     for spec in FITNESS_CASCADE_COMMANDS:
         argv = list(spec["command"])
         if argv and shutil.which(argv[0]) is None:
+            # Probe the interpreter's own bin dir: first by exact name (the
+            # POSIX layout), then via which() with an explicit path, which
+            # honours PATHEXT on Windows — the tools live there as ruff.exe,
+            # so a bare "ruff" filename never matches.
             local = bin_dir / argv[0]
+            if not local.is_file():
+                local = Path(shutil.which(argv[0], path=str(bin_dir)) or "")
             if local.is_file():
                 argv = [str(local), *argv[1:]]
             else:
@@ -986,13 +1094,240 @@ def _handle_cascade_validation_failure(
     return {"ok": False, "error": "validation_failed", "details": details}
 
 
+#: Cycle outcomes that are process states, not Candidate verdicts. They must
+#: not land in the paired session as Rejects and must not clear a stale gate
+#: record — there was no Candidate being judged.
+_PROCESS_STATES: Final[frozenset[str]] = frozenset(
+    {
+        "no_pending_run",
+        "already_solidified",
+        "not_a_git_repo",
+        "skip_validation_requires_pending_run",
+    }
+)
+
+
+def _pending_cycle_context() -> tuple[dict[str, Any], str]:
+    """The pending swarm cycle's id/candidate, plus the declared hypothesis
+    text — both read BEFORE the cycle burns them (§5.3 用后即焚)."""
+    pending_run: dict[str, Any] = {}
+    try:
+        state = _read_solidify_state() or {}
+        raw = state.get("last_run")
+        if isinstance(raw, dict):
+            pending_run = dict(raw)
+    except Exception:
+        pending_run = {}
+    text = ""
+    try:
+        from evolver.gep.hypothesis import load_hypothesis
+
+        record = load_hypothesis()
+        if isinstance(record, dict):
+            text = str(record.get("hypothesis") or "")
+    except Exception:
+        text = ""
+    return pending_run, text
+
+
+def _pending_candidate_id(pending_run: dict[str, Any] | None) -> str:
+    """The candidate this cycle is trying to land — the mutation id when the
+    state carries one, the selected gene otherwise."""
+    run = pending_run if isinstance(pending_run, dict) else {}
+    mutation = run.get("mutation")
+    mutation = mutation if isinstance(mutation, dict) else {}
+    return str(mutation.get("id") or run.get("selected_gene_id") or "")
+
+
+def _session_round_scopes() -> tuple[str, ...]:
+    """Round scopes that count as "this round" beside the swarm cycle id:
+    the running paired session's own id.
+
+    ``evolver session hypothesize`` stamps its records with the session id,
+    the host stamps the cycle id — both are this round. A leftover record
+    from a previous cycle matches neither and stays refused.
+    """
+    try:
+        from evolver.gep.evolution_session import RUNNING, EvolutionSession
+
+        run = EvolutionSession().latest_run()
+    except Exception:
+        return ()
+    if isinstance(run, dict) and run.get("status") == RUNNING and run.get("run_id"):
+        return (str(run["run_id"]),)
+    return ()
+
+
+def _settle_session(
+    result: dict[str, Any],
+    *,
+    pending_run: dict[str, Any] | None = None,
+    hypothesis: str = "",
+) -> dict[str, Any] | None:
+    """配对会话 §5.1/§5.2 — fold this cycle into the paired session ledger.
+
+    A refusal is a Reject: the session stays ``running`` and ``rounds.jsonl``
+    remembers why, so the engine cannot publish later as if nothing had
+    happened. A publish leaves an ``accept: true`` gate decision so the
+    session's Accept is an echo of a real gate verdict, never a bare claim.
+    Process states (nothing pending, already solidified, a HITL wait) are not
+    Candidate verdicts and touch nothing. Bookkeeping must never turn a
+    measured rejection into a crash, so every failure here is swallowed with
+    a warning.
+
+    The fold OPENS the round first (:meth:`EvolutionSession.begin_round`).
+    Without it ``current_candidate`` stayed empty forever, ``session accept``
+    refused with "no Candidate", and the frozen budget never moved — a gate
+    that judged nobody (round-86 seam). The cycle id keys the idempotence:
+    one Candidate, one round, however many times solidify retries.
+    """
+    if not isinstance(result, dict):
+        return None
+    ok = result.get("ok") is True
+    error = "" if ok else str(result.get("error") or "")
+    if not ok:
+        if not error or error in _PROCESS_STATES or error.startswith(("hitl_", "supervision_")):
+            return None
+
+    session = _session_active()
+    if session is None:
+        # No running session — nothing to fold into; the verdict stands as-is.
+        return None
+
+    cycle_ref = str((pending_run or {}).get("run_id") or "")
+    if cycle_ref and session.has_round_for(cycle_ref):
+        # A retried solidify of the same pending run already spent its round.
+        return None
+
+    try:
+        candidate = _pending_candidate_id(pending_run) or cycle_ref or "unknown-candidate"
+        session.begin_round(hypothesis, candidate)
+    except Exception:
+        # Budget exhaustion closes the session itself (incomplete); anything
+        # else leaves the ledger untouched. Either way the verdict returned
+        # to the caller is unchanged — bookkeeping must not rewrite it.
+        logger.warning("[session] round not opened — ledger untouched", exc_info=True)
+        return None
+
+    if ok:
+        _session_gate_record(
+            {
+                "accept": True,
+                "reason": "solidify_published",
+                "score": result.get("score"),
+                "bench_pack": result.get("bench_pack"),
+            }
+        )
+        return None
+
+    _session_gate_record({"accept": False, "reason": error})
+    return _session_reject(error, result, cycle_ref=cycle_ref)
+
+
+def _session_active() -> Any | None:
+    """The running paired session, or ``None`` when there is none to update."""
+    from evolver.gep.evolution_session import RUNNING, EvolutionSession
+
+    session = EvolutionSession()
+    try:
+        run = session.latest_run()
+    except Exception:
+        return None
+    if not isinstance(run, dict) or run.get("status") != RUNNING:
+        return None
+    try:
+        session.resume()
+    except Exception:
+        return None
+    return session
+
+
+def _session_gate_record(decision: dict[str, Any]) -> None:
+    """Persist the latest gate decision on the running session (best effort)."""
+    try:
+        session = _session_active()
+        if session is None:
+            return
+        session.record_gate_decision(decision)
+    except Exception:
+        logger.warning("[session] gate decision not recorded", exc_info=True)
+
+
+def _session_reject(
+    error: str,
+    result: dict[str, Any],
+    *,
+    cycle_ref: str = "",
+) -> dict[str, Any] | None:
+    """Write the refusal into ``rounds.jsonl``; the session stays running."""
+    try:
+        session = _session_active()
+        if session is None:
+            return None
+        details = result.get("details") if isinstance(result.get("details"), dict) else {}
+        bench = details.get("bench_pack") if isinstance(details.get("bench_pack"), dict) else {}
+        metrics: dict[str, Any] = {}
+        if bench:
+            metrics = {
+                "bench_pack_score": bench.get("score"),
+                "bench_pack_reason": bench.get("reason"),
+            }
+        entry = session.record_round(
+            decision="reject", notes=error, metrics=metrics, cycle_ref=cycle_ref
+        )
+        run = session.run
+        return {
+            "run_id": run.get("run_id"),
+            "round": entry.get("round"),
+            "rejects": session.rejected_count(),
+            "budget_max_rounds": (run.get("budget") or {}).get("max_rounds"),
+            "status": session.status,
+        }
+    except Exception:
+        logger.warning("[session] reject not recorded — session untouched", exc_info=True)
+        return None
+
+
 def solidify(
     *,
     mutation_override: dict[str, Any] | None = None,
     skip_validation: bool = False,
     proposal: dict[str, Any] | Path | str | None = None,
 ) -> dict[str, Any]:
-    """Run a solidify cycle."""
+    """Run a solidify cycle, then fold the outcome into the paired session.
+
+    The session ledger is updated here — once, on the way out — rather than
+    at every internal refusal point: one funnel, so no refusal path can
+    quietly skip the bookkeeping (round-84 lesson: the gate was built, the
+    writer was not wired).
+    """
+    result = _solidify_cycle(
+        mutation_override=mutation_override,
+        skip_validation=skip_validation,
+        proposal=proposal,
+    )
+    # The cycle context is read BEFORE _solidify_cycle consumes it: the
+    # ledger needs the cycle id and the candidate id, and the hypothesis
+    # file is burned inside the cycle (§5.3 用后即焚), so its text is read
+    # here while it still exists.
+    pending_run, hypothesis_text = _pending_cycle_context()
+    try:
+        session_state = _settle_session(result, pending_run=pending_run, hypothesis=hypothesis_text)
+    except Exception:
+        logger.warning("[session] settle failed — result returned as-is", exc_info=True)
+        session_state = None
+    if session_state is not None and isinstance(result, dict):
+        result = {**result, "session": session_state}
+    return result
+
+
+def _solidify_cycle(
+    *,
+    mutation_override: dict[str, Any] | None = None,
+    skip_validation: bool = False,
+    proposal: dict[str, Any] | Path | str | None = None,
+) -> dict[str, Any]:
+    """Run a solidify cycle (the gates; session bookkeeping lives above)."""
     state = _read_solidify_state()
     if not state or not state.get("last_run"):
         return {"ok": False, "error": "no_pending_run"}
@@ -1006,9 +1341,35 @@ def solidify(
 
         try:
             if isinstance(proposal, (str, Path)):
-                p_path = Path(proposal)
-                p_data = json.loads(p_path.read_text(encoding="utf-8"))
-                parsed_p = parse_proposal(p_data)
+                raw_proposal = Path(proposal).read_text(encoding="utf-8")
+            else:
+                raw_proposal = json.dumps(proposal, ensure_ascii=False, default=str)
+        except Exception as exc:
+            return {
+                "ok": False,
+                "error": "proposal_rejected",
+                "message": str(exc),
+            }
+
+        # 配对会话 §5.2: the proposal round is design context. A proposal that
+        # carries val wording or expected answers is refused outright — the
+        # whole document is suspect, not just the offending line.
+        try:
+            from evolver.gep.val_seal import ValSealBreachError, assert_sealed
+
+            assert_sealed(raw_proposal, where="proposal_round")
+        except ValSealBreachError as exc:
+            return {
+                "ok": False,
+                "error": "val_seal_breach",
+                "failure_mode": {"mode": "soft", "reasonClass": "val_seal", "retryable": True},
+                "next_action": "swarm_tick",
+                "details": {"val_seal": {"where": "proposal_round", "detail": str(exc)}},
+            }
+
+        try:
+            if isinstance(proposal, (str, Path)):
+                parsed_p = parse_proposal(json.loads(raw_proposal))
             else:
                 parsed_p = parse_proposal(proposal)
             proposal_report = apply_proposal(parsed_p, cwd)
@@ -1093,6 +1454,9 @@ def solidify(
 
     # Sprint 23.1 (enable_novelty_gate, ShinkaEvolve rejection sampling):
     # reject near-duplicate mutations BEFORE paying for the expensive cascade.
+    # It also precedes the hypothesis gate: "this mutation is not new" is the
+    # cheaper veto, so it settles first and the host is not asked to justify a
+    # change the engine has already refused.
     if cascade_mode and is_enabled("enable_novelty_gate") and _novelty_duplicate_diff(cwd):
         failed_blast = _compute_blast_radius()
         rejected_fp, rejected_added = _novelty_fingerprint(cwd)
@@ -1120,6 +1484,36 @@ def solidify(
             "error": "novelty_duplicate",
             "details": {"blast_radius": failed_blast},
         }
+
+    # 配对会话 §5.3 — one Candidate validates one primary hypothesis. Checked
+    # BEFORE the val gate (and before paying for the cascade): no record, no
+    # measurement, no publish. The record must belong to THIS round when it
+    # carries a run_id, and it is consumed here: a leftover claim from a
+    # previous round must not clear this one's bar either.
+    declared_hypothesis: dict[str, Any] | None = None
+    try:
+        from evolver.gep.hypothesis import (
+            HypothesisError,
+            clear_hypothesis,
+            load_hypothesis,
+            require_for_gate,
+        )
+
+        # The record is consumed below (one Candidate, one hypothesis), but the
+        # floors it declared must outlive it: the pack gate asserts them.
+        declared_hypothesis = load_hypothesis()
+        require_for_gate(
+            declared_hypothesis,
+            run_id=last_run.get("run_id"),
+            also_accept=_session_round_scopes(),
+        )
+    except HypothesisError as exc:
+        return _hypothesis_rejection(last_run, cwd, str(exc))
+    except Exception:
+        logger.warning("[hypothesis-gate] record unusable — rejecting", exc_info=True)
+        return _hypothesis_rejection(last_run, cwd, "hypothesis record unreadable")
+    else:
+        clear_hypothesis()
 
     validation_result: dict[str, Any] | None = None
     validation_report: dict[str, Any] | None = None
@@ -1235,7 +1629,10 @@ def solidify(
 
     # Charter 外部适应度: frozen bench pack — an enforced fitness floor.
     pack_rejection, bench_pack_verdict = _apply_bench_pack_gate(
-        last_run, cwd, validation_result=validation_result
+        last_run,
+        cwd,
+        validation_result=validation_result,
+        declaration=declared_hypothesis,
     )
     if pack_rejection is not None:
         return pack_rejection

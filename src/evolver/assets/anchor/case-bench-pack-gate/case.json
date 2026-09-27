@@ -1,7 +1,7 @@
 {
   "id": "bench-pack-gate",
-  "title": "frozen bench-pack gate: drop rejects, flat/up passes, baseline binds the pack digest, unmeasured claims nothing",
-  "source": "charter 演进方案.md 外部适应度 step 2 (round-79)",
-  "epoch_added": 4,
+  "title": "frozen bench-pack gate: only a strict improvement publishes; flat/drop/unmeasured/absent/gate-error reject, no reject moves the baseline, the baseline binds the pack digest",
+  "source": "charter 演进方案.md 外部适应度 step 2 (round-79); contract flipped §5.2 (epoch 12, 13)",
+  "epoch_added": 13,
   "kind": "python_contract"
 }

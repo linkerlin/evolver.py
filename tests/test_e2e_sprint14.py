@@ -31,6 +31,7 @@ from evolver.evolve.pipeline.dispatch import _write_solidify_state
 from evolver.gep import a2a_protocol, hub_fetch
 from evolver.gep import asset_call_log as acl
 from evolver.gep import memory_graph as mg
+from evolver.gep.hypothesis import record_hypothesis
 from evolver.gep.paths import get_cycle_progress_path, get_solidify_state_path
 from evolver.gep.reuse_attribution import REUSE_ATTR_SCHEMA
 from evolver.gep.self_pr import create_self_pr
@@ -596,6 +597,63 @@ class TestE2ECycleTimeoutAndProgress:
 
 
 class TestE2ERunSolidifyMemoryChain:
+    @staticmethod
+    def _arm_bench_gate() -> None:
+        """§5.2 — with the external-fitness charter an unfrozen pack rejects
+        (pack_absent): there is no "gate inactive" any more. Arm the smallest
+        instrument the solidify chain needs: a frozen two-task val pack, a
+        mutation-free Parent bar at 0.0, both solve slots solved."""
+        import json
+
+        from evolver.bench import frozen_gate
+
+        task = {
+            "id": "e2e-val-{n}",
+            "split": "val",
+            "title": "e2e task {n}",
+            "prompt": "Write x to out.txt.",
+            "sandbox": {"in.txt": "seed\n"},
+            "grader": {"type": "exact", "file": "out.txt", "expected": "x"},
+        }
+        train = {
+            "id": "e2e-train-1",
+            "split": "train",
+            "title": "e2e train task",
+            "prompt": "Write x to out.txt.",
+            "sandbox": {"in.txt": "seed\n"},
+            "grader": {"type": "exact", "file": "out.txt", "expected": "x"},
+        }
+        pack_path = frozen_gate.frozen_pack_path()
+        pack_path.parent.mkdir(parents=True, exist_ok=True)
+        pack_path.write_text(
+            json.dumps(
+                {
+                    "pack_version": 1,
+                    "tasks": [
+                        {**task, "id": "e2e-val-1", "title": "e2e task 1"},
+                        {**task, "id": "e2e-val-2", "title": "e2e task 2"},
+                        train,
+                    ],
+                },
+                indent=2,
+            )
+            + "\n",
+            encoding="utf-8",
+        )
+
+        def fill(text: str) -> None:
+            for index in (1, 2):
+                root = frozen_gate.sandbox_root(pack_path, replicate=index)
+                for tid in ("e2e-val-1", "e2e-val-2"):
+                    slot = root / tid
+                    slot.mkdir(parents=True, exist_ok=True)
+                    (slot / "out.txt").write_text(text, encoding="utf-8")
+
+        fill("wrong")
+        parent = frozen_gate.establish_parent_baseline()
+        assert parent.get("ok") is True, parent
+        fill("x")
+
     @pytest.mark.slow
     def test_run_solidify_then_record_outcome(
         self, e2e_env: Path, monkeypatch: pytest.MonkeyPatch
@@ -603,6 +661,25 @@ class TestE2ERunSolidifyMemoryChain:
         _init_git(e2e_env)
         monkeypatch.setenv("EVOLVER_REUSE_ATTRIBUTION", "shadow")
         assert main(["run"]) == 0
+        self._arm_bench_gate()
+        # 配对会话 §5.3 — the gate refuses a Candidate with no declared
+        # hypothesis. The CLI has no host to speak for it, so the test does;
+        # the mechanism check cites the armed pack's train task.
+        record_hypothesis(
+            {
+                "hypothesis": "the cycle's repair gene resolves the collected error signal",
+                "dimension": "content",
+                "mechanism_family": "test-fixture",
+                "target_hook": "tests/",
+                "mechanism_check": [
+                    {
+                        "id": "e2e-train-1",
+                        "before": "error signal collected with no candidate response",
+                        "after": "candidate generated against the signal",
+                    }
+                ],
+            }
+        )
         assert main(["solidify"]) == 0
 
         solidify = json.loads(get_solidify_state_path().read_text(encoding="utf-8"))

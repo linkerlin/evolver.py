@@ -107,6 +107,39 @@ async def _run_single_cycle(*, is_loop: bool = False) -> dict[str, Any]:
         ctx["supervision_paused"] = True
         print("Supervision paused; skipping cycle.")
         return ctx
+    if is_loop:
+        # §5.5 — a daemon only continues a session a human opened. New
+        # sessions are named by a person, or by external trajectory landing
+        # after the cursor; the loop must never invent one, or "the loop ran"
+        # becomes indistinguishable from "someone decided to evolve".
+        from evolver.gep.evolution_session import active_session
+
+        if active_session() is None:
+            ctx["loop_without_session"] = True
+            ctx["next_action"] = "stop_and_report"
+            ctx["loop_stop_reason"] = "no_running_session"
+            print(
+                "No running session; the loop continues sessions, it does not open them. "
+                "Start one with `evolver session start`."
+            )
+            # §5.5 — the cursor's only power is to remind. Enough external
+            # experience piling up (or enough time passing) is an invitation
+            # to a human, never a command: nothing here starts a session.
+            try:
+                from evolver.gep.cursor import reminder as cursor_reminder
+
+                hint = cursor_reminder()
+                if hint.get("due"):
+                    ctx["cursor_reminder"] = hint
+                    print(
+                        "Evolution reminder: external experience has piled up "
+                        f"(trajectories={hint.get('trajectories_seen_since')}, "
+                        f"age_days={hint.get('age_days')}). Naming a session is "
+                        "a human decision."
+                    )
+            except Exception:
+                pass
+            return ctx
     preflight = await guards.run_preflight_checks(is_loop=is_loop)
     if preflight.abort:
         print(f"Preflight abort: {preflight.reason}")
@@ -332,6 +365,17 @@ async def run_loop(
                     ctx = await evolve_task
 
                 consecutive_errors = 0
+
+                # A sessionless tick has nothing to continue and writes no
+                # gene — the loop honors its own stop verdict instead of
+                # idling until a human names a session.
+                if ctx.get("next_action") == "stop_and_report":
+                    print(
+                        "[loop] "
+                        + str(ctx.get("loop_stop_reason") or "nothing to continue")
+                        + " — stopping."
+                    )
+                    break
 
                 # Track pending bridge runs: if the cycle produced a spawn
                 # directive in bridge mode, stamp the timestamp.

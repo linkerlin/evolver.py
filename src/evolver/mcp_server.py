@@ -274,29 +274,53 @@ def build_server() -> Any:
 
         return swarm_distill(response_text, dry_run=dry_run)
 
-    def tool_swarm_propose(
-        proposal: dict[str, Any], agent_name: str = "host-agent"
+    def tool_swarm_hypothesis(
+        hypothesis: dict[str, Any], agent_name: str = "host-agent"
     ) -> dict[str, Any]:
-        """S29 mechanical mutation application: validate-all-first, exact unique anchor matching."""
+        """Declare this Candidate's one primary hypothesis (演进方案.md §5.3).
+
+        Fields: hypothesis (what you claim), dimension (content|tool|schema),
+        mechanism_family, target_hook, mechanism_check (train task refs only —
+        the validation reserve is sealed). The host owns the claim; the engine
+        never invents one. Declaring is not passing: the gate re-reads it.
+        """
+        from evolver.swarm import swarm_hypothesis
+
+        return swarm_hypothesis(hypothesis=hypothesis, agent_name=agent_name)
+
+    def tool_swarm_propose(
+        proposal: dict[str, Any],
+        agent_name: str = "host-agent",
+        hypothesis: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
+        """S29 mechanical mutation application: validate-all-first, exact unique anchor matching.
+
+        hypothesis (§5.3) is recorded before the proposal is applied.
+        """
         from evolver.swarm import swarm_propose
 
-        return swarm_propose(proposal=proposal, agent_name=agent_name)
+        return swarm_propose(proposal=proposal, agent_name=agent_name, hypothesis=hypothesis)
 
     def tool_swarm_solidify(
         skip_validation: bool = False,
         agent_name: str = "host-agent",
         proposal: dict[str, Any] | None = None,
+        hypothesis: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
         """Run the solidify gate: validations, acceptance gate, commit/rollback.
 
         skip_validation=True is high-risk: it passes the HITL approval gate
         (blocked → await_human_approval; timeout fails safe to reject).
         Optionally accepts a proposal to mechanically apply before validation (S29).
+        hypothesis (§5.3) is recorded before gating; no claim, no measurement.
         """
         from evolver.swarm import swarm_solidify
 
         return swarm_solidify(
-            skip_validation=skip_validation, agent_name=agent_name, proposal=proposal
+            skip_validation=skip_validation,
+            agent_name=agent_name,
+            proposal=proposal,
+            hypothesis=hypothesis,
         )
 
     def tool_swarm_approvals() -> dict[str, Any]:
@@ -558,6 +582,7 @@ def build_server() -> Any:
         ("swarm_boot", tool_swarm_boot, None),
         ("swarm_tick", tool_swarm_tick, None),
         ("swarm_distill", tool_swarm_distill, None),
+        ("swarm_hypothesis", tool_swarm_hypothesis, destructive),
         ("swarm_propose", tool_swarm_propose, destructive),
         ("swarm_solidify", tool_swarm_solidify, destructive),
         ("swarm_feedback", tool_swarm_feedback, None),

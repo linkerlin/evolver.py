@@ -25,21 +25,52 @@ def isolated_evolver_env(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
 
 
 @pytest.mark.asyncio
-@pytest.mark.slow
-async def test_run_loop_runs_at_least_one_cycle(
+async def test_a_sessionless_tick_stops_and_writes_no_gene(
     isolated_evolver_env: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    # Start loop then immediately request shutdown after a short delay
-    async def stopper():
-        await asyncio.sleep(0.3)
-        runner.request_shutdown()
+    """Charter §5.5 completion: a tick with no running session returns
+    ``stop_and_report`` and writes no gene — the loop continues sessions,
+    it does not open them, and it does not idle-spin either.
 
-    asyncio.create_task(stopper())
+    (Supersedes the old "loop runs a full GEP cycle" pin: since the loop
+    gate, a sessionless daemon never reaches the pipeline, so the GEP
+    protocol header can no longer be its assertion.)
+    """
+    result = await runner._run_single_cycle(is_loop=True)
+    assert result["next_action"] == "stop_and_report"
+    assert result["loop_without_session"] is True
+    assert result["loop_stop_reason"] == "no_running_session"
+    assert "selected_gene" not in result
+    assert "dispatch_prompt" not in result
+
+    # The daemon honors the verdict: it breaks instead of re-ticking.
     await runner.run_loop(interval_ms=100)
-    captured = capsys.readouterr()
-    assert "[loop] Starting daemon loop" in captured.out
-    assert "[loop] Graceful shutdown complete." in captured.out
-    assert "GENOME EVOLUTION PROTOCOL" in captured.out
+    out = capsys.readouterr().out
+    assert "no_running_session — stopping." in out
+    assert "GENOME EVOLUTION PROTOCOL" not in out, "no cycle ran, so no gene work"
+    assert "[loop] Graceful shutdown complete." in out
+
+
+@pytest.mark.asyncio
+async def test_a_due_reminder_still_stops_but_rides_along(
+    isolated_evolver_env: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """Even when the cursor's reminder is due, the tick's verdict is the
+    same: stop. The reminder is an invitation to a human, never a command —
+    the only difference is that it rides in the stop report."""
+    from evolver.gep import cursor
+
+    cursor.save_cursor(recorded_at="2020-01-01T00:00:00Z")  # far past due
+
+    result = await runner._run_single_cycle(is_loop=True)
+    assert result["next_action"] == "stop_and_report"
+    assert result["cursor_reminder"]["due"] is True
+    assert "name a session yourself" in result["cursor_reminder"]["action"]
+
+    await runner.run_loop(interval_ms=100)
+    out = capsys.readouterr().out
+    assert "Evolution reminder" in out
+    assert "no_running_session — stopping." in out
 
 
 @pytest.mark.asyncio

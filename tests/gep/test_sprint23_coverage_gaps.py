@@ -150,8 +150,15 @@ class TestCommitMutationEdges:
     def test_no_targets_returns_false(self, git_ws: Path) -> None:
         assert solidify_mod._commit_mutation(git_ws, "noop") is False
 
+    # armed_pack + declared_hypothesis: §5.3 and §5.2 gate the publish, and
+    # this case pins what happens AFTER they let the round through — a dead git
+    # must not turn a successful round into a failure.
     def test_git_failure_returns_false_but_solidify_survives(
-        self, git_ws: Path, monkeypatch: pytest.MonkeyPatch
+        self,
+        git_ws: Path,
+        monkeypatch: pytest.MonkeyPatch,
+        armed_pack: dict[str, Any],
+        declared_hypothesis: dict[str, Any],
     ) -> None:
         from evolver.gep import git_ops
 

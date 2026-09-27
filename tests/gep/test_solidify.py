@@ -98,8 +98,11 @@ def test_not_a_git_repo(temp_workspace: Path, monkeypatch: pytest.MonkeyPatch) -
     assert result["error"] == "not_a_git_repo"
 
 
-def test_success_skip_validation(git_ws: Path) -> None:
+def test_success_skip_validation(
+    git_ws: Path, armed_pack: dict[str, Any], declared_hypothesis: dict[str, Any]
+) -> None:
     _ = git_ws
+    _ = armed_pack, declared_hypothesis
     write_state_for_solidify(_last_run())
     result = solidify(skip_validation=True)
     assert result["ok"] is True
@@ -107,16 +110,25 @@ def test_success_skip_validation(git_ws: Path) -> None:
     assert "files" in result["blast_radius"]
 
 
-def test_success_empty_validation(git_ws: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_success_empty_validation(
+    git_ws: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    armed_pack: dict[str, Any],
+    declared_hypothesis: dict[str, Any],
+) -> None:
     _ = git_ws
+    _ = armed_pack, declared_hypothesis
     # Legacy path (cascade off): mutation.validation is the validation source.
     set_flag("enable_fitness_cascade", False, persist=False)
     write_state_for_solidify(_last_run(mutation={"id": "m1", "validation": []}))
     assert solidify()["ok"] is True
 
 
-def test_writes_event_jsonl(git_ws: Path) -> None:
+def test_writes_event_jsonl(
+    git_ws: Path, armed_pack: dict[str, Any], declared_hypothesis: dict[str, Any]
+) -> None:
     _ = git_ws
+    _ = armed_pack, declared_hypothesis
     result = solidify(skip_validation=True) if False else None
     write_state_for_solidify(_last_run())
     result = solidify(skip_validation=True)
@@ -131,16 +143,22 @@ def test_writes_event_jsonl(git_ws: Path) -> None:
     assert evt["outcome"]["status"] == "success"
 
 
-def test_updates_last_solidify(git_ws: Path) -> None:
+def test_updates_last_solidify(
+    git_ws: Path, armed_pack: dict[str, Any], declared_hypothesis: dict[str, Any]
+) -> None:
     _ = git_ws
+    _ = armed_pack, declared_hypothesis
     write_state_for_solidify(_last_run())
     solidify(skip_validation=True)
     state = json.loads(get_solidify_state_path().read_text(encoding="utf-8"))
     assert state["last_solidify"]["outcome"] == "success"
 
 
-def test_mutation_override(git_ws: Path) -> None:
+def test_mutation_override(
+    git_ws: Path, armed_pack: dict[str, Any], declared_hypothesis: dict[str, Any]
+) -> None:
     _ = git_ws
+    _ = armed_pack, declared_hypothesis
     write_state_for_solidify(_last_run())
     solidify(mutation_override={"id": "mut_override", "validation": []}, skip_validation=True)
     evt = json.loads(
@@ -149,7 +167,10 @@ def test_mutation_override(git_ws: Path) -> None:
     assert evt["mutation"]["id"] == "mut_override"
 
 
-def test_blast_counts_dirty(git_ws: Path) -> None:
+def test_blast_counts_dirty(
+    git_ws: Path, armed_pack: dict[str, Any], declared_hypothesis: dict[str, Any]
+) -> None:
+    _ = armed_pack, declared_hypothesis
     (git_ws / "dirty.txt").write_text("hello\nworld\n", encoding="utf-8")
     write_state_for_solidify(_last_run())
     result = solidify(skip_validation=True)
@@ -201,8 +222,9 @@ def test_run_validations_timeout(git_ws: Path, monkeypatch: pytest.MonkeyPatch) 
     assert res["results"][0]["stderr"]
 
 
-def test_solidify_validation_failed(git_ws: Path) -> None:
+def test_solidify_validation_failed(git_ws: Path, declared_hypothesis: dict[str, Any]) -> None:
     _ = git_ws
+    _ = declared_hypothesis
     # Legacy path (cascade off): mutation.validation drives validation.
     set_flag("enable_fitness_cascade", False, persist=False)
     write_state_for_solidify(
@@ -218,8 +240,11 @@ def test_solidify_validation_failed(git_ws: Path) -> None:
     assert result["error"] == "validation_failed"
 
 
-def test_validation_failure_event_carries_timing(git_ws: Path) -> None:
+def test_validation_failure_event_carries_timing(
+    git_ws: Path, declared_hypothesis: dict[str, Any]
+) -> None:
     _ = git_ws
+    _ = declared_hypothesis
     # Round-19: a rejected cascade burns the same validation seconds — the
     # failure event must carry validation_timing or the efficiency panel is
     # blind to its most expensive path.
@@ -263,8 +288,14 @@ def test_failure_event_eval_meta_filtering() -> None:
     assert "eval_workspace" not in evt_flag_off
 
 
-def test_solidify_validation_success(git_ws: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_solidify_validation_success(
+    git_ws: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    armed_pack: dict[str, Any],
+    declared_hypothesis: dict[str, Any],
+) -> None:
     _ = git_ws
+    _ = armed_pack, declared_hypothesis
     # Legacy path (cascade off): mutation.validation drives validation.
     set_flag("enable_fitness_cascade", False, persist=False)
     write_state_for_solidify(
@@ -283,8 +314,11 @@ def test_solidify_validation_success(git_ws: Path, monkeypatch: pytest.MonkeyPat
     assert isinstance(evt.get("execution_trace"), list)
 
 
-def test_skip_ignores_failing(git_ws: Path) -> None:
+def test_skip_ignores_failing(
+    git_ws: Path, armed_pack: dict[str, Any], declared_hypothesis: dict[str, Any]
+) -> None:
     _ = git_ws
+    _ = armed_pack, declared_hypothesis
     write_state_for_solidify(
         _last_run(
             mutation={
@@ -405,8 +439,11 @@ def test_blast_untracked(git_ws: Path) -> None:
     assert br["lines"] >= 2
 
 
-def test_preserves_signals(git_ws: Path) -> None:
+def test_preserves_signals(
+    git_ws: Path, armed_pack: dict[str, Any], declared_hypothesis: dict[str, Any]
+) -> None:
     _ = git_ws
+    _ = armed_pack, declared_hypothesis
     write_state_for_solidify(_last_run(signals=["sig_a", "sig_b"]))
     solidify(skip_validation=True)
     evt = json.loads(
@@ -415,8 +452,11 @@ def test_preserves_signals(git_ws: Path) -> None:
     assert evt["signals"] == ["sig_a", "sig_b"]
 
 
-def test_run_id_from_mutation(git_ws: Path) -> None:
+def test_run_id_from_mutation(
+    git_ws: Path, armed_pack: dict[str, Any], declared_hypothesis: dict[str, Any]
+) -> None:
     _ = git_ws
+    _ = armed_pack, declared_hypothesis
     lr = _last_run()
     del lr["run_id"]
     lr["mutation"] = {"id": "mut_only_id", "validation": []}
@@ -436,8 +476,14 @@ def test_write_state_overwrites(git_ws: Path) -> None:
     assert state["last_run"]["run_id"] == "second"
 
 
-def test_multi_validation_ok(git_ws: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_multi_validation_ok(
+    git_ws: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    armed_pack: dict[str, Any],
+    declared_hypothesis: dict[str, Any],
+) -> None:
     _ = git_ws
+    _ = armed_pack, declared_hypothesis
     # Legacy path (cascade off): mutation.validation drives validation.
     set_flag("enable_fitness_cascade", False, persist=False)
     write_state_for_solidify(
@@ -454,8 +500,11 @@ def test_multi_validation_ok(git_ws: Path, monkeypatch: pytest.MonkeyPatch) -> N
     assert solidify()["ok"] is True
 
 
-def test_multi_validation_second_fails(git_ws: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_multi_validation_second_fails(
+    git_ws: Path, monkeypatch: pytest.MonkeyPatch, declared_hypothesis: dict[str, Any]
+) -> None:
     _ = git_ws
+    _ = declared_hypothesis
     # Legacy path (cascade off): both commands must run (no short-circuit).
     set_flag("enable_fitness_cascade", False, persist=False)
     write_state_for_solidify(
@@ -474,11 +523,16 @@ def test_multi_validation_second_fails(git_ws: Path, monkeypatch: pytest.MonkeyP
     assert len(result["details"]["results"]) == 2
 
 
-def test_duplicate_solidify_refused(git_ws: Path) -> None:
+def test_duplicate_solidify_refused(
+    git_ws: Path, armed_pack: dict[str, Any], declared_hypothesis: dict[str, Any]
+) -> None:
     # Round-12: a second solidify on an already-landed run used to burn a
     # full cascade and append a phantom success event, polluting the
     # acceptance gate's soak sample.
+    # Armed pack + hypothesis: the duplicate guard sits before both gates, but
+    # the FIRST solidify must land, or "already_solidified" proves nothing.
     _ = git_ws
+    _ = armed_pack, declared_hypothesis
     write_state_for_solidify(_last_run())
     first = solidify(skip_validation=True)
     assert first["ok"] is True
@@ -489,8 +543,11 @@ def test_duplicate_solidify_refused(git_ws: Path) -> None:
     assert second["next_action"] == "swarm_tick"
 
 
-def test_new_run_after_solidify_not_blocked(git_ws: Path) -> None:
+def test_new_run_after_solidify_not_blocked(
+    git_ws: Path, armed_pack: dict[str, Any], declared_hypothesis: dict[str, Any]
+) -> None:
     _ = git_ws
+    _ = armed_pack, declared_hypothesis
     write_state_for_solidify(_last_run())
     assert solidify(skip_validation=True)["ok"] is True
 
@@ -499,6 +556,10 @@ def test_new_run_after_solidify_not_blocked(git_ws: Path) -> None:
     state["last_run"] = dict(state["last_run"], run_id="run_newer")
     get_solidify_state_path().write_text(json.dumps(state), encoding="utf-8")
     result = solidify(skip_validation=True)
+    # The pack gate is the LAST gate and the first run already spent the
+    # fixture's one strict improvement, so a second identical round now lands
+    # on `bench_pack_rejected` (flat) — still not the duplicate veto this case
+    # exists to rule out.
     assert result.get("error") != "already_solidified"
 
 
@@ -509,8 +570,18 @@ def test_validation_env_prepends_tool_dirs(monkeypatch: pytest.MonkeyPatch) -> N
     env = solidify_mod._validation_env()
     parts = env["PATH"].split(os.pathsep)
     assert parts[0] == str(Path(sys.executable).parent)
-    assert "/usr/bin" in parts  # never drops inherited entries
-    assert "/opt/homebrew/bin" in parts or "/usr/local/bin" in parts
+    # Inherited entries are never dropped. Substring, not split membership:
+    # os.pathsep is ";" on Windows, so a POSIX-style inherited value stays
+    # one element there and split-membership would misread survival.
+    assert "/usr/bin" in env["PATH"]
+    # Only well-known dirs that EXIST on this platform are prepended:
+    # homebrew is macOS-only; the user-local dir covers Linux/Windows.
+    if sys.platform == "darwin":
+        assert "/opt/homebrew/bin" in parts or "/usr/local/bin" in parts
+    else:
+        home_local = str(Path.home() / ".local" / "bin")
+        if Path(home_local).is_dir():
+            assert home_local in parts
 
 
 def test_run_validations_augments_crippled_path(
@@ -536,12 +607,21 @@ def test_bounded_output_keeps_head_and_tail() -> None:
 
 
 def test_legacy_rollback_deletes_relative_to_workspace_not_cwd(
-    git_ws: Path, monkeypatch: pytest.MonkeyPatch, tmp_path_factory: pytest.TempPathFactory
+    git_ws: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path_factory: pytest.TempPathFactory,
+    declared_hypothesis: dict[str, Any],
 ) -> None:
     """DEBUG #20: the legacy validation-failure path listed untracked files in
     the isolated workspace but deleted them from Path.cwd(). Under a cascade
     that cwd is the real repo, so the workspace-relative runtime-state path
-    named the engine's OWN state file there and deleted it mid-cascade."""
+    named the engine's OWN state file there and deleted it mid-cascade.
+
+    A hypothesis is declared because the §5.3 gate now precedes validation:
+    without one this case would stop at the hypothesis rejection and never
+    exercise the rollback it exists to pin.
+    """
+    _ = declared_hypothesis
     proc_cwd = tmp_path_factory.mktemp("proccwd")
     victim_dir = proc_cwd / "memory" / "evolution"
     victim_dir.mkdir(parents=True)

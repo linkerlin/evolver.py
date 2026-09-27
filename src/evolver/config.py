@@ -382,6 +382,15 @@ ANCHOR_TRIGGER_SURFACES: Final[tuple[str, ...]] = (
     # lost early). round-56 skipped the guard on "no rejection authority";
     # destructive twins qualify.
     "src/evolver/ops/cleanup.py",
+    # 配对会话 (§5.2/§5.3): the bench pack gate IS the external fitness floor,
+    # and the hypothesis / val-seal modules decide what may even be measured.
+    # A mutation that re-opens "flat publishes" or "val leaks into the proposal"
+    # is the same class as weakening the gate and its tests together — the
+    # machinery that decides is part of what must be frozen. Left unguarded,
+    # changes here never triggered the anchor at all (found 2026-09-26).
+    "src/evolver/bench/",
+    "src/evolver/gep/hypothesis.py",
+    "src/evolver/gep/val_seal.py",
 )
 ANCHOR_PROBE_TIMEOUT_S: Final = 120.0
 

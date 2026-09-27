@@ -22,6 +22,25 @@ def isolated_evolver_env(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
     yield tmp_path
 
 
+def _declare_hypothesis() -> None:
+    """配对会话 §5.3 — a Candidate enters the gate carrying exactly one
+    hypothesis, stated in observed before/after form. The CLI has no host to
+    speak for the Candidate, so the test plays the host's part."""
+    from evolver.gep.hypothesis import record_hypothesis
+
+    record_hypothesis(
+        {
+            "hypothesis": "the dispatch prompt names no explicit success bar",
+            "dimension": "content",
+            "mechanism_family": "prompt_specificity",
+            "target_hook": "gep.prompt.dispatch",
+            "mechanism_check": [
+                {"id": "train-1", "before": "no bar stated", "after": "bar stated"}
+            ],
+        }
+    )
+
+
 def test_cli_version(capsys: pytest.CaptureFixture[str]) -> None:
     code = main(["--version"])
     assert code == 0
@@ -160,30 +179,62 @@ def test_cli_gene_lifecycle_flow(
     assert "already_active" in capsys.readouterr().err
 
 
-def test_cli_solidify_after_run_in_git_repo(
-    isolated_evolver_env: Path, capsys: pytest.CaptureFixture[str]
+def _init_git_repo(root: Path) -> None:
+    subprocess.run(["git", "init", "-b", "main", str(root)], check=True, capture_output=True)
+    subprocess.run(
+        ["git", "-C", str(root), "config", "user.email", "test@example.com"],
+        check=True,
+        capture_output=True,
+    )
+    subprocess.run(
+        ["git", "-C", str(root), "config", "user.name", "Test"],
+        check=True,
+        capture_output=True,
+    )
+
+
+def test_cli_solidify_after_run_is_refused_while_the_gate_is_unarmed(
+    isolated_evolver_env: Path,
+    capsys: pytest.CaptureFixture[str],
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    subprocess.run(
-        ["git", "init", "-b", "main", str(isolated_evolver_env)], check=True, capture_output=True
-    )
-    subprocess.run(
-        ["git", "-C", str(isolated_evolver_env), "config", "user.email", "test@example.com"],
-        check=True,
-        capture_output=True,
-    )
-    subprocess.run(
-        ["git", "-C", str(isolated_evolver_env), "config", "user.name", "Test"],
-        check=True,
-        capture_output=True,
-    )
+    """配对会话 §5.2 — an unarmed gate is a reject, never a pass.
 
-    code = main(["run"])
-    assert code == 0
+    No frozen pack means no Parent, so there is nothing to be strictly
+    better than. Arming it is a human setup action (``evolver bench freeze``
+    then ``evolver bench baseline``); until that happens, a Candidate that
+    cannot be measured is not a Candidate that may publish. This replaces an
+    older assertion that solidify simply succeeded: "no instrument installed"
+    used to read as "measured fine".
+    """
+    monkeypatch.setenv("EVOLVER_HOME", str(isolated_evolver_env / ".evolver"))
+    _init_git_repo(isolated_evolver_env)
 
+    assert main(["run"]) == 0
+    _declare_hypothesis()
     code = main(["solidify"])
-    assert code == 0
+    assert code != 0
     captured = capsys.readouterr()
-    assert "Solidify succeeded" in captured.out
+    assert "bench_pack_rejected" in captured.err
+    assert "pack_absent" in captured.err
+
+
+def test_cli_solidify_without_a_hypothesis_is_refused(
+    isolated_evolver_env: Path,
+    capsys: pytest.CaptureFixture[str],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """配对会话 §5.3 — no hypothesis, no measurement, no publish. A run that
+    never stated what it is testing must not be solidified: it would publish
+    a mutation nobody can explain."""
+    monkeypatch.setenv("EVOLVER_HOME", str(isolated_evolver_env / ".evolver"))
+    _init_git_repo(isolated_evolver_env)
+
+    assert main(["run"]) == 0
+    code = main(["solidify"])
+    assert code != 0
+    captured = capsys.readouterr()
+    assert "hypothesis_missing" in captured.err
 
 
 def test_cli_webui_token_generate_and_revoke(

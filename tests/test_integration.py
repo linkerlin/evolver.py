@@ -11,9 +11,11 @@ These tests exercise multiple subsystems together:
 
 from __future__ import annotations
 
+import gc
 import json
 import subprocess
 from pathlib import Path
+from typing import Any
 
 import pytest
 from fastapi.testclient import TestClient
@@ -37,6 +39,34 @@ def isolated_evolver_env(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
     monkeypatch.setenv("EVOLVER_USER_LOCK", str(tmp_path / "user.lock"))
     monkeypatch.setenv("EVOLVER_HOME", str(tmp_path / ".evolver"))
     yield tmp_path
+
+
+@pytest.fixture
+def gated_evolver_env(
+    temp_workspace: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    armed_pack: dict[str, Any],
+    declared_hypothesis: dict[str, Any],
+):
+    """``isolated_evolver_env`` with both publish gates cleared (§5.2 + §5.3).
+
+    Same isolation doctrine, but built on ``temp_workspace`` so the shared
+    fixtures can arm the frozen pack and record the hypothesis into the same
+    sandbox the cycle writes to — the two env sets must not be mixed, or the
+    gates would be armed in one tree and read from another. Cases whose flow
+    must make it *through* solidify request this; cases that only need a
+    workspace keep using ``isolated_evolver_env``.
+    """
+    monkeypatch.setenv("EVOLVER_NO_PARENT_GIT", "1")
+    monkeypatch.setenv("EVOLVER_USER_LOCK", str(temp_workspace / "user.lock"))
+    yield temp_workspace
+    # Windows refuses to unlink a SQLite file whose connection is still open,
+    # and the run pipeline leaves the last one inside a reference cycle (the
+    # connection object only dies on an explicit collection). temp_workspace
+    # removes its sandbox unconditionally, so collect before it does —
+    # otherwise teardown raises a sharing violation on .evomap/evolver.db.
+    gc.collect()
+    gc.collect()
 
 
 def _init_git_repo(path: Path) -> None:
@@ -75,9 +105,9 @@ class TestFullRunSolidifyCycle:
 
     @pytest.mark.slow
     def test_solidify_after_run_in_git_repo(
-        self, isolated_evolver_env: Path, capsys: pytest.CaptureFixture[str]
+        self, gated_evolver_env: Path, capsys: pytest.CaptureFixture[str]
     ) -> None:
-        _init_git_repo(isolated_evolver_env)
+        _init_git_repo(gated_evolver_env)
 
         code = main(["run"])
         assert code == 0
@@ -92,8 +122,8 @@ class TestFullRunSolidifyCycle:
         state = json.loads(get_solidify_state_path().read_text())
         assert "last_solidify" in state
 
-    def test_run_then_solidify_appends_events(self, isolated_evolver_env: Path) -> None:
-        _init_git_repo(isolated_evolver_env)
+    def test_run_then_solidify_appends_events(self, gated_evolver_env: Path) -> None:
+        _init_git_repo(gated_evolver_env)
         from evolver.gep.asset_store import read_all_events
 
         before = len(read_all_events())
@@ -177,9 +207,9 @@ class TestWebUIFullPipeline:
 class TestSQLiteStoreFullPipeline:
     @pytest.mark.slow
     def test_sqlite_events_after_run_and_solidify(
-        self, isolated_evolver_env: Path, monkeypatch: pytest.MonkeyPatch
+        self, gated_evolver_env: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        _init_git_repo(isolated_evolver_env)
+        _init_git_repo(gated_evolver_env)
         monkeypatch.setenv("EVOLVER_SQLITE_STORE", "1")
         from evolver.ops import sqlite_store
 
@@ -442,10 +472,10 @@ class TestPeerLifecycle:
 class TestCrossSubsystemWorkflow:
     @pytest.mark.slow
     def test_run_then_webui_then_replay(
-        self, client: TestClient, isolated_evolver_env: Path, monkeypatch: pytest.MonkeyPatch
+        self, client: TestClient, gated_evolver_env: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         """Most comprehensive integration: run cycle → WebUI state → event replay → auth."""
-        _init_git_repo(isolated_evolver_env)
+        _init_git_repo(gated_evolver_env)
         monkeypatch.setenv("EVOLVER_SQLITE_STORE", "1")
         # 1. Run + solidify cycle
         code = main(["run"])

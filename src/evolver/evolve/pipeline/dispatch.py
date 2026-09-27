@@ -88,6 +88,10 @@ def _write_solidify_state(ctx: dict[str, Any]) -> None:
         "memory_advice": serialize_memory_advice(ctx.get("memory_advice")),
         "memory_graph_friction_synced": ctx.get("memory_graph_friction_synced"),
         "innovation_attempt_id": ctx.get("innovation_attempt_id"),
+        # Charter §5.4: WHICH library snapshot the candidate consulted this
+        # cycle — the comparison must show active still pointing at Parent
+        # while this id was read.
+        "library_snapshot": ctx.get("library_active_id"),
         # P4-a reuse attribution surface (created_at correlates same-cycle).
         "created_at": utc_now_iso(),
         "source_type": source_type,
@@ -244,6 +248,7 @@ async def dispatch_phase(ctx: dict[str, Any]) -> dict[str, Any]:
         ctx.get("causal_cluster_brief", ""),  # Self-Harness B2
         ctx.get("proposer_surface_block", ""),  # Self-Harness A2
         ctx.get("constrained_hook_block", ""),  # Self-Harness C1
+        ctx.get("library_block", ""),  # Charter §5.4 in-cycle consultation
         lineage_block,  # Sprint 22.6
     ]
 
@@ -290,6 +295,19 @@ async def dispatch_phase(ctx: dict[str, Any]) -> dict[str, Any]:
 
     # Expose the assembled prompt to in-process callers (MCP swarm_tick) so the
     # host-agent executor can consume it structurally instead of parsing stdout.
+    # 配对会话 §5.2 — last line of defence. Whatever earlier stages assembled,
+    # the sealed val split must not leave this function in executor-facing
+    # text. Counted redaction, never a silent rewrite.
+    try:
+        from evolver.gep.val_seal import redact
+
+        prompt, dispatch_seal = redact(prompt, where="dispatch")
+        if dispatch_seal.get("redacted"):
+            ctx["dispatch_seal"] = dispatch_seal
+            ctx["dispatch_seal_redacted"] = int(dispatch_seal["redacted"])
+    except Exception as exc:  # dispatch must still produce a prompt
+        ctx["dispatch_seal_error"] = str(exc)
+
     ctx["dispatch_prompt"] = prompt
 
     # The artifact feeds swarm_status + the evolver://dispatch/last resource —
