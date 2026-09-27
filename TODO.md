@@ -15,7 +15,7 @@ round-89 点名收口路线：**换包**。现行 12 题的 Parent 是 1.0，第
 
 round-89 执行完毕：v2 包（4 train + 5 val，digest `dfd9f8cada3740b4`）字节拷贝上岗，5 道 val 由不写候选的本上下文解两遍（未读 grader；预注册失手点 `val-ledger-posted` 被双解释器逐字落地解对，230 两遍一致）。新 bar 仍 **1.0**，地板与 epoch 13 绑定齐全。按预注册决策树**转入八会话分支，不再写第三份包**：`evolver session start` 由人点名，之后八次会话（预算耗尽或 ≥2 Reject 后合法 Incomplete）无 Accept 即按章程第 4 节收窄说法并关闭从未赢过的臂。
 
-round-90 八会话收束：run_1..run_8 全部合法结束（每场 2 轮真周期 + `unreliable_evaluation` 判停），`rounds.jsonl` 在案 **16 轮、16 Reject、0 Accept**。会话 1 第 1 轮被级联抓到 15 个真实 mypy strict 错误，已修复（c2b1b10）；其余 15 轮全级联通过、包门一律 flat。**第 6 项完成条件按章程第 4 节第 2 条达成**。剩余为产品面动作，由人执行：说法收窄为「受治理的仓库自维护」（README/AGENTS 定位段）、关臂记录（种群维持关闭；bandit、niche、ATP bridge 维持默认关闭）、minor 切版本。此前引擎行为无任何变化，shadow 与全部安全门维持原状。
+round-90 八会话收束：run_1..run_8 全部合法结束（每场 2 轮真周期 + `unreliable_evaluation` 判停），`rounds.jsonl` 在案 **16 轮、16 Reject、0 Accept**。会话 1 第 1 轮被级联抓到 15 个真实 mypy strict 错误，已修复（c2b1b10）；其余 15 轮全级联通过、包门一律 flat。**第 6 项完成条件按章程第 4 节第 2 条达成**。步子哥裁决：**说法不改**（README/AGENTS 保持原样，「受治理的仓库自维护」是章程 §4 的预注册措辞、从未落任何文件，该条款作废）；**关臂为空操作**（种群 K=2、bandit、niche、ATP bridge 开赛前本就关闭，无臂可关）；minor 切不切由人定。引擎行为无任何变化，shadow 与全部安全门维持原状。
 
 | # | 项 | 完成时 |
 |---|---|---|

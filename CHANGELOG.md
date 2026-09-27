@@ -14,8 +14,8 @@ TODO #6 的完成条件按第 2 条达成。版本保持 **1.112.0**（阶段结
 
 - **八次配对会话全部合法收束**。run_1..run_8，每场 2 轮真周期（`session hypothesize` 预注册假说 → `evolver run` 五阶段流水线 → `evolver solidify` 全级联），随后判断性停止（`unreliable_evaluation`——0/1 评分在 1.0 的 bar 上无法分辨任何候选）。soak 根 `evolution/sessions/` 的 `rounds.jsonl` 逐条在案：**16 轮、16 次 `decision: reject`、0 次 Accept**；每场结束均 no publish、cursor 未动。
 - **会话 1 第 1 轮的拒绝是真缺陷**：级联的 mypy strict 抓到 15 个类型错误（round-82..87 新模块占 9 个）——协议第一轮就抓到真问题，已修复并单独提交（c2b1b10，mypy 339 文件 0 issues）。其后 15 轮全级联（ruff + mypy strict + pytest not slow）通过，包门一律 `flat`（两遍 [1.0, 1.0] vs bar 1.0，五题 per-task 地板全守住），与预注册的饱和标尺判定一致。
-- **收口判据（章程第 4 节第 2 条）**：协议生效后八次会话结束（每场在至少两次 Reject 后合法 Incomplete），仍无一次「候选在密封 val 上严格优于 Parent」的 Accept。按章程，产品说法收窄为「**受治理的仓库自维护**」，并关掉从未赢过的臂：种群（K=2）维持关闭，bandit、niche、ATP bridge 维持默认关闭。
-- **待步子哥执行的产品面动作**：说法收窄的落笔（README/AGENTS 的产品定位段）与 minor 版本切换。在此之前引擎行为无任何变化；shadow 与全部安全门维持原状。全量回归基线：3967 通过（round-88）＋ mypy strict 全绿（c2b1b10）。
+- **收口判据（章程第 4 节第 2 条）**：协议生效后八次会话结束（每场在至少两次 Reject 后合法 Incomplete），仍无一次「候选在密封 val 上严格优于 Parent」的 Accept。
+- **步子哥裁决（同轮补记）：说法不改，关臂为空操作。**「受治理的仓库自维护」与「关掉从未赢过的臂」是章程 §4（演进方案.md:60）预注册的两条结局措辞，回执原样引用；裁决后均不执行——README/AGENTS 保持原样（本就未动过），该条款作废；种群（K=2）、bandit、niche、ATP bridge 开赛前就是关闭状态（本阶段边界，见 AGENTS.md 演进篇），无臂可关，维持即可，无代码与文档动作。minor 切不切由人定。引擎行为无任何变化；shadow 与全部安全门维持原状。全量回归基线：3967 通过（round-88）＋ mypy strict 全绿（c2b1b10）。
 
 ### Changed — 收口路线点名：换包（round-89，裁决）
 
