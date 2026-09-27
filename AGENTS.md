@@ -39,6 +39,8 @@
 | Soak 外置运行态 | `uv run evolver soak setup\|exports\|status`（`$EVOLVER_HOME/evolver.py-soak`，勿提交 `memory/`） |
 | 配对会话（§5.1） | `uv run evolver session start\|resume\|status\|round\|reject\|accept\|incomplete\|extend\|finalize\|hypothesize`（running/accepted/incomplete；预算默认 8 且开局冻结，只有 `extend --by=<人>` 能调高） |
 | 父代基线（§5.2） | `uv run evolver bench baseline`（不带变异的唯一首写；solidify 写不到这条基线） |
+| Parent 库首写（库即尺子） | `uv run evolver library establish-parent --from=<file>`（establish_* 族首写；solidify 调用不到，测试钉住；`publish` 保持 Accept-only；active 不动） |
+| 求解带库（库即尺子） | `uv run evolver bench prompt <id> --pack <path> --library <snapshot_id>`（按 id 读快照正文贴进 prompt；Parent 解注 Parent id、候选解注候选 id；active 不动） |
 | 配对会话（§5.3） | `uv run evolver session hypothesize --json='{...}'`（宿主声明本轮唯一假说；`--stdin` 或 `@file` 亦可。无假说则门拒，引擎不代笔） |
 | 评估隔离 worktree | 默认开启（`enable_eval_worktree`）。失败回退 live cwd 并告警；`EVOLVER_EVAL_WORKTREE_STRICT=1` 时回退改为失败 |
 | 守护进程生命周期 | `uv run evolver start` / `stop` / `restart` / `status` / `log` |

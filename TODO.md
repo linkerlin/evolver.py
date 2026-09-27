@@ -18,7 +18,7 @@
 | 3 | 条款来自 train，val 题面不含条款 | 决定性条款必须能从 train 的前后观察里唯一收回，val 题面不出现。Parent 求解只看 Parent 快照 + val 题面；候选求解只看候选快照 + 同一批 val 题面；写候选的宿主看 train，不看 val、不看 grader。空库 Parent 拿不到 train 蒸馏的约定；若 Parent 仍满分 → 宿主不读库也能猜中，测量结束，不改题面再测。「家规只在写库人脑子里」的旧设计已废（round-92：空库钉 Parent 于 0、首份候选靠抄写白得 Accept，是出题人给候选写及格线） |
 | 4 | 按快照 id 读 | 求解入口按 id 注入：Parent 求解放 Parent 快照 id，候选求解放候选快照 id，都走 `load_version()`，都不动 active。不复用 enrich `_consult_library()`（读 active；候选草稿条款不在那里）。现在 `bench prompt` 只有题面和沙箱，库不在场 |
 
-第 3 步按上表修正之前**不写 Parent 库、不出新题**。完成判据同步收窄：「库里有句子、答卷里有句子」的 Accept 只证明求解路径读了快照，不算；本阶段的 Accept 是候选快照条款只来自 train 观察、val 求解只靠这份快照、两遍严格高于只持有 Parent 快照的 Parent。
+在一份满足第 3 行的题被点名之前，**不写 Parent 库、不出新题**。点名本身另算一次裁决，不是 bc6f651。完成判据同步收窄：「库里有句子、答卷里有句子」的 Accept 只证明求解路径读了快照，不算；本阶段的 Accept 是候选快照条款只来自 train 观察、val 求解只靠这份快照、两遍严格高于只持有 Parent 快照的 Parent。当前锚侧那份 bar 1.0 的包上也不开新会话。
 
 不开第三份「把宿主难住」的包。Evolver.php（2026-04 / v1.69）与 EvoScientists 分叉不追这次协议。
 

@@ -8,6 +8,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed — 库即尺子机器就位：establish 首写入口 + 按快照 id 的求解注入（round-93）
+
+裁决放行的引擎侧第 2、4 步：只落机器，调用与内容不动。出题与写 Parent 库仍冻着；当前锚侧 bar 1.0 的包上不开新会话；本函数本轮不被调用，soak 的 active 保持空（已核验：soak 无 library 目录）。版本保持 **1.113.0**。
+
+- **第 2 步：`library.establish_parent_library()`**（`establish_*` 族，`establish_parent_baseline` 同一纪律）。存快照（`save_version`，内容寻址、同内容幂等、异内容冲突拒写）＋写 `parent.json` 指针。`active` 按构造不动——`_set_active` 的唯一调用者仍是 `publish()`（Accept-only），首写与 Accept 不合用一条路。重立不同内容是人的 CLI 决定，回执带 `previous`，旧快照永不删除。**调用图钉**：`test_establish_is_absent_from_the_solidify_call_graph` 扫 `solidify.py` 与 `evolve/` 全部源码，出现该名字即失败。CLI：`evolver library establish-parent --from=<file>`。
+- **第 4 步：求解按快照 id 注入**。`bench prompt` 增 `--library <snapshot_id>`：`load_version(id)` 只读取，`render_prompt_block` 把快照正文**贴进 prompt**（4000 字符预算），并保留沙箱限定——宿主不被告知去开任何库目录。Parent 求解注 Parent id、候选求解注候选 id（候选 id 将来来自只存储不改 active 的 `save_version()`，不来自 `publish()`）。id 不存在是报错，不是静默出一份没有库的 prompt；不带 `--library` 的 prompt 逐字不变。
+- **两处失效句子修正**：TODO 的禁令改为「在一份满足第 3 行的题被点名之前，不写 Parent 库、不出新题；点名本身另算一次裁决」（原句在上次提交里已按字面到期）；SKILL.md Current stage 换成 round-92 的 train 可收回设计（原句还在派发已废的家规）；README.zh.md 总评切 1.113.0。
+- **AGENTS 命令篇**：补 `library establish-parent` 与 `bench prompt --library` 两行。
+
+**测试**：`test_library.py` 增七钉（首写前无 Parent、建立不动 active、同内容幂等、异内容换指针报 previous、`save_version` 单独不移动任何指针、调用图缺席、render 粘贴正文＋保留限定＋超预算截断）；`test_bench_pack.py` 增三钉（无 `--library` 的 prompt 无库段、指定 id 贴正文且保留限定且 active 不动、未知 id 报错）。受影响面 56 过；ruff / format / mypy strict（339 文件）全绿。
+
 ### Changed — 库即尺子第 3 步设计修正：条款来自 train，不许抄写 Accept（round-92，裁决）
 
 round-91 落进章程的第 3 步（「家规只在写库人脑子里」）经裁决废止，未开工即改。版本保持 **1.113.0**（已按「协议落地、没有适应度胜利」切过，不再切）。
