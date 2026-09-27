@@ -1303,16 +1303,16 @@ def solidify(
     quietly skip the bookkeeping (round-84 lesson: the gate was built, the
     writer was not wired).
     """
-    result = _solidify_cycle(
-        mutation_override=mutation_override,
-        skip_validation=skip_validation,
-        proposal=proposal,
-    )
     # The cycle context is read BEFORE _solidify_cycle consumes it: the
     # ledger needs the cycle id and the candidate id, and the hypothesis
     # file is burned inside the cycle (§5.3 用后即焚), so its text is read
     # here while it still exists.
     pending_run, hypothesis_text = _pending_cycle_context()
+    result = _solidify_cycle(
+        mutation_override=mutation_override,
+        skip_validation=skip_validation,
+        proposal=proposal,
+    )
     try:
         session_state = _settle_session(result, pending_run=pending_run, hypothesis=hypothesis_text)
     except Exception:

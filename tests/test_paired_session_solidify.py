@@ -359,6 +359,27 @@ class TestSessionLedgerFold:
         assert entry["cycle_ref"] == "run_paired_gate"
         assert entry["decision"] == "reject"
 
+    def test_the_ledger_remembers_the_burned_hypothesis_text(self, git_ws: Path) -> None:
+        """round-91 hole: the cycle burns the hypothesis (§5.3 用后即焚) and
+        the fold used to read the file AFTER the burn, so every rounds.jsonl
+        entry carried an empty string — procedurally legal, unreplayable at
+        the hypothesis level. The text is captured before the cycle now."""
+        from evolver.gep.evolution_session import EvolutionSession
+
+        self._open_session()
+        _freeze_pack(git_ws)
+        hypothesis_mod.record_hypothesis(_good_hypothesis())
+        write_state_for_solidify(_last_run())
+
+        assert solidify(skip_validation=True)["ok"] is False
+
+        entry = json.loads(
+            (EvolutionSession().run_dir / "rounds.jsonl")
+            .read_text(encoding="utf-8")
+            .splitlines()[-1]
+        )
+        assert entry["hypothesis"] == "the executor misses the exclusion clause"
+
     def test_a_retried_cycle_does_not_burn_a_second_round(self, git_ws: Path) -> None:
         """One Candidate, one round — however many times solidify retries."""
         from evolver.gep.evolution_session import EvolutionSession
