@@ -8,6 +8,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed — 收口路线点名：换包（round-89，裁决）
+
+TODO #6 点名为换包。版本保持 1.112.0。`EVOLVER_ACCEPTANCE_SHADOW` 保持打开。本轮无代码改动。
+
+- **八会话留到新 Parent 仍满分时再用。** 第 4 节第 2 条记的是搜索跑完仍无 Accept。现行 0/1 小包上 Parent 已是 1.0，Accept 没有分数空间；现在开会话，收窄说法时记下来的是满格尺子，不是进化结果。
+- **换包是替换锚侧文件的字节。** `freeze_charter_pack` 只调用 `write_pack()`，产物与 digest `721a33d8de3a0b6e` 相同。digest 不变，基线继续有效。`evolver bench freeze --force` 会把锚侧手装的包盖回这份内置 12 题。
+- **新包要给严格优于留出格。** 评分是 0 与 1。val ≤ 6 时 Parent 至少一题为 0；val > 6 时 Parent 至少 8 题为 0，否则 `COMPARE_MIN_DISCORDANT` 到不了。题由人写，不走自博弈出题。先放包，由不写候选的测量解完 val，再 `evolver bench baseline`。新 Parent 仍满分就转入八会话，不准备第三份包。
+- **`evolver session start` 排在新基线低于满分之后。**
+
+**下一步**：锚侧新包，一次 `evolver bench baseline`。第 6 项仍要真实会话数据；换尺子不算阶段进度。
+
+**执行回执（同轮补记）**。`charter-pack-v2.tasks.json` 按字节拷贝至锚侧（`cmp` 逐字节一致，digest `dfd9f8cada3740b4` 保持），验尺脚本 FIT。5 道 val 由本上下文仅凭 `bench prompt` 题面与沙箱输入求解 × 2 遍，未读 JSON 里的 grader：`val-code-div3` 的 sum.py 自测输出 120，与作者参考解一致；`val-ledger-posted` 按规则逐字落地，手推与独立解释器对拍均为 230，r2 对 r2 字节重放同为 230。`bench baseline` 一次：**Parent = 1.0**，两遍五题全 1.0，per_task 地板全 1.0，绑 `dfd9f8cada3740b4` + epoch 13，落 soak 根。
+
+**预注册失手点未兑现**。RULES.txt 没有藏规则：`void H` 因双命名空间落 post 侧被忽略（「void 一个 hold id 会关掉它」那条捷径不成立）、capture 把 posted 打到 −15（「posted 不允许为负」是捷径）、void 负额 post 反向加账 15、capture Z 60 只取 50（「不足额改成部分冻结」是捷径）、输出 posted 本身 230 而非 available 205。解题上下文知道包里有一道要失手的题，仍尽了全力——规则可解则解，不是沙袋测量。
+
+**决策树触发：新 Parent 仍满分 → 按 round-89 转入八会话分支，不再写第三份包。** 下一动作是 `evolver session start`，由人点名；八次会话（预算耗尽，或至少两次 Reject 后合法 Incomplete）无 Accept，即按章程第 4 节把说法收窄为「受治理的仓库自维护」并关闭从未赢过的臂。换尺子不算第 6 项进度。
+
 ### Changed — 仪器武装 + 全量回归首次全绿（round-88，round-86/87 遗留清账）
 
 收口序列真机执行完毕，配对会话的测量仪器从此在线。版本保持 1.112.0。
@@ -24,7 +41,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 **测试**：全量 3967 通过。8 处修复的钉：`test_acceptance_shadow_lineage`（rearm 地板）、`test_anchor` 种子套件（三探针）、`test_anchor` 锚钩子（rebind）、`test_solidify` / `test_validation_env`（平台适配）、`test_solidify_dogfood_fixes`（引擎 which 回退 + 假件签名）、`test_sprint26_promotion`（rearm 地板）、`test_e2e_sprint14`（假说 + 包门）。
 
-**遗留（须步子哥裁决）**：TODO #6 收口的两条路——换更难的包重测基线，或点起首次配对会话走八会话分支。仪器已就位：epoch 13 全绿、包 digest `721a33d8de3a0b6e`、bar 1.0。
+**遗留**：TODO #6 的两条路当时未点名。round-89 点名为换包。仪器状态仍是：epoch 13 全绿、包 digest `721a33d8de3a0b6e`、bar 1.0。
 
 ### Changed — 大包配对检验 + 环内查阅 + 游标停止语义（round-87，TODO #3/#4/#5 闭账）
 

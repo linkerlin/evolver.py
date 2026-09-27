@@ -9,7 +9,11 @@
 
 round-87 闭了第 3、4、5 项：大包（val > 6）发布走 `bench/compare.py` 配对检验（α = 0.05，discordant ≥ 8，raw-score floors 让位于配对检验、自报 declaration 仍绑定）；enrich 把已发布库快照作只读设计上下文注入 prompt、run record 记查阅 id（active 对比期间仍指 Parent）；无会话的 `--loop` tick 返回 `stop_and_report` 不写基因，守护循环即停。机器部分全部接完，只剩第 6 项收口——它要真实运行数据，不是代码。
 
-round-88 把仪器装上了（真机，仓外 soak 根）：锚纪元 13 全绿、章程包冻结（12 题，digest `721a33d8de3a0b6e`）、Parent 基线 1.0（5 题 val × 2 遍，per_task 地板与 epoch 绑定齐全）。**bar 在天花板**：此包下「严格优于」打不穿，第 6 项只剩两条路，由人点名——换更难的包（`bench freeze --force` 作废基线重测），或起首次配对会话走八会话分支。全量回归 3967 通过，首次有全量数字。
+round-88 把仪器装上了（真机，仓外 soak 根）：锚纪元 13 全绿、章程包冻结（12 题，digest `721a33d8de3a0b6e`）、Parent 基线 1.0（5 题 val × 2 遍，per_task 地板与 epoch 绑定齐全）。全量回归 3967 通过，首次有全量数字。
+
+round-89 点名收口路线：**换包**。现行 12 题的 Parent 是 1.0，第 4 节第 1 条没有可上升的分数，第 2 条要等搜索真的跑完才成立。下一步是把另一份 tasks 写到锚侧 `anchor/bench/charter-pack.tasks.json`。`evolver bench freeze`（含 `--force`）的写入源是内置 12 题，会把这份文件盖回去；digest 不变时 `rekeyed_void` 也不作废基线。评分只有 0 和 1：val ≤ 6 时新 Parent 至少错一题，val > 6 时至少错 8 题（`COMPARE_MIN_DISCORDANT`），「严格优于」才有格。顺序是先放包、由不写候选的测量解完 val、再单独 `evolver bench baseline`。新 Parent 仍是满分，就改走八会话，并且不再准备第三份包。新基线低于满分之后才 `evolver session start`。换包这一步不算第 6 项进度。
+
+round-89 执行完毕：v2 包（4 train + 5 val，digest `dfd9f8cada3740b4`）字节拷贝上岗，5 道 val 由不写候选的本上下文解两遍（未读 grader；预注册失手点 `val-ledger-posted` 被双解释器逐字落地解对，230 两遍一致）。新 bar 仍 **1.0**，地板与 epoch 13 绑定齐全。按预注册决策树**转入八会话分支，不再写第三份包**：`evolver session start` 由人点名，之后八次会话（预算耗尽或 ≥2 Reject 后合法 Incomplete）无 Accept 即按章程第 4 节收窄说法并关闭从未赢过的臂。
 
 | # | 项 | 完成时 |
 |---|---|---|
