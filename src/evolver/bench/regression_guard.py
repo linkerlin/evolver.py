@@ -31,7 +31,7 @@ Harvested from EvoOntology ``evaluation/evaluation.py``
 from __future__ import annotations
 
 import math
-from typing import Any, Final
+from typing import Any, Final, TypeGuard
 
 #: Verdict reasons (stable strings — tests and the instrument cite them).
 REASON_NO_FLOOR_SOURCE: Final = "baseline_without_per_task"
@@ -46,9 +46,10 @@ REASON_UNMEASURED_TASK: Final = "regression_check_unmeasured"
 DECLARATION_SPLIT: Final = "train"
 
 
-def _finite(value: Any) -> bool:
+def _finite(value: Any) -> TypeGuard[float]:
     """True for a real number. ``bool`` is excluded: ``True == 1`` would
-    otherwise pass as a score of one."""
+    otherwise pass as a score of one. The TypeGuard narrows JSON-shaped
+    ``Any | None`` scores at every call site that gates on it."""
     return isinstance(value, (int, float)) and not isinstance(value, bool) and math.isfinite(value)
 
 

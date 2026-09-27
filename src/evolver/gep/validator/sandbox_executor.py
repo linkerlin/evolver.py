@@ -37,6 +37,7 @@ import tempfile
 import time
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Any, cast
 
 from evolver.config import VALIDATION_TIMEOUT_MS
 
@@ -289,9 +290,12 @@ def _linux_child_preexec() -> None:
     try:
         import resource as resource_mod
 
-        resource_mod.setrlimit(resource_mod.RLIMIT_CPU, (60, 60))
-        resource_mod.setrlimit(resource_mod.RLIMIT_AS, (512 * 1024 * 1024, 512 * 1024 * 1024))
-        resource_mod.setrlimit(resource_mod.RLIMIT_FSIZE, (128 * 1024 * 1024, 128 * 1024 * 1024))
+        # typeshed's view of `resource` hides the POSIX attrs from win32
+        # mypy even though this code only runs behind the Linux gate above.
+        limits = cast(Any, resource_mod)
+        limits.setrlimit(limits.RLIMIT_CPU, (60, 60))
+        limits.setrlimit(limits.RLIMIT_AS, (512 * 1024 * 1024, 512 * 1024 * 1024))
+        limits.setrlimit(limits.RLIMIT_FSIZE, (128 * 1024 * 1024, 128 * 1024 * 1024))
     except Exception as exc:
         logger.debug("[Sandbox] Failed to set resource limits: %s", exc)
     _try_linux_network_isolation()

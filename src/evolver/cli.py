@@ -1677,7 +1677,7 @@ def _cmd_session(args: argparse.Namespace) -> int:
 
     action = getattr(args, "session_action", None) or "status"
 
-    def _emit(payload: dict) -> None:
+    def _emit(payload: dict[str, Any]) -> None:
         print(json.dumps(payload, ensure_ascii=False, indent=2, default=str))
 
     try:
@@ -1695,23 +1695,23 @@ def _cmd_session(args: argparse.Namespace) -> int:
             return 0
 
         if action == "status":
-            run = active_session()
-            if run is None:
+            current = active_session()
+            if current is None:
                 latest = EvolutionSession().latest_run()
                 if latest is None:
                     print("no session yet — `evolver session start --parent=<ref>`")
                     return 0
-                run = latest
+                current = latest
             if getattr(args, "json", False):
-                _emit(run)
+                _emit(current)
                 return 0
-            print(f"session       : {run['run_id']}")
-            print(f"status        : {run['status']}")
-            print(f"parent        : {run['parent']}")
-            print(f"round         : {run['round']} / {run['budget']['max_rounds']}")
-            print(f"candidate     : {run.get('current_candidate') or '-'}")
+            print(f"session       : {current['run_id']}")
+            print(f"status        : {current['status']}")
+            print(f"parent        : {current['parent']}")
+            print(f"round         : {current['round']} / {current['budget']['max_rounds']}")
+            print(f"candidate     : {current.get('current_candidate') or '-'}")
             print(f"rejects       : {EvolutionSession().rejected_count()}")
-            print(f"end reason    : {run.get('end_reason') or '-'}")
+            print(f"end reason    : {current.get('end_reason') or '-'}")
             return 0
 
         if action == "resume":
@@ -1748,7 +1748,7 @@ def _cmd_session(args: argparse.Namespace) -> int:
             if not isinstance(payload, dict):
                 print("hypothesis rejected: top level must be a JSON object", file=sys.stderr)
                 return 2
-            run = active_session()
+            session_run = active_session()
             # The record must carry the round it belongs to. The swarm cycle
             # id is the primary scope (same stamp as swarm_hypothesis); the
             # session's own round id is the fallback when no cycle is pending
@@ -1766,7 +1766,7 @@ def _cmd_session(args: argparse.Namespace) -> int:
                         cycle_id = str(last.get("run_id") or "")
             except Exception:
                 cycle_id = ""
-            scope = cycle_id or str((run or {}).get("run_id") or "")
+            scope = cycle_id or str((session_run or {}).get("run_id") or "")
             if scope:
                 payload.setdefault("run_id", scope)
             try:

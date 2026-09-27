@@ -1264,8 +1264,10 @@ def _session_reject(
         session = _session_active()
         if session is None:
             return None
-        details = result.get("details") if isinstance(result.get("details"), dict) else {}
-        bench = details.get("bench_pack") if isinstance(details.get("bench_pack"), dict) else {}
+        raw_details = result.get("details")
+        details = raw_details if isinstance(raw_details, dict) else {}
+        raw_bench = details.get("bench_pack")
+        bench = raw_bench if isinstance(raw_bench, dict) else {}
         metrics: dict[str, Any] = {}
         if bench:
             metrics = {
