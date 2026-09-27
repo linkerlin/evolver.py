@@ -509,6 +509,15 @@ def _build_parser() -> argparse.ArgumentParser:
     bench_grade_p.add_argument(
         "--replicate", type=int, default=None, help="Independent solve slot (r1 / r2) to grade"
     )
+    bench_prompt_p.add_argument(
+        "--library",
+        default=None,
+        help=(
+            "Snapshot id whose content is pasted into the prompt (库即尺子 §5.4). "
+            "Parent solves get the Parent id, candidate solves the candidate id; "
+            "loaded by id, active never moves. Without it the prompt is unchanged."
+        ),
+    )
     bench_run.add_argument(
         "--replicate", type=int, default=None, help="Grade this independent solve slot (r1 / r2)"
     )
@@ -522,6 +531,25 @@ def _build_parser() -> argparse.ArgumentParser:
     bench_cmp.add_argument("a", help="Results JSON A (from bench run --output)")
     bench_cmp.add_argument("b", help="Results JSON B")
     bench_cmp.add_argument("--alpha", type=float, default=0.05, help="Significance threshold")
+    library_p = sub.add_parser(
+        "library",
+        help="Content library snapshots (库即尺子: the scored object is the snapshot)",
+    )
+    library_sub = library_p.add_subparsers(dest="library_action", required=True)
+    lib_establish = library_sub.add_parser(
+        "establish-parent",
+        help=(
+            "First-write the Parent library (establish_* entry — solidify cannot "
+            "reach it; publish stays Accept-only; active untouched)"
+        ),
+    )
+    lib_establish.add_argument(
+        "--from",
+        dest="from_file",
+        required=True,
+        help="JSON file holding the Parent library payload",
+    )
+    lib_establish.add_argument("--json", action="store_true", help="Output raw JSON")
     webui_p = sub.add_parser("webui", help="Launch the WebUI dashboard")
     webui_p.add_argument("--host", default="127.0.0.1", help="Bind host")
     webui_p.add_argument(
@@ -821,6 +849,9 @@ def main(argv: Sequence[str] | None = None) -> int:
 
     if command == "bench":
         return _cmd_bench(args)
+
+    if command == "library":
+        return _cmd_library(args)
 
     if command == "sync":
         return asyncio.run(_cmd_sync(args))
@@ -2276,6 +2307,48 @@ def _cmd_apply_proposal(args: argparse.Namespace) -> int:
     return 0
 
 
+def _cmd_library(args: argparse.Namespace) -> int:
+    """Content library snapshots (库即尺子). The establish_* family lives
+    here — the human's mutation-free first-write, unreachable from solidify
+    (pinned by test); ``publish`` stays Accept-only inside the session flow."""
+    from evolver.gep import library
+
+    action = getattr(args, "library_action", None) or ""
+    if action == "establish-parent":
+        raw = Path(getattr(args, "from_file", "") or "")
+        if not raw.is_file():
+            print(f"library establish-parent failed: file not found: {raw}", file=sys.stderr)
+            return 2
+        try:
+            payload = json.loads(raw.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError) as exc:
+            print(f"library establish-parent failed: unreadable JSON: {exc}", file=sys.stderr)
+            return 2
+        if not isinstance(payload, dict):
+            print(
+                "library establish-parent failed: top level must be a JSON object", file=sys.stderr
+            )
+            return 2
+        try:
+            result = library.establish_parent_library(payload)
+        except library.SnapshotConflictError as exc:
+            print(f"library establish-parent failed: {exc}", file=sys.stderr)
+            return 1
+        if getattr(args, "json", False):
+            print(json.dumps(result, ensure_ascii=False, indent=2))
+            return 0
+        print(f"parent library : {result['snapshot']}")
+        print(f"stored at      : {result['path']}")
+        print(f"previous       : {result['previous'] or '-'}")
+        print(
+            f"active         : {result['active_untouched'] or 'untouched (publish is Accept-only)'}"
+        )
+        print("solves read it by id (load_version); no solve happens until a pack is named")
+        return 0
+    print(f"unknown library action: {action}", file=sys.stderr)
+    return 2
+
+
 def _cmd_bench(args: argparse.Namespace) -> int:
     """S26.1: benchmark the workspace; feeds the r_best fitness ledger."""
     from evolver.bench import runner
@@ -2373,7 +2446,14 @@ def _cmd_bench(args: argparse.Namespace) -> int:
 
     if args.bench_action == "prompt":
         try:
-            print(pack_prompt(Path(args.pack), args.task_id, replicate=args.replicate))
+            print(
+                pack_prompt(
+                    Path(args.pack),
+                    args.task_id,
+                    replicate=args.replicate,
+                    library_snapshot=getattr(args, "library", None),
+                )
+            )
         except (ValueError, OSError, json.JSONDecodeError) as exc:
             print(f"bench prompt failed: {exc}")
             return 1

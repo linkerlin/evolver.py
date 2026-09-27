@@ -18,7 +18,16 @@ from pathlib import Path
 from typing import Any
 
 
-def inference_prompt(task: dict[str, Any], sandbox: Path) -> str:
+def inference_prompt(
+    task: dict[str, Any], sandbox: Path, *, library_block: str | None = None
+) -> str:
+    """Build the solve prompt for one materialized task.
+
+    ``library_block`` is a pre-rendered snapshot section (see
+    :func:`evolver.gep.library.render_prompt_block`). It rides IN the
+    prompt — the isolation rule stays intact: the host works only inside
+    the sandbox and is never pointed at a library directory (库即尺子 §5.4).
+    """
     grader = task.get("grader") or {}
     deliverable = grader.get("file") or grader.get("script") or ""
     workdir = sandbox.resolve()
@@ -33,8 +42,10 @@ def inference_prompt(task: dict[str, Any], sandbox: Path) -> str:
         "",
         str(task.get("prompt") or ""),
         "",
-        "## Deliverable",
     ]
+    if library_block:
+        lines += [library_block, ""]
+    lines += ["## Deliverable"]
     if grader.get("type") == "code_stdout":
         lines += [
             f"Write your solution to `{deliverable}` — the grader runs it with",

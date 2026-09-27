@@ -150,3 +150,80 @@ async def test_the_dispatch_run_record_names_the_consulted_snapshot(
 
     state = _read_solidify_state()
     assert state["last_run"]["library_snapshot"] == library.snapshot_id(PARENT)
+
+
+# ---------------------------------------------------------------------------
+# round-93: the establish_* first-write and its call-graph discipline
+# ---------------------------------------------------------------------------
+
+
+def test_before_the_first_write_there_is_no_parent(library_env: Path) -> None:
+    assert library.parent_snapshot_id() is None
+
+
+def test_establish_writes_the_parent_pointer_and_never_touches_active(
+    library_env: Path,
+) -> None:
+    result = library.establish_parent_library(PARENT)
+    assert result["ok"] is True and result["reason"] == "parent_established"
+    assert result["snapshot"] == library.snapshot_id(PARENT)
+    assert library.parent_snapshot_id() == library.snapshot_id(PARENT)
+    assert library.load_version(library.snapshot_id(PARENT)) == PARENT
+    # active moves only on Accept: establish is the human's first-write
+    assert result["active_untouched"] is None
+    assert library.active_snapshot_id() is None
+
+
+def test_establish_same_content_twice_is_idempotent(library_env: Path) -> None:
+    first = library.establish_parent_library(PARENT)
+    second = library.establish_parent_library(dict(PARENT))
+    assert second["reason"] == "already_stored"
+    assert second["snapshot"] == first["snapshot"]
+    assert library.parent_snapshot_id() == first["snapshot"]
+
+
+def test_reestablishing_different_content_moves_the_pointer_and_reports_previous(
+    library_env: Path,
+) -> None:
+    first = library.establish_parent_library(PARENT)
+    second = library.establish_parent_library(CHILD)
+    assert second["previous"] == first["snapshot"]
+    assert library.parent_snapshot_id() == library.snapshot_id(CHILD)
+    # versions are never deleted: the old snapshot stays loadable by id
+    assert library.load_version(first["snapshot"]) == PARENT
+
+
+def test_save_version_alone_never_moves_active_or_parent(library_env: Path) -> None:
+    library.save_version(CHILD)
+    assert library.active_snapshot_id() is None
+    assert library.parent_snapshot_id() is None
+
+
+def test_establish_is_absent_from_the_solidify_call_graph() -> None:
+    """round-93 discipline pin: the first-write must be unreachable from the
+    engine's cycle. solidify's call graph (the module and the evolve
+    pipeline) must not reference it — the only entry is the human CLI."""
+    repo = Path(__file__).resolve().parents[2]
+    guarded = [
+        repo / "src/evolver/gep/solidify.py",
+        *sorted((repo / "src/evolver/evolve").rglob("*.py")),
+    ]
+    assert guarded, "call-graph scan found no files"
+    for path in guarded:
+        assert "establish_parent_library" not in path.read_text(encoding="utf-8"), (
+            f"{path.name} references establish_parent_library — the first-write "
+            "must stay outside the engine cycle"
+        )
+
+
+def test_render_prompt_block_pastes_content_and_keeps_the_confine(library_env: Path) -> None:
+    block = library.render_prompt_block(library.snapshot_id(PARENT), PARENT)
+    assert library.snapshot_id(PARENT) in block
+    assert "do the thing" in block  # the payload itself, pasted
+    assert "Do NOT open or edit any library store" in block
+
+
+def test_render_prompt_block_truncates_past_the_budget(library_env: Path) -> None:
+    big = {"genes": [{"id": f"g{i}", "strategy": ["x" * 200]} for i in range(100)]}
+    block = library.render_prompt_block("sha256:big", big)
+    assert "truncated" in block

@@ -35,9 +35,11 @@ from evolver.gep.paths import get_evolution_dir
 
 LIBRARY_DIRNAME: Final = "library"
 ACTIVE_FILENAME: Final = "active.json"
+PARENT_FILENAME: Final = "parent.json"
 VERSIONS_DIRNAME: Final = "versions"
 SNAPSHOT_FILENAME: Final = "snapshot.json"
 LIBRARY_FORMAT: Final = "evolver.library.v0"
+PROMPT_BLOCK_MAX_CHARS: Final = 4000
 
 
 class SnapshotConflictError(RuntimeError):
@@ -54,6 +56,10 @@ def library_dir() -> Path:
 
 def active_path() -> Path:
     return library_dir() / ACTIVE_FILENAME
+
+
+def parent_path() -> Path:
+    return library_dir() / PARENT_FILENAME
 
 
 def versions_dir() -> Path:
@@ -102,6 +108,22 @@ def load_active() -> dict[str, Any] | None:
     if snap is None:
         return None
     return load_version(snap)
+
+
+def parent_snapshot_id() -> str | None:
+    """The established Parent library's id, or ``None`` before the human
+    first-write. Distinct from ``active``: only an Accept publishes."""
+    path = parent_path()
+    if not path.exists():
+        return None
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return None
+    if not isinstance(payload, dict):
+        return None
+    value = payload.get("snapshot")
+    return str(value) if value else None
 
 
 def load_version(snap: str) -> dict[str, Any] | None:
@@ -190,6 +212,58 @@ def publish(
     }
 
 
+def establish_parent_library(payload: dict[str, Any]) -> dict[str, Any]:
+    """The Parent library's first-write — the content twin of
+    ``establish_parent_baseline``.
+
+    Stores the snapshot under its content address and records it as the
+    Parent-of-record in ``parent.json``. Deliberately its own entry: the
+    only caller of ``_set_active`` is :func:`publish`, which stays
+    Accept-only, so the human first-write and an Accept never share a path;
+    ``solidify`` cannot reach this function (pinned by test). Solves load
+    the result by id via :func:`load_version`; ``active`` is untouched by
+    construction. Re-establishing with different content is a human CLI
+    decision that moves the Parent pointer — the previous id is returned
+    and the old snapshot stays stored (versions are never deleted).
+    """
+    stored = save_version(payload)
+    snap = str(stored["snapshot"])
+    with with_file_lock(target_path=library_dir()):
+        previous = parent_snapshot_id()
+        path = parent_path()
+        path.parent.mkdir(parents=True, exist_ok=True)
+        atomic_write_json(path, {"format": LIBRARY_FORMAT, "snapshot": snap})
+    stored_already = str(stored["reason"]) == "already_stored"
+    return {
+        "ok": True,
+        "reason": "already_stored" if stored_already else "parent_established",
+        "snapshot": snap,
+        "previous": previous,
+        "path": str(path),
+        "active_untouched": active_snapshot_id(),
+    }
+
+
+def render_prompt_block(snap: str, payload: dict[str, Any]) -> str:
+    """Render a snapshot as paste-into-prompt context for a solve.
+
+    A solve prompt confines the host to the task sandbox, so the snapshot's
+    content rides IN the prompt — the host is never pointed at a library
+    directory to open. Same budget as the dispatch-side block.
+    """
+    body = json.dumps(payload, ensure_ascii=False, indent=2, sort_keys=True)
+    if len(body) > PROMPT_BLOCK_MAX_CHARS:
+        body = body[:PROMPT_BLOCK_MAX_CHARS] + "\n... (truncated — full text in the library store)"
+    return (
+        "## Library snapshot (read-only design context)\n"
+        f"- snapshot id: `{snap}`\n"
+        "- The snapshot content is pasted below; it is the only library you "
+        "get. Do NOT open or edit any library store — your writes stay "
+        "inside the working directory.\n"
+        f"```json\n{body}\n```"
+    )
+
+
 def snapshot_of(payload: dict[str, Any] | None) -> str | None:
     """Convenience for callers holding a payload rather than an id."""
     if not isinstance(payload, dict):
@@ -201,15 +275,21 @@ __all__ = [
     "ACTIVE_FILENAME",
     "LIBRARY_DIRNAME",
     "LIBRARY_FORMAT",
+    "PARENT_FILENAME",
+    "PROMPT_BLOCK_MAX_CHARS",
     "SNAPSHOT_FILENAME",
     "VERSIONS_DIRNAME",
     "SnapshotConflictError",
     "active_path",
     "active_snapshot_id",
+    "establish_parent_library",
     "library_dir",
     "load_active",
     "load_version",
+    "parent_path",
+    "parent_snapshot_id",
     "publish",
+    "render_prompt_block",
     "save_version",
     "snapshot_id",
     "snapshot_of",

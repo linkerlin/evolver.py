@@ -136,13 +136,23 @@ def _pack_sandbox_root(pack_path: Path, *, replicate: int | None = None) -> Path
     return sandbox_root(pack_path, replicate=replicate)
 
 
-def pack_prompt(pack_path: Path, task_id: str, *, replicate: int | None = None) -> str:
+def pack_prompt(
+    pack_path: Path,
+    task_id: str,
+    *,
+    replicate: int | None = None,
+    library_snapshot: str | None = None,
+) -> str:
     """Materialize the task sandbox (force — stale artifacts deleted) and
     return the inference prompt for an external agent. The engine never runs
     an agent; the prompt is the interface (bridge-mode contract).
 
     Solve the same task once per replicate: each slot is materialized afresh
-    and scored independently.
+    and scored independently. ``library_snapshot`` names the snapshot whose
+    content is pasted into the prompt (Parent solves get the Parent id,
+    candidate solves the candidate id); it is loaded by id — read-only,
+    ``active`` never moves — and an unknown id is an error, not a silent
+    prompt without the library.
     """
     tasks = {str(t["id"]): t for t in load_pack(pack_path)}
     if task_id not in tasks:
@@ -150,7 +160,15 @@ def pack_prompt(pack_path: Path, task_id: str, *, replicate: int | None = None) 
     sandbox = materialize(
         tasks[task_id], _pack_sandbox_root(pack_path, replicate=replicate), force=True
     )
-    return inference_prompt(tasks[task_id], sandbox)
+    library_block: str | None = None
+    if library_snapshot is not None:
+        from evolver.gep import library as library_mod
+
+        payload = library_mod.load_version(library_snapshot)
+        if payload is None:
+            raise ValueError(f"library snapshot {library_snapshot!r} not found")
+        library_block = library_mod.render_prompt_block(library_snapshot, payload)
+    return inference_prompt(tasks[task_id], sandbox, library_block=library_block)
 
 
 def grade_pack_task(pack_path: Path, task_id: str, *, replicate: int | None = None) -> float:

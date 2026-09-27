@@ -123,3 +123,46 @@ def test_load_pack_rejects_invalid(tmp_path: Path) -> None:
     bad = _write_pack(tmp_path, [{"id": "x"}])
     with pytest.raises(ValueError, match="invalid task pack"):
         load_pack(bad)
+
+
+# ---------------------------------------------------------------------------
+# round-93: the solve prompt carries the named snapshot by id (库即尺子 §5.4)
+# ---------------------------------------------------------------------------
+
+
+def _library_env(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("EVOLUTION_DIR", str(tmp_path / "memory" / "evolution"))
+
+
+def test_prompt_without_library_option_has_no_library_section(tmp_path: Path) -> None:
+    pack = _write_pack(tmp_path, _two_task_pack())
+    plain = pack_prompt(pack, "val-exact-1")
+    assert "Library snapshot" not in plain
+    assert "read-only design context" not in plain
+
+
+def test_prompt_with_named_snapshot_pastes_content_by_id(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _library_env(tmp_path, monkeypatch)
+    from evolver.gep import library
+
+    stored = library.save_version(
+        {"genes": [{"id": "gene_a", "strategy": ["tie? earlier id wins"]}]}
+    )
+    snap = str(stored["snapshot"])
+
+    pack = _write_pack(tmp_path, _two_task_pack())
+    prompt = pack_prompt(pack, "val-exact-1", library_snapshot=snap)
+
+    assert snap in prompt  # the id, so the run can prove which library it solved with
+    assert "tie? earlier id wins" in prompt  # the content, pasted in
+    assert "Do NOT open or edit any library store" in prompt  # confinement kept
+    # reading by id never moves active
+    assert library.active_snapshot_id() is None
+
+
+def test_prompt_with_unknown_snapshot_id_is_an_error(tmp_path: Path) -> None:
+    pack = _write_pack(tmp_path, _two_task_pack())
+    with pytest.raises(ValueError, match="not found"):
+        pack_prompt(pack, "val-exact-1", library_snapshot="sha256:absent")
