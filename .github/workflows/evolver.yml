@@ -54,10 +54,14 @@ jobs:
       - name: Run evolver version check
         run: uv run evolver --version
 
-      - name: Assert package version is 1.95.0
+      - name: Assert package version consistency
         run: |
-          uv run python -c "from evolver import __version__; assert __version__ == '1.95.0', __version__"
-          uv run evolver --version | grep -F "1.95.0"
+          uv run python -c "
+          import tomllib
+          from evolver import __version__
+          py = tomllib.load(open('pyproject.toml', 'rb'))['project']['version']
+          assert __version__ == py, (py, __version__)"
+          uv run evolver --version | grep -F "evolver "
 
       - name: Run evolver run (dry check)
         run: uv run evolver run
@@ -93,11 +97,12 @@ jobs:
         env:
           EVOLVER_NO_PARENT_GIT: "1"
 
-  # Advisory only: Windows is a first-class dev platform for this port
-  # (getloadavg/file-lock/os.replace pitfalls). Failures do not block merge.
+  # Windows is a first-class dev platform for this port (getloadavg /
+  # file-lock / os.replace / PATHEXT pitfalls) and blocking since round-88:
+  # the full suite is green on real Windows, so a red run is a real defect,
+  # not platform noise.
   test-windows:
     runs-on: windows-latest
-    continue-on-error: true
     strategy:
       matrix:
         python-version: ["3.12"]

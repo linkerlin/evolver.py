@@ -313,7 +313,7 @@ memory/                 # Runtime data (graph JSONL, reviews JSONL)
 | **Ops / Solo** | ~85% | lifecycle, force-update, --solo |
 | **WebUI** | ~70% | SSR dashboard + GitHub observer |
 | **Validator** | ~50% | sandbox framework; prod network isolation pending |
-| **Docs / Release** | ~90% | CHANGELOG + version **1.112.0**; multi-OS CI advisory |
+| **Docs / Release** | ~90% | CHANGELOG + version **1.113.0**; multi-OS CI advisory |
 
 Live plan: [演进方案.md](演进方案.md) and [TODO.md](TODO.md). The wikiskill audit is an archive.
 
