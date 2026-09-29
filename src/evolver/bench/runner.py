@@ -19,7 +19,7 @@ import time
 from pathlib import Path
 from typing import Any
 
-from evolver.bench.frozen_gate import sandbox_root
+from evolver.bench.frozen_gate import pack_digest, sandbox_root
 from evolver.bench.prompts import inference_prompt
 from evolver.bench.scoring import grade
 from evolver.bench.tasks import materialize, validate_tasks
@@ -168,6 +168,30 @@ def pack_prompt(
         if payload is None:
             raise ValueError(f"library snapshot {library_snapshot!r} not found")
         library_block = library_mod.render_prompt_block(library_snapshot, payload)
+
+    # Solve provenance (round-94): the receipt records WHAT this solve saw —
+    # pack bytes, injected snapshot, replicate slot, time. Written beside the
+    # sandbox (never inside it: the solving agent must not be able to forge
+    # it). Capture only for now; a consumer binds it at measurement time once
+    # the pack-naming ruling defines snapshot freshness.
+    receipts = _pack_sandbox_root(pack_path, replicate=replicate) / "_receipts"
+    receipts.mkdir(parents=True, exist_ok=True)
+    receipts.joinpath(f"{task_id}.json").write_text(
+        json.dumps(
+            {
+                "format": "evolver.solve_receipt.v0",
+                "pack": str(pack_path),
+                "pack_digest": pack_digest(pack_path),
+                "task": task_id,
+                "replicate": replicate,
+                "library": library_snapshot,
+                "written_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+            },
+            indent=2,
+        )
+        + "\n",
+        encoding="utf-8",
+    )
     return inference_prompt(tasks[task_id], sandbox, library_block=library_block)
 
 

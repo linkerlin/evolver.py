@@ -166,3 +166,46 @@ def test_prompt_with_unknown_snapshot_id_is_an_error(tmp_path: Path) -> None:
     pack = _write_pack(tmp_path, _two_task_pack())
     with pytest.raises(ValueError, match="not found"):
         pack_prompt(pack, "val-exact-1", library_snapshot="sha256:absent")
+
+
+# ---------------------------------------------------------------------------
+# round-94: solve receipts — provenance for what a solve saw
+# ---------------------------------------------------------------------------
+
+
+def test_prompt_writes_a_solve_receipt(tmp_path: Path) -> None:
+    pack = _write_pack(tmp_path, _two_task_pack())
+    pack_prompt(pack, "val-exact-1", replicate=1)
+    receipt = json.loads(
+        (tmp_path / "sandboxes" / "r1" / "_receipts" / "val-exact-1.json").read_text(
+            encoding="utf-8"
+        )
+    )
+    assert receipt["format"] == "evolver.solve_receipt.v0"
+    assert receipt["task"] == "val-exact-1"
+    assert receipt["replicate"] == 1
+    assert receipt["library"] is None
+    assert len(receipt["pack_digest"]) == 16
+    assert receipt["written_at"].endswith("Z")
+
+
+def test_prompt_receipt_names_the_injected_snapshot(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _library_env(tmp_path, monkeypatch)
+    from evolver.gep import library
+
+    snap = str(library.save_version({"genes": []})["snapshot"])
+    pack = _write_pack(tmp_path, _two_task_pack())
+    pack_prompt(pack, "val-exact-1", library_snapshot=snap)
+    receipt = json.loads(
+        (tmp_path / "sandboxes" / "_receipts" / "val-exact-1.json").read_text(encoding="utf-8")
+    )
+    assert receipt["library"] == snap
+
+
+def test_prompt_failure_writes_no_receipt(tmp_path: Path) -> None:
+    pack = _write_pack(tmp_path, _two_task_pack())
+    with pytest.raises(ValueError):
+        pack_prompt(pack, "val-exact-1", library_snapshot="sha256:absent")
+    assert not (tmp_path / "sandboxes" / "_receipts").exists()
