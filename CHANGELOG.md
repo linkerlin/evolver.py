@@ -17,7 +17,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **两处失效句子修正**：TODO 的禁令改为「在一份满足第 3 行的题被点名之前，不写 Parent 库、不出新题；点名本身另算一次裁决」（原句在上次提交里已按字面到期）；SKILL.md Current stage 换成 round-92 的 train 可收回设计（原句还在派发已废的家规）；README.zh.md 总评切 1.113.0。
 - **AGENTS 命令篇**：补 `library establish-parent` 与 `bench prompt --library` 两行。
 
-**测试**：`test_library.py` 增七钉（首写前无 Parent、建立不动 active、同内容幂等、异内容换指针报 previous、`save_version` 单独不移动任何指针、调用图缺席、render 粘贴正文＋保留限定＋超预算截断）；`test_bench_pack.py` 增三钉（无 `--library` 的 prompt 无库段、指定 id 贴正文且保留限定且 active 不动、未知 id 报错）。受影响面 56 过；ruff / format / mypy strict（339 文件）全绿。
+**测试**：`test_library.py` 增七钉（首写前无 Parent、建立不动 active、同内容幂等、异内容换指针报 previous、`save_version` 单独不移动任何指针、调用图缺席、render 粘贴正文＋保留限定＋超预算截断）；`test_bench_pack.py` 增三钉（无 `--library` 的 prompt 无库段、指定 id 贴正文且保留限定且 active 不动、未知 id 报错）。受影响面 111 过；全量回归 **3979 passed，0 failed**（8m56s，round-88 基线 3967 ＋ 新钉）；ruff / format / mypy strict（339 文件）全绿。
 
 ### Changed — 库即尺子第 3 步设计修正：条款来自 train，不许抄写 Accept（round-92，裁决）
 

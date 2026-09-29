@@ -14,9 +14,9 @@
 | # | 项 | 完成时 |
 |---|---|---|
 | 1 | ~~补账本~~ | 已完成（round-91 卫生账，不算阶段进度）：`solidify()` 在 `_solidify_cycle()` 之前取假说正文交给 `begin_round` |
-| 2 | Parent 库首写，入口独立 | 引擎先落新函数（`establish_*` 族，`evolver bench baseline` 同一纪律：不带变异、solidify 调用不到），带自己的命令行入口；**不给 `publish()` 加入口**（首写和 Accept 不得合用一条路，publish 保持 Accept-only）。函数就位后由人写第一份 Parent 库 |
+| 2 | Parent 库首写，入口独立 | 机器已落（round-93）：`library.establish_parent_library` + CLI `evolver library establish-parent --from=<file>`，`publish()` 未动、active 按构造不动，solidify 调用图有钉（出现该名字即测试失败）。**剩调用**：由人写第一份，等题被点名 |
 | 3 | 条款来自 train，val 题面不含条款 | 决定性条款必须能从 train 的前后观察里唯一收回，val 题面不出现。Parent 求解只看 Parent 快照 + val 题面；候选求解只看候选快照 + 同一批 val 题面；写候选的宿主看 train，不看 val、不看 grader。空库 Parent 拿不到 train 蒸馏的约定；若 Parent 仍满分 → 宿主不读库也能猜中，测量结束，不改题面再测。「家规只在写库人脑子里」的旧设计已废（round-92：空库钉 Parent 于 0、首份候选靠抄写白得 Accept，是出题人给候选写及格线） |
-| 4 | 按快照 id 读 | 求解入口按 id 注入：Parent 求解放 Parent 快照 id，候选求解放候选快照 id，都走 `load_version()`，都不动 active。不复用 enrich `_consult_library()`（读 active；候选草稿条款不在那里）。现在 `bench prompt` 只有题面和沙箱，库不在场 |
+| 4 | 按快照 id 读 | 机器已落（round-93）：`bench prompt --library <snapshot_id>`——`load_version(id)` 只读、快照正文贴进 prompt（保留沙箱限定）、未知 id 报错、不带参数逐字不变。**剩调用**：Parent 解注 Parent id、候选解注候选 id（候选 id 将来自 `save_version()`，不来自 `publish()`），随测量发生 |
 
 在一份满足第 3 行的题被点名之前，**不写 Parent 库、不出新题**。点名本身另算一次裁决，不是 bc6f651。完成判据同步收窄：「库里有句子、答卷里有句子」的 Accept 只证明求解路径读了快照，不算；本阶段的 Accept 是候选快照条款只来自 train 观察、val 求解只靠这份快照、两遍严格高于只持有 Parent 快照的 Parent。当前锚侧那份 bar 1.0 的包上也不开新会话。
 
