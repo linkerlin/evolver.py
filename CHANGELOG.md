@@ -8,6 +8,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed — 测试针一轮：四个裸模块补 1:1 测试，一处真不一致修复（round-95）
+
+按章程此轮不算阶段进度。版本保持 **1.113.0**。差距盘点方法：名字映射（146 个无 1:1 文件，高估——探针经 `test_anchor` 覆盖、pipeline 经集成覆盖）校准为真实覆盖率（`--cov` 分支模式，快速面）：**总量 79%、70 个文件全覆盖**；阶段核心（solidify、frozen_gate、bench.runner、hypothesis、cursor、library、evolution_session、regression_guard）全在全覆盖名单里。缺口集中在章程冻结的 proxy/webui/atp 面，不补。
+
+- **`tests/bench/test_scoring.py`（22 钉）**：四种评分器的边路——缺交付物、坏 JSON、越界路径、崩溃脚本、超时、未知类型、不可解码字节、分数恒在 [0,1]；`_normalize` 语义钉死（行尾空白与首尾空行归一，**行首空白与内部空行是内容**——测试初版写错语义，纠正时顺带把这条语义显式钉住）。
+- **`tests/bench/test_tasks.py`（20 钉）**：`validate_tasks` 全错误族（非列表/非对象/坏 slug/重复 id/坏 split/空 prompt/空 sandbox/路径穿越/评分器字段缺失）＋ `materialize` 的幻影评分防御（force 删未声明陈旧文件与目录、force=False 保留、幂等）。
+- **`tests/bench/test_prompts.py`（12 钉）**：绝对 workdir、禁离场、标题题面、读回提醒、exact/code_stdout 措辞分叉、library_block 位置（Task 与 Deliverable 之间）与空块视同缺席。
+- **`tests/gep/test_val_seal.py`（20 钉）**：未武装全惰性；train 共享材料是公共非秘密（落盘验证）；短答案弱信号永不裁决（「chapter 2」不触发）；强命中 `assert_sealed` 抛错；redact 替换并计数、弱串不动、非字符串期望 JSON 化；秘密去重且按长度降序。
+- **一处真不一致（钉子落地即抓到）**：`val_seal.redact("")` 的早退路径不带 `redacted` 键，调用方无法统一读数——docstring 说「计数被报告」。已修：空文本路径也带 `redacted: 0`。
+- **staleness 假阳性定性**：覆盖率跑中 `test_status_reports_staleness_surface` 失败，根因是套件运行期间源文件被本轮编辑（mtime 新于进程启动，`stale` 如实报 True）——测试正确，流程竞态自造；单独跑、同过滤跑均过。教训入账：跑全量的同时不要改源。
+
+**测试**：新增 74 钉全绿；ruff / format / mypy strict 全绿；全量回归 **4059 passed，0 failed**（12m16s，round-94 基线 3985 ＋ 74 钉）。
+
 ### Changed — 系统审阅落地：CI 升格、文档钉、求解回执（round-94）
 
 全仓审阅（测量自证、指挥文件漂移、平台债三处系统性风险）的处置落地。仪器加固一轮，按章程不算阶段进度。版本保持 **1.113.0**。
