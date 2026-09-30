@@ -8,6 +8,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed — round-93 遗留的 CLI 钉补齐（round-99）
+
+卫生轮，按章程不算阶段进度。版本保持 **1.113.0**。
+
+- **`library establish-parent` 的 CLI 级四钉**（round-93 落地时只有手工烟测，属本仓自己的未完成项）：成功路径写 `parent.json` 且 `active` 保持空（输出含 untouched）；缺文件 exit 2；非 dict JSON exit 2；`--json` 输出可解析且带 sha256 快照 id。
+- **`bench prompt --library` 的 CLI 透传一钉**：命令行指定的快照 id 与正文都出现在 prompt、active 不动。
+- **观察到一次 flake**：`test_cli_webui_token_generate_and_revoke` 单次 SystemExit（三跑两绿，顺序敏感，无复现路径）。未回填 DEBUG——再出现即立簿追根因。
+
+**测试**：CLI 22 过（test_cli 13＋bench_cli 9）；ruff / format 绿；无 src 改动，mypy 与全量基线维持。
+
 ### Changed — CI 跑锚套件 + `__all__` 完整性钉（round-98）
 
 卫生轮，按章程不算阶段进度。版本保持 **1.113.0**。

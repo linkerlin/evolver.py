@@ -132,3 +132,36 @@ def test_bench_gate_reports_armed_state(
     assert '"val_tasks": 5' in out
     assert '"baseline": null' in out
     assert len(json.loads(out)["digest"]) == 16
+
+
+def test_bench_prompt_passes_library_snapshot_by_id(
+    bench_env: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """round-93 CLI seam: --library names the snapshot whose content is pasted
+    into the solve prompt (库即尺子 §5.4) — by id, active never moves."""
+    from evolver.gep import library
+
+    stored = library.save_version({"genes": [{"id": "g", "strategy": ["tie? earlier id wins"]}]})
+    snap = str(stored["snapshot"])
+
+    pack = bench_env / "tasks.json"
+    pack.write_text(
+        json.dumps(
+            [
+                {
+                    "id": "val-1",
+                    "split": "val",
+                    "title": "t",
+                    "prompt": "p",
+                    "sandbox": {"in.txt": "x"},
+                    "grader": {"type": "exact", "file": "out.txt", "expected": "x"},
+                }
+            ]
+        ),
+        encoding="utf-8",
+    )
+    assert main(["bench", "prompt", "val-1", "--pack", str(pack), "--library", snap]) == 0
+    out = capsys.readouterr().out
+    assert snap in out
+    assert "tie? earlier id wins" in out
+    assert library.active_snapshot_id() is None

@@ -256,3 +256,51 @@ def test_cli_webui_token_generate_and_revoke(
     assert code == 0
     captured = capsys.readouterr()
     assert "Revoked." in captured.out
+
+
+# ---------------------------------------------------------------------------
+# 库即尺子 round-93: the library CLI entries (pinned round-99)
+# ---------------------------------------------------------------------------
+
+
+def test_cli_library_establish_parent_writes_the_pointer(
+    isolated_evolver_env: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    payload = isolated_evolver_env / "parent.json"
+    payload.write_text(json.dumps({"genes": [], "capsules": []}), encoding="utf-8")
+
+    assert main(["library", "establish-parent", f"--from={payload}"]) == 0
+    out = capsys.readouterr().out
+    assert "parent library : sha256:" in out
+    assert "untouched" in out  # active stays empty — publish is Accept-only
+
+    from evolver.gep import library
+
+    assert library.parent_snapshot_id() is not None
+    assert library.active_snapshot_id() is None
+
+
+def test_cli_library_establish_parent_missing_file(
+    isolated_evolver_env: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    assert main(["library", "establish-parent", "--from=nope.json"]) == 2
+    assert "file not found" in capsys.readouterr().err
+
+
+def test_cli_library_establish_parent_rejects_non_dict(
+    isolated_evolver_env: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    payload = isolated_evolver_env / "parent.json"
+    payload.write_text("[1, 2]", encoding="utf-8")
+    assert main(["library", "establish-parent", f"--from={payload}"]) == 2
+    assert "JSON object" in capsys.readouterr().err
+
+
+def test_cli_library_establish_parent_json_output(
+    isolated_evolver_env: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    payload = isolated_evolver_env / "parent.json"
+    payload.write_text(json.dumps({"genes": []}), encoding="utf-8")
+    assert main(["library", "establish-parent", f"--from={payload}", "--json"]) == 0
+    report = json.loads(capsys.readouterr().out)
+    assert report["ok"] is True and report["snapshot"].startswith("sha256:")
