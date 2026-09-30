@@ -12,13 +12,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 全仓审阅（测量自证、指挥文件漂移、平台债三处系统性风险）的处置落地。仪器加固一轮，按章程不算阶段进度。版本保持 **1.113.0**。
 
-- **CI：Windows 升 blocking**。`test-windows` 原是 `continue-on-error` 咨询位——round-88 的 8 个失败（PATHEXT 级联回退、`os.pathsep` 断言、Windows cwd 删除竞态、win32 mypy 假阳性）全靠开发机恰好是 Windows 才撞见。修复后套件在本机全量绿，失败即真缺陷，去掉豁免。顺带拆掉一颗哑弹：CI 里硬编码的「Assert package version is 1.95.0」自 1.95.0 起必红，改为 pyproject ↔ `__version__` 自洽断言。审阅勘误：Windows job 一直存在，缺的是牙，不是有无。
+- **CI：Windows 升 blocking**。`test-windows` 原是 `continue-on-error` 咨询位——round-88 的 8 个失败（PATHEXT 级联回退、`os.pathsep` 断言、Windows cwd 删除竞态、win32 mypy 假阳性）全靠开发机恰好是 Windows 才撞见。修复后套件在本机全量绿，失败即真缺陷，去掉豁免。顺带拆掉一颗哑弹：CI 里硬编码的「Assert package version is 1.95.0」自 1.95.0 起必红，改为 pyproject ↔ `__version__` 自洽断言（首版多行 `python -c` 缩进会 IndentationError，本地按 CI 渲染复验后改单行——CI 改动必须本地按渲染后命令演练，这条算学费）。审阅勘误：Windows job 一直存在，缺的是牙，不是有无。
 - **指挥文件一致性钉**（`tests/test_docs_consistency.py`，纯文本零引擎导入）。本阶段三起漂移（round-88 重派已落接线、round-93 禁令按字面到期＋SKILL 携带已废设计、round-94 README 版本残字）。三根钉：粗体版本声明须与 pyproject 一致（动态读，不写死，人切版本时文档随更）；指令文件（README×2/AGENTS/SKILL/TODO）不出现已废措辞（「受治理的仓库自维护」「家规」「conventions, not derivations」——章程 §4 豁免，记史是其职责）；阶段标记在四个阶段文件必须在场。钉子落地即抓到真漂移一条：`README.md` 状态表仍写 `version **1.112.0**`，已修。TODO 第 3 行的已废措辞引用收干为「见章程 §4」——工作清单不存档，废因住章程。
 - **求解回执（只捕获，不执法）**。测量自证缺口：八会话战役里门每轮重评同一份旧解而账本只记 flat，机器无法知道没人重解。`bench prompt` 现在在沙箱旁 `_receipts/<task_id>.json` 写 `evolver.solve_receipt.v0`（pack digest、注入的快照 id 或 null、replicate、时间戳）——放在沙箱外，解题的宿主伪造不到。执法（回执与基线/门的绑定、快照新鲜度）**留到点名裁决**：绑定语义依赖「解的是哪份库」的定义，现在硬上要么打断测试生态、要么 fail-open 糊弄，都不诚实。
 - **点名检查单**（入 TODO）：① 候选快照在 run record 的槽位；② 回执绑定与新鲜度；③ 求解上下文隔离层级。
 - **记录在案不动**：`verify_charter_pack.py` 的归宿两选一（入仓 / 升锚探针 epoch 14），由人定；`cli.py` 3065 行、夹具重复（`git_ws` ×9）、proxy/webui/atp 完整度参差——章程冻结中，不顺路不值得动；三处版本字面测试钉是刻意绊线（版本只由人切），保留；sandbox_executor Windows 无资源上限仅超时，本地威胁模型内可接受。
 
-**测试**：`test_docs_consistency.py` 三钉、`test_bench_pack.py` 增三钉（回执字段、注入 id 入回执、失败不写回执）；受影响面全绿，ruff / format / mypy 全绿。
+**测试**：`test_docs_consistency.py` 三钉、`test_bench_pack.py` 增三钉（回执字段、注入 id 入回执、失败不写回执）；全量回归 **3985 passed，0 failed**（10m12s，round-93 基线 3979 ＋ 六根新钉）；ruff / format / mypy strict 全绿。
 
 ### Changed — 库即尺子机器就位：establish 首写入口 + 按快照 id 的求解注入（round-93）
 
