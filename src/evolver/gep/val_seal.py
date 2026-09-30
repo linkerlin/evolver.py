@@ -170,7 +170,9 @@ def redact(text: str | None, *, where: str) -> tuple[str, dict[str, Any]]:
     Evidence Pack already applies to its budget.
     """
     if not text:
-        return text or "", seal_report(text, where=where)
+        report = seal_report(text, where=where)
+        report["redacted"] = 0
+        return text or "", report
 
     scrubbed = text
     hits = strong_scan(scrubbed)
