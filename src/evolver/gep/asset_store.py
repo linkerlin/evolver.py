@@ -11,7 +11,7 @@ import tempfile
 from collections.abc import Iterator
 from contextlib import contextmanager, suppress
 from pathlib import Path
-from typing import Any, cast
+from typing import Any
 
 from filelock import FileLock
 
@@ -45,11 +45,15 @@ def _sqlite_enabled() -> bool:
     return os.environ.get("EVOLVER_SQLITE_STORE", "").lower() in ("1", "true", "yes", "on")
 
 
-def _safe_json_loads(raw: str) -> Any:
+def _safe_json_loads(raw: str) -> dict[str, Any] | None:
+    # The cast-era shape was a lie: json.loads happily returns a list/str/int,
+    # and callers do .get() on the result (DEBUG #53). Non-dict JSON is
+    # corruption for every store file here — skip it like a hash mismatch.
     try:
-        return cast(dict[str, Any], json.loads(raw))
+        parsed = json.loads(raw)
     except json.JSONDecodeError:
         return None
+    return parsed if isinstance(parsed, dict) else None
 
 
 def read_json_if_exists(path: Path) -> dict[str, Any] | None:
@@ -59,9 +63,10 @@ def read_json_if_exists(path: Path) -> dict[str, Any] | None:
         raw = path.read_text(encoding="utf-8")
         if not raw.strip():
             return None
-        return cast(dict[str, Any], json.loads(raw))
+        parsed = json.loads(raw)
     except (OSError, json.JSONDecodeError):
         return None
+    return parsed if isinstance(parsed, dict) else None
 
 
 def atomic_write_json(path: Path, data: Any) -> None:
@@ -81,8 +86,12 @@ def atomic_write_json(path: Path, data: Any) -> None:
 
 def append_jsonl(path: Path, record: dict[str, Any]) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
-    with open(path, "a", encoding="utf-8") as f:
-        f.write(json.dumps(record, ensure_ascii=False) + "\n")
+    # Serialized under a sidecar lock (DEBUG #54): the daemon loop and the
+    # MCP server are two live processes appending to the same JSONL files,
+    # and Windows makes no O_APPEND interleaving guarantee.
+    with with_file_lock(target_path=path):
+        with open(path, "a", encoding="utf-8") as f:
+            f.write(json.dumps(record, ensure_ascii=False) + "\n")
 
 
 _LARGE_JSONL_BYTES = 1024 * 1024  # 1 MiB — switch to tail-only read
@@ -196,8 +205,15 @@ def with_file_lock(
     timeout: float = 30.0,
     target_path: Path | str | None = None,
 ) -> Iterator[None]:
-    """Serialize critical sections; *target_path* scopes the lock file (issue #451)."""
-    lock = FileLock(str(_lock_path_for(target_path)), timeout=timeout)
+    """Serialize critical sections; *target_path* scopes the lock file (issue #451).
+
+    The FileLock is a per-path singleton: nested ``with_file_lock`` on the
+    SAME target inside this process re-enters (reference-counted) instead of
+    self-deadlocking for ``timeout`` seconds — which is what happens on
+    Windows when two lock instances meet one path (round-97: the JSONL
+    wrappers already lock the path ``append_jsonl`` now locks too).
+    """
+    lock = FileLock(str(_lock_path_for(target_path)), timeout=timeout, is_singleton=True)
     with lock:
         yield
 

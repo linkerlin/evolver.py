@@ -319,3 +319,90 @@ def test_with_file_lock_releases_after_throw(tmp_path: Path) -> None:
 def test_build_validation_cmd_allows_known_tools() -> None:
     assert asset_store.build_validation_cmd("pytest -q", Path("."))[:1] == ["pytest"]
     assert asset_store.build_validation_cmd("rm -rf /", Path(".")) == []
+
+
+# ---------------------------------------------------------------------------
+# round-97 (DEBUG #53/#54): non-dict JSON refused at runtime; appends
+# serialize under a sidecar lock
+# ---------------------------------------------------------------------------
+
+
+class TestNonDictJsonRefused:
+    def test_safe_json_loads_rejects_a_json_list(self) -> None:
+        from evolver.gep.asset_store import _safe_json_loads
+
+        assert _safe_json_loads("[1, 2, 3]") is None
+        assert _safe_json_loads('"a string"') is None
+        assert _safe_json_loads("42") is None
+        assert _safe_json_loads('{"genes": []}') == {"genes": []}
+
+    def test_read_json_if_exists_rejects_non_dict_files(self, tmp_path: Path) -> None:
+        from evolver.gep.asset_store import read_json_if_exists
+
+        bad = tmp_path / "bad.json"
+        bad.write_text("[1, 2]", encoding="utf-8")
+        assert read_json_if_exists(bad) is None
+
+        good = tmp_path / "good.json"
+        good.write_text('{"a": 1}', encoding="utf-8")
+        assert read_json_if_exists(good) == {"a": 1}
+
+    def test_broken_json_still_refused(self, tmp_path: Path) -> None:
+        from evolver.gep.asset_store import read_json_if_exists
+
+        bad = tmp_path / "broken.json"
+        bad.write_text("{not json", encoding="utf-8")
+        assert read_json_if_exists(bad) is None
+
+
+class TestAppendJsonlSerialization:
+    def test_appends_hold_the_sidecar_lock(self, tmp_path: Path) -> None:
+        """The lock is the contract: daemon and MCP server are two processes
+        appending the same files, and Windows makes no O_APPEND guarantee."""
+        import evolver.gep.asset_store as store
+
+        held: list[object] = []
+        original = store.with_file_lock
+
+        from contextlib import contextmanager
+
+        @contextmanager
+        def recording(*, target_path=None, timeout: float = 30.0):  # type: ignore[no-untyped-def]
+            held.append(target_path)
+            with original(target_path=target_path, timeout=timeout):
+                yield
+
+        store_local = tmp_path / "events.jsonl"
+
+        import pytest
+
+        with pytest.MonkeyPatch.context() as mp:
+            mp.setattr(store, "with_file_lock", recording)
+            store.append_jsonl(store_local, {"n": 1})
+        assert held == [store_local]
+        assert store_local.read_text(encoding="utf-8") == '{"n": 1}\n'
+
+    def test_concurrent_threads_leave_intact_lines(self, tmp_path: Path) -> None:
+        import threading
+
+        from evolver.gep.asset_store import append_jsonl
+
+        target = tmp_path / "events.jsonl"
+        barrier = threading.Barrier(4)
+
+        def worker(tag: int) -> None:
+            barrier.wait()
+            for i in range(25):
+                append_jsonl(target, {"tag": tag, "i": i})
+
+        threads = [threading.Thread(target=worker, args=(t,)) for t in range(4)]
+        for t in threads:
+            t.start()
+        for t in threads:
+            t.join()
+
+        import json as json_mod
+
+        lines = [ln for ln in target.read_text(encoding="utf-8").splitlines() if ln]
+        assert len(lines) == 100
+        assert all(json_mod.loads(ln) for ln in lines)
