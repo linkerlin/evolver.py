@@ -8,6 +8,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed — CI 跑锚套件 + `__all__` 完整性钉（round-98）
+
+卫生轮，按章程不算阶段进度。版本保持 **1.113.0**。
+
+- **锚套件进 CI（双平台）**。ubuntu 与 Windows 两个 job 各加 `anchor init` + `anchor run`——DEBUG #46（锚探针模板漂移，契约变更未同步冻结面）这类缺陷从此由 CI 拦截，不再等下一次 epoch 重播种才发现。CI 上的播种是临时 runner home 的构建检查，不是人的仪器首写。两步命令已按 CI 渲染原样在本地一次性环境复演（epoch 1、17/17 PASS）。
+- **`tests/test_all_exports.py`（外部审阅 M5 的最简解）**：七个手工维护 `__all__` 的模块（config / library / hypothesis / cursor / bench 三件）逐一钉「每个导出名在模块上存在」——typo 即红，不再等到第一次 `import *`。落地即抓到一条事实：`asset_store` 根本没有 `__all__`（400 行模块全公开导出）——钉的职责是校验既有清单而非强制新清单，该模块记注后移出名单。
+- 跨会话记忆同步至 round-98。
+
+**测试**：新钉 7 过；快速面 4049 passed ＋ 24 deselected（总量 4073＝round-97 全量 4066 ＋ 新钉）；ruff / format 全绿（本轮无 src 改动，mypy 维持）。
+
 ### Changed — 外部审阅三真缺陷落地修复：锁窃、盲 cast、无锁追加（round-97）
 
 外部审阅（Antigravity 报告，round-96 前一轮已逐条核实）中三条成立项作为一轮卫生修复落地。按章程不算阶段进度。版本保持 **1.113.0**。驳回项维持：C2（TypedDict 管线上下文）顶撞 AGENTS 规范篇成文规范；C1（拆 cli.py）章程明说不立项，记录在案。

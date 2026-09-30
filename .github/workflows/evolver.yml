@@ -64,6 +64,14 @@ jobs:
         env:
           EVOLVER_NO_PARENT_GIT: "1"
 
+      # Anchor suite (DEBUG #46 class: probe drift must fail CI, not the
+      # next epoch bump). Ephemeral runner home — seeding here is not the
+      # human instrument write, it is a build check of the packaged probes.
+      - name: Anchor suite (seed + run)
+        run: |
+          uv run evolver anchor init
+          uv run evolver anchor run
+
   # Slow track (subprocess/E2E daemon tests, ~4 min of wall time): runs in
   # parallel with the fast track so merge feedback stays ~5 min.
   test-slow:
@@ -126,3 +134,8 @@ jobs:
 
       - name: Version check
         run: uv run evolver --version
+
+      - name: Anchor suite (seed + run)
+        run: |
+          uv run evolver anchor init
+          uv run evolver anchor run
