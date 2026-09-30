@@ -8,6 +8,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed — 文档追平 round-97~99（round-100）
+
+文档轮，按章程不算阶段进度。版本保持 **1.113.0**。
+
+- **README（中英）状态表**：「multi-OS CI advisory / 多 OS CI 提示」自 round-94 起 已失实——Windows 是 blocking、round-98 起双平台跑锚套件，改为如实表述。CHANGELOG 导览行 round-96 → round-99。
+- **AGENTS.md**：`instance_lock.py` 架构行更新为 OS 锁唯一真相语义（round-97）；坑阱篇补两条——同路径文件锁嵌套须 singleton 可重入（DEBUG #54）、进程互斥只有 OS 锁一个真相（DEBUG #52）。
+- **CONTRIBUTING.md**：测试基线以实测更新（2026-09-30，**4078 passed**，13m01s），CI 描述补锚套件。
+- ja/ko README 未动（其 CI 单元格只写「多 OS CI」，无失实表述）；史料不动；百分比快照保持原日期。
+
+**测试**：全量 **4078 passed，0 failed**（13m01s；round-97 基线 4066 ＋ round-98 七钉 ＋ round-99 五钉）；文档一致性钉三根全绿。
+
 ### Changed — round-93 遗留的 CLI 钉补齐（round-99）
 
 卫生轮，按章程不算阶段进度。版本保持 **1.113.0**。

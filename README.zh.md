@@ -207,7 +207,7 @@ memory/                 # 运行时数据（graph JSONL、reviews JSONL）
 | **Ops 运维** | ~85% | lifecycle、force-update、--solo |
 | **WebUI** | ~70% | SSR 仪表盘 + GitHub observer |
 | **验证者** | ~50% | 沙箱框架存在；生产级网络隔离待完善 |
-| **文档/发布** | ~90% | CHANGELOG + 版本 **1.113.0**；多 OS CI 提示 |
+| **文档/发布** | ~90% | CHANGELOG + 版本 **1.113.0**；多 OS CI（Windows 为 blocking ＋ 锚套件） |
 
 现行计划见 [`演进方案.md`](演进方案.md) 与 [`TODO.md`](TODO.md)。wikiskill 对照版是档案。
 

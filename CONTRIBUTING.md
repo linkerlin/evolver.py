@@ -51,7 +51,7 @@ pytest tests/ -q
 
 All new code must pass `uv run mypy src` (strict) before submission. The full `ruff check` suite may report pre-existing style warnings; fix any issues in files you touch.
 
-Current baseline (2026-09-27): **4059 tests** (`pytest`), **mypy strict 0 errors** (339 files). CI runs the lint gate plus fast/slow test tracks on ubuntu and a blocking windows track — Windows-specific failures are real defects, not noise.
+Current baseline (2026-09-30): **4078 tests** (`pytest`), **mypy strict 0 errors** (339 files). CI runs the lint gate plus fast/slow test tracks on ubuntu, a blocking windows track, and the anchor suite (`anchor init` + `anchor run`) on both platforms — Windows-specific and probe-drift failures are real defects, not noise.
 
 ## Testing
 

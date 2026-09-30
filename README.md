@@ -313,7 +313,7 @@ memory/                 # Runtime data (graph JSONL, reviews JSONL)
 | **Ops / Solo** | ~85% | lifecycle, force-update, --solo |
 | **WebUI** | ~70% | SSR dashboard + GitHub observer |
 | **Validator** | ~50% | sandbox framework; prod network isolation pending |
-| **Docs / Release** | ~90% | CHANGELOG + version **1.113.0**; multi-OS CI advisory |
+| **Docs / Release** | ~90% | CHANGELOG + version **1.113.0**; multi-OS CI (blocking Windows + anchor suite) |
 
 Live plan: [演进方案.md](演进方案.md) and [TODO.md](TODO.md). The wikiskill audit is an archive.
 
@@ -493,7 +493,7 @@ A2A_HUB_URL=https://your-hub.example.com uv run evolver proxy
 
 - [`演进方案.md`](演进方案.md) — Current charter: paired session (Chinese)
 - [`TODO.md`](TODO.md) — Work list for that charter
-- [`CHANGELOG.md`](CHANGELOG.md) — Per-round notes (v1.98 through round-96; current release 1.113.0)
+- [`CHANGELOG.md`](CHANGELOG.md) — Per-round notes (v1.98 through round-99; current release 1.113.0)
 - [`AGENTS.md`](AGENTS.md) — Agent integration guide, coding standards, pitfalls
 - [`DEBUG.md`](DEBUG.md) — Debugging playbook: dogfood and interlock bugs, with root causes and transferable lessons
 - [`RSI演进对照.md`](RSI演进对照.md) — Archived paper comparison and effective-L5 log (Chinese)

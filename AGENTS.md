@@ -104,7 +104,7 @@ gep/                GEP（基因组进化协议）核心
                     复用 skill2gep 层（基因 id 前缀 gene_distilled_s2g-）
   fetch.py          从 Hub 下载并安装资源
   git_ops.py        Git diff/回滚/状态辅助函数
-  instance_lock.py  基于 FileLock 之单实例守护（守护循环）
+  instance_lock.py  单实例守护（守护循环）：OS 锁为唯一真相（活持有者任何年龄不可窃；崩溃残留自然复用；release 只删自己持有的；PID 仅诊断），round-97
   canonical_identity_lock.py  进程身份感知规范锁（node_id 元组，v1.92.0）
   node_identity.py  规范 node_id 解析/持久化/state-path 后缀（proxy↔A2A 统一）
   validation_report.py  标准化 ValidationReport（vr_* + 内容寻址）
@@ -434,3 +434,5 @@ instrument prompt 第三章（Hooks 集成）指导宿主择轨。
 - **PATH 继承断言用子串**：`os.pathsep` 在 Windows 是 `;`，POSIX 风格继承值（`/usr/bin:/bin`）整串成单元素——「继承未丢」断言用子串判断，不用切分成员（DEBUG #49）。
 - **跑全量时勿改源**：staleness 按「进程启动 vs 最新源 mtime」判定，套件运行中改源会让 `test_swarm` 如实报 stale（round-95 定性的假阳性）。
 - **CI 改动须本地按渲染后命令演练**：`run: |` 块的缩进会原样进 `python -c`，多行即 IndentationError；嵌进 CI 的版本字面量是哑弹，能自洽就不要硬编码（DEBUG #51）。
+- **同路径文件锁嵌套须可重入**：`with_file_lock` 的 FileLock 是按路径 singleton（引用计数）——同进程同路径嵌套直接重入；新建 FileLock 实例锁同路径在 Windows 会等满 timeout（自死锁，DEBUG #54）。加锁前先查同路径既有锁。
+- **进程互斥只有 OS 锁一个真相**：mtime/PID 探测的「stale 锁回收」会造出偷锁窗口（活守护跑过阈值即被窃，DEBUG #52）；句柄随进程死亡自动释放，残留文件即无锁。
