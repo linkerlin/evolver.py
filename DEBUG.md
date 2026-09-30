@@ -49,6 +49,11 @@
 | 40 | shell 模板执行器：原始占位符值即注入面（Mimosa triage） | gep/llm_template | round-29 | 未发版 |
 | 41 | 验收门终态死锁：ready 结构性不可达 + phase 指标读数饱和 | acceptance/report | round-30 | 未发版 |
 | 42 | T0 基线测量不对称：单浮点合成伪观测放行退化或误杀 | acceptance/orchestrator | round-31 | 未发版 |
+| 47 | 假说折账读已焚文件：16 条 rounds.jsonl 假说全空串 | solidify | round-91 | v1.113.0 |
+| 48 | Windows 裸文件名探测探不到 ruff.exe，级联静默跳过（#2 同族复发） | solidify | round-88 | v1.113.0 |
+| 49 | 平台断言三族：pathsep 切分、cwd-rmtree、resource win32 mypy 假阳性 | tests/探针 | round-88 | v1.113.0 |
+| 50 | val_seal.redact 空文本早退缺 redacted 键 | val_seal | round-95 | v1.113.0 |
+| 51 | CI 多行 python -c 缩进即 IndentationError（1.95.0 断言哑弹同查） | ci | round-94 | v1.113.0 |
 
 ## 条目
 
@@ -943,3 +948,59 @@
   延迟暴露；全量套件是提交前最后闸门，最终提交后不复跑等于把红灯
   发给下一轮。
 
+### 47. 假说折账读已焚文件（round-91）
+
+- **症状**：八会话战役全部 16 条 `rounds.jsonl` 的 `hypothesis` 字段是空串；假说门
+  明明在评分前拦截过缺记录的轮。
+- **根因**：`solidify()` 先跑 `_solidify_cycle()`——周期内 `clear_hypothesis()` 已把
+  假说焚毁（§5.3 用后即焚）——返回后才调 `_pending_cycle_context()` 去读；该函数
+  自己的 docstring 写的就是「焚毁前读」。程序合法、假说层无法复盘。
+- **修复**：读取挪到周期调用之前，正文随 `begin_round` 写进账本；钉
+  `test_the_ledger_remembers_the_burned_hypothesis_text`。
+- **经验**：**注释宣称的次序要用测试钉住**。「焚毁前读」写在 docstring 里四年，
+  没有一根钉验证它，直到八场真会话把账本烧穿。
+
+### 48. Windows PATHEXT 探测盲区（round-88）
+
+- **症状**：裸 venv python + 洗净 PATH 的真实 dogfood 场景，Windows 上整段级联
+  静默跳过——与 DEBUG #2 同一症状，换了一个根因复发。
+- **根因**：`get_fitness_cascade_commands` 的回退用 `bin_dir / "ruff"` 的
+  `is_file()` 探测；Windows 工具是 `ruff.exe`，裸名永远探不到。#2 修的是
+  「PATH 上找不到」，没修「解释器目录里的后缀」。
+- **修复**：先试精确文件名（POSIX 布局），再退 `shutil.which(argv[0], path=bin_dir)`
+  ——which 带 path 时尊重 PATHEXT。
+- **经验**：**同症状不同根因的复发要回到经验簿对号**。#2 的修复只覆盖了它见到的
+  那一半平台；跨平台工具查找统一走 `shutil.which`，不要手搓路径探测。
+
+### 49. 平台断言三族（round-88）
+
+- **症状**：全量回归首跑 8 败，其中三族在 POSIX 上永远绿：`"/usr/bin" in parts`
+  断言、探针退出时 `TemporaryDirectory` 清理 WinError 32、mypy 对
+  `resource.setrlimit` 报 attr-defined。
+- **根因**：`os.pathsep` 在 Windows 是 `;`，POSIX 风格的继承值
+  （`"/usr/bin:/bin"`）整串成单元素；Windows 不允许删除任何进程的 cwd；
+  typeshed 的 `resource` 视图在 win32 上隐藏 POSIX 属性（代码在 Linux 门后）。
+- **修复**：继承断言改子串判断；探针清理前 `os.chdir` 出沙箱；`cast(Any)` 隔开
+  typeshed 视图。CI 的 Windows job 同轮升 blocking。
+- **经验**：**「继承未丢」类断言用子串，不用切分成员**；平台差异的系统性拦截
+  靠 CI 矩阵，不靠开发机恰好是哪个平台。
+
+### 50. redact 空文本缺键（round-95）
+
+- **症状**：新钉 `redact("")` 断言 `report["redacted"] == 0` 直接 KeyError。
+- **根因**：早退路径 `return text or "", seal_report(...)` 没有像主路径那样补
+  `redacted` 键——docstring 承诺「计数被报告」，空文本却报告不出。
+- **修复**：早退路径同样带 `redacted: 0`；API 键集统一。
+- **经验**：**早退路径是 API 契约的盲区**——给返回体加字段时，grep 所有 return。
+
+### 51. CI 多行 python -c 缩进即语法错（round-94）
+
+- **症状**：workflow 里改版本断言为多行 `python -c`，本地 YAML 校验通过；
+  按渲染后命令逐字复跑立刻 IndentationError。另查得 1.95.0 时代硬编码的
+  版本断言自那以后每次 CI 都必红（哑弹）。
+- **根因**：`run: |` 块的缩进原样进入 `python -c` 的字符串参数，模块级缩进即
+  语法错误；旧断言则是版本切了、CI 步骤没跟。
+- **修复**：改单行分号形式；断言改 pyproject ↔ `__version__` 自洽（不再随版本
+  切换维护 CI 步骤）。
+- **经验**：**CI 改动必须本地按 YAML 渲染后的命令逐字演练**；嵌进 CI 的字面量
+  （版本号等）是定时哑弹，能自洽就不要硬编码。

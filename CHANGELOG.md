@@ -8,6 +8,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed — 文档全面同步到 v1.113.0 / 库即尺子（round-96）
+
+按章程此轮不算阶段进度（文档轮）。版本保持 **1.113.0**。边界：两份史料（RSI演进对照、wikiskill 对照版）不动；产品说法不重写（round-90 裁决）；百分比快照保持其 2026-09-05 日期（改日期即伪造）。
+
+- **DEBUG.md 回填 #47–#51**（章程要求修完回填，本会话五条真修复入簿）：假说折账读已焚文件（round-91，16 条空串的根因）；Windows PATHEXT 探测盲区致级联静默跳过（round-88，与 #2 同症状异根因——复发对号经验）；平台断言三族（pathsep 切分 / cwd-rmtree / resource win32 mypy）；redact 空文本缺键（round-95，早退路径是 API 契约盲区）；CI 多行 `python -c` 即语法错（round-94，渲染后演练经验）。
+- **AGENTS.md 架构篇**：`bench/` 包整体入树（八模块：tasks/builtin_pack/scoring/prompts/runner/frozen_gate/compare/regression_guard——此前完全缺席）；gep 补五个新模块（evolution_session / hypothesis / val_seal / cursor / library）。**坑阱篇**补四条：Windows 工具查找走 `shutil.which`、PATH 继承断言用子串、跑全量时勿改源、CI 改动按渲染后命令演练。
+- **SKILL.md CLI 速查表**：补齐缺失的整个测量与治理命令族（session / bench / anchor / library / gate-report / meta-report / hitl / supervise / gene-lifecycle / soak / mcp / skills / workflow）——此前表格止于 ATP 命令。
+- **README 四语同步**：主 README 的 CHANGELOG 导览行（残留 1.112.0）更新至 round-96；日文 / 韩文 README 的总评行与版本格同步到 1.113.0——收束事实（八会话无胜者）与现阶段（库即尺子）如实写入，产品定位措辞不动。
+- **CONTRIBUTING.md**：测试基线从 2026-06-15 的 1331 更新到 2026-09-27 的 4059 ＋ mypy strict 0 错；补一句 CI Windows 已是 blocking。
+
+**测试**：`test_docs_consistency.py` 三钉全绿（版本一致性钉覆盖本次所有改动文件）；无代码改动，无需全量重跑（round-95 基线 4059 维持）。
+
 ### Changed — 测试针一轮：四个裸模块补 1:1 测试，一处真不一致修复（round-95）
 
 按章程此轮不算阶段进度。版本保持 **1.113.0**。差距盘点方法：名字映射（146 个无 1:1 文件，高估——探针经 `test_anchor` 覆盖、pipeline 经集成覆盖）校准为真实覆盖率（`--cov` 分支模式，快速面）：**总量 79%、70 个文件全覆盖**；阶段核心（solidify、frozen_gate、bench.runner、hypothesis、cursor、library、evolution_session、regression_guard）全在全覆盖名单里。缺口集中在章程冻结的 proxy/webui/atp 面，不补。

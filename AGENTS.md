@@ -118,7 +118,19 @@ gep/                GEP（基因组进化协议）核心
   sanitize.py       资源字段输入净化
   selector.py       Gene/Capsule 与信号匹配（含 living_memory 评分调节）
   signals.py        信号收集与分类
-  solidify.py       应用基因 → 验证 → 持久化 → 发布
+  solidify.py       应用基因 → 验证 → 持久化 → 发布（折账在进周期前取假说正文，
+                    round-91）
+  evolution_session.py 配对会话机（§5.1）：三态、开局预算冻结 8、extend 仅人；
+                    begin_round 折账 + cycle_ref 幂等
+  hypothesis.py     一假说门（§5.3）：record/load/clear + require_for_gate
+                    （周期 id ∪ 会话轮 id 双 scope；mechanism_check 须 train
+                    前后观察）
+  val_seal.py       密封 val（§5.2）：val 专用串抽取/打码/扫描；train 共享材料
+                    为公共、短答案弱信号永不裁决
+  cursor.py         进化游标（§5.5）：只在 Accept 推进；reminder 只提醒不开会话
+  library.py        库快照（库即尺子）：内容寻址版本；publish 保持 Accept-only；
+                    establish_parent_library 首写（solidify 调用不到，有测试钉）；
+                    load_version 按 id 读不动 active；render_prompt_block
   autopoiesis.py    Autopoiesis 编排（SelfReport + homeostasis + viability）
   self_report.py    摩擦捕获 → autopoiesis_rules.json + LESSONS_LEARNED.md
   living_memory.py  活记忆加载（LESSONS_LEARNED YAML frontmatter）
@@ -142,6 +154,20 @@ evolve/             进化流水线
     select.py       选择最佳 Gene/Capsule（repair bias + innovation 记录）
     dispatch.py     生成 GEP 提示词（含回忆 + autopoiesis_context），写入分发输出
   post_cycle.py     周期末钩子（ATP auto-buyer、task pickup）
+bench/              锚侧任务包与外部适应度（章程 §5.2 / 库即尺子）
+  tasks.py          任务模式校验（slug/split/沙箱名安全）+ 沙箱物化（force 删
+                    陈旧未声明文件——幻影评分防御）
+  builtin_pack.py   内置 12 题确定性任务包（两次调用字节相同）
+  scoring.py        四评分器（exact/contains/json_field/code_stdout），
+                    永不抛、缺交付物记 0
+  prompts.py        求解提示词：绝对 workdir + 禁离场 + library_block 贴库
+  runner.py         包执行：prompt 物化（--library 按 id 注入 + 求解回执
+                    solve_receipt.v0）、评分、聚合进 fitness ledger
+  frozen_gate.py    冻结包门：val ≤ 6 两遍严格高于 Parent；大包走 compare.py
+                    配对检验；基线只由 establish_parent_baseline 首写、
+                    绑 pack digest + anchor epoch
+  compare.py        配对精确二项检验（α=0.05，discordant ≥ 8）
+  regression_guard.py 不许退化项断言（基线 per_task 地板；候选只许收紧）
 proxy/              本地 HTTP 代理（CLI 默认 127.0.0.1:8081；路由前缀 /v1/a2a）
   mailbox/store.py  本地邮箱 JSONL 存储（较完整）
   sync/             双向同步引擎（较完整）
@@ -404,3 +430,7 @@ instrument prompt 第三章（Hooks 集成）指导宿主择轨。
 - **IDE 双轨**：`setup-hooks` 对 `cursor`/`claude-code`/`codex`/`kiro`/`opencode` 调用各 adapter `install()`；`vscode`/`generic` 仍写静态配置。`--project-dir` 为安装根，不回落 `$HOME`。
 - **Feature flags**：`proxy/router/features.py` 委托 `gep/feature_flags.py`；`EVOLVER_FF_*` 对 GEP 与 Proxy 路由同时生效。
 - **许可证差异**：本移植使用 Apache-2.0，Node.js 参考实现使用 GPL-3.0-or-later。如引入 Node 版之测试或文档，须注意许可证兼容性。
+- **Windows 工具查找走 `shutil.which`**：裸文件名 `is_file()` 探测在 Windows 探不到 `ruff.exe`（PATHEXT）——级联回退曾因此静默跳过整段（DEBUG #48）。带 `path=` 的 `which` 两平台都对。
+- **PATH 继承断言用子串**：`os.pathsep` 在 Windows 是 `;`，POSIX 风格继承值（`/usr/bin:/bin`）整串成单元素——「继承未丢」断言用子串判断，不用切分成员（DEBUG #49）。
+- **跑全量时勿改源**：staleness 按「进程启动 vs 最新源 mtime」判定，套件运行中改源会让 `test_swarm` 如实报 stale（round-95 定性的假阳性）。
+- **CI 改动须本地按渲染后命令演练**：`run: |` 块的缩进会原样进 `python -c`，多行即 IndentationError；嵌进 CI 的版本字面量是哑弹，能自洽就不要硬编码（DEBUG #51）。

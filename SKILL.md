@@ -56,6 +56,17 @@ pip install -e .
 | `evolver atp balance\|deposit\|withdraw\|history\|enable\|disable\|status` | Local settlement + auto-buyer consent | ✅ |
 | `evolver buy <skill_id>` / `orders` / `verify <order_id>` | ATP Hub client commands | ✅ |
 | `evolver atp-complete <task_id>` | Complete ATP task | ✅ |
+| `evolver session start\|resume\|status\|round\|reject\|accept\|incomplete\|extend\|hypothesize` | Paired-session ledger (§5.1): budget frozen at 8, extend is human-only, only Accept publishes | ✅ |
+| `evolver bench list\|init\|freeze\|gate\|baseline\|run\|prompt\|grade\|compare` | External fitness on the frozen pack; `baseline` is the ONLY first-baseline writer; `prompt --library <snapshot_id>` pastes a snapshot by id into the solve prompt (active never moves) | ✅ |
+| `evolver anchor init\|list\|run` | Out-of-tree frozen verifier contracts (RSI P0-1), epoch-seeded; verification-surface mutations must pass | ✅ |
+| `evolver library establish-parent --from=<file>` | Parent library first-write (establish_* family; solidify cannot reach it — pinned; `publish` stays Accept-only) | ✅ |
+| `evolver gate-report [--json]` / `meta-report [--json]` | Acceptance soak report; improvement-mechanism telemetry | ✅ |
+| `evolver hitl list\|approve\|reject` | HITL approval gate (fail-closed on unknown mode) | ✅ |
+| `evolver supervise status\|pause\|resume\|direct\|veto\|unveto` | HOTL supervision (veto/pause wrap CLI and loop) | ✅ |
+| `evolver gene-lifecycle list\|evaluate\|reinstate` | Gene lifecycle governance (RSI P1-5) | ✅ |
+| `evolver soak setup\|exports\|status` | Out-of-tree runtime state (`$EVOLVER_HOME/evolver.py-soak`; never commit `memory/`) | ✅ |
+| `evolver mcp` | stdio MCP server — the swarm evolution entry (host-takeover protocol) | ✅ |
+| `evolver skills list\|scan\|sync [--dry-run]` / `workflow …` | Skill ecosystem bridge; persistent workflow engine (WAL + approvals) | ✅ |
 
 **IDE adapters:** `setup-hooks --platform=…` delegates to `cursor.py`, `claude_code.py`, `codex.py`, `kiro.py`, `opencode.py` (runtime hooks + scripts). Use `--uninstall` / `--verify` (opencode). Installs always target `--project-dir`.
 
