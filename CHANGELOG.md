@@ -8,6 +8,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed — 外部审阅三真缺陷落地修复：锁窃、盲 cast、无锁追加（round-97）
+
+外部审阅（Antigravity 报告，round-96 前一轮已逐条核实）中三条成立项作为一轮卫生修复落地。按章程不算阶段进度。版本保持 **1.113.0**。驳回项维持：C2（TypedDict 管线上下文）顶撞 AGENTS 规范篇成文规范；C1（拆 cli.py）章程明说不立项，记录在案。
+
+- **#52 单实例锁重写（OS 锁为唯一真相）**。旧 mtime 启发式三宗罪：活守护跑满 5 分钟即「过期」可被后来者偷锁；双启动同判 stale 互删成双实例（TOCTOU）；`release` 无条件 unlink，未持锁进程一次误调删掉别人的活锁。现在直接 `FileLock.acquire`——活持有者任何年龄不可窃，崩溃残留（无 OS 锁）自然复用，拿到锁写 PID（诊断用），release 只删自己持有的。钉六根，含子进程活持有者把 mtime 拨到 4000 秒前仍不可窃。
+- **#53 非 dict JSON 运行时拒**。`_safe_json_loads` / `read_json_if_exists` 的 `cast` 对合法 JSON 的 list/str/int 原样放行，调用方 `.get()` 即崩；现在 `isinstance` 校验，非 dict 与哈希失配同族按损坏跳过。
+- **#54 JSONL 追加串行化（修复中自撞出第四缺陷）**。`append_jsonl` 上 sidecar 锁（daemon 与 MCP 服务器两活进程写同一文件，Windows 无 O_APPEND 保证）；上锁后 5 个既有测试 30 秒超时——`append_event_jsonl` 等三个包装层早已同路径持锁，同进程两 FileLock 实例在 Windows 不可重入。`with_file_lock` 改 `is_singleton=True`（进程内按路径单例＋引用计数，嵌套即重入），套件 152s → 1.5s。这一条同时消掉了一个先于本轮存在的嵌套死锁隐患。
+
+**测试**：`test_instance_lock.py` 重写为六钉（新语义）；`test_asset_store.py` 增五钉（非 dict 三、锁契约与并发线程 100 行完整）。全量回归 **4066 passed，0 failed**（10m44s，round-95 基线 4059 ＋ 净增 7 钉）；ruff / format / mypy strict 全绿。DEBUG.md 回填 #52–#54。
+
 ### Changed — 文档全面同步到 v1.113.0 / 库即尺子（round-96）
 
 按章程此轮不算阶段进度（文档轮）。版本保持 **1.113.0**。边界：两份史料（RSI演进对照、wikiskill 对照版）不动；产品说法不重写（round-90 裁决）；百分比快照保持其 2026-09-05 日期（改日期即伪造）。

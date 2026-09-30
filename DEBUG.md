@@ -54,6 +54,9 @@
 | 49 | 平台断言三族：pathsep 切分、cwd-rmtree、resource win32 mypy 假阳性 | tests/探针 | round-88 | v1.113.0 |
 | 50 | val_seal.redact 空文本早退缺 redacted 键 | val_seal | round-95 | v1.113.0 |
 | 51 | CI 多行 python -c 缩进即 IndentationError（1.95.0 断言哑弹同查） | ci | round-94 | v1.113.0 |
+| 52 | 单实例锁 mtime 窃锁：活守护可被 steal、双启动 TOCTOU、异释删他锁 | instance_lock | round-97 | v1.113.0 |
+| 53 | `_safe_json_loads` 盲 cast：合法 JSON 非 dict 直穿成 AttributeError | asset_store | round-97 | v1.113.0 |
+| 54 | `append_jsonl` 无锁追加 + 同路径嵌套锁在 Windows 自死锁 30s | asset_store | round-97 | v1.113.0 |
 
 ## 条目
 
@@ -1004,3 +1007,43 @@
   切换维护 CI 步骤）。
 - **经验**：**CI 改动必须本地按 YAML 渲染后的命令逐字演练**；嵌进 CI 的字面量
   （版本号等）是定时哑弹，能自洽就不要硬编码。
+
+### 52. 单实例锁的 mtime 窃锁（round-97）
+
+- **症状**（外部审阅 C4 指认，核实成立）：`acquire_instance_lock` 以 5 分钟 mtime 判
+  「stale」→ unlink → 重取。POSIX 上两个启动者同判 stale 会互删成双实例（TOCTOU）；
+  更糟的是**活**守护跑满 5 分钟后 mtime 即「过期」，后来者可把它的锁偷走。
+  `release_instance_lock` 还无条件 unlink——从未持锁的进程一次误调就能删掉别人的活锁。
+- **根因**：互斥语义本该由 OS 锁独占承担（flock/lockfile 句柄随进程死亡消失），
+  mtime 启发式在这之上叠加了一个错误的第二真相。
+- **修复**：OS 锁为唯一真相——直接 `FileLock.acquire`，拿到即写 PID（诊断用），
+  拿不到即 False（活持有者任何年龄都不可窃）；崩溃残留文件无 OS 锁，下一次
+  acquire 直接复用。release 只在 `_held_lock` 非空时释放并删除。钉：子进程活
+  持有者把文件 mtime 拨到 4000 秒前仍不可窃；异释不删他锁；无持有者残留可复用。
+- **经验**：**进程互斥的第二真相（mtime/PID 探测）必然与第一真相（OS 锁）打架**。
+  句柄随死即释的机制已经免费给了全部所需语义，叠加启发式只会造出可窃窗口。
+
+### 53. `_safe_json_loads` 的盲 cast（round-97）
+
+- **症状**（外部审阅 C5，核实成立）：`cast(dict, json.loads(raw))` 对合法 JSON 的
+  list/str/int 原样放行；调用方 `.get()` 即 AttributeError。
+- **根因**：cast 只改类型视图不改运行时；JSON 存储文件的损坏形态包括「合法 JSON
+  但不是对象」，未被当作损坏。
+- **修复**：`_safe_json_loads` 与 `read_json_if_exists` 运行时 `isinstance` 校验，
+  非 dict 与哈希失配同样按损坏跳过（返回 None）。
+- **经验**：**cast 是借据不是担保**——凡 cast 的形状假设，要么上游已证，要么
+  运行时验，二选一。
+
+### 54. JSONL 无锁追加 × 同路径嵌套锁自死锁（round-97）
+
+- **症状**（外部审阅 H2 指认 + 修复时自撞）：`append_jsonl` 裸追加——daemon 与
+  MCP 服务器两个活进程写同一 `events.jsonl`，Windows 无 O_APPEND 交错保证。给它
+  套上 `with_file_lock(target=path)` 后，5 个既有测试开始 30 秒超时（套件 152s）。
+- **根因**：`append_event_jsonl` 等三个包装层**早已**用同路径 `with_file_lock` 包住
+  `append_jsonl`——同进程两个 FileLock 实例同路径，Windows msvcrt 不可重入，
+  内层 acquire 等满 timeout。
+- **修复**：`with_file_lock` 的 FileLock 改 `is_singleton=True`——进程内按路径
+  单例、引用计数，嵌套即重入（152s → 1.5s）；`append_jsonl` 保持上锁，直接
+  调用方（mailbox/narrative/gene_lifecycle/skill2recipes）一并纳入串行化。
+- **经验**：**加锁前先查同路径既有锁**；跨平台文件锁默认不可重入，可重入性
+  要显式选（singleton）并用嵌套钉钉住。
