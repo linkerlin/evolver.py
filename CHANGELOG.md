@@ -8,6 +8,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### 阶段收束 — 经验即证据（round-108）
+
+**点名裁决 1 已裁**：不用 test 位，改报告口径。消融只比过程指标（门通过率/工具复用率/成本），从 episode record 与 relay 观测直接复算，不需要 held-out test 集；下游 test 位会把 val 从「门读」升为「裁决读」，多次消融即对 val 过拟合（SelfSearch 不做 dev-score 选择的理由）。下游能力评测留待外部基准适配器（下一阶段）。
+
+**消融裁决机制验证（影子）**：`experiment/ablation.py` 端到端可复算——
+- 信号态（记录有效）：with_records 20/20 成功 vs without 0/20，`success_rate_delta=+1.0`，verdict=signal（「记录改变了改进行为」）。
+- null 态（记录无效）：两条件皆 0/20，verdict=no_signal（「判负并停」）。
+- 机制正确检测信号与无信号；只比过程指标，不碰 val。
+
+**八项机制全部就位**：episode record（内容寻址、一轮一写、调用图钉）｜线索层（标来源、不进验收）｜提示词三块序（记录→证据包→线索）｜val-seal 存储前打码｜improver 工具面（3 基因入种子 + meta-report 面板）｜双向记录路线（影子，互见不打分）｜成本/配置采集先行（receipt 增 cost/model，unmeasured 不猜）｜消融裁决机制。
+
+**诚实状态**：真实消融需要**真实 episode**，而真实 episode 由宿主跑 solidify 产生——引擎无法自主产出。机制已就绪，真实对照跑待宿主闭环。
+
+**下一阶段提议**：**真实 episode 闭环**——宿主跑真实 solidify 轮产出 episode，引擎用真实记录跑消融裁决，验证「记录侧证据先于结果侧分数」假说。前置：带走表第 1 项 Parent 库首写（人写第一份）。
+
 ### Added — 消融裁决机制（经验即证据 §5.8，round-107）
 
 版本保持 **1.113.0**。

@@ -22,7 +22,9 @@ from evolver.experiment.agent_runner import TaskResult
 from evolver.experiment.metrics import compare_metrics, compute_metrics
 
 #: Marker a stub agent looks for in the context to simulate the record effect.
-RECORD_MARKER: Final = "EPISODE-RECORD"
+#: Defaults to the episode-block heading the real renderer emits, so a stub
+#: and a real record context agree on what "has a record" means.
+RECORD_MARKER: Final = "## Previous Episode"
 
 
 def make_stub_agent(*, record_effect: bool = True, record_marker: str = RECORD_MARKER) -> Any:
