@@ -8,6 +8,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added — 真实 LLM 消融（经验即证据 §5.9，round-111）
+
+版本保持 **1.113.0**。
+
+- **`experiment/llm.py`**：DeepSeek LLM 客户端（宿主执行器）。OpenAI 兼容，配置取自 `DEEPSEEK_*` 环境变量。推理模型（deepseek-v4-flash）——答案在 `content`，推理在 `reasoning_content`，`max_tokens` 须留足推理余量。
+- **消融 `success_mode`**：`experiment/ablation.py` 增 `success_mode` 参数（`"exact"` 给确定性 agent，`"contains"` 给 LLM 生成的代码——精确匹配既不可能也不是重点）。
+- **真实 LLM 消融结果**（deepseek-v4-flash，3 题，合成记录上下文）：
+  - with_records：1/3 成功，平均 1747 tokens。
+  - without_records：1/3 成功，平均 2707 tokens。
+  - **token_delta −35.4%**，verdict = **signal**（记录改变了改进行为——具体是降低 token 成本）。
+  - 诚实限定：3 题、合成记录上下文、成功率低（1/3）；结论只到「记录降低 token 成本」，不外推「记录提升下游能力」。
+- **完整 GEP 闭环状态**：`swarm_tick` 产出 dispatch prompt（21580 字符）→ LLM 执行有响应，但 LLM 产出 EvolutionEvent（非 distillable 的 Mutation）且 solidify 需 hypothesis——完整闭环对 LLM 输出格式要求高，待后续。
+
+**测试**：新增 1 全绿（`success_mode="contains"`）；`tests/experiment` 21 过；ruff / format / mypy 绿。
+
 ### Fixed — 升级 pass 只追加一个家族，新种子基因不 propagate（round-110）
 
 版本保持 **1.113.0**。

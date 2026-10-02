@@ -44,11 +44,20 @@ def make_stub_agent(*, record_effect: bool = True, record_marker: str = RECORD_M
     return agent
 
 
-def _run_one(task: dict[str, Any], *, record_context: str, agent_fn: Any) -> TaskResult:
+def _run_one(
+    task: dict[str, Any],
+    *,
+    record_context: str,
+    agent_fn: Any,
+    success_mode: str = "exact",
+) -> TaskResult:
     prompt = str(task.get("prompt", ""))
     answer, tokens = agent_fn(prompt, record_context)
     expected = task.get("expected")
-    success = (answer == expected) if expected else bool(answer)
+    if expected:
+        success = expected in answer if success_mode == "contains" else answer == expected
+    else:
+        success = bool(answer)
     return TaskResult(
         task_id=str(task.get("id", "unknown")),
         success=success,
@@ -63,6 +72,7 @@ def run_ablation(
     record_context: str,
     agent_fn: Any,
     budget: int | None = None,
+    success_mode: str = "exact",
 ) -> dict[str, Any]:
     """Run the with-records vs without-records ablation over the same tasks.
 
@@ -70,10 +80,21 @@ def run_ablation(
     for both + the comparison. Process metrics only (see module docstring) —
     the verdict is about whether records changed the improvement behavior,
     not about downstream task scores.
+
+    *success_mode* controls how a task's ``expected`` is checked: ``"exact"``
+    (the answer equals it — for deterministic agents) or ``"contains"`` (the
+    answer includes it — for LLM-generated code, where an exact match is
+    neither possible nor the point).
     """
     selected = list(tasks[:budget]) if budget else list(tasks)
-    with_results = [_run_one(t, record_context=record_context, agent_fn=agent_fn) for t in selected]
-    without_results = [_run_one(t, record_context="", agent_fn=agent_fn) for t in selected]
+    with_results = [
+        _run_one(t, record_context=record_context, agent_fn=agent_fn, success_mode=success_mode)
+        for t in selected
+    ]
+    without_results = [
+        _run_one(t, record_context="", agent_fn=agent_fn, success_mode=success_mode)
+        for t in selected
+    ]
     with_metrics = compute_metrics(with_results)
     without_metrics = compute_metrics(without_results)
     return {
