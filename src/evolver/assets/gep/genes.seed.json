@@ -785,5 +785,129 @@
       ],
       "asset_id": "sha256:c85f323d8e5f982c5d551409a9f9782a235e3e23ad16d035329b0a7446dd1884"
     }
+,
+    {
+      "type": "Gene",
+      "id": "gene_improver_bounded_text_search",
+      "summary": "Bounded text search: cap output lines/bytes and center excerpts on the match so long records stay readable.",
+      "category": "innovate",
+      "signals_match": [
+        "long_output",
+        "search_output_truncated",
+        "output_too_large",
+        "inspection_difficulty",
+        "record_too_large"
+      ],
+      "preconditions": [
+        "the improver must read a long record or log",
+        "unbounded search output previously overflowed the context"
+      ],
+      "strategy": [
+        "Add a search tool that caps output lines and bytes per call",
+        "Center excerpts on the match so the relevant text stays visible",
+        "Add an overall output limit with a continuation cursor for the remainder",
+        "Verify the tool returns matches without truncation hiding them"
+      ],
+      "constraints": {
+        "max_files": 6,
+        "forbidden_paths": [
+          ".git",
+          "node_modules",
+          ".venv"
+        ]
+      },
+      "validation": [
+        "python -m pytest tests/ -x -q -m \"not slow\""
+      ],
+      "routing_hint": {
+        "tier": "cheap",
+        "reasoning_level": "low"
+      },
+      "target_hook": "improver_tool",
+      "mechanism_family": "improver_tools",
+      "schema_version": "1.8.0",
+      "asset_id": "sha256:a9597a47d17dfc63762fdc6c7e83675f1f7c28b8755f1a0bc44bb5695db1d111"
+    },
+    {
+      "type": "Gene",
+      "id": "gene_improver_line_range_view",
+      "summary": "Line-range file viewing: read a file by line range instead of whole-file, preserving tabs and line endings.",
+      "category": "innovate",
+      "signals_match": [
+        "long_file",
+        "whole_file_too_large",
+        "file_view_overflow",
+        "inspection_difficulty"
+      ],
+      "preconditions": [
+        "the improver must inspect a specific region of a large file",
+        "whole-file reads previously overflowed the context"
+      ],
+      "strategy": [
+        "Add a file-view tool that takes a line range (start, end)",
+        "Preserve tabs and line endings during viewing so edits stay consistent",
+        "Verify the viewed range matches the requested lines"
+      ],
+      "constraints": {
+        "max_files": 6,
+        "forbidden_paths": [
+          ".git",
+          "node_modules",
+          ".venv"
+        ]
+      },
+      "validation": [
+        "python -m pytest tests/ -x -q -m \"not slow\""
+      ],
+      "routing_hint": {
+        "tier": "cheap",
+        "reasoning_level": "low"
+      },
+      "target_hook": "improver_tool",
+      "mechanism_family": "improver_tools",
+      "schema_version": "1.8.0",
+      "asset_id": "sha256:70d61e2444b625172e2cd520fe274149d0721cb66b1ad45158c159491cecbaa5"
+    },
+    {
+      "type": "Gene",
+      "id": "gene_improver_trajectory_reader",
+      "summary": "Trajectory reader: inspect previous episode records and tool results, linking each result to the call that produced it.",
+      "category": "innovate",
+      "signals_match": [
+        "trajectory_too_long",
+        "episode_record_unreadable",
+        "tool_result_orphan",
+        "inspection_difficulty"
+      ],
+      "preconditions": [
+        "the improver must read a previous episode record or trajectory",
+        "long records previously could not be inspected"
+      ],
+      "strategy": [
+        "Add a trajectory reader that reads episode records by id",
+        "Link each tool result to the call and arguments that produced it",
+        "Add filtering so the improver can find relevant events",
+        "Verify the reader returns the record content without overflow"
+      ],
+      "constraints": {
+        "max_files": 6,
+        "forbidden_paths": [
+          ".git",
+          "node_modules",
+          ".venv"
+        ]
+      },
+      "validation": [
+        "python -m pytest tests/ -x -q -m \"not slow\""
+      ],
+      "routing_hint": {
+        "tier": "cheap",
+        "reasoning_level": "low"
+      },
+      "target_hook": "improver_tool",
+      "mechanism_family": "improver_tools",
+      "schema_version": "1.8.0",
+      "asset_id": "sha256:609f9699d5c16b18b1de21e42ba766223009157a10ea460f500897bd2a2b7915"
+    }
   ]
 }

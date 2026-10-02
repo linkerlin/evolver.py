@@ -378,6 +378,35 @@ class TestDistillSolidifyReport:
         assert "hint" not in result
         assert result["next_action"] == "swarm_solidify"
 
+    def test_distill_stores_the_host_account_as_a_clue(self, isolated_swarm_env: Path) -> None:
+        """经验即证据 §5.2: the host's free-text account is a clue, not evidence —
+        stored apart from the episode record, tagged with its source."""
+        response = (
+            "I searched the logs and found the retry loop.\n\n"
+            "```json\n"
+            '{"type": "Gene", "id": "gene_clue_demo", "category": "repair", '
+            '"summary": "x", "signals_match": ["ImportError"]}\n'
+            "```\n"
+        )
+        result = swarm_distill(response)
+        assert result["ok"] is True
+        assert result["clue"]["ok"] is True
+        assert result["clue"]["source"] == "host_distill"
+
+        from evolver.gep import episode_clue
+
+        clues = episode_clue.recent_clues()
+        assert any("retry loop" in c["text"] for c in clues)
+
+    def test_distill_dry_run_stores_no_clue(self, isolated_swarm_env: Path) -> None:
+        """A clue for a round that never happened is worse than no clue."""
+        result = swarm_distill("I searched the logs and found the retry loop.", dry_run=True)
+        assert result["ok"] is True
+        assert "clue" not in result
+        from evolver.gep import episode_clue
+
+        assert episode_clue.recent_clues() == []
+
     def test_proposal_bridge_works_in_dry_run(self, isolated_swarm_env: Path) -> None:
         """Round-70: the bridge is OBSERVATION — it must fire in dry_run too
         (dry_run skips installs, not observations; the proposal replay

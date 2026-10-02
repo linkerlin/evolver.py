@@ -174,6 +174,11 @@ def pack_prompt(
     # sandbox (never inside it: the solving agent must not be able to forge
     # it). Capture only for now; a consumer binds it at measurement time once
     # the pack-naming ruling defines snapshot freshness.
+    #
+    # 经验即证据 §5.7: cost/model are captured when observable (relay-side
+    # extract_usage for tokens; relay-observed or AGENT_MODEL for config).
+    # null = unmeasured — a solve whose cost was not observed says so
+    # explicitly rather than being guessed (round-106: 采集先行).
     receipts = _pack_sandbox_root(pack_path, replicate=replicate) / "_receipts"
     receipts.mkdir(parents=True, exist_ok=True)
     receipts.joinpath(f"{task_id}.json").write_text(
@@ -185,6 +190,8 @@ def pack_prompt(
                 "task": task_id,
                 "replicate": replicate,
                 "library": library_snapshot,
+                "cost": None,
+                "model": None,
                 "written_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
             },
             indent=2,

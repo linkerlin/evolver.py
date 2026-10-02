@@ -685,7 +685,27 @@ def swarm_distill(response_text: str, dry_run: bool = False) -> dict[str, Any]:
             "swarm_propose or `evolver solidify --proposal/--population` "
             "(same validation gates as any mutation)"
         )
+    # 经验即证据 §5.2: the host's own account is a clue, not evidence — stored
+    # apart from the episode record, tagged with its source. Not in dry_run:
+    # a clue for a round that never happened is worse than no clue.
+    if not dry_run:
+        account = _extract_host_account(response_text)
+        if account:
+            from evolver.gep import episode_clue
+
+            result["clue"] = episode_clue.append_clue(account, source="host_distill")
     return result
+
+
+def _extract_host_account(response_text: str) -> str:
+    """The host's free-text account: the response minus its fenced asset blocks.
+
+    The distill channel keeps the structured assets; the prose around them is
+    the host's own account of what it did and saw — exactly the material the
+    engine never observed. Bounded so one verbose host cannot flood the layer.
+    """
+    prose = re.sub(r"```[a-zA-Z]*\s*\n.*?```", "", response_text, flags=re.DOTALL)
+    return prose.strip()[:2000]
 
 
 def _extract_proposal_candidates(response_text: str) -> list[dict[str, Any]]:
@@ -949,6 +969,16 @@ def swarm_solidify(
             result.setdefault(
                 "next_action", "swarm_tick" if mode.get("retryable") else "stop_and_report"
             )
+    if isinstance(result, dict) and result.get("ok") and result.get("event_id"):
+        # 经验即证据 §5.1: the runtime records the round at the cycle boundary.
+        # The mutation path cannot (call-graph pin), and a record failure must
+        # not turn a good cycle into a failed one — it is reported either way.
+        from evolver.gep import episode_record
+
+        try:
+            result["episode"] = episode_record.record_round(event_id=str(result["event_id"]))
+        except Exception as exc:
+            result["episode"] = {"ok": False, "error": f"episode_record_failed: {exc}"}
     return result
 
 

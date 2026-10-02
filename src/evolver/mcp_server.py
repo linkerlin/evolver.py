@@ -89,6 +89,20 @@ def asset_get(asset_id: str) -> dict[str, Any]:
     raise LookupError(f"asset not found locally: {asset_id}")
 
 
+def episode_get(episode_id: str) -> dict[str, Any]:
+    """Fetch one episode record by id (read-only).
+
+    经验即证据 §5.1c: the thin read side of the episode store — the same
+    read discipline as ``asset_get``, over the runtime-held round record.
+    """
+    from evolver.gep import episode_record
+
+    body = episode_record.load_episode(episode_id)
+    if body is None:
+        raise LookupError(f"episode not found: {episode_id}")
+    return body
+
+
 # ---------------------------------------------------------------------------
 # Mailbox (durable agent↔daemon messages)
 # ---------------------------------------------------------------------------
@@ -560,6 +574,7 @@ def build_server() -> Any:
     classic_tools: list[tuple[str, ToolAnnotations | None]] = [
         ("tool_asset_search", read_only),
         ("tool_asset_get", read_only),
+        ("episode_get", read_only),
         ("tool_mailbox_send", None),
         ("tool_mailbox_poll", read_only),
         ("tool_mailbox_ack", None),
@@ -569,6 +584,7 @@ def build_server() -> Any:
     classic_fns = {
         "tool_asset_search": tool_asset_search,
         "tool_asset_get": tool_asset_get,
+        "episode_get": episode_get,
         "tool_mailbox_send": tool_mailbox_send,
         "tool_mailbox_poll": tool_mailbox_poll,
         "tool_mailbox_ack": tool_mailbox_ack,
@@ -624,6 +640,7 @@ __all__ = [
     "asset_search",
     "build_server",
     "cycle_timeline",
+    "episode_get",
     "mailbox_ack",
     "mailbox_poll",
     "mailbox_send",

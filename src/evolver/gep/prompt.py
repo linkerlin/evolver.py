@@ -116,6 +116,8 @@ def build_gep_prompt(
     strategy_policy: dict[str, Any] | None,
     initial_user_prompt: str | None,
     evidence_pack: str = "",
+    episode_block: str = "",
+    clue_block: str = "",
     max_chars: int = PROMPT_MAX_CHARS,
 ) -> str:
     genes_preview = _compact_or_passthrough(genes_preview)
@@ -180,11 +182,13 @@ def build_gep_prompt(
         "## Context [Execution]",
         context or "(none)",
         "",
-        # RSI P1-4: failure-side evidence precedes the gene suggestion — the
-        # Selected Gene is retrieval-augmented advice, not the only allowed
-        # intervention (see the pack's proposal-channel hint). Absent for
-        # novel families (no prior attempts to report).
+        # 经验即证据 §5.2: the previous round's record precedes the evidence
+        # pack — record-side evidence before result-side scores. The clue
+        # block (host-reported, weakest) comes last and is never merged into
+        # either: evidence and clues are counted separately, never together.
+        *([episode_block, ""] if episode_block else []),
         *([evidence_pack, ""] if evidence_pack else []),
+        *([clue_block, ""] if clue_block else []),
         "## Selected Gene",
         selected_gene_block or "(none)",
         "",

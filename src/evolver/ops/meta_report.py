@@ -140,16 +140,68 @@ def _descendant_quality(events: list[dict[str, Any]]) -> list[dict[str, Any]]:
     return rows
 
 
+def _improver_tool_panel(episodes: list[dict[str, Any]]) -> dict[str, Any]:
+    """Improver-tool usage (经验即证据 §5.4): how often the applied gene was an
+    improver-tool gene, counted once per round.
+
+    Recomputed from the episode record — the record carries the applied gene's
+    target_hook (attached at record time), with a gene-library fallback for
+    records written before the field existed. This is the engine's selection
+    rate of the improver's tool surface, not the host's self-reported tool
+    invocation: the same honesty rule as the rest of the panel.
+    """
+    from evolver.gep.asset_store import load_genes
+
+    library = {str(g.get("id")): g for g in load_genes()}
+
+    def _is_improver(gene_id: str, gene_field: Any) -> bool:
+        if isinstance(gene_field, dict):
+            if gene_field.get("target_hook") == "improver_tool":
+                return True
+            if gene_field.get("mechanism_family") == "improver_tools":
+                return True
+        gene = library.get(gene_id)
+        if gene:
+            return bool(
+                gene.get("target_hook") == "improver_tool"
+                or gene.get("mechanism_family") == "improver_tools"
+            )
+        return False
+
+    total = len(episodes)
+    improver_rounds = 0
+    for episode in episodes:
+        if not isinstance(episode, dict):
+            continue
+        raw_gene = episode.get("gene")
+        gene: dict[str, Any] = raw_gene if isinstance(raw_gene, dict) else {}
+        gene_id = str(gene.get("id") or episode.get("gene_id") or "")
+        if _is_improver(gene_id, gene):
+            improver_rounds += 1
+    return {
+        "rounds": total,
+        "improver_tool_rounds": improver_rounds,
+        "usage_rate": (round(improver_rounds / total, 3) if total else None),
+        "note": (
+            "fraction of recorded rounds whose applied gene is an improver-tool "
+            "gene (target_hook=improver_tool); counted once per round, recomputed "
+            "from the episode record"
+        ),
+    }
+
+
 def build_meta_report(
     events: list[dict[str, Any]],
     feedback: list[dict[str, Any]] | None = None,
     lifecycle: dict[str, str] | None = None,
+    episodes: list[dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
     """Aggregate the improvement-mechanism panel. Read-only.
 
     *lifecycle* is a plain ``gene_id → status`` map supplied by the caller
     (``evolver.gep.gene_lifecycle.status_map``); the report itself performs
-    no file reads.
+    no file reads. *episodes* is the episode-record index (经验即证据 §5.4) —
+    the source for the improver-tool usage panel; absent → that panel is empty.
     """
     feedback = feedback or []
     lifecycle = lifecycle or {}
@@ -357,6 +409,7 @@ def build_meta_report(
                 "lifecycle": status_counts,
                 "faithful_use": faithful_use,
             },
+            "improver_tools": _improver_tool_panel(episodes or []),
             "cost": cost_panel,
         },
         "mechanism_audit": mechanism_rows,

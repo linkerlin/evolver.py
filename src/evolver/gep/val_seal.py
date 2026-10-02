@@ -36,7 +36,7 @@ from typing import Any
 MIN_SECRET_LEN: int = 6
 
 #: Where the seal applies. Listed so inspectors see the full surface.
-SEAL_TARGETS: tuple[str, ...] = ("dispatch", "evidence_pack", "proposal_round")
+SEAL_TARGETS: tuple[str, ...] = ("dispatch", "evidence_pack", "proposal_round", "episode_record")
 
 
 class ValSealBreachError(RuntimeError):

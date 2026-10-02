@@ -11,6 +11,7 @@ from evolver.mcp_server import (
     asset_search,
     build_server,
     cycle_timeline,
+    episode_get,
     mailbox_ack,
     mailbox_poll,
     mailbox_send,
@@ -152,6 +153,7 @@ class TestServerBuild:
         expected = {
             "tool_asset_search",
             "tool_asset_get",
+            "episode_get",
             "tool_mailbox_send",
             "tool_mailbox_poll",
             "tool_mailbox_ack",
@@ -160,7 +162,37 @@ class TestServerBuild:
         }
         assert expected <= names
 
-    def test_build_server_registers_swarm_tools(self) -> None:
+    def test_episode_get_returns_a_recorded_round(
+        self, temp_workspace: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """经验即证据 §5.1c: the thin read side — same discipline as asset_get,
+        over the runtime-held round record."""
+        monkeypatch.setenv("EVOLUTION_DIR", str(temp_workspace / "evolution"))
+        from evolver.gep import episode_record
+
+        body = episode_record.build_episode(
+            {
+                "event": {
+                    "type": "EvolutionEvent",
+                    "id": "evt_mcp_1",
+                    "run_id": "run_mcp",
+                    "timestamp": "2026-10-02T00:00:00.000Z",
+                    "gene_id": "gene_a",
+                    "mutation": {"id": "mut_1", "category": "repair"},
+                    "diff_snapshot": "+x",
+                    "outcome": {"status": "success", "score": 1.0},
+                },
+                "validation_result": {"ok": True, "results": []},
+                "fitness_verdict": None,
+                "gate": {"accepted": True},
+            }
+        )
+        stored = episode_record.record_episode(body)
+        assert episode_get(stored["id"]) == body
+
+    def test_episode_get_missing_id_raises(self) -> None:
+        with pytest.raises(LookupError):
+            episode_get("sha256:nope")
         import asyncio
 
         server = build_server()

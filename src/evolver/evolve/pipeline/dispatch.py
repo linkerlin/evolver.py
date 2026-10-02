@@ -271,6 +271,35 @@ async def dispatch_phase(ctx: dict[str, Any]) -> dict[str, Any]:
     except Exception as exc:  # prompt assembly must never abort dispatch
         ctx["evidence_pack_error"] = str(exc)
 
+    # 经验即证据 §5.2: the previous round's record precedes the evidence pack
+    # — record-side evidence before result-side scores. Read-only over the
+    # episode store; the writer lives at the cycle boundary (pinned).
+    episode_block = ""
+    try:
+        from evolver.gep import episode_record
+
+        entries = episode_record.list_episodes()
+        if entries and isinstance(entries[-1], dict):
+            latest_id = str(entries[-1].get("id") or "")
+            body = episode_record.load_episode(latest_id) if latest_id else None
+            if body is not None:
+                episode_block = episode_record.render_episode_block(body, ep_id=latest_id)
+                ctx["episode_block"] = body
+    except Exception as exc:  # prompt assembly must never abort dispatch
+        ctx["episode_block_error"] = str(exc)
+
+    # The clue layer: host-reported material, separately tagged, weakest last.
+    clue_block = ""
+    try:
+        from evolver.gep import episode_clue
+
+        clues = episode_clue.recent_clues()
+        if clues:
+            clue_block = episode_clue.render_clue_block(clues)
+            ctx["clue_block"] = clues
+    except Exception as exc:  # prompt assembly must never abort dispatch
+        ctx["clue_block_error"] = str(exc)
+
     prompt = build_gep_prompt(
         now_iso=ctx.get("scan_time_iso", ""),
         context="\n".join(part for part in context_parts if part),
@@ -291,6 +320,8 @@ async def dispatch_phase(ctx: dict[str, Any]) -> dict[str, Any]:
         strategy_policy=ctx.get("strategy_policy"),
         initial_user_prompt=ctx.get("initial_user_prompt"),
         evidence_pack=evidence_pack_block,
+        episode_block=episode_block,
+        clue_block=clue_block,
     )
 
     # Expose the assembled prompt to in-process callers (MCP swarm_tick) so the

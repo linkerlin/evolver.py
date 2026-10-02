@@ -45,6 +45,29 @@ def test_library_panel_accepts_lifecycle_status_map() -> None:
     assert lifecycle == {"active": 0, "under_review": 0, "retired": 1}
 
 
+def test_improver_tool_panel_counts_from_episode_records() -> None:
+    """经验即证据 §5.4: usage rate is recomputed from the episode record —
+    the record carries the applied gene's target_hook."""
+    episodes = [
+        {"gene": {"id": "gene_a", "target_hook": "improver_tool"}},
+        {"gene": {"id": "gene_b", "target_hook": None, "mechanism_family": None}},
+        {"gene": {"id": "gene_c"}},  # no target_hook — library fallback (absent → not improver)
+    ]
+    report = build_meta_report([], [], None, episodes)
+    panel = report["panel"]["improver_tools"]
+    assert panel["rounds"] == 3
+    assert panel["improver_tool_rounds"] == 1
+    assert panel["usage_rate"] == 0.333
+
+
+def test_improver_tool_panel_empty_without_episodes() -> None:
+    report = build_meta_report([], [])
+    panel = report["panel"]["improver_tools"]
+    assert panel["rounds"] == 0
+    assert panel["improver_tool_rounds"] == 0
+    assert panel["usage_rate"] is None
+
+
 class TestFaithfulUse:
     """Round-38 (RSI P1-3 prerequisite): retrieval vs faithful following."""
 

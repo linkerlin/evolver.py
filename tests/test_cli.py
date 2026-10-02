@@ -304,3 +304,69 @@ def test_cli_library_establish_parent_json_output(
     assert main(["library", "establish-parent", f"--from={payload}", "--json"]) == 0
     report = json.loads(capsys.readouterr().out)
     assert report["ok"] is True and report["snapshot"].startswith("sha256:")
+
+
+# ---------------------------------------------------------------------------
+# 经验即证据 §5.1: the episode record CLI and the cycle-boundary write
+# ---------------------------------------------------------------------------
+
+
+def _episode_scene() -> dict[str, object]:
+    return {
+        "event": {
+            "type": "EvolutionEvent",
+            "id": "evt_1_abc",
+            "run_id": "run_1",
+            "timestamp": "2026-10-02T00:00:00.000Z",
+            "gene_id": "gene_a",
+            "mutation": {"id": "mut_1", "category": "repair"},
+            "diff_snapshot": "--- a.py\n+++ b.py\n-x = 1\n+x = 2\n",
+            "outcome": {"status": "success", "score": 1.0},
+        },
+        "validation_result": {
+            "ok": True,
+            "results": [{"command": "uv run pytest", "ok": True, "stdout": "1 passed"}],
+        },
+        "fitness_verdict": None,
+        "gate": {"accepted": True, "reason": "improved"},
+    }
+
+
+def test_cli_episode_list_and_show_round_trip(
+    isolated_evolver_env: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    from evolver.gep import episode_record
+
+    body = episode_record.build_episode(_episode_scene())
+    stored = episode_record.record_episode(body)
+
+    assert main(["episode", "list"]) == 0
+    assert stored["id"] in capsys.readouterr().out
+
+    assert main(["episode", "show", stored["id"]]) == 0
+    assert json.loads(capsys.readouterr().out) == body
+
+
+def test_cli_episode_show_unknown_id_exits_2(
+    isolated_evolver_env: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    assert main(["episode", "show", "sha256:nope"]) == 2
+    assert "not found" in capsys.readouterr().err
+
+
+def test_the_cycle_boundary_records_the_round_it_settled(isolated_evolver_env: Path) -> None:
+    """1a 判据: after one settled round the record is readable by id, and it is
+    derived from the immutable scene — never from anything the host reports."""
+    from evolver.cli import _record_episode_round
+    from evolver.gep import episode_record
+    from evolver.gep.evidence import save_evidence
+
+    save_evidence("run_1", "evt_1_abc", _episode_scene())
+    result = _record_episode_round({"ok": True, "event_id": "evt_1_abc"})
+    assert result["ok"] is True
+    body = episode_record.load_episode(result["id"])
+    assert body is not None
+    assert body["run_id"] == "run_1" and body["event_id"] == "evt_1_abc"
+    # a missing scene is reported, never guessed
+    missing = _record_episode_round({"ok": True, "event_id": "evt_missing"})
+    assert missing["ok"] is False and missing["error"] == "scene_missing"

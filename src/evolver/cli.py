@@ -550,6 +550,15 @@ def _build_parser() -> argparse.ArgumentParser:
         help="JSON file holding the Parent library payload",
     )
     lib_establish.add_argument("--json", action="store_true", help="Output raw JSON")
+    episode_p = sub.add_parser(
+        "episode",
+        help="Episode records (经验即证据: the runtime-held record of one self-improvement round)",
+    )
+    episode_sub = episode_p.add_subparsers(dest="episode_action", required=True)
+    episode_sub.add_parser("list", help="List recorded rounds (index order)")
+    ep_show = episode_sub.add_parser("show", help="Print one episode body by id")
+    ep_show.add_argument("episode_id", help="Content-addressed episode id (sha256:...)")
+    ep_show.add_argument("--json", action="store_true", help="Output raw JSON")
     webui_p = sub.add_parser("webui", help="Launch the WebUI dashboard")
     webui_p.add_argument("--host", default="127.0.0.1", help="Bind host")
     webui_p.add_argument(
@@ -853,6 +862,9 @@ def main(argv: Sequence[str] | None = None) -> int:
     if command == "library":
         return _cmd_library(args)
 
+    if command == "episode":
+        return _cmd_episode(args)
+
     if command == "sync":
         return asyncio.run(_cmd_sync(args))
 
@@ -975,6 +987,23 @@ def _cmd_watch(args: argparse.Namespace) -> int:
     return 0
 
 
+def _record_episode_round(result: dict[str, Any]) -> dict[str, Any]:
+    """经验即证据 §5.1: the cycle boundary records the round it just settled.
+
+    Non-fatal by design: a missing scene is reported, never guessed, and a
+    record failure must not turn a good cycle into a failed one.
+    """
+    from evolver.gep import episode_record
+
+    event_id = str(result.get("event_id") or "")
+    if not event_id:
+        return {"ok": False, "error": "no_event"}
+    try:
+        return episode_record.record_round(event_id=event_id)
+    except Exception as exc:
+        return {"ok": False, "error": f"episode_record_failed: {exc}"}
+
+
 def _cmd_solidify(args: argparse.Namespace) -> int:
     """Apply the pending solidify state (optionally with a GeneProposal)."""
     from evolver.gep.solidify import solidify
@@ -989,9 +1018,10 @@ def _cmd_solidify(args: argparse.Namespace) -> int:
         print(f"Solidify failed: {exc}", file=sys.stderr)
         return 1
     if result.get("ok"):
+        episode = _record_episode_round(result)
         print(
             f"Solidify succeeded: event_id={result.get('event_id')} "
-            f"blast_radius={result.get('blast_radius')}"
+            f"blast_radius={result.get('blast_radius')} episode={episode}"
         )
         return 0
     print(
@@ -1287,6 +1317,17 @@ def _cmd_anchor(args: argparse.Namespace) -> int:
     return 2
 
 
+def _load_episode_index() -> list[dict[str, Any]]:
+    """经验即证据 §5.4: the episode-record index for the improver-tool panel.
+    Best-effort — an unreadable store yields an empty list, never a crash."""
+    from evolver.gep import episode_record
+
+    try:
+        return episode_record.list_episodes()
+    except Exception:
+        return []
+
+
 def _cmd_meta_report(args: argparse.Namespace) -> int:
     """Improvement-mechanism telemetry (RSI P0-2): the effective-L5 panel."""
     from evolver.gep.asset_store import read_all_events
@@ -1294,8 +1335,9 @@ def _cmd_meta_report(args: argparse.Namespace) -> int:
     from evolver.ops.meta_report import build_meta_report, load_feedback_events
 
     events = read_all_events()[-max(1, args.limit) :]
+    episodes = _load_episode_index()
     report = build_meta_report(
-        events, load_feedback_events(), status_map(load_lifecycle(strict=False))
+        events, load_feedback_events(), status_map(load_lifecycle(strict=False)), episodes
     )
     if args.json:
         print(json.dumps(report, ensure_ascii=False, indent=2))
@@ -1313,6 +1355,10 @@ def _cmd_meta_report(args: argparse.Namespace) -> int:
     )
     n_transfer = panel["transfer"]["genes_under_multiple_signal_families"]
     print(f"transfer: {n_transfer} gene(s) across signal families")
+    imp = panel["improver_tools"]
+    imp_rate = imp.get("usage_rate")
+    imp_note = f" | rate {imp_rate}" if imp_rate is not None else ""
+    print(f"improver tools: {imp['improver_tool_rounds']}/{imp['rounds']} rounds{imp_note}")
     eff = panel["efficiency"]
     ms_per_gain = eff.get("validation_ms_per_validated_gain")
     time_note = f" | {ms_per_gain} ms validation/gain" if ms_per_gain else ""
@@ -2305,6 +2351,36 @@ def _cmd_apply_proposal(args: argparse.Namespace) -> int:
     print(f"applied {report['action']}: {', '.join(report['files_changed'])}")
     print("next: run 'evolver solidify' to validate and gate this mutation.")
     return 0
+
+
+def _cmd_episode(args: argparse.Namespace) -> int:
+    """Read-only access to episode records (经验即证据 §5.1c): list / show."""
+    import json as _json
+
+    from evolver.gep import episode_record
+
+    action = getattr(args, "episode_action", None) or ""
+    try:
+        if action == "list":
+            for row in episode_record.list_episodes():
+                print(
+                    f"{row.get('id')}  run={row.get('run_id')}  gene={row.get('gene_id')}  "
+                    f"outcome={row.get('outcome_status')}  score={row.get('score')}  "
+                    f"accepted={row.get('accepted')}"
+                )
+            return 0
+        if action == "show":
+            body = episode_record.load_episode(str(getattr(args, "episode_id", "") or ""))
+            if body is None:
+                print("episode not found", file=sys.stderr)
+                return 2
+            print(_json.dumps(body, ensure_ascii=False, indent=2, sort_keys=True))
+            return 0
+    except Exception as exc:
+        print(f"episode failed: {exc}", file=sys.stderr)
+        return 1
+    print("episode: unknown action", file=sys.stderr)
+    return 2
 
 
 def _cmd_library(args: argparse.Namespace) -> int:
