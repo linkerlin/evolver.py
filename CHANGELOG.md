@@ -8,6 +8,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added — 消融裁决机制（经验即证据 §5.8，round-107）
+
+版本保持 **1.113.0**。
+
+- **`experiment/ablation.py`**：同预算同题、有/无记录影子对照。`run_ablation` 两条件跑同一批任务同一 agent，报告均值与成本差；`ablation_verdict` 判 signal / no-signal。**只比过程指标**（门通过率、工具复用率、成本）——点名裁决 1（test 位）未裁之前，结论只可写「记录改变了改进行为」；用 val 比分就把 val 从「门读」升为「裁决读」，正是 SelfSearch 不做 dev-score 选择的理由。**记录无信号 → 判负并停**。
+- **测试 4 根**：有记录胜无记录（判据）；无信号判负；同预算两条件任务数相等；报告含成本差。
+- **待跑**：点名裁决 1 裁后跑一次真实对照，可复算报告进 CHANGELOG。机制已就位，跑不跑取决于裁决。
+
+**测试**：新增 4 全绿；`tests/experiment` 20 过；ruff / format / mypy 绿。
+
 ### Added — 成本与配置采集先行（经验即证据 §5.7，round-106）
 
 版本保持 **1.113.0**。

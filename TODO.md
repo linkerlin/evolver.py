@@ -33,7 +33,7 @@
 | 5 | improver 工具面进库 | 1c + 带走 1 | **已落地（round-104）**：3 个 improver 工具基因入种子（`target_hook=improver_tool` / `mechanism_family=improver_tools`，asset_id 经 `compute_asset_id` 校验）；`record_episode` 存储前从基因库附着 `target_hook`/`mechanism_family`（记录自包含）；`meta_report` 新增 `improver_tools` 面板（从 episode record 复算使用率，每轮计一次，库回退）。**宿主装/卸的闭环**依赖带走 1（Parent 库首写），未决 |
 | 6 | 双向记录路线（影子） | 2 | **已落地（round-105）**：`gep/record_route.py`——两条定性方向（capability / adaptive）并行产出记录，各出内容寻址记录、互见对方记录（`build_direction_block` 按 id 互引）、不打分、archive 全留。**是记录路线不是种群择优**，`MULTI_PROPOSE_ROUTES` 保持 1。生产形态（LLM 驱动双 lineage）留后续 |
 | 7 | 成本与配置采集先行 | 1a | **已落地（round-106）**：receipt schema 增 `cost`/`model`（默认 `null` = unmeasured）；`bench/cost.py` 的 `record_cost` 求解后回填（token 来自 relay `extract_usage`，model 以 relay 观测为准、`AGENT_MODEL` 只作线索）；观测不到出 `unmeasured`，不猜不零填。**此步之前不出效率/迁移结论** |
-| 8 | 消融裁决（**本阶段出口**） | 2 + 7；**点名裁决 1 须先裁** | 同预算同题、有记录 vs 无记录影子对照（`experiment/` 的 `agent_runner` / `comparison` / `stats`），报告均值与成本差。**裁决口径**：点名裁决 1 未裁之前只比过程指标（门通过率、工具复用率、成本），结论只可写「记录改变了改进行为」——用 val 比分就把 val 从「门读」升为「裁决读」，正是 SelfSearch 不做 dev-score 选择的理由。判据：可复算的对照报告进 CHANGELOG；**记录无信号 → 本阶段判负并停** |
+| 8 | 消融裁决（**本阶段出口**） | 2 + 7；**点名裁决 1 须先裁** | **机制已落（round-107）**：`experiment/ablation.py`——同预算同题、有/无记录影子对照，报告均值与成本差；只比过程指标（门通过率、工具复用率、成本），结论只可写「记录改变了改进行为」；记录无信号 → 判负并停。**待跑**：点名裁决 1 裁后跑一次真实对照，报告进 CHANGELOG |
 | 9 | 阶段末报告 | 8 | 均值、成本、消融结论一并进 CHANGELOG，**须写 relay 覆盖率**（宿主走本地代理的比例）与全部 `unmeasured` 项；由人切版本、定下阶段；不出「test 位」字样 |
 
 ## 守住
