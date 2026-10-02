@@ -28,7 +28,7 @@
 | 1a | ~~episode record 载体（引擎侧）~~ | — | **已落地（round-101）**：`gep/episode_record.py`——`e_k` 只收引擎自记（选中基因、diff、检查结果、门裁决），白名单拒宿主上报；内容寻址 `sha256:` id，一轮只记一次（同内容幂等、异内容 `EpisodeConflictError`）；`index.json` 轮账损坏即抛；视图有界、超限拒写。`recorded_at` 取事件时间戳（重推导同内容才谈得上幂等）。episodes = evidence 的有界可引用视图＋身份 id＋索引，不复制原始现场 |
 | 1b | ~~写不进自己的记录~~ | 1a | **已落地（round-101）**：调用图钉 `test_the_record_writer_is_absent_from_the_mutation_call_graph`——`solidify.py` / `evolve/` / `bench/` 引用 `episode_record` / `record_episode` 即测试失败；写入口只在周期边界（`cli._record_episode_round`、`swarm_solidify`），缺现场报 `scene_missing` 不猜 |
 | 1c | 只读取用面 | 1a | **已落地（round-101/102）**：CLI `evolver episode list\|show <id>` + MCP `episode_get`（薄读，走 `asset_*` 同一读法）；不新增写入口 |
-| 10 | 实时基因库缺 improver 基因 | — | **观察（round-109）**：`genes.seed.json` 有 20 基因（含 3 improver），但 `load_genes()` 只返 18——种子加进后未 propagate 到实时库（`ensure_genes_seeded` 只在空库时种、升级 pass 不含新基因）。影响：选择器看不见 improver 基因。修法：实时库 `upsert` 缺的基因，或升级 pass 纳入新种子基因。Parent 首写已用种子规避 |
+| 10 | ~~实时基因库缺 improver 基因~~ | — | **已修（round-110）**：升级 pass `select_bundled_upgrade_genes` 改为追加**所有**缺失种子基因（非仅 context-routing 家族）——旧库升级到种子全量。`BUNDLED_UPGRADE_GENE_IDS` 与 `FAMILY_GENE_IDS` 导入随之移除。测试：非家族种子基因（improver）也 propagate；marker 阈值（≥2）与手写库不触碰仍成立 |
 | 2 | 记录进提示词 | 1a/1b | **已落地（round-102）**：提示词三块序 `## Previous Episode` → `## Evidence Pack` → `## Host Clues`（`prompt.py` + `dispatch.py`）；记录块先于证据包，证据块与线索块不混排、互不重复计数；`swarm_distill` 回执入线索层（标 `source=host_distill`，dry_run 不存） |
 | 3 | 记录过 val-seal | 1a | **已落地（round-103）**：`val_seal.SEAL_TARGETS` 增 `episode_record`；`record_episode` 存储前递归过 `redact`（`where="episode_record"`）——强 val 串替换为 `[sealed:val]` 后才算内容寻址 id，泄漏串拿不到地址；弱串只打码不判死 |
 | 4 | 线索层（宿主回执） | 2 | 宿主侧 account / 工具动作与结果进线索块，逐条标来源，不进验收维、不单独支撑裁决。判据：去掉线索块不改变任何门的裁决 |

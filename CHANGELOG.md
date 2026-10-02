@@ -8,6 +8,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed — 升级 pass 只追加一个家族，新种子基因不 propagate（round-110）
+
+版本保持 **1.113.0**。
+
+- **症状**：`genes.seed.json` 有 20 基因（含 3 个 improver），但 `load_genes()` 只返 18——种子加进后未 propagate 到实时库。选择器看不见 improver 基因。
+- **根因**：升级 pass `select_bundled_upgrade_genes` 只追加 `BUNDLED_UPGRADE_GENE_IDS`（= `FAMILY_GENE_IDS`，6 个 context-routing 基因），新种子基因（improver）不在其中。
+- **修复**：改为追加**所有**缺失种子基因（按 id，不覆盖手写基因；marker 阈值 ≥2 与手写库不触碰仍成立）。`BUNDLED_UPGRADE_GENE_IDS` 与 `FAMILY_GENE_IDS` 导入随之移除。
+- **测试**：非家族种子基因（improver）也 propagate；既有升级测试全过。
+
+**测试**：新增 1 全绿；`tests/test_asset_store*.py` 40 过；ruff / format / mypy 绿。
+
 ### Added — Parent 库首写（经验即证据收束，round-109）
 
 版本保持 **1.113.0**。

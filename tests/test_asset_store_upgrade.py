@@ -130,3 +130,38 @@ class TestSeedUpgrade:
                 build_claude_context_gene_family(), existing_ids | set(FAMILY_IDS)
             )
             assert second == []
+
+    def test_select_appends_all_missing_seed_genes_not_just_family(
+        self, iso: tuple[Path, Path]
+    ) -> None:
+        """round-109: the upgrade pass keeps a store current with the whole
+        seed, not one family — a non-family seed gene (e.g. an improver tool
+        gene) must propagate too."""
+        seed_path, target = iso
+        improver = {
+            "type": "Gene",
+            "id": "gene_improver_bounded_text_search",
+            "category": "innovate",
+            "strategy": ["cap output"],
+        }
+        write_seed(seed_path, [*build_claude_context_gene_family(), improver])
+        target.write_text(
+            json.dumps(
+                {
+                    "version": 1,
+                    "genes": [
+                        marker_gene("gene_gep_repair_from_errors"),
+                        marker_gene("gene_tool_integrity"),
+                    ],
+                }
+            ),
+            encoding="utf-8",
+        )
+        asset_store.ensure_genes_seeded()
+        ids = {g["id"] for g in read_genes(target)}
+        assert "gene_improver_bounded_text_search" in ids
+        for fid in FAMILY_IDS:
+            assert fid in ids
+        # hand-authored marker genes are never touched
+        assert "gene_gep_repair_from_errors" in ids
+        assert "gene_tool_integrity" in ids

@@ -16,11 +16,7 @@ from typing import Any
 from filelock import FileLock
 
 from evolver.gep.content_hash import compute_asset_id, verify_asset_id
-from evolver.gep.context_routing_gene import FAMILY_GENE_IDS
 from evolver.gep.paths import get_bundled_gep_assets_dir, get_gep_assets_dir
-
-# Gene ids the upgrade pass may append into an older bundled seed (v1.94.0).
-BUNDLED_UPGRADE_GENE_IDS: tuple[str, ...] = tuple(FAMILY_GENE_IDS)
 
 # Ids that mark a store as "was an older bundled seed". Requires >=2 hits so
 # hand-authored stores are never touched (Node assetStore.js parity).
@@ -330,10 +326,18 @@ def should_append_bundled_upgrade_genes(existing_genes: list[dict[str, Any]]) ->
 def select_bundled_upgrade_genes(
     seed_genes: list[dict[str, Any]], existing_ids: set[str]
 ) -> list[dict[str, Any]]:
-    """Pick bundled upgrade Genes from *seed_genes* that are missing locally."""
-    by_id = {str(g["id"]): g for g in seed_genes if isinstance(g, dict) and g.get("id")}
+    """Pick bundled seed Genes missing locally, for the upgrade pass.
+
+    Appends every seed gene the store lacks — the upgrade pass keeps an
+    older bundled store current with the shipped seed, not just one family.
+    Hand-authored genes are never touched (only missing ids are appended), and
+    the >=2-prior-marker guard in :func:`should_append_bundled_upgrade_genes`
+    keeps hand-authored stores out of the pass entirely.
+    """
     return [
-        by_id[gid] for gid in BUNDLED_UPGRADE_GENE_IDS if gid not in existing_ids and gid in by_id
+        g
+        for g in seed_genes
+        if isinstance(g, dict) and g.get("id") and str(g["id"]) not in existing_ids
     ]
 
 
