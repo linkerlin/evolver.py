@@ -57,6 +57,7 @@
 | 52 | 单实例锁 mtime 窃锁：活守护可被 steal、双启动 TOCTOU、异释删他锁 | instance_lock | round-97 | v1.113.0 |
 | 53 | `_safe_json_loads` 盲 cast：合法 JSON 非 dict 直穿成 AttributeError | asset_store | round-97 | v1.113.0 |
 | 54 | `append_jsonl` 无锁追加 + 同路径嵌套锁在 Windows 自死锁 30s | asset_store | round-97 | v1.113.0 |
+| 55 | `test_cli_webui_token_generate_and_revoke` 顺序敏感 flake 复发（token 提取空值 → `--revoke` 无参 SystemExit） | tests/cli | round-104 | v1.113.0 |
 
 ## 条目
 
@@ -1047,3 +1048,16 @@
   调用方（mailbox/narrative/gene_lifecycle/skill2recipes）一并纳入串行化。
 - **经验**：**加锁前先查同路径既有锁**；跨平台文件锁默认不可重入，可重入性
   要显式选（singleton）并用嵌套钉钉住。
+
+### 55. `test_cli_webui_token_generate_and_revoke` 顺序敏感 flake 复发（round-104）
+
+- **症状**：全量套件中该测试偶发 `SystemExit`（`argument --revoke: expected one
+  argument`）——`token` 提取为空串，`--revoke` 无参。单独重跑 **1 passed**。
+  与 round-99 记录的 flake 同一测试、同一症状。
+- **根因**：未定。顺序敏感、无复现路径；与本次改动无关（webui-token 面，
+  未碰）。`token = captured.out.split(": ")[1].strip()` 在特定顺序下拿到
+  空值——疑似前序测试残留 token 存储状态或 `main()` 进程内缓存，未证实。
+- **修复**：未修（Heisenbug）。立簿追根因中；若再复发，优先隔离 token 存储
+  路径的跨测试污染。
+- **经验**：**全量里的偶发 SystemExit 先单独重跑**——过了就是顺序敏感
+  flake，别急着归因到自己的改动；CHANGELOG 已记的 flake 复发要回填本簿。

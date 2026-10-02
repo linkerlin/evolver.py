@@ -1,58 +1,59 @@
 # evolver.py 工作清单
 
-> 章程：[`演进方案.md`](演进方案.md)（库即尺子，版本 **1.113.0**）。
-> 按轮记账：[`CHANGELOG.md`](CHANGELOG.md)。
-> [`RSI演进对照.md`](RSI演进对照.md) 与 [`演进方案_wikiskill对照版.md`](演进方案_wikiskill对照版.md) 是史料。不要从史料里的「下一步」开工。
-> 2026-09-24 外部适应度的两步（重复失败走 `swarm_propose`、冻结任务包）已落地，继续有效。下表是新的发布规则。
+> 章程：[`演进方案.md`](演进方案.md)（**经验即证据**，版本 **1.113.0**，同日按自审意见修订）。
+> 台账：[`CHANGELOG.md`](CHANGELOG.md)。史料：[`演进方案_库即尺子.md`](演进方案_库即尺子.md)、[`TODO_库即尺子.md`](TODO_库即尺子.md)、[`RSI演进对照.md`](RSI演进对照.md)、[`演进方案_wikiskill对照版.md`](演进方案_wikiskill对照版.md)——史料里的「下一步」不开工。
+> 2026-10-02 起，对照 arXiv:2609.37968v2（SelfSearch）。旧清单的账不回填，只带走未竟项。
+
+## 带走（库即尺子未竟，不作废）
+
+| # | 项 | 现状 |
+|---|---|---|
+| 1 | Parent 库首写调用 | 机器已落：`library.establish_parent_library` + `evolver library establish-parent --from=<file>`，`publish()` 未动、active 按构造不动、solidify 调用图有钉（`test_establish_is_absent_from_the_solidify_call_graph`）。**剩调用**：由人写第一份，等题被点名。**这是现在做第 5 项的前置** |
+| 2 | 条款来自 train，val 题面不含条款 | 判定规则见旧章程 §4 末段（旧设计已废）。决定性条款须能从 train 前后观察唯一收回；空库 Parent 满分即测量结束，不改题面再测。不点名不写题 |
+| 3 | 按快照 id 求解调用 | `bench prompt --library <snapshot_id>` 已落（`load_version(id)` 只读、未知 id 报错）。**剩调用**：Parent 解注 Parent id、候选解注候选 id（候选 id 来自 `save_version()`，不来自 `publish()`） |
+
+## 点名裁决（不先猜，未决前只捕获）
+
+| # | 待裁 | 未裁前的处置 |
+|---|---|---|
+| 1 | test 位出路：加第三 split（撞环内不改冻结包）／人点名新包（撞「不做」里不自建更难微任务包，需消歧）／不用 test 位改报告口径 | **须在消融裁决之前裁**；未裁前消融只比过程指标（门通过率、工具复用率、成本），阶段末只报告既有 val 口径，不出「test 位」字样 |
+| 2 | 库即尺子三件套（承旧）：run record 的候选快照槽位；`solve_receipt.v0` 新鲜度与绑定执法；求解上下文隔离层次 | `solve_receipt.v0` 只捕获不执法 |
+| 3 | 线索层升证据层的判据（宿主上报何时可当证据） | 宿主上报一律只作线索、标来源，不单独支撑裁决 |
 
 ## 现在做
 
-配对会话阶段已收束（round-90）：八次会话、16 Reject、0 Accept，门证明的是治理机器能拒绝发布。版本切 **1.113.0**。本阶段叫**库即尺子**：被进化的对象本身成为评分对象——被评分的是库快照，不是宿主的细心程度，也不是再写一份更难的微任务。
-
-账上的两个洞：八场 `parent_snapshot` 全 null（没有 Parent 库首写，「active 不动的 Parent/Candidate val 评分」从未发生，跑过的只是仓库 diff 对宿主微任务）；16 条 `hypothesis` 全空串（周期先焚毁、折账后读——round-91 已修，卫生账；历史空串**不回填**）。
-
-| # | 项 | 完成时 |
-|---|---|---|
-| 1 | ~~补账本~~ | 已完成（round-91 卫生账，不算阶段进度）：`solidify()` 在 `_solidify_cycle()` 之前取假说正文交给 `begin_round` |
-| 2 | Parent 库首写，入口独立 | 机器已落（round-93）：`library.establish_parent_library` + CLI `evolver library establish-parent --from=<file>`，`publish()` 未动、active 按构造不动，solidify 调用图有钉（出现该名字即测试失败）。**剩调用**：由人写第一份，等题被点名 |
-| 3 | 条款来自 train，val 题面不含条款 | 决定性条款必须能从 train 的前后观察里唯一收回，val 题面不出现。Parent 求解只看 Parent 快照 + val 题面；候选求解只看候选快照 + 同一批 val 题面；写候选的宿主看 train，不看 val、不看 grader。空库 Parent 拿不到 train 蒸馏的约定；若 Parent 仍满分 → 宿主不读库也能猜中，测量结束，不改题面再测。旧设计已废（round-92，废因见章程 §4 末段） |
-| 4 | 按快照 id 读 | 机器已落（round-93）：`bench prompt --library <snapshot_id>`——`load_version(id)` 只读、快照正文贴进 prompt（保留沙箱限定）、未知 id 报错、不带参数逐字不变。**剩调用**：Parent 解注 Parent id、候选解注候选 id（候选 id 将来自 `save_version()`，不来自 `publish()`），随测量发生 |
-
-在一份满足第 3 行的题被点名之前，**不写 Parent 库、不出新题**。点名本身另算一次裁决，不是 bc6f651。
-
-点名那次裁决要一并定（round-94 审阅遗留，现在建是猜）：① run record 的候选快照槽位——内容维下候选即快照，它决定 Accept 后 publish 什么；② 求解回执的绑定——`bench prompt` 已在沙箱旁写 `solve_receipt.v0`（pack digest、注入的快照 id、replicate、时间），快照新鲜度与「解的是哪份库」的执法在点名时定，此前只捕获不执法；③ 求解上下文的隔离落在哪一层。完成判据同步收窄：「库里有句子、答卷里有句子」的 Accept 只证明求解路径读了快照，不算；本阶段的 Accept 是候选快照条款只来自 train 观察、val 求解只靠这份快照、两遍严格高于只持有 Parent 快照的 Parent。当前锚侧那份 bar 1.0 的包上也不开新会话。
-
-不开第三份「把宿主难住」的包。Evolver.php（2026-04 / v1.69）与 EvoScientists 分叉不追这次协议。
-
-## 已完成（round-87）
-
-- 大包配对检验：`gate_verdict` 在 val 题数 > `REPLICATE_VAL_MAX` 时走 `_paired_verdict`——每轮须候选赢方向（p ≤ 0.05）且 discordant ≥ 8 才发布；大包不跑 raw-score floors（配对检验即不退化断言），`declaration` 先于配对检验断言；`baseline_without_per_task` / `task_set_mismatch` / `parent_better` / `not_enough_discordant` / `no_significant_difference` 分别拒绝且不动基线。
-- 环内查阅：enrich `_consult_library` 渲染 `library_block`（只读、4000 字符截断带标记），dispatch 挂进 prompt、solidify state 记 `library_snapshot`。
-- 游标停止语义：无会话 tick `next_action=stop_and_report` 且不进管线；`run_loop` 收到即 break；到期提醒随报告捎带。
-
-## 已完成（round-86）
-
-- solidify 折账先 `begin_round`：候选 id 取 pending 周期的 mutation id，假说文本在焚毁前先读；`cycle_ref` 幂等防重烧；`rounds.jsonl` 带 `cycle_ref`。
-- 假说归属：`require_for_gate` 增 `also_accept`（周期 id ∪ 当前会话轮 id）；CLI `session hypothesize` 优先盖 pending 周期 id。
-- 不许退化项断言（`bench/regression_guard.py`，基线 v1 带 `per_task`，候选可追加只许收紧）、门入参有限性（NaN/inf 拒）、验收协议冻结（基线绑 `anchor_epoch`）。
-- `gep/library.py`（发布不覆盖、按 id 读不碰 active）、`gep/cursor.py`（只在 Accept 推进）落树并接线会话机与循环门。
+| # | 项 | 依赖 | 完成时 |
+|---|---|---|---|
+| 1a | ~~episode record 载体（引擎侧）~~ | — | **已落地（round-101）**：`gep/episode_record.py`——`e_k` 只收引擎自记（选中基因、diff、检查结果、门裁决），白名单拒宿主上报；内容寻址 `sha256:` id，一轮只记一次（同内容幂等、异内容 `EpisodeConflictError`）；`index.json` 轮账损坏即抛；视图有界、超限拒写。`recorded_at` 取事件时间戳（重推导同内容才谈得上幂等）。episodes = evidence 的有界可引用视图＋身份 id＋索引，不复制原始现场 |
+| 1b | ~~写不进自己的记录~~ | 1a | **已落地（round-101）**：调用图钉 `test_the_record_writer_is_absent_from_the_mutation_call_graph`——`solidify.py` / `evolve/` / `bench/` 引用 `episode_record` / `record_episode` 即测试失败；写入口只在周期边界（`cli._record_episode_round`、`swarm_solidify`），缺现场报 `scene_missing` 不猜 |
+| 1c | 只读取用面 | 1a | **已落地（round-101/102）**：CLI `evolver episode list\|show <id>` + MCP `episode_get`（薄读，走 `asset_*` 同一读法）；不新增写入口 |
+| 2 | 记录进提示词 | 1a/1b | **已落地（round-102）**：提示词三块序 `## Previous Episode` → `## Evidence Pack` → `## Host Clues`（`prompt.py` + `dispatch.py`）；记录块先于证据包，证据块与线索块不混排、互不重复计数；`swarm_distill` 回执入线索层（标 `source=host_distill`，dry_run 不存） |
+| 3 | 记录过 val-seal | 1a | **已落地（round-103）**：`val_seal.SEAL_TARGETS` 增 `episode_record`；`record_episode` 存储前递归过 `redact`（`where="episode_record"`）——强 val 串替换为 `[sealed:val]` 后才算内容寻址 id，泄漏串拿不到地址；弱串只打码不判死 |
+| 4 | 线索层（宿主回执） | 2 | 宿主侧 account / 工具动作与结果进线索块，逐条标来源，不进验收维、不单独支撑裁决。判据：去掉线索块不改变任何门的裁决 |
+| 5 | improver 工具面进库 | 1c + 带走 1 | **已落地（round-104）**：3 个 improver 工具基因入种子（`target_hook=improver_tool` / `mechanism_family=improver_tools`，asset_id 经 `compute_asset_id` 校验）；`record_episode` 存储前从基因库附着 `target_hook`/`mechanism_family`（记录自包含）；`meta_report` 新增 `improver_tools` 面板（从 episode record 复算使用率，每轮计一次，库回退）。**宿主装/卸的闭环**依赖带走 1（Parent 库首写），未决 |
+| 6 | 双向记录路线（影子） | 2 | **已落地（round-105）**：`gep/record_route.py`——两条定性方向（capability / adaptive）并行产出记录，各出内容寻址记录、互见对方记录（`build_direction_block` 按 id 互引）、不打分、archive 全留。**是记录路线不是种群择优**，`MULTI_PROPOSE_ROUTES` 保持 1。生产形态（LLM 驱动双 lineage）留后续 |
+| 7 | 成本与配置采集先行 | 1a | **已落地（round-106）**：receipt schema 增 `cost`/`model`（默认 `null` = unmeasured）；`bench/cost.py` 的 `record_cost` 求解后回填（token 来自 relay `extract_usage`，model 以 relay 观测为准、`AGENT_MODEL` 只作线索）；观测不到出 `unmeasured`，不猜不零填。**此步之前不出效率/迁移结论** |
+| 8 | 消融裁决（**本阶段出口**） | 2 + 7；**点名裁决 1 须先裁** | 同预算同题、有记录 vs 无记录影子对照（`experiment/` 的 `agent_runner` / `comparison` / `stats`），报告均值与成本差。**裁决口径**：点名裁决 1 未裁之前只比过程指标（门通过率、工具复用率、成本），结论只可写「记录改变了改进行为」——用 val 比分就把 val 从「门读」升为「裁决读」，正是 SelfSearch 不做 dev-score 选择的理由。判据：可复算的对照报告进 CHANGELOG；**记录无信号 → 本阶段判负并停** |
+| 9 | 阶段末报告 | 8 | 均值、成本、消融结论一并进 CHANGELOG，**须写 relay 覆盖率**（宿主走本地代理的比例）与全部 `unmeasured` 项；由人切版本、定下阶段；不出「test 位」字样 |
 
 ## 守住
 
-这些不是待办，是本阶段的边界。
-
-- 版本 1.113.0（配对会话阶段收束，2026-09-27）。下一阶段结束由人再切。
-- `EVOLVER_ACCEPTANCE_SHADOW` 保持打开。真阳性仍由人登记到 `$EVOLVER_HOME/anchor/gate-verifications.jsonl`。
-- 产品仓不提交 `memory/` 运行态，也不提交已发布的库快照。快照在仓外，按内容哈希保留。
-- 宿主上报的 `primary_score` 来自级联或门的结果。
-- 回归地板是级联和锚。宿主不能自加预算，也不能自报「无回归」。
+- 引擎不自建 LLM 调度；`EVOLVER_ACCEPTANCE_SHADOW` 保持打开；HITL 未知 fail-closed；HOTL pause / veto 拦 CLI 与 `--loop`；anchor epoch 只由人写。
+- **记录分层**：证据 = 引擎自记 + relay 观测；宿主上报 = 线索（标来源、不单独支撑裁决、不进验收维）。
+- episode record 由 runtime 持有、内容寻址、写后不可变；入 prompt 前过 val-seal（短串只打码不裁决）。
+- 三份账本各司其职：`episodes/` 不可变载体 ｜ `memory_graph.py` 查询与信号 ｜ `evidence_pack.py` 预算内渲染。
+- 分数只当门、不当搜索信号；记录侧证据不得含 val 题面、答案、grader。
+- 成本/配置观测不到记 `unmeasured`，不得由宿主自报补位。
+- 产品仓不提交 `memory/` 运行态与库快照。
+- 回归地板是级联与锚；宿主不自加预算、不自报「无回归」。
+- 每轮 `uv run ruff check src tests`、`uv run mypy src`、`uv run pytest` 必过；修完新 bug 回填 [`DEBUG.md`](DEBUG.md)。
 
 ## 不做
 
-- 移植本体五类记录、本体可视化、LLM Judge、插件市场。
-- RSI P2-6 / P2-8 / P2-9。
-- validator 安全模型重写、ATP 商业闭环、PyPI、把拆 `cli.py` 当作独立项目。
-- 打开 `enable_event_history`、bandit、niche、novelty gate、operator bandit、K=2 种群。
-- 把 soak `ready` 当作本阶段出口。
-- 再开一轮只修测量仪器或测试针的 dogfood，并把它算成阶段进度。
-- 环内修改冻结包、val 期望或评分规则。
+- 外部公开基准适配器（SWE-bench / Terminal-Bench）、更难的微任务包——下一步，不是本阶段。
+- DGM / HGM / Hyperagents 本体移植；LLM Judge；PyPI；validator 安全模型重写；ATP 商业闭环；拆 `cli.py` 当独立项目。
+- bandit、niche、novelty gate、operator bandit、`enable_event_history`；种群择优不解禁（解禁的只是记录路线）。
+- 引擎改自己的 Python 源码；「无奖励」全面切换（级联、bench、假说、验收门照旧）。
+- soak `ready` 当出口（出口是消融裁决）；只修测量仪器或测试针的 dogfood 算成阶段进度。
+- 环内改冻结包、val 期望、评分规则、会话预算。
+- Evolver.php（停 2026-04 / v1.69）与 EvoScientists 分叉不追本次协议。

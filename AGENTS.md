@@ -6,11 +6,11 @@
 
 现行章程：[`演进方案.md`](演进方案.md)。工作清单：[`TODO.md`](TODO.md)。
 
-上一阶段（配对会话）已收束：八次会话、16 Reject、0 Accept，门证明的是能拒绝发布，不是仓库被进化改好了。版本 **1.113.0**。本阶段叫**库即尺子**，只做一件事：让被进化的对象本身成为评分对象——被评分的是库快照，不是宿主的细心程度。假说账本的卫生账已补：`solidify()` 在进周期前取假说正文交给 `begin_round`。`EVOLVER_ACCEPTANCE_SHADOW` 保持打开。运行态不进产品 git。
+上一阶段（库即尺子）已归档，机器仍在树上（`library.establish_parent_library`、`bench prompt --library`、`solve_receipt.v0` 只捕获不执法），未竟项折在 [`TODO.md`](TODO.md) 的「带走」表。版本 **1.113.0**。本阶段叫**经验即证据**，对照 arXiv:2609.37968v2（SelfSearch）：把「一次自改进的过程记录」（episode record）升为一等经验源，让改进过程本身可替代下游分数推进改进。**记录分层是护栏**——进提示词当证据的只有引擎自记与 relay 观测，宿主上报只作线索（标来源、不单独支撑裁决、不进验收维）。本阶段出口是**消融裁决**（同预算有记录 vs 无记录影子对照，记录无信号即判负并停），不是一次评测。`EVOLVER_ACCEPTANCE_SHADOW` 保持打开。运行态不进产品 git。
 
-本阶段不做：移植本体图式、LLM Judge、RSI P2-6/8/9、validator 重写、ATP 商业闭环、PyPI、为拆 `cli.py` 单独立项、把 soak `ready` 当出口、开第三份「把宿主难住」的任务包。Evolver.php（停在 2026-04 / v1.69）与 EvoScientists 分叉不追这次协议。只修测量仪器或测试针的一轮，不算阶段进度。
+本阶段不做：移植本体图式或 DGM/HGM/Hyperagents 本体、外部公开基准适配器（SWE-bench / Terminal-Bench）、更难的微任务包、LLM Judge、RSI P2-6/8/9、validator 重写、ATP 商业闭环、PyPI、为拆 `cli.py` 单独立项、种群择优（解禁的只是双向记录路线）、引擎改自己的源码、「无奖励」全面切换、把 soak `ready` 当出口。Evolver.php（停在 2026-04 / v1.69）与 EvoScientists 分叉不追这次协议。只修测量仪器或测试针的一轮，不算阶段进度。
 
-[`RSI演进对照.md`](RSI演进对照.md) 与 [`演进方案_wikiskill对照版.md`](演进方案_wikiskill对照版.md) 是史料。两文里的「下一步」不得当作当前排期。
+[`RSI演进对照.md`](RSI演进对照.md)、[`演进方案_wikiskill对照版.md`](演进方案_wikiskill对照版.md)、[`演进方案_库即尺子.md`](演进方案_库即尺子.md) 与 [`TODO_库即尺子.md`](TODO_库即尺子.md) 是史料。史料里的「下一步」不得当作当前排期。
 
 ## 命令篇
 

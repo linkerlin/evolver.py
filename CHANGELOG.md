@@ -8,6 +8,74 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added — 成本与配置采集先行（经验即证据 §5.7，round-106）
+
+版本保持 **1.113.0**。
+
+- **receipt schema 增 `cost`/`model`**（`bench/runner.py`，默认 `null` = unmeasured）：receipt 在求解**前**写入（记录求解看见了什么），token 用量与模型配置要**求解后**才可观测——两个字段显式留空，观测不到就说 `unmeasured`，不猜不零填。
+- **`bench/cost.py`**：`record_cost` 求解后回填 receipt 的 `cost`（input/output/total tokens）与 `model`；`read_cost` 读回（`null` → `unmeasured`）。token 源为 relay 侧 `proxy/trace/extractor.extract_usage`（relay 看得见 LLM 流量）；model 以 relay 观测为准，`AGENT_MODEL` 只作线索（自报）。
+- **纪律**：此步之前不出效率/迁移结论。采集先行，结论后到。
+- **测试 5 根**：默认 unmeasured；回填 tokens+model；无 model 仍 measured；缺 receipt → unmeasured；回填保留 provenance 字段。
+
+**测试**：新增 5 全绿；`tests/bench` 146 过（receipt schema 改动无回归）；ruff / format / mypy 绿。
+
+### Added — 双向记录路线（影子）（经验即证据 §5.6，round-105）
+
+版本保持 **1.113.0**。
+
+- **`gep/record_route.py`**：两条定性方向（capability / adaptive）并行产出记录。`run_dual_record_route` 各出一份内容寻址记录；`build_direction_block` 让每条方向的上下文按 id 引对方记录（互见）；不打分、archive 全留。**是记录路线，不是种群择优**——`MULTI_PROPOSE_ROUTES` 保持 1，择优语义不解禁。
+- **定位**：影子验证（SelfSearch 双 lineage 记录共享机制）。生产形态（LLM 驱动双 lineage 跑真实 episode）留后续；本步只验证共享机制端到端。
+- **测试 4 根**：两方向各出记录；互见对方记录（判据）；方向枚举与 `other_direction`；archive 全留（两份记录都在）。
+
+**测试**：新增 4 全绿；`tests/gep`（含 record_route / episode_record）27 过；ruff / format / mypy 绿。
+
+### Added — improver 工具面进库（经验即证据 §5.4，round-104）
+
+版本保持 **1.113.0**。
+
+- **3 个 improver 工具基因入种子**（`genes.seed.json`，共 20 个基因）：`gene_improver_bounded_text_search`（有界文本搜索）、`gene_improver_line_range_view`（行区间查看）、`gene_improver_trajectory_reader`（轨迹读取）。均带 `target_hook=improver_tool` / `mechanism_family=improver_tools`，`asset_id` 经 `compute_asset_id` 实算（加载时内容寻址校验通过）。信号为检查侧（`long_output` / `search_output_truncated` / `trajectory_too_long` / `inspection_difficulty` 等），不与常见突变信号撞车。
+- **记录自包含**（`episode_record.record_episode`）：存储前从基因库附着 `target_hook`/`mechanism_family` 到 episode 的 gene 字段——「使用率可从 episode record 复算」不依赖第二次查找。未知基因 id 优雅留空，meta-report 有库回退。
+- **`meta_report` 新增 `improver_tools` 面板**：从 episode record 复算使用率（improver 工具轮数 / 总轮数，每轮计一次，对齐 SelfSearch Table 12 口径）。这是引擎对 improver 工具面的**选择率**，不是宿主自报的工具调用——与面板其余部分同一诚实口径。CLI `evolver meta-report` 打印该行。
+- **测试 4 根**：种子含 3 个 improver 基因（asset_id 校验）；`record_round` 附着 target_hook；面板从 episode record 复算（含库回退）；无 episodes 时面板为空。
+- **未决**：宿主装/卸的闭环依赖带走表第 1 项（Parent 库首写，等人写第一份）——基因已就位，装/卸执行待 Parent 库。
+
+**测试**：新增 4 全绿；`tests/gep`（含 episode_record / meta_report / val_seal）+ `test_cli` + `test_swarm` + `test_mcp_server` 共 139 过；ruff / format / mypy 绿。全量 `-m "not slow"` 4088 过（唯一失败为下述已知 flake）。
+
+### Added — 记录过 val-seal（经验即证据 §5.3，round-103）
+
+版本保持 **1.113.0**。
+
+- **`val_seal.SEAL_TARGETS` 增 `episode_record`**：密封面清单如实列出记录库。
+- **存储前打码**（`episode_record.record_episode`）：正文递归过 `val_seal.redact`（`where="episode_record"`）——强 val 串替换为 `[sealed:val]` 后才计算内容寻址 id。泄漏串拿不到内容地址；弱串（短答案）永不裁决，只打码不判死。一轮的历史不因一个杂散 val 串而丢失，但秘密不进库。
+- **测试 2 根**：构造泄漏样本（diff 含 val 期望）必被打码；`SEAL_TARGETS` 含 `episode_record`。
+
+**测试**：新增 2 全绿；`tests/gep`（含 val_seal）+ `test_mcp_server` + `test_swarm` 共 133 过；ruff / format / mypy 绿。
+
+### Added — 记录进提示词 + 线索层 + MCP 薄读（经验即证据 §5.2 + §5.1c 后半，round-102）
+
+版本保持 **1.113.0**。
+
+- **`gep/episode_clue.py`**（线索层）：宿主上报的 account / 工具动作是**线索**不是证据——append-only JSONL（`<EVOLUTION_DIR>/episodes/clues.jsonl`），逐条标 `source`，渲染时每条带来源标签。不入 episode record、不支撑门、不进验收维。
+- **提示词三块序**（`gep/prompt.py` + `evolve/pipeline/dispatch.py`）：`## Previous Episode`（上一轮记录，引擎侧）→ `## Evidence Pack`（结果侧）→ `## Host Clues`（宿主上报，最弱垫后）。三块不混排、互不重复计数——记录侧证据先于结果侧分数。dispatch 只读 episode store 渲染上一轮摘要（`render_episode_block`，截断带标记）；写入口仍在周期边界。
+- **钉收窄为写调用**：`record_episode(` / `append_clue(` / `episode_record.record_round(`——`record_round(` 裸扫会撞 `EvolutionSession.record_round`（会话账本，同名不同物），故只钉限定形式；读者（dispatch 读上一轮）不受影响。
+- **`swarm_distill` 收回执**：宿主自由文本（去掉 fenced 资产块）作为线索入层，标 `source=host_distill`；dry_run 不存（没发生的轮的线索比没线索更糟）。
+- **MCP `episode_get`**（§5.1c 后半）：薄读工具，走 `asset_*` 同一读法；工具面与回读各一钉。
+- **测试 13 根**：`tests/gep/test_episode_clue.py`（5）+ `tests/gep/test_prompt.py`（2）+ `test_episode_record` 渲染（2）+ `test_mcp_server`（2）+ `test_swarm`（2）。
+
+**测试**：新增 13 全绿；`tests/gep` 全量 + `test_mcp_server` + `test_swarm` 共 114 过；ruff / format / mypy 绿。
+
+### Added — episode record 载体（经验即证据 §5.1a/1b + 1c 的 CLI 半，round-101）
+
+本阶段第一件：把「一次自改进」立为一等对象（对照 arXiv:2609.37968v2，SelfSearch）。版本保持 **1.113.0**，阶段结束由人切。
+
+- **`gep/episode_record.py`**：episode record 的引擎侧一半。一等对象 `e_k` 只收引擎自记（选中基因、diff、检查结果、门裁决）——宿主上报是**线索层**，白名单之外的键一律拒（`HOST_SIDE_KEYS` 单独报错，免得又把「宿主的细心程度」请回被评位置）。内容寻址 `sha256:` id（与 `library.py` 同一纪律）；**一轮只记一次**：同内容重记幂等 `already_stored`，同一轮异内容拒写（`EpisodeConflictError`）；`index.json` 是轮账，损坏即抛、不静默重开（重开就分叉历史）。`recorded_at` 取事件时间戳而非墙上时钟——重推导得同内容，否则幂等无从谈起。视图有界（diff 4000 / 检查至多 20 条 / 每条输出 400 / 全文 64k 上限，超限拒而非静默裁），完整现场仍在 `gep/evidence.py`——**不复制原始现场，不另起账本**：episodes = evidence 的有界可引用视图 ＋ 身份 id ＋ 索引。
+- **写入口在周期边界**（调用图钉 `test_the_record_writer_is_absent_from_the_mutation_call_graph`）：`solidify.py` / `evolve/` / `bench/` 不得引用 `episode_record` / `record_episode`——变异路径写不进自己的记录。钉法照 round-93 的 `test_establish_is_absent_from_the_solidify_call_graph`。扫描名避开 `EvolutionSession.record_round`（同名不同物，会话账本；首跑即撞，钉收窄为模块名）。
+- **接线**：`evolver solidify`（`cli._record_episode_round`）与 MCP `swarm_solidify` 收尾各记一轮，返回面带 `episode`；缺现场报 `scene_missing`——**报告而不猜**；记录失败不翻转好周期。
+- **只读取用面**（§5.1c 的 CLI 半）：`evolver episode list|show <id>`。MCP 薄读工具下轮接。
+- **测试 20 根**（`tests/gep/test_episode_record.py` 17 ＋ `tests/test_cli.py` 3）：内容寻址幂等、一轮一写、白名单拒宿主上报、越界拒写、索引轮账、坏索引不静默重开、按 event id 找现场、CLI list/show 回读、周期边界判据（一轮后按 id 读回完整记录）。
+
+**测试**：新增 20 全绿；`tests/gep/test_library.py` 22 绿（相邻面）；`tests/test_cli.py` 16 绿；ruff / format / mypy 绿。
+
 ### Changed — 文档追平 round-97~99（round-100）
 
 文档轮，按章程不算阶段进度。版本保持 **1.113.0**。
