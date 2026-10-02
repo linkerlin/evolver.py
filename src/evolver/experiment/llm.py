@@ -50,6 +50,10 @@ class DeepSeekClient:
         self.model = model or os.environ.get("DEEPSEEK_MODEL") or DEFAULT_MODEL
         self.max_tokens = max_tokens
         self.timeout_s = timeout_s
+        #: Server-returned model id of the most recent call. The provider may
+        #: alias the requested id (e.g. ``deepseek-v4-flash`` resolves to
+        #: ``deepseek-flash``), so reports must cite this, not the request.
+        self.last_server_model: str = ""
 
     def complete(
         self,
@@ -88,6 +92,9 @@ class DeepSeekClient:
             raise LLMError(f"LLM HTTP {exc.code}: {detail}") from exc
         except (urllib.error.URLError, TimeoutError) as exc:
             raise LLMError(f"LLM request failed: {exc}") from exc
+        server_model = str(data.get("model") or "")
+        if server_model:
+            self.last_server_model = server_model
         try:
             choice = data["choices"][0]
             message = choice["message"]

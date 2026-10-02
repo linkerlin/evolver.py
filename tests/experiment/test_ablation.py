@@ -73,8 +73,10 @@ def test_cost_difference_is_reported() -> None:
 def test_contains_success_mode_for_llm_output() -> None:
     """LLM-generated code is checked by containment, not exact match."""
     tasks = [{"id": "t1", "prompt": "write f", "expected": "def f"}]
+
     def agent(prompt: str, context: str) -> tuple[str, int]:
         return ("```python\ndef f():\n    pass\n```", 10)
+
     report = ablation.run_ablation(
         tasks, record_context="", agent_fn=agent, success_mode="contains"
     )
@@ -83,3 +85,25 @@ def test_contains_success_mode_for_llm_output() -> None:
     exact = ablation.run_ablation(tasks, record_context="", agent_fn=agent)
     assert exact["with_records"]["success_rate"] == 0.0
 
+
+def test_agent_error_counts_as_failure_with_arm() -> None:
+    """One raising agent call is a failed task, not a crashed ablation."""
+    seen: list[tuple[str, str]] = []
+
+    def bad_agent(prompt: str, context: str) -> tuple[str, int]:
+        raise RuntimeError("llm down")
+
+    report = ablation.run_ablation(
+        _tasks(2),
+        record_context=ablation.RECORD_MARKER,
+        agent_fn=bad_agent,
+        on_task_error=lambda tid, arm, err: seen.append((tid, arm)),
+    )
+    assert report["with_records"]["success_rate"] == 0.0
+    assert report["without_records"]["success_rate"] == 0.0
+    assert sorted(arm for _, arm in seen) == [
+        "with_records",
+        "with_records",
+        "without_records",
+        "without_records",
+    ]

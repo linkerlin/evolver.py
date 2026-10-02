@@ -438,6 +438,36 @@ def _build_parser() -> argparse.ArgumentParser:
     experiment_p.add_argument("--tasks", required=True, help="Path to tasks JSON (list of dicts)")
     experiment_p.add_argument("--genes", default=None, help="Path to genes JSON (list of dicts)")
     experiment_p.add_argument("--output", default=None, help="Path to write results JSON")
+    experiment_p.add_argument(
+        "--ablation",
+        action="store_true",
+        help="Real-LLM with/without-records ablation (§5.9) instead of baseline-vs-evolved",
+    )
+    experiment_p.add_argument(
+        "--record-context", default="", help="Record context text for the with-records arm"
+    )
+    experiment_p.add_argument(
+        "--record-context-file",
+        default=None,
+        help="Path to a file holding the record context (wins over --record-context)",
+    )
+    experiment_p.add_argument(
+        "--model",
+        default="deepseek-flash",
+        help="LLM model id, pinned explicitly (default: deepseek-flash)",
+    )
+    experiment_p.add_argument(
+        "--success-mode",
+        default="contains",
+        choices=["exact", "contains"],
+        help="How a task's expected text is checked (default: contains)",
+    )
+    experiment_p.add_argument(
+        "--budget", type=int, default=None, help="Max tasks per arm (default: all)"
+    )
+    experiment_p.add_argument(
+        "--max-tokens", type=int, default=16384, help="Per-call token budget (default: 16384)"
+    )
     bench_p = sub.add_parser(
         "bench", help="Benchmark the workspace (S26.1: health tasks + fitness ledger)"
     )
@@ -2320,6 +2350,16 @@ def _cmd_experiment(args: argparse.Namespace) -> int:
         experiment_args += ["--genes", args.genes]
     if args.output:
         experiment_args += ["--output", args.output]
+    if args.ablation:
+        experiment_args += ["--ablation"]
+        experiment_args += ["--record-context", args.record_context]
+        if args.record_context_file:
+            experiment_args += ["--record-context-file", args.record_context_file]
+        experiment_args += ["--model", args.model]
+        experiment_args += ["--success-mode", args.success_mode]
+        if args.budget is not None:
+            experiment_args += ["--budget", str(args.budget)]
+        experiment_args += ["--max-tokens", str(args.max_tokens)]
     return experiment_main(experiment_args)
 
 

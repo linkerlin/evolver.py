@@ -16,6 +16,7 @@ ablations) — the very thing SelfSearch refuses to do with dev-score selection.
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from typing import Any, Final
 
 from evolver.experiment.agent_runner import TaskResult
@@ -50,16 +51,26 @@ def _run_one(
     record_context: str,
     agent_fn: Any,
     success_mode: str = "exact",
+    arm: str = "",
+    on_task_error: Callable[[str, str, str], None] | None = None,
 ) -> TaskResult:
+    task_id = str(task.get("id", "unknown"))
     prompt = str(task.get("prompt", ""))
-    answer, tokens = agent_fn(prompt, record_context)
+    try:
+        answer, tokens = agent_fn(prompt, record_context)
+    except Exception as exc:
+        # One failed LLM call must not kill the whole ablation: the task
+        # counts as failed and the error rides along for the report.
+        if on_task_error is not None:
+            on_task_error(task_id, arm, str(exc))
+        return TaskResult(task_id=task_id, success=False, answer="", tokens_used=0)
     expected = task.get("expected")
     if expected:
         success = expected in answer if success_mode == "contains" else answer == expected
     else:
         success = bool(answer)
     return TaskResult(
-        task_id=str(task.get("id", "unknown")),
+        task_id=task_id,
         success=success,
         answer=answer,
         tokens_used=tokens,
@@ -73,6 +84,7 @@ def run_ablation(
     agent_fn: Any,
     budget: int | None = None,
     success_mode: str = "exact",
+    on_task_error: Callable[[str, str, str], None] | None = None,
 ) -> dict[str, Any]:
     """Run the with-records vs without-records ablation over the same tasks.
 
@@ -85,14 +97,31 @@ def run_ablation(
     (the answer equals it — for deterministic agents) or ``"contains"`` (the
     answer includes it — for LLM-generated code, where an exact match is
     neither possible nor the point).
+
+    *on_task_error* is called as ``(task_id, arm, error)`` when an agent call
+    raises; the task counts as failed and the run continues.
     """
     selected = list(tasks[:budget]) if budget else list(tasks)
     with_results = [
-        _run_one(t, record_context=record_context, agent_fn=agent_fn, success_mode=success_mode)
+        _run_one(
+            t,
+            record_context=record_context,
+            agent_fn=agent_fn,
+            success_mode=success_mode,
+            arm="with_records",
+            on_task_error=on_task_error,
+        )
         for t in selected
     ]
     without_results = [
-        _run_one(t, record_context="", agent_fn=agent_fn, success_mode=success_mode)
+        _run_one(
+            t,
+            record_context="",
+            agent_fn=agent_fn,
+            success_mode=success_mode,
+            arm="without_records",
+            on_task_error=on_task_error,
+        )
         for t in selected
     ]
     with_metrics = compute_metrics(with_results)

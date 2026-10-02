@@ -8,6 +8,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added — 消融 CLI + deepseek-flash 真实对照（经验即证据 §5.9，round-112）
+
+版本保持 **1.113.0**。
+
+- **消融 CLI 入口**：`evolver experiment --ablation --tasks <file> --record-context-file <file> --model deepseek-flash --success-mode contains --output <file>`（人类摘要走 stderr，JSON 走 stdout/文件；`--ablation` 缺席时老路径原样不动）。可复算：任务与记录上下文皆来自文件。
+- **模型显式 pin**：`run_llm_ablation` 要求显式 model（默认 `deepseek-flash`），永不静默继承 `DEEPSEEK_MODEL`；报告同时记录 `model_requested` + 服务端实际返回的 `server_models`。`llm.py` 新增 `last_server_model`（加法，不改签名）。
+- **单个 LLM 失败不再炸整轮**：`ablation._run_one` 新增 `on_task_error(task_id, arm, error)`，失败记 failed task + 错误条目，另一臂证据保留。
+- **真实对照结果**（deepseek-flash，served=`['deepseek-flash']`，与 round-111 同 3 题、同合成记录）：
+  - with_records：2/3 成功，平均 625 tokens。
+  - without_records：0/3 成功，平均 3668.3 tokens。
+  - **success_rate_delta +66.7%，token_delta −83.0%**，verdict = **signal**（记录改变了改进行为），errors=0。
+  - 诚实限定：3 题、合成记录上下文、单次运行；token 不对称部分来自推理模型逐次方差；结论仍只到过程指标，不外推下游能力。
+- **标签修正**：round-111 的 "v4-flash" 标签未经验证——旧脚本用客户端默认，实际会继承 `DEEPSEEK_MODEL`（现值为 `deepseek-v4-pro`）。自本轮起模型显式 pin 且服务端 id 入报告，标签不再漂移。
+
+**测试**：新增 6（pin 忽略 env、server id 记录、错误捕获、缺 key 预检、CLI 接线、`on_task_error` 路径）；`tests/experiment` 27 过；ruff / format / mypy 绿。
+
 ### Added — 真实 LLM 消融（经验即证据 §5.9，round-111）
 
 版本保持 **1.113.0**。
