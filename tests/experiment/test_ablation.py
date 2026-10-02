@@ -73,7 +73,8 @@ def test_cost_difference_is_reported() -> None:
 def test_contains_success_mode_for_llm_output() -> None:
     """LLM-generated code is checked by containment, not exact match."""
     tasks = [{"id": "t1", "prompt": "write f", "expected": "def f"}]
-    agent = lambda prompt, context: ("```python\ndef f():\n    pass\n```", 10)
+    def agent(prompt: str, context: str) -> tuple[str, int]:
+        return ("```python\ndef f():\n    pass\n```", 10)
     report = ablation.run_ablation(
         tasks, record_context="", agent_fn=agent, success_mode="contains"
     )
@@ -81,3 +82,4 @@ def test_contains_success_mode_for_llm_output() -> None:
     # exact mode would fail (the answer is not exactly "def f")
     exact = ablation.run_ablation(tasks, record_context="", agent_fn=agent)
     assert exact["with_records"]["success_rate"] == 0.0
+
