@@ -9,7 +9,7 @@
 
 | # | 项 | 现状 |
 |---|---|---|
-| 1 | Parent 库首写调用 | 机器已落：`library.establish_parent_library` + `evolver library establish-parent --from=<file>`，`publish()` 未动、active 按构造不动、solidify 调用图有钉（`test_establish_is_absent_from_the_solidify_call_graph`）。**剩调用**：由人写第一份，等题被点名。**这是现在做第 5 项的前置** |
+| 1 | ~~Parent 库首写调用~~ | **已落地（round-109）**：`evolver library establish-parent --from=<file>` 执行，Parent = 种子基因库快照（20 基因含 3 个 improver + 0 capsules），`parent.json` 写入 `sha256:fcfb1cae...`，`active` 未动（Accept-only）。**决策**：用种子（出厂完整能力）而非实时库（18 基因、缺 improver——种子加进但未 propagate 到实时库，另记于 #56）。后续可重立（`previous` 可追） |
 | 2 | 条款来自 train，val 题面不含条款 | 判定规则见旧章程 §4 末段（旧设计已废）。决定性条款须能从 train 前后观察唯一收回；空库 Parent 满分即测量结束，不改题面再测。不点名不写题 |
 | 3 | 按快照 id 求解调用 | `bench prompt --library <snapshot_id>` 已落（`load_version(id)` 只读、未知 id 报错）。**剩调用**：Parent 解注 Parent id、候选解注候选 id（候选 id 来自 `save_version()`，不来自 `publish()`） |
 
@@ -28,6 +28,7 @@
 | 1a | ~~episode record 载体（引擎侧）~~ | — | **已落地（round-101）**：`gep/episode_record.py`——`e_k` 只收引擎自记（选中基因、diff、检查结果、门裁决），白名单拒宿主上报；内容寻址 `sha256:` id，一轮只记一次（同内容幂等、异内容 `EpisodeConflictError`）；`index.json` 轮账损坏即抛；视图有界、超限拒写。`recorded_at` 取事件时间戳（重推导同内容才谈得上幂等）。episodes = evidence 的有界可引用视图＋身份 id＋索引，不复制原始现场 |
 | 1b | ~~写不进自己的记录~~ | 1a | **已落地（round-101）**：调用图钉 `test_the_record_writer_is_absent_from_the_mutation_call_graph`——`solidify.py` / `evolve/` / `bench/` 引用 `episode_record` / `record_episode` 即测试失败；写入口只在周期边界（`cli._record_episode_round`、`swarm_solidify`），缺现场报 `scene_missing` 不猜 |
 | 1c | 只读取用面 | 1a | **已落地（round-101/102）**：CLI `evolver episode list\|show <id>` + MCP `episode_get`（薄读，走 `asset_*` 同一读法）；不新增写入口 |
+| 10 | 实时基因库缺 improver 基因 | — | **观察（round-109）**：`genes.seed.json` 有 20 基因（含 3 improver），但 `load_genes()` 只返 18——种子加进后未 propagate 到实时库（`ensure_genes_seeded` 只在空库时种、升级 pass 不含新基因）。影响：选择器看不见 improver 基因。修法：实时库 `upsert` 缺的基因，或升级 pass 纳入新种子基因。Parent 首写已用种子规避 |
 | 2 | 记录进提示词 | 1a/1b | **已落地（round-102）**：提示词三块序 `## Previous Episode` → `## Evidence Pack` → `## Host Clues`（`prompt.py` + `dispatch.py`）；记录块先于证据包，证据块与线索块不混排、互不重复计数；`swarm_distill` 回执入线索层（标 `source=host_distill`，dry_run 不存） |
 | 3 | 记录过 val-seal | 1a | **已落地（round-103）**：`val_seal.SEAL_TARGETS` 增 `episode_record`；`record_episode` 存储前递归过 `redact`（`where="episode_record"`）——强 val 串替换为 `[sealed:val]` 后才算内容寻址 id，泄漏串拿不到地址；弱串只打码不判死 |
 | 4 | 线索层（宿主回执） | 2 | 宿主侧 account / 工具动作与结果进线索块，逐条标来源，不进验收维、不单独支撑裁决。判据：去掉线索块不改变任何门的裁决 |

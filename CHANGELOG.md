@@ -8,6 +8,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added — Parent 库首写（经验即证据收束，round-109）
+
+版本保持 **1.113.0**。
+
+- **Parent 库首写**：`evolver library establish-parent --from=<file>` 执行。Parent = 种子基因库快照（20 基因含 3 个 improver + 0 capsules），`parent.json` 写入 `sha256:fcfb1cae...`，`active` 未动（Accept-only）。
+- **决策**：用种子（出厂完整能力）而非实时库（18 基因、缺 improver——种子加进但未 propagate 到实时库，另记于 TODO #10）。后续可重立（`previous` 可追）。
+- **意义**：解开下一阶段「真实 episode 闭环」的前置——Parent 是被进化对象的冻结基准快照，候选须严格赢过它才 Accept。空库 Parent 是反例（若空库满分 → 宿主不读库也能猜中，测量作废），故首写内容非空、是引擎当前能力的诚实快照。
+- **观察**：实时基因库缺 improver 基因（种子 20 vs 实时 18）——`ensure_genes_seeded` 只在空库时种、升级 pass 不含新种子基因。影响选择器看不见 improver 基因。已记 TODO #10。
+
+**验证**：`parent_snapshot_id=sha256:fcfb1cae...`，`active_snapshot_id=None`（Accept-only），`load_version` 可读回 20 基因。首写机制端到端成立。
+
 ### 阶段收束 — 经验即证据（round-108）
 
 **点名裁决 1 已裁**：不用 test 位，改报告口径。消融只比过程指标（门通过率/工具复用率/成本），从 episode record 与 relay 观测直接复算，不需要 held-out test 集；下游 test 位会把 val 从「门读」升为「裁决读」，多次消融即对 val 过拟合（SelfSearch 不做 dev-score 选择的理由）。下游能力评测留待外部基准适配器（下一阶段）。
