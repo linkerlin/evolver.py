@@ -147,6 +147,38 @@ def test_ablation_cli_wires_model_and_context(
     assert "signal" in capsys.readouterr().err
 
 
+def test_ablation_cli_placebo_flag_controls_the_without_arm(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    from evolver.experiment import cli as exp_cli
+
+    tasks_file = tmp_path / "tasks.json"
+    tasks_file.write_text(json.dumps(_tasks()), encoding="utf-8")
+    seen: list[dict[str, Any]] = []
+
+    def fake_run(tasks: list[dict[str, Any]], context: str, **kwargs: Any) -> dict[str, Any]:
+        seen.append(kwargs)
+        return {
+            "model_requested": kwargs.get("model"),
+            "server_models": [],
+            "budget": len(tasks),
+            "with_records": {"successes": 0, "total": 2, "total_tokens": 0},
+            "without_records": {"successes": 0, "total": 2, "total_tokens": 0},
+            "comparison": {"success_rate_pct": "+0.0%", "token_delta_pct": "+0.0%"},
+            "verdict": {"verdict": "no_signal", "conclusion": "none"},
+            "errors": [],
+        }
+
+    monkeypatch.setattr(ablation_llm, "run_llm_ablation", fake_run)
+    record = "## Previous Episode\n- x"
+    base = ["--tasks", str(tasks_file), "--ablation", "--record-context", record]
+    assert exp_cli.main(base) == 0
+    assert exp_cli.main([*base, "--placebo"]) == 0
+    assert seen[0]["control_context"] == ""
+    assert len(seen[1]["control_context"]) == len(record)
+    assert "Previous Episode" not in seen[1]["control_context"]
+
+
 # ---------------------------------------------------------------------------
 # --from-episodes: the store-to-ablation bridge (no hand-carried file)
 # ---------------------------------------------------------------------------

@@ -8,6 +8,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed — 消融裁决自带「分量」：样本充足性 / 依据 / 占位对照（外审取舍，round-115）
+
+一份外部勘察报告经逐条 grep 复核后，**只采纳了与本阶段出口直接相关、且代码上可证实的四点**；其余（0/1 饱和 Parent、门影子、GEP 命名、无交叉算子、许可证/署名、版本号/tag、`deepseek-flash` 悬空等）或属本阶段「不做」、或属已披露的设计选择、或经核不成立，**一概不动**。本轮属测量仪器修补，**不计阶段进度**。
+
+- **裁决带量级**：`ablation_verdict` 的 `signal`/`verdict` 取值不变，新增 `n_per_arm`、`sample_adequate`（复用 `stats.MIN_N=30`，不另立常数）；`n < 30` 的 signal 在 `conclusion` 里自注「indicative only」。——round-112 那次 n=3 的 signal 因此只能读作线索。
+- **依据分层**：新增 `signal_basis` ∈ `success_rate | tokens_only | none`。成功率持平、仅靠 token 更少即判 signal 的情形（`compare_metrics` 的并列裁断）现在显式标「tokens-only」，不再与成功率提升混为一谈。
+- **`metrics` 标签说实话**：原写「gate pass rate, tool reuse, cost」，而代码只测成功率与 token；改为只列真测者，并注明另两项未在此测量。
+- **占位对照臂**：`llm.complete_prompt` 仅在 context 非空时加 system 消息，故旧法两臂之差含「有无 system 角色」。新增 `make_placebo_context()` 与 `run_ablation(control_context=…)` / `evolver experiment --ablation --placebo`：无记录臂挂**等长中性块**，只剩记录内容一个变量。默认关闭、旧行为不变；报告与裁决带 `control` ∈ `empty | placebo`。
+- **调用图钉补全仓扫描**：原钉只守 `solidify` / `evolve/` / `bench/` 三路径；新增 `test_the_record_writer_is_confined_to_a_declared_boundary`，扫 `src/` 全部，写入口（`record_episode(` / `append_clue(` / `episode_record.record_round(`）须在显式白名单（`cli`、`swarm`、`episode_record`、`episode_clue`、`record_route`），新增写入口即测试失败、由人审。
+
+**核实后弃用的指控**：`AGENTS.md` 已无 `设计方案.md` 悬引；`deepseek-flash` 已真实跑通且 `served=['deepseek-flash']`（非悬空）；消融桩测试是管线单测，非效应证据，不改。
+**未动而留待人**：`pyproject.toml` `authors` 署 `EvoMap`、本仓 Apache-2.0 而上游 `EvoMap/evolver` 为 GPL-3.0——属法律与署名决定，须人（必要时法务）裁，引擎不代改。
+
+
 ### Added — 最近一周改进的单元测试覆盖（round-114）
 
 逐项核对 9/26 以来功能提交后补的 5 处缺口（已有覆盖的不重复：episode record / 线索层 / 三块序 / val-seal / improver 面板 / 双向路线 / 成本单元 / 消融机制与影子 / 升级 pass 全量追加 / establish-parent 与 bench `--library` / receipt 写入 / 配对会话缝线 / round-97 锁修复 / test_config 告警 / 取材桥本身）。

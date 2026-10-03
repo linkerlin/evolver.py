@@ -70,6 +70,12 @@ def main(argv: Sequence[str] | None = None) -> int:
         help="Per-episode render budget (default: 2000, same as the renderer)",
     )
     parser.add_argument(
+        "--placebo",
+        action="store_true",
+        help="Give the without-records arm a neutral same-length system block instead of "
+        "none, so the arms differ by record content only (not by system-role presence)",
+    )
+    parser.add_argument(
         "--model",
         default="deepseek-flash",
         help="LLM model id, pinned explicitly (default: deepseek-flash)",
@@ -217,6 +223,9 @@ def _main_ablation(args: argparse.Namespace, tasks: list[Any]) -> int:
         context = args.record_context
         if not context:
             source = "empty"
+    from evolver.experiment.ablation import make_placebo_context
+
+    control = make_placebo_context(context) if args.placebo else ""
     try:
         result = run_llm_ablation(
             tasks,
@@ -225,6 +234,7 @@ def _main_ablation(args: argparse.Namespace, tasks: list[Any]) -> int:
             max_tokens=args.max_tokens,
             budget=args.budget,
             success_mode=args.success_mode,
+            control_context=control,
         )
     except LLMError as exc:
         print(f"ablation: {exc}", file=sys.stderr)
@@ -255,6 +265,13 @@ def _main_ablation(args: argparse.Namespace, tasks: list[Any]) -> int:
         f"delta={result['comparison']['success_rate_pct']} "
         f"tokens={result['comparison']['token_delta_pct']} "
         f"verdict={verdict['verdict']} ({verdict['conclusion']})",
+        file=sys.stderr,
+    )
+    print(
+        f"control={verdict.get('control', 'empty')} "
+        f"n_per_arm={verdict.get('n_per_arm', 'n/a')} "
+        f"sample_adequate={verdict.get('sample_adequate', 'n/a')} "
+        f"basis={verdict.get('signal_basis', 'n/a')}",
         file=sys.stderr,
     )
 

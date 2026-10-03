@@ -38,6 +38,7 @@ def run_llm_ablation(
     budget: int | None = None,
     success_mode: str = "contains",
     timeout_s: int = 120,
+    control_context: str = "",
 ) -> dict[str, Any]:
     """Run the with/without-records ablation with a real LLM as the agent.
 
@@ -67,11 +68,13 @@ def run_llm_ablation(
         budget=budget,
         success_mode=success_mode,
         on_task_error=on_error,
+        control_context=control_context,
     )
     return {
         "model_requested": model,
         "server_models": sorted(server_models),
         "budget": report["budget"],
+        "control": report["control"],
         "with_records": report["with_records"],
         "without_records": report["without_records"],
         "comparison": report["comparison"],

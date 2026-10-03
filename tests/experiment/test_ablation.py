@@ -107,3 +107,108 @@ def test_agent_error_counts_as_failure_with_arm() -> None:
         "without_records",
         "without_records",
     ]
+
+
+# ---------------------------------------------------------------------------
+# Verdict weight + placebo control (a verdict says how much it can bear)
+# ---------------------------------------------------------------------------
+
+
+def test_small_n_signal_is_marked_indicative_only() -> None:
+    """n < MIN_N: still a signal, but the verdict must say it is under-powered."""
+    report = ablation.run_ablation(
+        _tasks(3),
+        record_context=ablation.RECORD_MARKER,
+        agent_fn=ablation.make_stub_agent(record_effect=True),
+    )
+    verdict = ablation.ablation_verdict(report)
+    assert verdict["signal"] is True
+    assert verdict["n_per_arm"] == 3
+    assert verdict["sample_adequate"] is False
+    assert verdict["signal_basis"] == "success_rate"
+    assert "indicative only" in verdict["conclusion"]
+
+
+def test_adequate_n_signal_carries_no_caveat() -> None:
+    from evolver.experiment.stats import MIN_N
+
+    report = ablation.run_ablation(
+        _tasks(MIN_N),
+        record_context=ablation.RECORD_MARKER,
+        agent_fn=ablation.make_stub_agent(record_effect=True),
+    )
+    verdict = ablation.ablation_verdict(report)
+    assert verdict["sample_adequate"] is True
+    assert "indicative only" not in verdict["conclusion"]
+
+
+def test_tokens_only_signal_is_labelled_as_such() -> None:
+    """Equal success rate + fewer tokens is a tie-break, not a success-rate gain."""
+    report = {
+        "comparison": {"evolved_better": True, "success_rate_delta": 0.0},
+        "with_records": {"total": 3},
+        "without_records": {"total": 3},
+    }
+    verdict = ablation.ablation_verdict(report)
+    assert verdict["signal"] is True
+    assert verdict["signal_basis"] == "tokens_only"
+    assert "tokens-only" in verdict["conclusion"]
+
+
+def test_no_signal_basis_is_none() -> None:
+    report = ablation.run_ablation(
+        _tasks(),
+        record_context=ablation.RECORD_MARKER,
+        agent_fn=ablation.make_stub_agent(record_effect=False),
+    )
+    assert ablation.ablation_verdict(report)["signal_basis"] == "none"
+
+
+def test_verdict_metrics_claim_only_what_the_code_measures() -> None:
+    """The label must not name gate pass rate / tool reuse as measured."""
+    report = ablation.run_ablation(
+        _tasks(),
+        record_context=ablation.RECORD_MARKER,
+        agent_fn=ablation.make_stub_agent(),
+    )
+    label = str(ablation.ablation_verdict(report)["metrics"])
+    assert "success rate" in label and "token cost" in label
+    assert "not measured" in label
+
+
+def test_placebo_matches_length_and_carries_no_record_marker() -> None:
+    record = "## Previous Episode\n" + ablation.RECORD_MARKER + "\n- gene_a\n" * 40
+    placebo = ablation.make_placebo_context(record)
+    assert len(placebo) == len(record)
+    assert ablation.RECORD_MARKER not in placebo
+    assert ablation.make_placebo_context("") == ""
+
+
+def test_placebo_control_arm_sends_the_placebo_not_nothing() -> None:
+    """Both arms occupy the system slot; only the record content differs."""
+    seen: dict[str, list[str]] = {"with": [], "without": []}
+    record = "## Previous Episode\n" + ablation.RECORD_MARKER
+
+    def agent(prompt: str, context: str) -> tuple[str, int]:
+        seen["with" if ablation.RECORD_MARKER in context else "without"].append(context)
+        return ("solved" if ablation.RECORD_MARKER in context else "unsolved"), 1
+
+    report = ablation.run_ablation(
+        _tasks(2),
+        record_context=record,
+        agent_fn=agent,
+        control_context=ablation.make_placebo_context(record),
+    )
+    assert report["control"] == "placebo"
+    assert all(c == ablation.make_placebo_context(record) for c in seen["without"])
+    assert all(len(c) == len(record) for c in seen["with"] + seen["without"])
+    assert ablation.ablation_verdict(report)["control"] == "placebo"
+
+
+def test_default_control_stays_empty() -> None:
+    report = ablation.run_ablation(
+        _tasks(2),
+        record_context=ablation.RECORD_MARKER,
+        agent_fn=ablation.make_stub_agent(),
+    )
+    assert report["control"] == "empty"

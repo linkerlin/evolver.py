@@ -243,6 +243,33 @@ def test_the_record_writer_is_absent_from_the_mutation_call_graph() -> None:
             )
 
 
+def test_the_record_writer_is_confined_to_a_declared_boundary() -> None:
+    """The pin above guards three known paths; a new writer elsewhere would slip
+    through. Scan all of ``src/`` and require every writer call site to be on an
+    explicit allowlist — adding a writer entry point becomes a reviewed change."""
+    repo = Path(__file__).resolve().parents[2]
+    src = repo / "src" / "evolver"
+    allowed = {
+        "cli.py",
+        "swarm.py",
+        "gep/episode_record.py",
+        "gep/episode_clue.py",
+        "gep/record_route.py",
+    }
+    names = ("record_episode(", "append_clue(", "episode_record.record_round(")
+    found: set[str] = set()
+    for path in sorted(src.rglob("*.py")):
+        text = path.read_text(encoding="utf-8")
+        if any(name in text for name in names):
+            found.add(path.relative_to(src).as_posix())
+    assert found, "scan found no writer call sites — the pin is blind"
+    stray = found - allowed
+    assert not stray, (
+        f"episode writer referenced outside the declared boundary: {sorted(stray)} — "
+        "add it to the allowlist only if it is a cycle-boundary entry point"
+    )
+
+
 def test_the_record_body_survives_a_json_round_trip(episode_env: Path) -> None:
     body = episode_record.build_episode(scene())
     stored = episode_record.record_episode(body)

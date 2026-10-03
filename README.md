@@ -171,6 +171,22 @@ uv run evolver workflow approve <id>               # 审批放行
 
 MCP 侧：`swarm_workflow_run`（文件或模板启动）、`swarm_workflow_act`（approve/reject/complete/resume/cancel）、`swarm_workflow_status`（全量状态 + 宿主待办）。
 
+### Controlled Experiments & Ablation Adjudication (消融裁决与对照实验)
+
+Ablation benchmarking validates whether prior episode records genuinely improve host self-repair outcomes (SelfSearch protocol, arXiv:2609.37968v2). Rather than relying on self-asserted score improvements, evolver provides a rigorous, offline/online controlled evaluation harness:
+
+```bash
+# Run real-LLM ablation over tasks with/without previous episode records
+uv run evolver experiment --ablation --tasks tasks.json \
+    --from-episodes --placebo --model deepseek-flash --output result.json
+```
+
+Key Scientific Safeguards:
+- **Placebo Control (`--placebo`)**: Replaces an empty context with an equal-length neutral system block in the without-records arm, isolating prompt presence bias so only the *content* of past episodes is evaluated.
+- **Sample Adequacy Audit**: Evaluates sample size against `MIN_N=30`; signals with under-powered samples are automatically tagged `indicative only`.
+- **Attribution Transparency**: Distinguishes between genuine success rate gain (`success_rate`) and token tie-breaks (`tokens_only`).
+- **Call-graph Boundary Guard**: The episode recorder is scanned across all `src/` files via unit tests (`test_the_record_writer_is_confined_to_a_declared_boundary`) ensuring mutation and benchmark runners can never record or grade themselves.
+
 > WebUI / Proxy 需要 server extras：`uv sync --extra server`（核心进化引擎与 MCP server 无 fastapi 依赖）。
 
 ## Prerequisites
@@ -237,13 +253,14 @@ src/evolver/
 │   ├── lifecycle.py        # Cross-platform daemon management
 │   ├── health_check.py     # Disk/memory/process checks
 │   └── self_repair.py      # Git emergency repair
+├── experiment/         # Controlled experiments, real-LLM ablation, placebo arm, and metrics
 └── webui/              # FastAPI read-only dashboard
     ├── app.py            # Dashboard + SSE `/events/stream`
     ├── dashboard.py      # Self-contained dark HTML dashboard (live events)
     ├── client/           # Inline JS/CSS (SSE, bootstrap, i18n)
     └── observer/         # Data aggregation modules
 
-tests/                  # 280+ test files, 3455+ tests (pytest; incl. MCP
+tests/                  # 300+ test files, 4150+ tests (pytest; incl. MCP
                         #   protocol E2E + live-LLM loop E2E under tests/e2e/)
 scripts/                # 17 CLI helper scripts (see Scripts section)
 assets/gep/             # Seed gene library
@@ -412,11 +429,12 @@ python scripts/validate_modules.py
 
 ## Differences from Node.js Reference
 
-- **License**: Python port uses Apache-2.0; Node.js reference uses GPL-3.0-or-later
-- **Source visibility**: Python port is fully readable; Node.js core files are obfuscated
-- **Database**: Python port adds `ops/sqlite_store.py` for SQLite persistence (enhancement)
-- **Recipe Hub**: Python port includes `recipe/` module (new feature)
-- **WebUI frontend**: Python port ships an inline JS client (`webui/client/`) with SSE; not a separate SPA build
+- **License**: Python port is licensed under **Apache-2.0** (clean-room behavioral re-implementation based on published APIs, test contracts, and specifications); the upstream Node.js reference implementation is distributed under GPL-3.0-or-later.
+- **Source visibility**: Python port is fully readable and documented; Node.js core files are obfuscated.
+- **Database**: Python port adds `ops/sqlite_store.py` for SQLite persistence (enhancement).
+- **Recipe Hub**: Python port includes `recipe/` module (new feature).
+- **WebUI frontend**: Python port ships an inline JS client (`webui/client/`) with SSE; not a separate SPA build.
+- **Controlled Experimentation**: Python port includes `experiment/` module for rigorous with/without-records ablation with placebo control and sample size gating.
 
 ## Security Model
 
@@ -502,7 +520,7 @@ A2A_HUB_URL=https://your-hub.example.com uv run evolver proxy
 - [`SKILL.md`](SKILL.md) — Skill usage reference
 
 ## License
-
-[Apache License 2.0](LICENSE)
-
-> This is a community port of the EvoMap evolver engine. The original Node.js reference implementation is distributed by EvoMap under GPL-3.0-or-later.
+ 
+Distributed under the [Apache License 2.0](LICENSE).
+ 
+> **Note on Upstream Lineage**: This project is an independent Python clean-room behavioral re-implementation developed from scratch against documented protocols, test contracts, and public APIs. The original Node.js reference implementation is maintained by EvoMap under GPL-3.0-or-later. This project is released under Apache-2.0.

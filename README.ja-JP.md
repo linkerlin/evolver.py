@@ -28,11 +28,13 @@ uv run evolver mcp          # MCP stdio サーバー（群進化ホスト接続�
 - **ATP マーケットプレース** — 15 の CLI サブコマンド（buy / sell / settle / dispute）
 - **IDE 統合** — Cursor / Claude Code / Codex / Kiro / opencode のランタイムフック
 - **Autopoiesis** — SelfReport + ホメオスタシス + 自己修復（Python オリジナル機能）
+- **消融実験・対照判定（v1.113+、SelfSearch 収穫）** — 過去のエピソード記録が真に自己修復を改善するかを判定する受控アブレーションハーネス（`--ablation`）。プラセボ対照（`--placebo`、同等長の中性プロンプトでシステムロールのバイアスを排除）、サンプル充足度検証（`MIN_N=30`、不足時は `indicative only` を明記）、全ソース（`src/`）を対象とする呼び出しグラフピン（Call-graph Pin）による自己採点ループの完全遮断。
 
 ```bash
 uv run evolver workflow templates               # repair / innovate テンプレート一覧
 uv run evolver workflow run --template repair   # 修復ループ起動（YAML ファイルも可）
 uv run evolver workflow awaiting <id>           # ホスト実行器 / 承認者の現在の担当
+uv run evolver experiment --ablation --tasks tasks.json --from-episodes --placebo   # 消融対照実験
 ```
 
 ## インストール
@@ -86,6 +88,7 @@ OPENCLAW_WORKSPACE=/path/to/project    # ワークスペースルート
 | `uv run evolver recipe list / show / apply` | レシピ管理 |
 | `uv run evolver skill2recipe` | スキルからレシピへの変換 |
 | `uv run evolver atp balance / buy / orders / verify` | ATP マーケットプレース |
+| `uv run evolver experiment --ablation` | 消融実験・対照判定（受控アブレーションハーネス） |
 
 ## 例
 
@@ -115,8 +118,9 @@ evolver.py/
 │   ├── webui/              # WebUI ダッシュボード
 │   ├── ops/                # 運用ツール（ヘルス、修復、トリガー）
 │   ├── atp/                # エージェント取引プロトコル
-│   └── adapters/           # IDE フックアダプター
-├── tests/
+│   ├── adapters/           # IDE フックアダプター
+│   └── experiment/         # 受控実験・消融判定・プラセボ対照・統計分析
+├── tests/                  # 300+ テストファイル、4,150+ テスト（pytest）
 ├── examples/               # 実践ガイド（全機能をカバー）
 └── docs/                   # 設計書とロードマップ
 ```
@@ -145,7 +149,9 @@ uv run mypy src                            # 型チェック（strict）
 
 ## ライセンス
 
-Apache-2.0 — 詳細は [LICENSE](LICENSE) を参照してください。
+本プロジェクトは **[Apache License 2.0](LICENSE)** の下で配布されています。
+
+> **上流系統に関する注記**: 本プロジェクトは、公開された API 仕様、テスト契約、プロトコル定義に基づいてゼロから独自にクリーンルーム実装された Python ポートです。オリジナルの Node.js リファレンス実装（`@evomap/evolver`）は EvoMap により GPL-3.0-or-later の下で配布されています。本リポジトリは Apache-2.0 で維持されています。
 
 ## 実装ステータス
 

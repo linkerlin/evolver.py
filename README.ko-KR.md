@@ -28,11 +28,13 @@ uv run evolver mcp          # MCP stdio 서버 (군집 진화 호스트 진입�
 - **ATP 마켓플레이스** — 15개 CLI 서브커맨드(buy / sell / settle / dispute)
 - **IDE 통합** — Cursor / Claude Code / Codex / Kiro / opencode 런타임 훅
 - **Autopoiesis** — SelfReport + 항상성 + 자가 수리 (Python 오리지널 기능)
+- **소거 실험·대조 판정(v1.113+, SelfSearch 수확)** — 이전 에피소드 기록이 실제로 자가 복구를 개선하는지 판정하는 제어 소거 하네스(`--ablation`). 플라세보 대조(`--placebo`, 동일한 길이의 중립 프롬프트로 시스템 역할 편향 배제), 표본 충족성 검증(`MIN_N=30`, 미달 시 `indicative only` 명시), 전체 소스(`src/`) 대상 호출 그래프 핀(Call-graph Pin)을 통한 자가 채점 루프 차단.
 
 ```bash
 uv run evolver workflow templates               # repair / innovate 템플릿 목록
 uv run evolver workflow run --template repair   # 복구 루프 시작 (YAML 파일도 가능)
 uv run evolver workflow awaiting <id>           # 호스트 실행기 / 승인자의 현재 담당
+uv run evolver experiment --ablation --tasks tasks.json --from-episodes --placebo   # 소거 대조 실험
 ```
 
 ## 설치
@@ -86,6 +88,7 @@ OPENCLAW_WORKSPACE=/path/to/project    # 워크스페이스 루트
 | `uv run evolver recipe list / show / apply` | 레시피 관리 |
 | `uv run evolver skill2recipe` | 스킬을 레시피로 변환 |
 | `uv run evolver atp balance / buy / orders / verify` | ATP 마켓플레이스 |
+| `uv run evolver experiment --ablation` | 소거 실험·대조 판정(제어 소거 하네스) |
 
 ## 예제
 
@@ -115,8 +118,9 @@ evolver.py/
 │   ├── webui/              # WebUI 대시보드
 │   ├── ops/                # 운영 도구 (헬스, 수리, 트리거)
 │   ├── atp/                # 에이전트 거래 프로토콜
-│   └── adapters/           # IDE 훅 어댑터
-├── tests/
+│   ├── adapters/           # IDE 훅 어댑터
+│   └── experiment/         # 제어 실험·소거 판정·플라세보 대조·통계 지표
+├── tests/                  # 300+ 테스트 파일, 4,150+ 테스트 (pytest)
 ├── examples/               # 실습 가이드 (모든 기능 커버)
 └── docs/                   # 설계 문서와 로드맵
 ```
@@ -145,7 +149,9 @@ uv run mypy src                            # 타입 체크 (strict)
 
 ## 라이선스
 
-Apache-2.0 — 자세한 내용은 [LICENSE](LICENSE)를 참조하세요.
+본 프로젝트는 **[Apache License 2.0](LICENSE)**에 따라 배포됩니다.
+
+> **상위 프로젝트 계보에 대한 안내**: 본 프로젝트는 공개된 API 명세, 테스트 규약, 프로토콜 정의를 기반으로 바닥부터 독립적으로 클린룸 구현된 Python 포트입니다. 원본 Node.js 참조 구현체(`@evomap/evolver`)는 EvoMap에 의해 GPL-3.0-or-later로 배포되고 있습니다. 본 리포지토리는 Apache-2.0 라이선스로 유지됩니다.
 
 ## 구현 상태
 

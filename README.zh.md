@@ -79,6 +79,22 @@ uv run evolver workflow approve <id>               # 审批放行
 
 MCP 侧：`swarm_workflow_run` / `swarm_workflow_act` / `swarm_workflow_status`。
 
+## 受控实验与消融裁决（经验即证据，v1.113+）
+
+消融基准检验既往周期记录是否真实促进宿主自修（对照 SelfSearch 协议，arXiv:2609.37968v2）。引擎提供离线/在线受控消融裁决套件：
+
+```bash
+# 对照有/无历史记录下的任务表现（真实 LLM 盲测）
+uv run evolver experiment --ablation --tasks tasks.json \
+    --from-episodes --placebo --model deepseek-flash --output result.json
+```
+
+核心科学防护：
+- **占位对照臂（`--placebo`）**：为无记录臂注入等长中性系统上下文，隔离系统角色偏置，保证两臂差异仅在记录内容本身。
+- **样本充足性审计**：自动对标 `MIN_N=30`；样本不足时裁决结论自动标明 `indicative only`，拒绝小样本误报。
+- **依据透明分层**：严格区分成功率实质提升（`success_rate`）与纯 token 消耗平局裁决（`tokens_only`）。
+- **全仓调用图钉**：扫描 `src/` 全仓，episode 写入口收敛于受检边界，杜绝任何自修改逻辑「自记自评」。
+
 ## 技能生态桥（SKILL.md → 技能基因，v1.104+）
 
 把宿主生态的技能文件接入进化引擎（project > user > builtin 三级优先、同名遮蔽）：
@@ -142,13 +158,14 @@ src/evolver/
 │   ├── lifecycle.py        # 跨平台守护进程管理
 │   ├── health_check.py     # 磁盘/内存/进程检查
 │   └── self_repair.py      # Git 紧急修复
+├── experiment/         # 受控实验、真实 LLM 消融、占位对照臂与统计指标
 └── webui/              # FastAPI 只读仪表盘
     ├── app.py            # 仪表盘 + SSE `/events/stream`
     ├── dashboard.py      # 暗色 HTML 仪表盘（实时事件）
     ├── client/           # 内嵌 JS/CSS（SSE、bootstrap、i18n）
     └── observer/         # 数据聚合模块
 
-tests/                  # 130+ 测试文件，1250+ 用例（pytest）
+tests/                  # 300+ 测试文件，4150+ 用例（pytest）
 scripts/                # 17 个 CLI 辅助脚本
 assets/gep/             # 种子基因库
 memory/                 # 运行时数据（graph JSONL、reviews JSONL）
@@ -289,11 +306,12 @@ python scripts/validate_modules.py
 
 ## 与 Node.js 参考实现的差异
 
-- **许可证**：Python 移植版使用 Apache-2.0；Node.js 参考实现使用 GPL-3.0-or-later
-- **源码可见性**：Python 移植版完全可读；Node.js 核心文件经混淆保护
-- **数据库**：Python 移植版增加了 `ops/sqlite_store.py` 用于 SQLite 持久化（增强）
-- **Recipe Hub**：Python 移植版包含 `recipe/` 模块（新功能）
-- **WebUI 前端**：Python 移植版提供内嵌 JS 客户端（`webui/client/`）与 SSE；非独立 SPA 构建
+- **许可证**：Python 移植版使用 **Apache-2.0** 许可证分发（依据公开 API、测试契约与协议规范进行的独立净室行为等价实现）；Node.js 参考实现使用 GPL-3.0-or-later。
+- **源码可见性**：Python 移植版完全可读且有完整文档；Node.js 核心文件经混淆保护。
+- **数据库**：Python 移植版增加了 `ops/sqlite_store.py` 用于 SQLite 持久化（增强）。
+- **Recipe Hub**：Python 移植版包含 `recipe/` 模块（新功能）。
+- **WebUI 前端**：Python 移植版提供内嵌 JS 客户端（`webui/client/`）与 SSE；非独立 SPA 构建。
+- **受控消融实验**：Python 移植版内建 `experiment/` 模块，提供具备占位对照与样本量充足性门槛的严谨消融裁决体系。
 
 ## 文档
 
@@ -308,6 +326,6 @@ python scripts/validate_modules.py
 
 ## 许可证
 
-[Apache License 2.0](LICENSE)
+本软件遵循 [Apache License 2.0](LICENSE) 开源协议。
 
-> 这是 EvoMap evolver 引擎的社区移植版本。原始 Node.js 参考实现由 EvoMap 以 GPL-3.0-or-later 许可证分发。
+> **关于上游谱系的说明**：本项目是一个独立的 Python 净室行为等价重实现工程，基于公开协议与测试契约开发。原始 Node.js 参考实现由 EvoMap 组织以 GPL-3.0-or-later 许可分发。本项目保持 Apache-2.0 独立开源发布。
