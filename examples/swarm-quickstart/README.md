@@ -18,6 +18,14 @@ uv run python examples/swarm-quickstart/demo_swarm_loop.py
 DEEPSEEK_API_KEY=sk-... uv run python examples/swarm-quickstart/demo_swarm_loop.py --llm
 ```
 
+上面的巡游只到 solidify 看一眼门。要看**真闭环**（tick → LLM 执行 → distill → 宿主声明假说 → solidify → 真实 episode → 用该 episode 跑有/无记录消融），跑：
+
+```bash
+DEEPSEEK_API_KEY=sk-... uv run python examples/swarm-quickstart/demo_closed_loop_flash.py [--keep]
+```
+
+该脚本把模型钉死为 `deepseek-flash`（不继承 `DEEPSEEK_MODEL`，报告引用服务端实测 id），除 DeepSeek 外零网络，全部状态进一次性临时工作区。一次运行约 5 次 flash 调用。消融只用 2 道玩具题、结论止于过程指标——演示的是机制能跑通，不支撑任何效果结论（实测曾出现 `no_signal`：玩具题两臂全对，记录只加了 token；这正是机制诚实的一面）。
+
 脚本会在临时 git 工作区里经真实 stdio MCP server 走完：
 
 ```
