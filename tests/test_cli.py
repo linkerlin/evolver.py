@@ -370,3 +370,88 @@ def test_the_cycle_boundary_records_the_round_it_settled(isolated_evolver_env: P
     # a missing scene is reported, never guessed
     missing = _record_episode_round({"ok": True, "event_id": "evt_missing"})
     assert missing["ok"] is False and missing["error"] == "scene_missing"
+
+
+def test_cli_experiment_ablation_forwards_episode_flags(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """取材桥透传: 顶层 `evolver experiment` 的新参数必须到达 experiment_main."""
+    import evolver.experiment.cli as exp_cli
+
+    seen: dict[str, list[str]] = {}
+
+    def fake_main(argv: list[str]) -> int:
+        seen["argv"] = list(argv)
+        return 0
+
+    monkeypatch.setattr(exp_cli, "main", fake_main)
+    assert (
+        main(
+            [
+                "experiment",
+                "--tasks",
+                "tasks.json",
+                "--ablation",
+                "--from-episodes",
+                "--episode-id",
+                "sha256:abc",
+                "--episodes-limit",
+                "3",
+                "--episode-max-chars",
+                "500",
+                "--model",
+                "deepseek-flash",
+            ]
+        )
+        == 0
+    )
+    assert seen["argv"] == [
+        "--tasks",
+        "tasks.json",
+        "--ablation",
+        "--record-context",
+        "",
+        "--from-episodes",
+        "--episode-id",
+        "sha256:abc",
+        "--episodes-limit",
+        "3",
+        "--episode-max-chars",
+        "500",
+        "--model",
+        "deepseek-flash",
+        "--success-mode",
+        "contains",
+        "--max-tokens",
+        "16384",
+    ]
+
+
+def test_cli_experiment_baseline_passes_no_ablation_flags(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """非消融路径不受取材桥参数污染。"""
+    import evolver.experiment.cli as exp_cli
+
+    seen: dict[str, list[str]] = {}
+
+    def fake_main(argv: list[str]) -> int:
+        seen["argv"] = list(argv)
+        return 0
+
+    monkeypatch.setattr(exp_cli, "main", fake_main)
+    assert main(["experiment", "--tasks", "t.json", "--genes", "g.json"]) == 0
+    assert seen["argv"] == ["--tasks", "t.json", "--genes", "g.json"]
+
+
+def test_load_episode_index_unreadable_store_yields_empty(
+    isolated_evolver_env: Path,
+) -> None:
+    """_load_episode_index 是尽力而为: 轮账损坏给空表, 不炸 meta-report."""
+    from evolver.cli import _load_episode_index
+    from evolver.gep import episode_record
+
+    path = episode_record.index_path()
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text("{corrupt", encoding="utf-8")
+    assert _load_episode_index() == []

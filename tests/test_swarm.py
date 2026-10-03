@@ -48,6 +48,26 @@ def isolated_swarm_env(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
     yield tmp_path
 
 
+def _solidify_scene(run_id: str, event_id: str) -> dict[str, Any]:
+    """Minimal settlement scene for the episode-record branch of solidify."""
+    return {
+        "event": {
+            "type": "EvolutionEvent",
+            "id": event_id,
+            "run_id": run_id,
+            "timestamp": "2026-10-02T00:00:00.000Z",
+            "gene_id": "gene_a",
+            "mutation": {"id": "mut_1", "category": "repair"},
+            "diff_snapshot": "--- a.py\n+++ b.py\n-x = 1\n+x = 2\n",
+            "outcome": {"status": "success", "score": 1.0},
+            "blast_radius": {"files": 1, "lines": 2},
+        },
+        "validation_result": {"ok": True, "results": []},
+        "fitness_verdict": None,
+        "gate": {"accepted": True, "reason": "improved"},
+    }
+
+
 class TestInstrumentPrompt:
     def test_contains_protocol_sections(self) -> None:
         prompt = build_instrument_prompt({"agent_name": "zcode-1", "workspace_root": "/ws"})
@@ -570,6 +590,39 @@ class TestTickPreservesPhaseTimings:
         result = swarm_solidify()
         assert result["failure_mode"]["retryable"] is False
         assert result["next_action"] == "stop_and_report"
+
+    def test_solidify_success_records_the_settled_round(
+        self, isolated_swarm_env: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """§5.1: ok + event_id 的轮在周期边界入 episode 库, 键名 episode."""
+        import evolver.gep.solidify as solidify_mod
+        from evolver.gep.evidence import save_evidence
+
+        save_evidence("run_ep_1", "evt_ep_1", _solidify_scene("run_ep_1", "evt_ep_1"))
+        monkeypatch.setattr(
+            solidify_mod, "solidify", lambda **kw: {"ok": True, "event_id": "evt_ep_1"}
+        )
+        result = swarm_solidify()
+        assert result["ok"] is True
+        assert result["episode"]["ok"] is True
+        assert result["episode"]["round_key"] == "run_ep_1#evt_ep_1"
+
+    def test_solidify_success_without_a_scene_still_succeeds(
+        self, isolated_swarm_env: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """记录失败不把好轮变坏轮: scene 缺席只报 scene_missing."""
+        import evolver.gep.solidify as solidify_mod
+
+        monkeypatch.setattr(
+            solidify_mod, "solidify", lambda **kw: {"ok": True, "event_id": "evt_missing"}
+        )
+        result = swarm_solidify()
+        assert result["ok"] is True
+        assert result["episode"] == {
+            "ok": False,
+            "error": "scene_missing",
+            "event_id": "evt_missing",
+        }
 
     def test_report_heartbeat(self, isolated_swarm_env: Path) -> None:
         result = swarm_report(category="friction", description="demo", resolution="none")

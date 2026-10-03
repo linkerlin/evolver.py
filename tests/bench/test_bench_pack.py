@@ -204,6 +204,22 @@ def test_prompt_receipt_names_the_injected_snapshot(
     assert receipt["library"] == snap
 
 
+def test_prompt_receipt_cost_fields_start_unmeasured(tmp_path: Path) -> None:
+    """§5.7 采集先行: cost/model 起手 null (unmeasured), 不猜不零填.
+
+    receipt 在求解前写 (记的是求解看到的东西), token 与模型配置只在观测到
+    之后由 record_cost 回填——起手必须是 null, 而不是 0 或空串。"""
+    pack = _write_pack(tmp_path, _two_task_pack())
+    pack_prompt(pack, "val-exact-1", replicate=1)
+    receipt = json.loads(
+        (tmp_path / "sandboxes" / "r1" / "_receipts" / "val-exact-1.json").read_text(
+            encoding="utf-8"
+        )
+    )
+    assert "cost" in receipt and receipt["cost"] is None
+    assert "model" in receipt and receipt["model"] is None
+
+
 def test_prompt_failure_writes_no_receipt(tmp_path: Path) -> None:
     pack = _write_pack(tmp_path, _two_task_pack())
     with pytest.raises(ValueError):

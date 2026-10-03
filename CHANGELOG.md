@@ -8,6 +8,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added — 最近一周改进的单元测试覆盖（round-114）
+
+逐项核对 9/26 以来功能提交后补的 5 处缺口（已有覆盖的不重复：episode record / 线索层 / 三块序 / val-seal / improver 面板 / 双向路线 / 成本单元 / 消融机制与影子 / 升级 pass 全量追加 / establish-parent 与 bench `--library` / receipt 写入 / 配对会话缝线 / round-97 锁修复 / test_config 告警 / 取材桥本身）。
+
+- **DeepSeekClient 首套离线测试**（新建 `tests/experiment/test_llm.py`，13 项）：`urlopen` 伪造，零网络。钉住 env 解析顺序（显式参数 > 环境变量 > 默认值，`DEEPSEEK_APIKEY` 第二键、`base_url` 去尾斜杠）、无 key 先报错且不触网、请求形状（URL/鉴权头/包体/超时）、`last_server_model` 观测与缺省留空、用量三字段映射与缺省归零、畸形包体/空答案判错、`HTTPError` 带状态截断/`URLError` 映射、`complete_prompt` 的 system+user 整形。
+- **顶层透传**（`test_cli.py`，3 项）：`evolver experiment --ablation` 的取材桥四参数逐字到达 `experiment_main`；基线路径不受消融参数污染；`_load_episode_index` 轮账损坏给空表。
+- **solidify 记录分支**（`test_swarm.py`，2 项）：ok+event_id 的轮在周期边界入 episode 库（`round_key` 对上）；scene 缺席只报 `scene_missing`，好轮不改坏。
+- **receipt 起手 unmeasured**（`test_bench_pack.py`，1 项）：`cost`/`model` 键在且为 null，不猜不零填。
+- **dispatch 记录块集成**（`test_dispatch_evidence.py`，2 项）：最近一条 episode 渲染进提示词且先于证据包；渲染炸了 prompt 照出、错误记 ctx。
+
+**测试**：新增 21 项，定向 120 项全过；`ruff` / `format` / `mypy strict`（346 文件）全绿（新 docstring 全角标点按 RUF002 改半角）；全量 `-m "not slow"` **4142 passed**（24 deselected，零 warning）。
+
 ### Added — 消融取材桥：`--from-episodes`（真实 episode 闭环的取材口）
 
 - **断点接上**：消融的 `record_context` 此前只能手工喂文件（`--record-context-file`），与 dispatch 流水线自动从 episode 库取材（`render_episode_block`）不共享。「用真实 episode 的渲染块作 record_context」（TODO 下一阶段第 2 步）现在一条命令可达：`evolver experiment --ablation --from-episodes [--episodes-limit N] [--episode-max-chars N] [--episode-id <id>]`，顶层 `evolver experiment` 同步透传。

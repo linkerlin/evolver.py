@@ -120,3 +120,64 @@ def test_prompt_artifact_carries_evidence(_ws: Path, capsys: pytest.CaptureFixtu
     assert "## Evidence Pack" in text
     assert json.dumps(result["evidence_pack"]["digests"])  # digests recorded
     capsys.readouterr()
+
+
+def _episode_scene(run_id: str, event_id: str) -> dict[str, Any]:
+    return {
+        "event": {
+            "type": "EvolutionEvent",
+            "id": event_id,
+            "run_id": run_id,
+            "timestamp": "2026-10-02T00:00:00.000Z",
+            "gene_id": "gene_a",
+            "mutation": {"id": "mut_1", "category": "repair"},
+            "diff_snapshot": "--- a.py\n+++ b.py\n",
+            "outcome": {"status": "success", "score": 1.0},
+            "blast_radius": {"files": 1, "lines": 2},
+        },
+        "validation_result": {"ok": True, "results": []},
+        "fitness_verdict": None,
+        "gate": {"accepted": True, "reason": "improved"},
+    }
+
+
+def test_dispatch_embeds_the_latest_episode_before_evidence(
+    _ws: Path,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture,
+) -> None:
+    """§5.2 记录侧证据先于结果侧分数: 上一轮记录渲染进提示词并先于证据包."""
+    from evolver.gep import episode_record
+
+    monkeypatch.setenv("EVOLUTION_DIR", str(tmp_path / "evolution"))
+    episode_record.record_episode(episode_record.build_episode(_episode_scene("r1", "e1")))
+    second = episode_record.record_episode(episode_record.build_episode(_episode_scene("r2", "e2")))
+    result = asyncio.run(dispatch_phase(_ctx(recent_events=[_family_fail_event()])))
+    prompt = result["dispatch_prompt"]
+    assert "## Previous Episode" in prompt
+    assert second["id"] in prompt  # the latest round, not the older one
+    assert prompt.index("## Previous Episode") < prompt.index("## Evidence Pack")
+    capsys.readouterr()
+
+
+def test_dispatch_episode_failure_never_aborts(
+    _ws: Path,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture,
+) -> None:
+    """记录渲染炸了也不炸分发: prompt 照出, 错误记 ctx."""
+    from evolver.gep import episode_record
+
+    monkeypatch.setenv("EVOLUTION_DIR", str(tmp_path / "evolution"))
+    episode_record.record_episode(episode_record.build_episode(_episode_scene("r1", "e1")))
+
+    def boom(*args: Any, **kwargs: Any) -> str:
+        raise RuntimeError("render boom")
+
+    monkeypatch.setattr(episode_record, "render_episode_block", boom)
+    result = asyncio.run(dispatch_phase(_ctx(recent_events=[_family_fail_event()])))
+    assert result.get("dispatch_prompt"), "dispatch must survive episode failure"
+    assert result.get("episode_block_error")
+    capsys.readouterr()
