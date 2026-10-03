@@ -399,6 +399,7 @@ def test_cli_experiment_ablation_forwards_episode_flags(
                 "3",
                 "--episode-max-chars",
                 "500",
+                "--placebo",
                 "--model",
                 "deepseek-flash",
             ]
@@ -414,6 +415,7 @@ def test_cli_experiment_ablation_forwards_episode_flags(
         "--from-episodes",
         "--episode-id",
         "sha256:abc",
+        "--placebo",
         "--episodes-limit",
         "3",
         "--episode-max-chars",

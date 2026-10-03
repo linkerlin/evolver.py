@@ -6,7 +6,7 @@
 
 现行章程：[`演进方案.md`](演进方案.md)。工作清单：[`TODO.md`](TODO.md)。
 
-上一阶段（库即尺子）已归档，机器仍在树上（`library.establish_parent_library`、`bench prompt --library`、`solve_receipt.v0` 只捕获不执法），未竟项折在 [`TODO.md`](TODO.md) 的「带走」表。版本 **1.113.0**。本阶段叫**经验即证据**，对照 arXiv:2609.37968v2（SelfSearch）：把「一次自改进的过程记录」（episode record）升为一等经验源，让改进过程本身可替代下游分数推进改进。**记录分层是护栏**——进提示词当证据的只有引擎自记与 relay 观测，宿主上报只作线索（标来源、不单独支撑裁决、不进验收维）。本阶段出口是**消融裁决**（同预算有记录 vs 无记录影子对照，记录无信号即判负并停），不是一次评测。`EVOLVER_ACCEPTANCE_SHADOW` 保持打开。运行态不进产品 git。
+上一阶段（库即尺子）已归档，机器仍在树上（`library.establish_parent_library`、`bench prompt --library`、`solve_receipt.v0` 只捕获不执法），未竟项折在 [`TODO.md`](TODO.md) 的「带走」表。版本 **1.113.0**。本阶段叫**经验即证据**，对照 arXiv:2609.37968v2（SelfSearch）：把「一次自改进的过程记录」（episode record）升为一等经验源，让改进过程本身可替代下游分数推进改进。**记录分层是护栏**——进提示词当证据的只有引擎自记与 relay 观测，宿主上报只作线索（标来源、不单独支撑裁决、不进验收维）。本阶段出口是**消融裁决**（同预算有记录 vs 无记录影子对照）。n < 30 时 signal 与 no_signal 都只写 indicative only，不判阶段失败；n ≥ 30 且无信号才判负并停。不是一次评测。`EVOLVER_ACCEPTANCE_SHADOW` 保持打开。运行态不进产品 git。
 
 本阶段不做：移植本体图式或 DGM/HGM/Hyperagents 本体、外部公开基准适配器（SWE-bench / Terminal-Bench）、更难的微任务包、LLM Judge、RSI P2-6/8/9、validator 重写、ATP 商业闭环、PyPI、为拆 `cli.py` 单独立项、种群择优（解禁的只是双向记录路线）、引擎改自己的源码、「无奖励」全面切换、把 soak `ready` 当出口。Evolver.php（停在 2026-04 / v1.69）与 EvoScientists 分叉不追这次协议。只修测量仪器或测试针的一轮，不算阶段进度。
 
@@ -437,7 +437,7 @@ instrument prompt 第三章（Hooks 集成）指导宿主择轨。
 - **Windows 工具查找走 `shutil.which`**：裸文件名 `is_file()` 探测在 Windows 探不到 `ruff.exe`（PATHEXT）——级联回退曾因此静默跳过整段（DEBUG #48）。带 `path=` 的 `which` 两平台都对。
 - **PATH 继承断言用子串**：`os.pathsep` 在 Windows 是 `;`，POSIX 风格继承值（`/usr/bin:/bin`）整串成单元素——「继承未丢」断言用子串判断，不用切分成员（DEBUG #49）。
 - **跑全量时勿改源**：staleness 按「进程启动 vs 最新源 mtime」判定，套件运行中改源会让 `test_swarm` 如实报 stale（round-95 定性的假阳性）。
-- **消融裁决与调用图钉全仓白名单**：消融裁决（`evolver experiment --ablation`）必须保证对照两臂仅有记录内容之差，`--placebo` 占位对照为无记录臂注入等长中性上下文以隔离 system 角色偏置；裁决自带样本量检验（`MIN_N=30`，样本不足自注 `indicative only`）并区分实质成功率与 token 成本平局。全仓调用图钉（`test_the_record_writer_is_confined_to_a_declared_boundary`）扫描 `src/` 全量源码，除显式白名单生命周期边界外禁止引用 episode 写入逻辑，杜绝任何自修改逻辑「自记自评」。
+- **消融裁决与调用图钉全仓白名单**：消融裁决（`evolver experiment --ablation`）必须保证对照两臂仅有记录内容之差，`--placebo` 占位对照为无记录臂注入等长中性上下文以隔离 system 角色偏置；裁决自带样本量检验（`MIN_N=30`）。n < 30 时 signal 与 no_signal 都只写 indicative only，不切版本，也不判阶段失败；n ≥ 30 且无信号才判负并停。成功率持平、仅 token 更少则标 tokens-only。失败结算与成功结算一样在周期边界入 episode，过程态不入。全仓调用图钉（`test_the_record_writer_is_confined_to_a_declared_boundary`）扫描 `src/` 全量源码，除显式白名单生命周期边界外禁止引用 episode 写入逻辑，杜绝任何自修改逻辑「自记自评」。
 - **CI 改动须本地按渲染后命令演练**：`run: |` 块的缩进会原样进 `python -c`，多行即 IndentationError；嵌进 CI 的版本字面量是哑弹，能自洽就不要硬编码（DEBUG #51）。
 - **同路径文件锁嵌套须可重入**：`with_file_lock` 的 FileLock 是按路径 singleton（引用计数）——同进程同路径嵌套直接重入；新建 FileLock 实例锁同路径在 Windows 会等满 timeout（自死锁，DEBUG #54）。加锁前先查同路径既有锁。
 - **进程互斥只有 OS 锁一个真相**：mtime/PID 探测的「stale 锁回收」会造出偷锁窗口（活守护跑过阈值即被窃，DEBUG #52）；句柄随进程死亡自动释放，残留文件即无锁。

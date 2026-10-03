@@ -1,8 +1,8 @@
 """Tests for evolver.experiment.ablation (经验即证据 §5.8 — the stage exit).
 
 The ablation adjudication: with-records vs without-records over the same
-budget and tasks, reporting the mean and cost difference over process
-metrics. 记录无信号 → 判负并停.
+budget and tasks, reporting the mean and cost difference. An under-powered
+no_signal is indicative only. An adequate no_signal judges the stage failed.
 """
 
 from __future__ import annotations
@@ -31,7 +31,7 @@ def test_with_records_beats_without_when_the_record_has_effect() -> None:
 
 
 def test_no_signal_when_records_change_nothing() -> None:
-    """记录无信号 → 判负并停."""
+    """n < MIN_N 的无信号只标明 indicative only, 不判阶段失败."""
     report = ablation.run_ablation(
         _tasks(),
         record_context="## Previous Episode\n" + ablation.RECORD_MARKER,
@@ -42,7 +42,25 @@ def test_no_signal_when_records_change_nothing() -> None:
     verdict = ablation.ablation_verdict(report)
     assert verdict["signal"] is False
     assert verdict["verdict"] == "no_signal"
+    assert verdict["stage_stop"] is False
+    assert "indicative only" in verdict["conclusion"]
+    assert "judged failed" not in verdict["conclusion"]
+
+
+def test_adequate_no_signal_stops_the_stage() -> None:
+    """足量无信号才判负并停."""
+    from evolver.experiment.stats import MIN_N
+
+    report = ablation.run_ablation(
+        _tasks(MIN_N),
+        record_context=ablation.RECORD_MARKER,
+        agent_fn=ablation.make_stub_agent(record_effect=False),
+    )
+    verdict = ablation.ablation_verdict(report)
+    assert verdict["sample_adequate"] is True
+    assert verdict["stage_stop"] is True
     assert "judged failed and stops" in verdict["conclusion"]
+    assert "indicative only" not in verdict["conclusion"]
 
 
 def test_budget_caps_both_conditions_equally() -> None:

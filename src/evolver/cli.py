@@ -475,6 +475,12 @@ def _build_parser() -> argparse.ArgumentParser:
         help="Per-episode render budget (default: 2000, same as the renderer)",
     )
     experiment_p.add_argument(
+        "--placebo",
+        action="store_true",
+        help="Give the without-records arm a neutral same-length block so the arms "
+        "differ by record content only",
+    )
+    experiment_p.add_argument(
         "--model",
         default="deepseek-flash",
         help="LLM model id, pinned explicitly (default: deepseek-flash)",
@@ -1043,8 +1049,9 @@ def _cmd_watch(args: argparse.Namespace) -> int:
 def _record_episode_round(result: dict[str, Any]) -> dict[str, Any]:
     """经验即证据 §5.1: the cycle boundary records the round it just settled.
 
-    Non-fatal by design: a missing scene is reported, never guessed, and a
-    record failure must not turn a good cycle into a failed one.
+    Called for every settled round that carries an event id, including
+    rejects. Non-fatal: a missing scene is reported, never guessed, and a
+    record failure must not change the settlement outcome.
     """
     from evolver.gep import episode_record
 
@@ -1070,15 +1077,16 @@ def _cmd_solidify(args: argparse.Namespace) -> int:
     except Exception as exc:
         print(f"Solidify failed: {exc}", file=sys.stderr)
         return 1
+    episode = _record_episode_round(result) if result.get("event_id") else None
     if result.get("ok"):
-        episode = _record_episode_round(result)
         print(
             f"Solidify succeeded: event_id={result.get('event_id')} "
             f"blast_radius={result.get('blast_radius')} episode={episode}"
         )
         return 0
     print(
-        f"Solidify failed: {result.get('error')} details={result.get('details')}", file=sys.stderr
+        f"Solidify failed: {result.get('error')} details={result.get('details')} episode={episode}",
+        file=sys.stderr,
     )
     return 1
 
@@ -2382,6 +2390,8 @@ def _cmd_experiment(args: argparse.Namespace) -> int:
             experiment_args += ["--from-episodes"]
         if args.episode_id:
             experiment_args += ["--episode-id", args.episode_id]
+        if args.placebo:
+            experiment_args += ["--placebo"]
         experiment_args += ["--episodes-limit", str(args.episodes_limit)]
         experiment_args += ["--episode-max-chars", str(args.episode_max_chars)]
         experiment_args += ["--model", args.model]

@@ -127,6 +127,44 @@ def _failure_event(
     return event
 
 
+def _failure_diff(cwd: Path) -> str:
+    """The mutation's diff, captured before rollback. After rollback it is gone."""
+    return capture_diff_snapshot(cwd)[:2000]
+
+
+def _remember_failure_scene(
+    event: dict[str, Any],
+    *,
+    validation_result: dict[str, Any] | None = None,
+    fitness_verdict: dict[str, Any] | None = None,
+    gate: dict[str, Any] | None = None,
+) -> str:
+    """Persist the immutable scene of a settled failure. Returns the event id.
+
+    Same shape as the success scene (event, checks, gate), keyed by the event
+    id so the cycle boundary can record it. This does not write the episode:
+    ``solidify`` stays off the episode-writer call graph.
+    """
+    event_id = str(event.get("id") or "")
+    if not event_id:
+        return ""
+    run_id = str(event.get("run_id") or "unknown")
+    with contextlib.suppress(Exception):
+        from evolver.gep.evidence import save_evidence
+
+        save_evidence(
+            run_id,
+            event_id,
+            {
+                "event": event,
+                "validation_result": validation_result,
+                "fitness_verdict": fitness_verdict,
+                "gate": gate,
+            },
+        )
+    return event_id
+
+
 def write_state_for_solidify(last_run: dict[str, Any]) -> None:
     """Write the pending evolution run to the solidify state file."""
     path = get_solidify_state_path()
@@ -491,6 +529,7 @@ def _reject_no_improvement(
     """S26.3 enforcement branch of the strict-improvement fitness gate:
     rollback the mutation and land a failed EvolutionEvent (same hygiene as
     the acceptance-gate rejection path)."""
+    diff_snapshot = _failure_diff(cwd)
     failed_blast = _compute_blast_radius()
     rollback_tracked(cwd=cwd, include_untracked=False)
     rollback_new_untracked_files(_disposable_untracked(cwd), cwd=cwd)
@@ -501,23 +540,25 @@ def _reject_no_improvement(
         cwd,
         blast_radius=failed_blast,
         error="fitness_gate_no_improvement",
+        diff_snapshot=diff_snapshot,
     )
-    append_event_jsonl(
-        _failure_event(
-            last_run,
-            mutation,
-            failed_blast,
-            {
-                "status": "failed",
-                "score": fitness_verdict["score"],
-                "error": "fitness_gate_no_improvement",
-            },
-            fitness_gate=fitness_verdict,
-        )
+    event = _failure_event(
+        last_run,
+        mutation,
+        failed_blast,
+        {
+            "status": "failed",
+            "score": fitness_verdict["score"],
+            "error": "fitness_gate_no_improvement",
+        },
+        fitness_gate=fitness_verdict,
+        diff_snapshot=diff_snapshot,
     )
+    append_event_jsonl(event)
     return {
         "ok": False,
         "error": "fitness_gate_no_improvement",
+        "event_id": _remember_failure_scene(event, fitness_verdict=fitness_verdict),
         "details": {"fitness_gate": fitness_verdict, "blast_radius": failed_blast},
     }
 
@@ -536,23 +577,31 @@ def _apply_acceptance_gate(
     # enforce (gray-scale — measure interception/false-kill rates first).
     if ACCEPTANCE_SHADOW:
         return None
+    diff_snapshot = _failure_diff(cwd)
     failed_blast = _compute_blast_radius()
     rollback_tracked(cwd=cwd, include_untracked=False)
     rollback_new_untracked_files(_disposable_untracked(cwd), cwd=cwd)
     record_solidify_failure(last_run, error="acceptance_gate_rejected")
     _wiki_rejection("acceptance_gate_rejected", last_run)
-    _append_failure_event(
+    gate = gate_result.model_dump()
+    event = _append_failure_event(
         last_run,
         cwd,
         blast_radius=failed_blast,
         error="acceptance_gate_rejected",
         validation_result=validation_result,
+        diff_snapshot=diff_snapshot,
     )
-    return {
+    result: dict[str, Any] = {
         "ok": False,
         "error": "acceptance_gate_rejected",
-        "details": {"acceptance": gate_result.model_dump()},
+        "details": {"acceptance": gate},
     }
+    if event is not None:
+        result["event_id"] = _remember_failure_scene(
+            event, validation_result=validation_result, gate=gate
+        )
+    return result
 
 
 def _hypothesis_rejection(
@@ -566,6 +615,7 @@ def _hypothesis_rejection(
     that cannot say what it is testing does not get to be measured, and its
     absence of a claim must never be laundered into a publish by scoring.
     """
+    diff_snapshot = _failure_diff(cwd)
     failed_blast = _compute_blast_radius()
     rollback_tracked(cwd=cwd, include_untracked=False)
     rollback_new_untracked_files(_disposable_untracked(cwd), cwd=cwd)
@@ -576,11 +626,13 @@ def _hypothesis_rejection(
         failed_blast,
         {"status": "failed", "error": "hypothesis_missing", "detail": reason},
         validation_result=None,
+        diff_snapshot=diff_snapshot,
     )
     append_event_jsonl(failure)
     return {
         "ok": False,
         "error": "hypothesis_missing",
+        "event_id": _remember_failure_scene(failure),
         # Same soft-failure contract as the pack gate: the round is over but
         # the loop keeps running with repair bias.
         "failure_mode": {"mode": "soft", "reasonClass": "hypothesis", "retryable": True},
@@ -596,6 +648,7 @@ def _seal_rejection(
     reason: str,
 ) -> dict[str, Any]:
     """配对会话 §5.2: a Candidate whose context carried val material."""
+    diff_snapshot = _failure_diff(cwd)
     failed_blast = _compute_blast_radius()
     rollback_tracked(cwd=cwd, include_untracked=False)
     rollback_new_untracked_files(_disposable_untracked(cwd), cwd=cwd)
@@ -611,11 +664,13 @@ def _seal_rejection(
             "detail": reason,
         },
         validation_result=None,
+        diff_snapshot=diff_snapshot,
     )
     append_event_jsonl(failure)
     return {
         "ok": False,
         "error": "val_seal_breach",
+        "event_id": _remember_failure_scene(failure),
         "failure_mode": {"mode": "soft", "reasonClass": "val_seal", "retryable": True},
         "next_action": "swarm_tick",
         "details": {"val_seal": {"where": where, "detail": reason}},
@@ -634,6 +689,7 @@ def _bench_pack_rejection(
     gate, an absent pack) — one code path so none of them can quietly differ
     in whether it rolls back or records a failure.
     """
+    diff_snapshot = _failure_diff(cwd)
     failed_blast = _compute_blast_radius()
     rollback_tracked(cwd=cwd, include_untracked=False)
     rollback_new_untracked_files(_disposable_untracked(cwd), cwd=cwd)
@@ -652,6 +708,7 @@ def _bench_pack_rejection(
         },
         validation_result=validation_result,
         bench_pack=verdict,
+        diff_snapshot=diff_snapshot,
     )
     # Single append (the rich event, not the flag-gated skeleton) — the DGM
     # variant archive and the diagnostic ledger still see the rejection.
@@ -661,6 +718,7 @@ def _bench_pack_rejection(
     return {
         "ok": False,
         "error": "bench_pack_rejected",
+        "event_id": _remember_failure_scene(failure, validation_result=validation_result),
         # A failed fitness bar is not a crash: the mutation is rolled back and
         # the loop continues with repair bias (structured field mirrors prose —
         # round-57 lesson; the swarm wrapper only fills absent keys).
@@ -777,13 +835,14 @@ def _append_failure_event(
     score: float = 0.0,
     validation_result: dict[str, Any] | None = None,
     eval_meta: dict[str, Any] | None = None,
-) -> None:
+    diff_snapshot: str = "",
+) -> dict[str, Any] | None:
     """Sprint 24.6 (enable_failure_events): land failed EvolutionEvents on
     rejection paths that historically stayed silent (Node v2 emits failure
-    events on every terminal outcome). Flag-off → byte-identical with
-    v1.94.0 parity behavior."""
+    events on every terminal outcome). Flag-off → no event (v1.94.0 parity).
+    Returns the event so the caller can persist its scene."""
     if not is_enabled("enable_failure_events"):
-        return
+        return None
     event = _failure_event(
         last_run,
         last_run.get("mutation", {}),
@@ -791,10 +850,12 @@ def _append_failure_event(
         {"status": "failed", "score": score, "error": error},
         validation_result=validation_result,
         eval_meta=eval_meta,
+        diff_snapshot=diff_snapshot,
     )
     append_event_jsonl(event)
     _maybe_record_variant(event, validation_result)
     _maybe_open_diagnostic_entry(event, validation_result)
+    return event
 
 
 def _is_runtime_state(rel: str) -> bool:
@@ -1051,6 +1112,7 @@ def _handle_cascade_validation_failure(
     and signal-history modulation), and the memory-graph failure outcome
     carries a partial-credit score."""
     score = _cascade_score(validation_result["results"])
+    diff_snapshot = _failure_diff(cwd)
     failed_blast = _compute_blast_radius()
     failed_fp, failed_added = _novelty_fingerprint(cwd)
     # cwd must be explicit: without it the rollback targets the process cwd
@@ -1059,39 +1121,29 @@ def _handle_cascade_validation_failure(
     # the workspace does not gitignore must survive (E2E calibration bug).
     rollback_tracked(cwd=cwd, include_untracked=False)
     rollback_new_untracked_files(_disposable_untracked(cwd), cwd=cwd)
-    append_event_jsonl(
-        _failure_event(
-            last_run,
-            mutation,
-            failed_blast,
-            {"status": "failed", "score": score, "error": "validation_failed"},
-            validation_result=validation_result,
-            eval_meta=eval_meta,
-            novelty_fingerprint=failed_fp[:4000],
-            novelty_added=failed_added[:4000],
-        )
+    event = _failure_event(
+        last_run,
+        mutation,
+        failed_blast,
+        {"status": "failed", "score": score, "error": "validation_failed"},
+        validation_result=validation_result,
+        eval_meta=eval_meta,
+        novelty_fingerprint=failed_fp[:4000],
+        novelty_added=failed_added[:4000],
+        diff_snapshot=diff_snapshot,
     )
+    append_event_jsonl(event)
     record_solidify_failure(last_run, error="validation_failed", score=score)
     _wiki_rejection("validation_failed", last_run, score=score)
-    # S28.1: failed runs leave the same immutable evidence trail.
-    with contextlib.suppress(Exception):
-        from evolver.gep.evidence import save_evidence
-
-        save_evidence(
-            str(last_run.get("run_id") or "unknown"),
-            f"failed_{int(time.time() * 1000)}",
-            {
-                "error": "validation_failed",
-                "score": score,
-                "validation_result": validation_result,
-                "validation_report": validation_report,
-            },
-        )
+    # The scene matches the success shape and is keyed by the event id.
+    # validation_report stays on the return details; the record reads checks
+    # from validation_result.
+    event_id = _remember_failure_scene(event, validation_result=validation_result)
     details = dict(validation_result)
     details["score"] = score
     if validation_report is not None:
         details["validation_report"] = validation_report
-    return {"ok": False, "error": "validation_failed", "details": details}
+    return {"ok": False, "error": "validation_failed", "event_id": event_id, "details": details}
 
 
 #: Cycle outcomes that are process states, not Candidate verdicts. They must
@@ -1460,6 +1512,7 @@ def _solidify_cycle(
     # cheaper veto, so it settles first and the host is not asked to justify a
     # change the engine has already refused.
     if cascade_mode and is_enabled("enable_novelty_gate") and _novelty_duplicate_diff(cwd):
+        diff_snapshot = _failure_diff(cwd)
         failed_blast = _compute_blast_radius()
         rejected_fp, rejected_added = _novelty_fingerprint(cwd)
         rollback_tracked(cwd=cwd, include_untracked=False)
@@ -1470,20 +1523,21 @@ def _solidify_cycle(
             score=0.0,
             extra={"fingerprint": rejected_fp[:200]},
         )
-        append_event_jsonl(
-            _failure_event(
-                last_run,
-                mutation,
-                failed_blast,
-                {"status": "failed", "score": 0.0, "error": "novelty_duplicate"},
-                novelty_fingerprint=rejected_fp[:4000],
-                novelty_added=rejected_added[:4000],
-            )
+        novelty_event = _failure_event(
+            last_run,
+            mutation,
+            failed_blast,
+            {"status": "failed", "score": 0.0, "error": "novelty_duplicate"},
+            novelty_fingerprint=rejected_fp[:4000],
+            novelty_added=rejected_added[:4000],
+            diff_snapshot=diff_snapshot,
         )
+        append_event_jsonl(novelty_event)
         record_solidify_failure(last_run, error="novelty_duplicate", score=0.0)
         return {
             "ok": False,
             "error": "novelty_duplicate",
+            "event_id": _remember_failure_scene(novelty_event),
             "details": {"blast_radius": failed_blast},
         }
 
@@ -1554,9 +1608,10 @@ def _solidify_cycle(
                         validation_report=validation_report,
                         eval_meta=eval_meta,
                     )
-                # Blast radius must be captured BEFORE the rollback (Sprint 23
-                # lesson — after rollback the tree is clean and radius reads 0).
+                # Blast radius and diff must be captured BEFORE the rollback
+                # (Sprint 23 lesson — after rollback the tree is clean).
                 failed_blast = _compute_blast_radius()
+                diff_snapshot = _failure_diff(cwd)
                 rollback_tracked()
                 # cwd must be explicit here too (Sprint 23 lesson, applied to
                 # the legacy path in round-13): without it the deletion runs
@@ -1565,22 +1620,28 @@ def _solidify_cycle(
                 # its own runtime state file there (DEBUG #20).
                 rollback_new_untracked_files(git_list_untracked_files(cwd), cwd=cwd)
                 record_solidify_failure(last_run, error="validation_failed")
-                _append_failure_event(
+                failed_event = _append_failure_event(
                     last_run,
                     cwd,
                     blast_radius=failed_blast,
                     error="validation_failed",
                     validation_result=validation_result,
                     eval_meta=eval_meta,
+                    diff_snapshot=diff_snapshot,
                 )
                 details: dict[str, Any] = dict(validation_result)
                 if validation_report is not None:
                     details["validation_report"] = validation_report
-                return {
+                legacy_result: dict[str, Any] = {
                     "ok": False,
                     "error": "validation_failed",
                     "details": details,
                 }
+                if failed_event is not None:
+                    legacy_result["event_id"] = _remember_failure_scene(
+                        failed_event, validation_result=validation_result
+                    )
+                return legacy_result
 
         # RSI P0-1: anchor contracts for verifier-surface mutations.
         anchor_touched = touches_verifier_surface(
@@ -1593,6 +1654,7 @@ def _solidify_cycle(
         if anchor_touched:
             anchor_result = run_anchor_suite()
             if not anchor_result["ok"]:
+                diff_snapshot = _failure_diff(cwd)
                 failed_blast = _compute_blast_radius()
                 rollback_tracked(cwd=cwd, include_untracked=False)
                 rollback_new_untracked_files(_disposable_untracked(cwd), cwd=cwd)
@@ -1603,6 +1665,7 @@ def _solidify_cycle(
                     {"status": "failed", "score": 0.0, "error": "anchor_failed"},
                     validation_result=validation_result,
                     eval_meta=eval_meta,
+                    diff_snapshot=diff_snapshot,
                 )
                 append_event_jsonl(anchor_event)
                 _maybe_record_variant(anchor_event, validation_result)
@@ -1610,6 +1673,9 @@ def _solidify_cycle(
                 return {
                     "ok": False,
                     "error": "anchor_failed",
+                    "event_id": _remember_failure_scene(
+                        anchor_event, validation_result=validation_result
+                    ),
                     "failure_mode": {
                         "mode": "hard",
                         "reasonClass": "anchor",

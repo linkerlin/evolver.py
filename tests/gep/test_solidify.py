@@ -222,6 +222,29 @@ def test_run_validations_timeout(git_ws: Path, monkeypatch: pytest.MonkeyPatch) 
     assert res["results"][0]["stderr"]
 
 
+def test_hypothesis_rejection_leaves_a_recordable_scene(git_ws: Path) -> None:
+    """A settled Reject is an engine scene: gene, diff, and the gate verdict."""
+    (git_ws / "README.md").write_text("changed by the candidate\n", encoding="utf-8")
+    write_state_for_solidify(_last_run())
+    result = solidify()
+    assert result["ok"] is False
+    assert result["error"] == "hypothesis_missing"
+    event_id = str(result["event_id"])
+    assert event_id.startswith("evt_")
+    from evolver.gep.episode_record import load_episode, record_round
+
+    stored = record_round(event_id=event_id)
+    assert stored["ok"] is True
+    body = load_episode(stored["id"])
+    assert body is not None
+    assert body["outcome"]["status"] == "failed"
+    assert body["outcome"]["error"] == "hypothesis_missing"
+    assert body["gene"]["id"] == "gene_test_solidify"
+    assert "changed by the candidate" in body["diff"]
+    assert "account" not in body
+    assert "tool_actions" not in body
+
+
 def test_solidify_validation_failed(git_ws: Path, declared_hypothesis: dict[str, Any]) -> None:
     _ = git_ws
     _ = declared_hypothesis

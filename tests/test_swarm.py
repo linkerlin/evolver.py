@@ -607,6 +607,27 @@ class TestTickPreservesPhaseTimings:
         assert result["episode"]["ok"] is True
         assert result["episode"]["round_key"] == "run_ep_1#evt_ep_1"
 
+    def test_solidify_reject_records_the_settled_round(
+        self, isolated_swarm_env: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """A Reject with an event id is recorded, and stays a Reject."""
+        import evolver.gep.solidify as solidify_mod
+        from evolver.gep.evidence import save_evidence
+
+        scene = _solidify_scene("run_ep_rej", "evt_ep_rej")
+        scene["event"]["outcome"] = {"status": "failed", "error": "bench_pack_rejected"}
+        scene["gate"] = {"accepted": False, "reason": "flat"}
+        save_evidence("run_ep_rej", "evt_ep_rej", scene)
+        monkeypatch.setattr(
+            solidify_mod,
+            "solidify",
+            lambda **kw: {"ok": False, "error": "bench_pack_rejected", "event_id": "evt_ep_rej"},
+        )
+        result = swarm_solidify()
+        assert result["ok"] is False
+        assert result["episode"]["ok"] is True
+        assert result["episode"]["round_key"] == "run_ep_rej#evt_ep_rej"
+
     def test_solidify_success_without_a_scene_still_succeeds(
         self, isolated_swarm_env: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:

@@ -14,7 +14,7 @@ This skill enables an agent to:
 
 Charter: `演进方案.md`（经验即证据）. Work list: `TODO.md`. Version **1.113.0**. The paired-session gate closed 2026-09-27 (8 sessions, 16 rejects, 0 accepts). Library-as-ruler is archived in `演进方案_库即尺子.md`; its unfinished items stay on the TODO carry-over table.
 
-Do this: follow the charter §5 and §0. The exit is one with/without-record ablation on a real episode. Point-ruling 1 is decided: process metrics only, no test split. A run with fewer than 30 tasks per arm is indicative only. Synthetic record context does not close the exit. Keep `EVOLVER_ACCEPTANCE_SHADOW` on.
+Do this: follow the charter §5 and §0. The exit is one with/without-record ablation on an engine-recorded episode. Point-ruling 1 is decided: process metrics only, no test split. A run with fewer than 30 tasks per arm is indicative only, for both signal and no_signal, and does not judge the stage failed. Synthetic record context does not close the exit. Keep `EVOLVER_ACCEPTANCE_SHADOW` on.
 
 Do not: treat an instrument-only or test-only round as stage progress, port an ontology, add an LLM judge, open bandit or niche, rewrite the validator, build ATP commerce, or publish to PyPI. `RSI演进对照.md` and `演进方案_wikiskill对照版.md` are archives.
 

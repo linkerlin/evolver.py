@@ -3,7 +3,7 @@
 > 章程：[`演进方案.md`](演进方案.md)（**经验即证据**，版本 **1.113.0**，同日按自审意见修订）。
 > 台账：[`CHANGELOG.md`](CHANGELOG.md)。史料：[`演进方案_库即尺子.md`](演进方案_库即尺子.md)、[`TODO_库即尺子.md`](TODO_库即尺子.md)、[`RSI演进对照.md`](RSI演进对照.md)、[`演进方案_wikiskill对照版.md`](演进方案_wikiskill对照版.md)——史料里的「下一步」不开工。
 > 2026-10-02 起，对照 arXiv:2609.37968v2（SelfSearch）。旧清单的账不回填，只带走未竟项。
-> **机制已就位（round-108）**：八项机制在树上，点名裁决 1 已裁（不用 test 位）。round-112 的 n=3 合成记录对照经 round-115 标为 indicative only，**不关出口**。出口仍是章程 §5 第 7 步：真实 episode 上的有/无记录消融；记录无信号则判负并停。
+> **机制已就位，出口未关。** 点名裁决 1 已裁（不用 test 位）。分量口径（2026-10-03）：证据是一条引擎记下的结算，加上一次 `--from-episodes --placebo` 对照。每臂 n < 30 时 signal 与 no_signal 都只写 indicative only，不切版本，也不判阶段失败。n ≥ 30 且无信号才判负并停。不为凑 30 造题。失败结算与成功结算同一形状，仍只在周期边界记。
 
 ## 带走（库即尺子未竟，不作废）
 
@@ -17,7 +17,7 @@
 
 | # | 待裁 | 未裁前的处置 |
 |---|---|---|
-| 1 | ~~test 位出路~~ | **已裁（round-108）：不用 test 位，改报告口径**。消融只比过程指标（门通过率/工具复用率/成本），从 episode record 与 relay 观测直接复算，不需要 held-out test 集；下游 test 位会把 val 从「门读」升为「裁决读」，多次消融即对 val 过拟合（SelfSearch 不做 dev-score 选择的理由）。下游能力评测留待外部基准适配器（下一阶段） |
+| 1 | ~~test 位出路~~ | **已裁（round-108）：不用 test 位，改报告口径**。消融只比代码真测的过程指标（成功率与 token；门通过率与工具复用率未测），从 episode record 与 relay 观测直接复算，不需要 held-out test 集；下游 test 位会把 val 从「门读」升为「裁决读」，多次消融即对 val 过拟合（SelfSearch 不做 dev-score 选择的理由）。下游能力评测留待外部基准适配器（下一阶段） |
 | 2 | 库即尺子三件套（承旧）：run record 的候选快照槽位；`solve_receipt.v0` 新鲜度与绑定执法；求解上下文隔离层次 | `solve_receipt.v0` 只捕获不执法 |
 | 3 | 线索层升证据层的判据（宿主上报何时可当证据） | 宿主上报一律只作线索、标来源，不单独支撑裁决 |
 
@@ -35,7 +35,7 @@
 | 5 | improver 工具面进库 | 1c + 带走 1 | **已落地（round-104）**：3 个 improver 工具基因入种子（`target_hook=improver_tool` / `mechanism_family=improver_tools`，asset_id 经 `compute_asset_id` 校验）；`record_episode` 存储前从基因库附着 `target_hook`/`mechanism_family`（记录自包含）；`meta_report` 新增 `improver_tools` 面板（从 episode record 复算使用率，每轮计一次，库回退）。**宿主装/卸的闭环**依赖带走 1（Parent 库首写），未决 |
 | 6 | 双向记录路线（影子） | 2 | **已落地（round-105）**：`gep/record_route.py`——两条定性方向（capability / adaptive）并行产出记录，各出内容寻址记录、互见对方记录（`build_direction_block` 按 id 互引）、不打分、archive 全留。**是记录路线不是种群择优**，`MULTI_PROPOSE_ROUTES` 保持 1。生产形态（LLM 驱动双 lineage）留后续 |
 | 7 | 成本与配置采集先行 | 1a | **已落地（round-106）**：receipt schema 增 `cost`/`model`（默认 `null` = unmeasured）；`bench/cost.py` 的 `record_cost` 求解后回填（token 来自 relay `extract_usage`，model 以 relay 观测为准、`AGENT_MODEL` 只作线索）；观测不到出 `unmeasured`，不猜不零填。**此步之前不出效率/迁移结论** |
-| 8 | 消融裁决（**本阶段出口**） | 2 + 7；**点名裁决 1 须先裁** | **机制已落（round-107）**：`experiment/ablation.py`——同预算同题、有/无记录影子对照，报告均值与成本差；只比过程指标（门通过率、工具复用率、成本），结论只可写「记录改变了改进行为」；记录无信号 → 判负并停。**已跑（round-112）**：deepseek-flash（served `['deepseek-flash']`），同 3 题同合成记录——with 2/3（均 625 tokens）vs without 0/3（均 3668.3），delta +66.7%，tokens −83.0%，verdict=signal；CLI 入口已立，可复算。**测量仪器加固（round-115）**：`ablation_verdict` 新增 `n_per_arm`/`sample_adequate`（`MIN_N=30`，不足自注 `indicative only`）与 `signal_basis`（区分 `success_rate` 与 `tokens_only`）；新增 `make_placebo_context` 与 `--placebo` 占位对照（等长中性块隔离系统角色偏置）；`test_the_record_writer_is_confined_to_a_declared_boundary` 扩展为 `src/` 全仓白名单扫描。**不关出口**：n=3、合成记录、空对照臂，读作线索 |
+| 8 | 消融裁决（**本阶段出口**） | 2 + 7；**点名裁决 1 须先裁** | **机制已落（round-107）**：`experiment/ablation.py`——同预算同题、有/无记录影子对照，报告均值与成本差；只比代码真测的成功率与 token（门通过率、工具复用率未测），结论只可写「记录改变了改进行为」。n < 30 的 signal 与 no_signal 都只写 indicative only，不判阶段失败；n ≥ 30 且无信号才判负并停。**已跑（round-112）**：deepseek-flash（served `['deepseek-flash']`），同 3 题同合成记录——with 2/3（均 625 tokens）vs without 0/3（均 3668.3），delta +66.7%，tokens −83.0%，verdict=signal；CLI 入口已立，可复算。**测量仪器加固（round-115）**：`ablation_verdict` 新增 `n_per_arm`/`sample_adequate`（`MIN_N=30`，不足自注 `indicative only`）与 `signal_basis`（区分 `success_rate` 与 `tokens_only`）；新增 `make_placebo_context` 与 `--placebo` 占位对照（等长中性块隔离系统角色偏置）；`test_the_record_writer_is_confined_to_a_declared_boundary` 扩展为 `src/` 全仓白名单扫描。**不关出口**：n=3、合成记录、空对照臂，读作线索 |
 | 9 | 阶段末报告 | 8 | **报告已入账（round-113），阶段未收**：均值（2/3 vs 0/3，+66.7pp）、成本（−83.0%）、消融结论（signal，只到过程指标）一并入 CHANGELOG；relay 覆盖率 **0%（unmeasured，消融直连 API）**；全部 unmeasured 项列明（receipt cost/model 零张、latency 未计时、improver 使用率索引空、token 为自报）。round-115 起该 signal 读作 indicative only。**待人**：切版本 |
 
 ## 守住
@@ -60,16 +60,12 @@
 - 环内改冻结包、val 期望、评分规则、会话预算。
 - Evolver.php（停 2026-04 / v1.69）与 EvoScientists 分叉不追本次协议。
 
-## 下一阶段（提议）：真实 episode 闭环
+## 本阶段出口（不是下一阶段）
 
-**目标**：用真实 episode 跑消融裁决，检验「记录侧证据先于结果侧分数」。这是章程 §5 第 7 步的出口，机制落地不等于出口已到。
+外部基准适配器仍在「不做」。下面是 §5 第 7 步。
 
-**前置**：Parent 种子快照已在仓库 `memory/evolution/library/`（round-109，`sha256:fcfb1cae…`，active 未动）。episode 库仍空。
+**口径**：一条引擎记下的结算，加上一次 `--from-episodes --placebo`。n < 30 只写 indicative only，不切版本，也不判阶段失败。n ≥ 30 且无信号才判负并停。
 
-**步骤**：
-1. 宿主跑真实 solidify 轮，产出真实 episode（引擎已在周期边界自动记录）。
-2. 用真实 episode 的渲染块作 record_context，跑 `experiment/ablation.py` 的有/无记录对照（`--from-episodes`；隔离 system 角色用 `--placebo`）。
-3. 报告均值与成本差，写进 CHANGELOG。每臂不足 30 则结论保持 indicative only。记录无信号 → 判负并停。
-4. 阶段末报告：均值、成本、消融结论 + relay 覆盖率，由人切版本。
+**已接到记录上的结算**：隔离工作区里一次真实 `evolver solidify` 拒绝（`hypothesis_missing`）。回滚前的 diff 在记录里。episode `sha256:ffe36d9e529b728f354e0f5143efae9955551b3583b77775a899234703e1a009`。这不是把 Parent 条拨到 0.0 造出来的 Accept，也不是 soak 宿主轮。运行态在 `C:\Temp\evolver-reject-episode\`，不进产品 git。
 
-**还差的两样**：一条引擎自己记下的 episode，以及一次分量够的对照（或在结论里标明 indicative only 的对照）。引擎不替宿主生成 episode。
+**对照**（已跑，不收阶段）：`demo-repair-1` 与 `demo-neutral-1`，n=2，`--from-episodes --placebo`，deepseek-flash。2/2 对 2/2，tokens 553 对 348（+58.9%），`no_signal`，`stage_stop=false`，结论 `indicative only`。relay 覆盖率 0%。数字在 CHANGELOG。版本保持 **1.113.0**。

@@ -969,10 +969,10 @@ def swarm_solidify(
             result.setdefault(
                 "next_action", "swarm_tick" if mode.get("retryable") else "stop_and_report"
             )
-    if isinstance(result, dict) and result.get("ok") and result.get("event_id"):
-        # 经验即证据 §5.1: the runtime records the round at the cycle boundary.
-        # The mutation path cannot (call-graph pin), and a record failure must
-        # not turn a good cycle into a failed one — it is reported either way.
+    if isinstance(result, dict) and result.get("event_id"):
+        # 经验即证据 §5.1: the runtime records the settled round, Accept or
+        # Reject, at the cycle boundary. The mutation path cannot (call-graph
+        # pin). A record failure must not change the settlement outcome.
         from evolver.gep import episode_record
 
         try:

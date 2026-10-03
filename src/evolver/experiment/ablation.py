@@ -5,13 +5,15 @@ records improve outcomes? This module runs the shadow form — same budget,
 same tasks, with-records vs without-records — and reports the mean and cost
 difference over process metrics.
 
-裁决口径 (before 点名裁决 1 / test 位 is decided): only process metrics are
-compared — gate pass rate, tool reuse rate, cost. The conclusion can only say
-"records changed the improvement behavior". A val-score comparison would
-promote val from "gate-read" to "verdict-read" (and re-fit val over multiple
-ablations) — the very thing SelfSearch refuses to do with dev-score selection.
+裁决口径 (点名裁决 1, 2026-10-03): only the metrics this module actually
+computes are compared — success rate and token cost. Gate pass rate and tool
+reuse are not measured here. The conclusion can only say "records changed
+the improvement behavior". A val-score comparison would promote val from
+"gate-read" to "verdict-read".
 
-记录无信号 → 本阶段判负并停 (no signal → the stage is judged failed and stops).
+n < MIN_N: both signal and no_signal are indicative only. An under-powered
+no_signal does not judge the stage failed and does not stop it. A no_signal
+at n >= MIN_N does: the stage is judged failed and stops.
 """
 
 from __future__ import annotations
@@ -169,8 +171,9 @@ def ablation_verdict(report: dict[str, Any]) -> dict[str, Any]:
     The verdict itself is unchanged (a signal is a signal), but it now carries
     how much weight it can bear: ``sample_adequate`` (both arms reach
     :data:`~evolver.experiment.stats.MIN_N`), ``signal_basis`` (a tokens-only
-    tie-break is not a success-rate gain), and ``control`` (empty vs placebo).
-    An under-powered signal is indicative only and the conclusion says so.
+    tie-break is not a success-rate gain), ``control`` (empty vs placebo),
+    and ``stage_stop`` (true only for an adequate no_signal). An under-powered
+    result, signal or not, is indicative only and does not stop the stage.
     """
     comparison = report.get("comparison", {})
     signal = bool(comparison.get("evolved_better", False))
@@ -184,13 +187,12 @@ def ablation_verdict(report: dict[str, Any]) -> dict[str, Any]:
         basis = "success_rate"
     else:
         basis = "tokens_only"
-    conclusion = (
-        "records changed the improvement behavior"
-        if signal
-        else "no signal — the stage is judged failed and stops"
-    )
-    if signal and not adequate:
+    conclusion = "records changed the improvement behavior" if signal else "no signal"
+    stage_stop = (not signal) and adequate
+    if not adequate:
         conclusion += f" (indicative only: n={n_per_arm} per arm < {MIN_N})"
+    elif not signal:
+        conclusion += " — the stage is judged failed and stops"
     if basis == "tokens_only":
         conclusion += " (tokens-only: success rate did not move)"
     return {
@@ -203,6 +205,7 @@ def ablation_verdict(report: dict[str, Any]) -> dict[str, Any]:
         ),
         "n_per_arm": n_per_arm,
         "sample_adequate": adequate,
+        "stage_stop": stage_stop,
         "signal_basis": basis,
         "control": str(report.get("control", "empty")),
     }

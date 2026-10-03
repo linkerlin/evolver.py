@@ -8,6 +8,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added — 失败结算入 episode，并跑了一次不足样本的 placebo 对照
+
+版本保持 **1.113.0**。本轮不切版本，也不判阶段失败。
+
+**口径**：本阶段的证据是一条引擎记下的结算，加上一次 `--from-episodes --placebo`。每臂 n < 30 时，signal 与 no_signal 都只写 indicative only。n ≥ 30 且无信号，才判负并停。不为凑 30 造题。
+
+**失败结算入记录**：校验失败、假说缺失、bench 拒绝、anchor 失败、novelty 拒绝、验收门拒绝、适应度无改进，都在回滚前留下与成功轮同形状的现场（选中基因、diff、检查、门裁决），并在返回值上带 `event_id`。`evolver solidify` 与 `swarm_solidify` 只要有 `event_id` 就在周期边界记 episode，拒绝轮仍是拒绝。没有候选被裁决的过程态不记。宿主上报仍只进线索。`solidify` 不调用 episode 写入。顶层 `evolver experiment --placebo` 此前未透传，现已到达 `experiment` CLI。
+
+**这一条记录**：隔离仓库 `C:\Temp\evolver-reject-episode`（不进产品 git）里，一次真实 `evolver solidify`。待定轮把 `README.md` 从 `init` 改成 `changed by the candidate`，没有假说。门拒 `hypothesis_missing`，回滚前的 diff 在记录里。episode `sha256:ffe36d9e529b728f354e0f5143efae9955551b3583b77775a899234703e1a009`，`run_reject_readme`，gene `gene_test_note`，outcome `failed`。检查为空（假说门在校验之前），`gates` 为空，裁决在 `outcome.error`。这不是把 Parent 条拨到 0.0 造出的 Accept，也不是 soak 宿主轮。
+
+**对照**（deepseek-flash，served `['deepseek-flash']`，`--from-episodes --placebo`，题是仓库里已有的 `demo-repair-1` 与 `demo-neutral-1`，n=2）：
+
+| 指标 | with_records | without_records | Δ |
+|---|---|---|---|
+| 成功率 | 2/2 | 2/2 | +0.0% |
+| tokens 合计 | 553 | 348 | +58.9% |
+| latency | unmeasured（字段恒 0.0，未计时） | unmeasured | — |
+
+`verdict=no_signal`，`conclusion=no signal (indicative only: n=2 per arm < 30)`，`stage_stop=false`，`sample_adequate=false`，`signal_basis=none`，`control=placebo`，`errors=[]`。记录来源 `episodes`，用的就是上面那条 id，渲染 406 字符。
+
+**未测量**：relay 覆盖率 0%（消融直连 API，不经本地代理）；token 是模型自报 `usage.total_tokens`；`solve_receipt.v0` 的 cost/model 本轮未写；门通过率与工具复用率未在此测量。有记录臂 token 更多，成功率没有分开。n=2，只说明这次对照没有信号，不说明记录无用，也不结束本阶段。
+
 ### Fixed — 章程文件恢复（Demo 覆盖回退）
 
 `289286a`（Demo）用一份过期工作清单覆盖了 `演进方案.md`。正文自 `1e1203e` 恢复，并写入已裁口径：点名裁决 1 不用 test 位；round-112 的 signal 为 indicative only，不关出口。`TODO.md` 开头的「阶段收束」改为「机制已就位，出口未到」。SKILL 与四份 README 的现行阶段行改指经验即证据。一致性钉 `test_the_stage_name_is_present_in_the_stage_files` 的阶段标记从已归档的「库即尺子」改为「经验即证据」。本轮是文档回正，不计阶段进度。版本保持 **1.113.0**。
