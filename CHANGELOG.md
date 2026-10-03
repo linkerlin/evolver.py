@@ -8,6 +8,35 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### 阶段末报告 — 经验即证据（round-113，出口裁决已出）
+
+版本保持 **1.113.0**（阶段收束，版本由人切）。
+
+**消融裁决（本阶段出口，§5.8）**：同预算同题、有/无记录对照，deepseek-flash（served `['deepseek-flash']`），与 round-111 同 3 题、同合成记录。结论只比过程指标（点名裁决 1 已裁，不用 test 位）：
+
+| 指标 | with_records | without_records | Δ |
+|---|---|---|---|
+| 均值（成功率） | 2/3 (66.7%) | 0/3 (0%) | **+66.7pp** |
+| 均值（tokens/题） | 625 | 3668.3 | **−83.0%** |
+| 均值（latency） | `unmeasured` | `unmeasured` | — |
+
+**verdict = signal（记录改变了改进行为）**——具体是降低 token 成本、提高过程成功率。按 §5.8 口径，结论不外推「记录提升下游能力」（下游能力留待外部基准适配器）。
+
+**relay 覆盖率**：`0%（unmeasured，本阶段消融直连 api.deepseek.com）`。`experiment/llm.py` 不经 `evolver proxy`；`HTTP_PROXY`/`DEEPSEEK_BASE_URL` 均未设。round-111 与 round-112 两次消融合计 6 次 LLM 调用，**relay 观测到 0 次**。round-106 的 receipt 采集面（`solve_receipt.v0` 的 `cost`/`model`）仅在 `bench pack solve` 路径写入——本轮 **`pack_prompt` 一次未跑，`record_cost` 一次未调，磁盘上零张 receipt**。
+
+**全部 unmeasured 项**：
+1. `solve_receipt.v0` 的 `cost`/`model`——schema 已落（round-106），本阶段零张 receipt 产出，字段恒 `null`（unmeasured）。
+2. 消融 `avg_latency_s`——`ablation._run_one` 未起计时，两臂恒 0.0，按口径记 `unmeasured`，不得当「零延迟」读。
+3. relay 覆盖率——见上，0%（unmeasured）。
+4. 真实 episode 的 improver 工具使用率（§5.4 面板）——episode 索引为空，`meta_report.improver_tools.usage_rate` 恒 `null`。
+5. token 数来源是 LLM 自报 usage（`usage.total_tokens`），非 relay 独立观测；省与不省的结论不依赖绝对值、只依赖同题同臂对照，但绝对值按自报口径记。
+
+**诚实边界**：3 题、合成记录上下文、单次运行、无预算重复；「记录降低 token 成本」成立于本次对照，不外推成普适规律。记录无信号路径（判负并停）已由影子 null 条件覆盖，本阶段未触发。
+
+**留给人的两件**：切版本；定下阶段（提议：真实 episode 闭环——宿主跑真实 solidify 轮产出 episode，引擎用真实记录跑消融；前置：带走表第 1 项 Parent 库首写）。
+
+**测试**：本轮无代码改动；全量 `-m "not slow"` 4113 过（round-112 基线）。
+
 ### Added — 消融 CLI + deepseek-flash 真实对照（经验即证据 §5.9，round-112）
 
 版本保持 **1.113.0**。

@@ -36,7 +36,7 @@
 | 6 | 双向记录路线（影子） | 2 | **已落地（round-105）**：`gep/record_route.py`——两条定性方向（capability / adaptive）并行产出记录，各出内容寻址记录、互见对方记录（`build_direction_block` 按 id 互引）、不打分、archive 全留。**是记录路线不是种群择优**，`MULTI_PROPOSE_ROUTES` 保持 1。生产形态（LLM 驱动双 lineage）留后续 |
 | 7 | 成本与配置采集先行 | 1a | **已落地（round-106）**：receipt schema 增 `cost`/`model`（默认 `null` = unmeasured）；`bench/cost.py` 的 `record_cost` 求解后回填（token 来自 relay `extract_usage`，model 以 relay 观测为准、`AGENT_MODEL` 只作线索）；观测不到出 `unmeasured`，不猜不零填。**此步之前不出效率/迁移结论** |
 | 8 | 消融裁决（**本阶段出口**） | 2 + 7；**点名裁决 1 须先裁** | **机制已落（round-107）**：`experiment/ablation.py`——同预算同题、有/无记录影子对照，报告均值与成本差；只比过程指标（门通过率、工具复用率、成本），结论只可写「记录改变了改进行为」；记录无信号 → 判负并停。**已跑（round-112）**：deepseek-flash（served `['deepseek-flash']`），同 3 题同合成记录——with 2/3（均 625 tokens）vs without 0/3（均 3668.3），delta +66.7%，tokens −83.0%，verdict=signal；CLI 入口已立，可复算 |
-| 9 | 阶段末报告 | 8 | 均值、成本、消融结论一并进 CHANGELOG，**须写 relay 覆盖率**（宿主走本地代理的比例）与全部 `unmeasured` 项；由人切版本、定下阶段；不出「test 位」字样 |
+| 9 | 阶段末报告 | 8 | **已落地（round-113）**：均值（2/3 vs 0/3，+66.7pp）、成本（−83.0%）、消融结论（signal，只到过程指标）一并入 CHANGELOG；relay 覆盖率 **0%（unmeasured，消融直连 API）**；全部 unmeasured 项列明（receipt cost/model 零张、latency 未计时、improver 使用率索引空、token 为自报）。**待人**：切版本、定下阶段 |
 
 ## 守住
 
