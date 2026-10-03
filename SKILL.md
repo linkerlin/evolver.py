@@ -66,6 +66,7 @@ pip install -e .
 | `evolver mcp` | stdio MCP server — the swarm evolution entry (host-takeover protocol) | ✅ |
 | `evolver skills list\|scan\|sync [--dry-run]` / `workflow …` | Skill ecosystem bridge; persistent workflow engine (WAL + approvals) | ✅ |
 | `evolver experiment --ablation --tasks <file> [--from-episodes] [--placebo]` | Controlled ablation adjudication: with/without records over frozen tasks with placebo control | ✅ |
+| `evolver experiment --ablation --stage-exit --from-episodes --placebo --output <report>` | Machine-enforced stage exit: seeded AB/BA interleave, per-call records, paired test; ineligible setups exit 2 | ✅ |
 
 **IDE adapters:** `setup-hooks --platform=…` delegates to `cursor.py`, `claude_code.py`, `codex.py`, `kiro.py`, `opencode.py` (runtime hooks + scripts). Use `--uninstall` / `--verify` (opencode). Installs always target `--project-dir`.
 

@@ -24,6 +24,15 @@ class TaskResult:
     latency_s: float = 0.0
     gene_ids: list[str] = field(default_factory=list)
     error: str = ""
+    #: Execution order in an interleaved ablation schedule (-1 = unordered).
+    seq: int = -1
+    #: Which ablation arm produced this result ("" = no arm).
+    arm: str = ""
+    #: Stable error class for a failed call ("" = no failure).
+    error_class: str = ""
+    #: Server-reported usage split (0 when the agent only reports a total).
+    prompt_tokens: int = 0
+    output_tokens: int = 0
 
 
 def run_task(

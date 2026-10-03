@@ -183,6 +183,7 @@ uv run evolver experiment --ablation --tasks tasks.json \
 
 Key Scientific Safeguards:
 - **Placebo Control (`--placebo`)**: Replaces an empty context with an equal-length neutral system block in the without-records arm, isolating prompt presence bias so only the *content* of past episodes is evaluated.
+- **Stage-Exit Contract (`--stage-exit`)**: Machine-enforces the exit — real episodes + placebo + unique tasks + known commit + on-disk report, or exit 2 with no report. Seeded AB/BA interleaving replaces fixed arm order; per-call records (latency, token splits, error class, served model), a paired exact test over per-task outcomes, frozen sampling params, and a server-side prompt-imbalance meter ship in the report.
 - **Sample Adequacy Audit**: Evaluates sample size against `MIN_N=30`; signals with under-powered samples are automatically tagged `indicative only`.
 - **Attribution Transparency**: Distinguishes between genuine success rate gain (`success_rate`) and token tie-breaks (`tokens_only`).
 - **Call-graph Boundary Guard**: The episode recorder is scanned across all `src/` files via unit tests (`test_the_record_writer_is_confined_to_a_declared_boundary`) ensuring mutation and benchmark runners can never record or grade themselves.

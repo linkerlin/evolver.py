@@ -481,6 +481,33 @@ def _build_parser() -> argparse.ArgumentParser:
         "differ by record content only",
     )
     experiment_p.add_argument(
+        "--stage-exit",
+        action="store_true",
+        help="Stage-exit contract (§5.8/§5.9): only real --from-episodes with "
+        "--placebo, unique tasks, seeded AB/BA interleaving, per-call records, "
+        "and a paired verdict. Ineligible setups exit 2 instead of reporting",
+    )
+    experiment_p.add_argument(
+        "--order-seed",
+        type=int,
+        default=0,
+        help="Seed for the AB/BA interleave order (default: 0; recorded in the report)",
+    )
+    experiment_p.add_argument(
+        "--temperature",
+        type=float,
+        default=None,
+        help="Freeze the LLM sampling temperature (default: unset — provider default, "
+        "recorded as such)",
+    )
+    experiment_p.add_argument(
+        "--seed",
+        type=int,
+        default=None,
+        help="Freeze the LLM sampling seed, when the provider honors one "
+        "(default: unset — recorded as such)",
+    )
+    experiment_p.add_argument(
         "--model",
         default="deepseek-flash",
         help="LLM model id, pinned explicitly (default: deepseek-flash)",
@@ -2392,6 +2419,13 @@ def _cmd_experiment(args: argparse.Namespace) -> int:
             experiment_args += ["--episode-id", args.episode_id]
         if args.placebo:
             experiment_args += ["--placebo"]
+        if args.stage_exit:
+            experiment_args += ["--stage-exit"]
+        experiment_args += ["--order-seed", str(args.order_seed)]
+        if args.temperature is not None:
+            experiment_args += ["--temperature", str(args.temperature)]
+        if args.seed is not None:
+            experiment_args += ["--seed", str(args.seed)]
         experiment_args += ["--episodes-limit", str(args.episodes_limit)]
         experiment_args += ["--episode-max-chars", str(args.episode_max_chars)]
         experiment_args += ["--model", args.model]

@@ -58,6 +58,8 @@
 | 53 | `_safe_json_loads` 盲 cast：合法 JSON 非 dict 直穿成 AttributeError | asset_store | round-97 | v1.113.0 |
 | 54 | `append_jsonl` 无锁追加 + 同路径嵌套锁在 Windows 自死锁 30s | asset_store | round-97 | v1.113.0 |
 | 55 | `test_cli_webui_token_generate_and_revoke` 顺序敏感 flake 复发（token 提取空值 → `--revoke` 无参 SystemExit） | tests/cli | round-104 | v1.113.0 |
+| 56 | 全量回归一次性失败无留存：36% 处红灯后无失败名留存，lastfailed 37 条 id 全陈旧、`--lf` 零命中静默变全量 | tests/测试治理 | 评估会话 | 未发版 |
+| 57 | 失败现场 diff 看不见未跟踪文件：MCP 验证脚本新建 notes.md 走拒绝后 episode diff 为空，成功侧同 helper 同盲区（未修，待单独一轮） | solidify/episode | 评估会话 | 未发版 |
 
 ## 条目
 
@@ -1061,3 +1063,33 @@
   路径的跨测试污染。
 - **经验**：**全量里的偶发 SystemExit 先单独重跑**——过了就是顺序敏感
   flake，别急着归因到自己的改动；CHANGELOG 已记的 flake 复发要回填本簿。
+
+### 56. 全量回归一次性失败无留存、lastfailed 全为陈旧 id（评估会话）
+
+- **症状**：一次全量非慢速回归在约 36% 处出现失败，输出被截断、失败测试名
+  未留存；事后 `.pytest_cache/v/cache/lastfailed` 内 37 条 id 逐一解析**全部
+  not found**（对应文件早已改名或删除，如 `tests/test_solidify.py`、
+  `tests/gep/test_assets.py`、`tests/gep/test_zz_diag_scratch.py`）；用
+  `--lf` 重放时零命中，pytest 静默回退为全量（一次 `--lf` 运行跑满 10 分钟
+  被超时杀掉，实为又一次全量）。
+- **根因**：未定。两次完整重跑（581s / 503s）均为 `4155 passed, 24
+  deselected`，失败不可复现；lastfailed 是跨多轮运行的历史累积（时间戳
+  2026-10-03 16:44），不是单次失败的清单。
+- **修复**：未修（一次性偶发）。lastfailed 已备份至
+  `C:\Temp\opencode\lastfailed-20261003T1644.json`；两次全绿对照即基线证据。
+- **经验**：**全量偶发失败必须当场落证**——一律 `--tb=short -rf` 且输出落盘
+  后再谈归因，截断输出里的百分比进度不是证据；**`lastfailed` 不是线索库，
+  是考古层**——`--lf` 前先 `--collect-only` 验 id 存活，零命中会静默变成全量。
+
+### 57. 失败现场 diff 看不见未跟踪文件（MCP 验证脚本实证，未修）
+
+- **症状**：MCP 闭环验证脚本里，宿主新建 `notes.md`（未跟踪）后走
+  `hypothesis_missing` 拒绝，episode 的 diff 为空，断言失败；把同一改动
+  落在已跟踪的 `README.md` 上后 diff 正常，脚本 PASS。
+- **根因**：`_failure_diff` → `capture_diff_snapshot` 即 `git diff HEAD`，
+  天然不含未跟踪文件。成功侧走同一 helper、同盲区——行为一致，没有偏袒
+  任一臂，但两边都可能丢掉"新建文件"类候选的关键现场。
+- **修复**：未修。改快照口径牵连成功侧与既有 diff 断言，需单独一轮（快照
+  未跟踪内容 + 钉住两臂一致 + 全量回归）。
+- **经验**：**验证脚本模拟宿主改动必须落在已跟踪文件上**；凡断言 diff
+  内容，先确认文件跟踪状态——`git diff HEAD` 类快照默认看不见新文件。

@@ -40,6 +40,8 @@ class DeepSeekClient:
         model: str | None = None,
         max_tokens: int = DEFAULT_MAX_TOKENS,
         timeout_s: int = DEFAULT_TIMEOUT_S,
+        temperature: float | None = None,
+        seed: int | None = None,
     ) -> None:
         self.api_key = (
             api_key or os.environ.get("DEEPSEEK_API_KEY") or os.environ.get("DEEPSEEK_APIKEY") or ""
@@ -50,6 +52,11 @@ class DeepSeekClient:
         self.model = model or os.environ.get("DEEPSEEK_MODEL") or DEFAULT_MODEL
         self.max_tokens = max_tokens
         self.timeout_s = timeout_s
+        #: Sampling params, frozen per stage-exit run and recorded in the
+        #: report. ``None`` means "not sent — provider default applies", which
+        #: is what the report records (never a guessed value).
+        self.temperature = temperature
+        self.seed = seed
         #: Server-returned model id of the most recent call. The provider may
         #: alias the requested id (e.g. ``deepseek-v4-flash`` resolves to
         #: ``deepseek-flash``), so reports must cite this, not the request.
@@ -69,13 +76,18 @@ class DeepSeekClient:
         """
         if not self.api_key:
             raise LLMError("no DEEPSEEK_API_KEY configured")
-        body = json.dumps(
-            {
-                "model": self.model,
-                "messages": messages,
-                "max_tokens": max_tokens or self.max_tokens,
-            }
-        ).encode("utf-8")
+        payload: dict[str, object] = {
+            "model": self.model,
+            "messages": messages,
+            "max_tokens": max_tokens or self.max_tokens,
+        }
+        # Sampling params ride along only when explicitly frozen; otherwise
+        # the provider default applies and the report says so.
+        if self.temperature is not None:
+            payload["temperature"] = self.temperature
+        if self.seed is not None:
+            payload["seed"] = self.seed
+        body = json.dumps(payload).encode("utf-8")
         req = urllib.request.Request(
             f"{self.base_url}/chat/completions",
             data=body,

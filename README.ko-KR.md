@@ -28,7 +28,7 @@ uv run evolver mcp          # MCP stdio 서버 (군집 진화 호스트 진입�
 - **ATP 마켓플레이스** — 15개 CLI 서브커맨드(buy / sell / settle / dispute)
 - **IDE 통합** — Cursor / Claude Code / Codex / Kiro / opencode 런타임 훅
 - **Autopoiesis** — SelfReport + 항상성 + 자가 수리 (Python 오리지널 기능)
-- **소거 실험·대조 판정(v1.113+, SelfSearch 수확)** — 이전 에피소드 기록이 실제로 자가 복구를 개선하는지 판정하는 제어 소거 하네스(`--ablation`). 플라세보 대조(`--placebo`, 동일한 길이의 중립 프롬프트로 시스템 역할 편향 배제), 표본 충족성 검증(`MIN_N=30`, 미달 시 `indicative only` 명시), 전체 소스(`src/`) 대상 호출 그래프 핀(Call-graph Pin)을 통한 자가 채점 루프 차단.
+- **소거 실험·대조 판정(v1.113+, SelfSearch 수확)** — 이전 에피소드 기록이 실제로 자가 복구를 개선하는지 판정하는 제어 소거 하네스(`--ablation`). 플라세보 대조(`--placebo`, 동일한 길이의 중립 프롬프트로 시스템 역할 편향 배제), 표본 충족성 검증(`MIN_N=30`, 미달 시 `indicative only` 명시), 전체 소스(`src/`) 대상 호출 그래프 핀(Call-graph Pin)을 통한 자가 채점 루프 차단. 단계 출구 계약(`--stage-exit`): 실제 에피소드 + 플라세보 + 고유 태스크 + 확정 커밋 + 리포트 저장, 미충족 시 exit 2.
 
 ```bash
 uv run evolver workflow templates               # repair / innovate 템플릿 목록

@@ -42,7 +42,7 @@
 | Parent 库首写（库即尺子） | `uv run evolver library establish-parent --from=<file>`（establish_* 族首写；solidify 调用不到，测试钉住；`publish` 保持 Accept-only；active 不动） |
 | 求解带库（库即尺子） | `uv run evolver bench prompt <id> --pack <path> --library <snapshot_id>`（按 id 读快照正文贴进 prompt；Parent 解注 Parent id、候选解注候选 id；active 不动） |
 | 配对会话（§5.3） | `uv run evolver session hypothesize --json='{...}'`（宿主声明本轮唯一假说；`--stdin` 或 `@file` 亦可。无假说则门拒，引擎不代笔） |
-| 消融裁决（§5.8/§5.9） | `uv run evolver experiment --ablation --tasks <file> [--from-episodes] [--placebo] [--model deepseek-flash]`（经验即证据出口：同预算有/无记录盲测；`--placebo` 注入等长中性上下文隔离系统角色偏置；`MIN_N=30` 充足性校验） |
+| 消融裁决（§5.8/§5.9） | `uv run evolver experiment --ablation --tasks <file> [--from-episodes] [--placebo] [--model deepseek-flash]`（经验即证据出口：同预算有/无记录盲测；`--placebo` 注入等长中性上下文隔离系统角色偏置；`MIN_N=30` 充足性校验；`--stage-exit` 为机器契约形态：真实 episode + placebo + 唯一任务 + 已知 commit + 落盘报告才受理，否则 exit 2，详见 `experiment/cli.py::_main_stage_exit`） |
 | 评估隔离 worktree | 默认开启（`enable_eval_worktree`）。失败回退 live cwd 并告警；`EVOLVER_EVAL_WORKTREE_STRICT=1` 时回退改为失败 |
 | 守护进程生命周期 | `uv run evolver start` / `stop` / `restart` / `status` / `log` |
 | 健康检查 | `uv run evolver check` / `watch` |
@@ -70,6 +70,7 @@ config.py           全部运行时阈值/超时、环境变量覆盖
 canary.py           Fork-canary：验证 CLI 加载不出崩溃
 experiment/         受控实验与消融裁决（经验即证据 §5.8/§5.9）：ablation / ablation_llm /
                     cli / stats / metrics / comparison / llm；--placebo 等长中性占位；
+                    --stage-exit 机器契约（种子交错/逐调用记录/配对检验/eligibility 门）；
                     全仓调用图钉白名单隔离
 swarm.py            蜂群进化核心：instrument prompt（宿主接管协议）+ 闭环工具
                     （boot/tick/distill/solidify/report/status），stdout 全捕获
@@ -437,7 +438,7 @@ instrument prompt 第三章（Hooks 集成）指导宿主择轨。
 - **Windows 工具查找走 `shutil.which`**：裸文件名 `is_file()` 探测在 Windows 探不到 `ruff.exe`（PATHEXT）——级联回退曾因此静默跳过整段（DEBUG #48）。带 `path=` 的 `which` 两平台都对。
 - **PATH 继承断言用子串**：`os.pathsep` 在 Windows 是 `;`，POSIX 风格继承值（`/usr/bin:/bin`）整串成单元素——「继承未丢」断言用子串判断，不用切分成员（DEBUG #49）。
 - **跑全量时勿改源**：staleness 按「进程启动 vs 最新源 mtime」判定，套件运行中改源会让 `test_swarm` 如实报 stale（round-95 定性的假阳性）。
-- **消融裁决与调用图钉全仓白名单**：消融裁决（`evolver experiment --ablation`）必须保证对照两臂仅有记录内容之差，`--placebo` 占位对照为无记录臂注入等长中性上下文以隔离 system 角色偏置；裁决自带样本量检验（`MIN_N=30`）。n < 30 时 signal 与 no_signal 都只写 indicative only，不切版本，也不判阶段失败；n ≥ 30 且无信号才判负并停。成功率持平、仅 token 更少则标 tokens-only。失败结算与成功结算一样在周期边界入 episode，过程态不入。全仓调用图钉（`test_the_record_writer_is_confined_to_a_declared_boundary`）扫描 `src/` 全量源码，除显式白名单生命周期边界外禁止引用 episode 写入逻辑，杜绝任何自修改逻辑「自记自评」。
+- **消融裁决与调用图钉全仓白名单**：消融裁决（`evolver experiment --ablation`）必须保证对照两臂仅有记录内容之差，`--placebo` 占位对照为无记录臂注入等长中性上下文以隔离 system 角色偏置；裁决自带样本量检验（`MIN_N=30`）。n < 30 时 signal 与 no_signal 都只写 indicative only，不切版本，也不判阶段失败；n ≥ 30 且无信号才判负并停。成功率持平、仅 token 更少则标 tokens-only。`--stage-exit` 把上述口径升为机器契约：种子 AB/BA 交错（`order_seed` 入报告）、逐调用记录（seq/arm/延迟/三段 tokens/错误类/served model）、逐题配对精确检验（`bench.compare.compare_runs`）、采样参数冻结并记录 provider-default、服务端 prompt 失衡单独度量；真实 episode + placebo + 唯一任务 + 已知 commit + `--output` 落盘五项有一项缺席即 exit 2，不产出可引用的 signal。失败结算与成功结算一样在周期边界入 episode，过程态不入。全仓调用图钉（`test_the_record_writer_is_confined_to_a_declared_boundary`）扫描 `src/` 全量源码，除显式白名单生命周期边界外禁止引用 episode 写入逻辑，杜绝任何自修改逻辑「自记自评」。
 - **CI 改动须本地按渲染后命令演练**：`run: |` 块的缩进会原样进 `python -c`，多行即 IndentationError；嵌进 CI 的版本字面量是哑弹，能自洽就不要硬编码（DEBUG #51）。
 - **同路径文件锁嵌套须可重入**：`with_file_lock` 的 FileLock 是按路径 singleton（引用计数）——同进程同路径嵌套直接重入；新建 FileLock 实例锁同路径在 Windows 会等满 timeout（自死锁，DEBUG #54）。加锁前先查同路径既有锁。
 - **进程互斥只有 OS 锁一个真相**：mtime/PID 探测的「stale 锁回收」会造出偷锁窗口（活守护跑过阈值即被窃，DEBUG #52）；句柄随进程死亡自动释放，残留文件即无锁。

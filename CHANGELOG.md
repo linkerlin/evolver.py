@@ -30,6 +30,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 **未测量**：relay 覆盖率 0%（消融直连 API，不经本地代理）；token 是模型自报 `usage.total_tokens`；`solve_receipt.v0` 的 cost/model 本轮未写；门通过率与工具复用率未在此测量。有记录臂 token 更多，成功率没有分开。n=2，只说明这次对照没有信号，不说明记录无用，也不结束本阶段。
 
+### Added — 阶段出口做成机器契约：`--stage-exit` 消融模式（测量仪器修补）
+
+版本保持 **1.113.0**。本轮不切版本，也不判阶段失败；属测量仪器修补，**不计阶段进度**。
+
+**修补的缺口**（上一轮对照的亲笔未测量项：latency 字段恒 0.0 未计时；两臂固定先有记录后对照；报告只有聚合指标，无逐题对照）：
+
+- **交错执行**：同任务两臂背靠背跑，顺序由 `--order-seed` 决定并记录在报告里；每次调用逐条落盘（seq/arm/任务/成功/延迟/input/output/total tokens/错误类/served model）。
+- **配对裁决**：逐题结局复用 `bench/compare.py` 的配对精确二项检验；阶段正结论要求同时满足 eligible + 足样本 + 成功率依据 + 配对显著，tokens-only 永为辅助结论。
+- **机器门**：`--stage-exit` 只接受真实 `--from-episodes` + `--placebo` + 唯一任务 id + 已知代码 commit + `--output` 落盘；inline/file 上下文、空 episode、重复任务一律 exit 2，不再只靠文档禁止。
+- **采样冻结与失衡报告**：`--temperature`/`--seed` 只在显式设置时进请求体，否则报告记 provider-default；服务端自报的 prompt_tokens 两臂失衡单独报告（字符等长 ≠ token 等长）。
+
+38 个新测试钉住上述契约（`tests/experiment/test_stage_exit.py`）；`TaskResult` 加调用级字段（全带默认值，既有构造不受影响）；`run_ablation` 旧路径的臂顺序与 verdict 口径未动。
+
+**活体烟雾**（本轮，n=2，indicative only，不收阶段）：隔离仓 MCP 拒绝 episode + 前例两题（`demo-repair-1`/`demo-neutral-1`），deepseek-flash，`--stage-exit --from-episodes --placebo --order-seed 7`。`eligible=True`，`stage=inconclusive`（n<30），`paired=no_significant_difference`（p=1.0，discordant=0），4 次调用延迟 2.1–3.5s 全计时，served 全为 `deepseek-flash`。附带一个真实发现：等字符 placebo 下，两臂服务端 prompt tokens 均值 222 对 129（`delta_pct=+0.7209`，状态 measured）——字符等长确不等于 token 等长，失衡报告不是摆设。provider 回包无 `completion_tokens` 字段，output 分项记 0（未猜）；门拒退出码实测为 2（一次显示 1 系终端管道假象）。报告存仓外，不进产品 git。
+
 ### Fixed — 章程文件恢复（Demo 覆盖回退）
 
 `289286a`（Demo）用一份过期工作清单覆盖了 `演进方案.md`。正文自 `1e1203e` 恢复，并写入已裁口径：点名裁决 1 不用 test 位；round-112 的 signal 为 indicative only，不关出口。`TODO.md` 开头的「阶段收束」改为「机制已就位，出口未到」。SKILL 与四份 README 的现行阶段行改指经验即证据。一致性钉 `test_the_stage_name_is_present_in_the_stage_files` 的阶段标记从已归档的「库即尺子」改为「经验即证据」。本轮是文档回正，不计阶段进度。版本保持 **1.113.0**。

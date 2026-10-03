@@ -91,6 +91,7 @@ uv run evolver experiment --ablation --tasks tasks.json \
 
 核心科学防护：
 - **占位对照臂（`--placebo`）**：为无记录臂注入等长中性系统上下文，隔离系统角色偏置，保证两臂差异仅在记录内容本身。
+- **阶段出口契约（`--stage-exit`）**：机器强制的出口形态——真实 episode + placebo + 唯一任务 + 已知 commit + 落盘报告，五缺一即 exit 2，不产出报告。种子 AB/BA 交错取代固定臂序；逐调用记录（延迟、三段 tokens、错误类、served model）、逐题配对精确检验、采样冻结、服务端 prompt 失衡度量随报告一起落盘。
 - **样本充足性审计**：自动对标 `MIN_N=30`；样本不足时裁决结论自动标明 `indicative only`，拒绝小样本误报。
 - **依据透明分层**：严格区分成功率实质提升（`success_rate`）与纯 token 消耗平局裁决（`tokens_only`）。
 - **全仓调用图钉**：扫描 `src/` 全仓，episode 写入口收敛于受检边界，杜绝任何自修改逻辑「自记自评」。

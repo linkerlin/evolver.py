@@ -76,6 +76,33 @@ def main(argv: Sequence[str] | None = None) -> int:
         "none, so the arms differ by record content only (not by system-role presence)",
     )
     parser.add_argument(
+        "--stage-exit",
+        action="store_true",
+        help="Stage-exit contract (§5.8/§5.9): only real --from-episodes with "
+        "--placebo, unique tasks, seeded AB/BA interleaving, per-call records, "
+        "and a paired verdict. Ineligible setups exit 2 instead of reporting.",
+    )
+    parser.add_argument(
+        "--order-seed",
+        type=int,
+        default=0,
+        help="Seed for the AB/BA interleave order (default: 0; recorded in the report)",
+    )
+    parser.add_argument(
+        "--temperature",
+        type=float,
+        default=None,
+        help="Freeze the LLM sampling temperature (default: unset — provider default, "
+        "recorded as such)",
+    )
+    parser.add_argument(
+        "--seed",
+        type=int,
+        default=None,
+        help="Freeze the LLM sampling seed, when the provider honors one "
+        "(default: unset — recorded as such)",
+    )
+    parser.add_argument(
         "--model",
         default="deepseek-flash",
         help="LLM model id, pinned explicitly (default: deepseek-flash)",
@@ -173,6 +200,17 @@ def build_record_context_from_episodes(
     return ("\n\n".join(blocks), used)
 
 
+def _detect_commit() -> str:
+    """The code commit the run binds to ("" when not in a git repo).
+
+    A module-level seam so tests can pin it; the stage-exit contract refuses
+    an unknown commit rather than letting a report float free of the code.
+    """
+    from evolver.gep.git_ops import try_run_cmd
+
+    return try_run_cmd(["rev-parse", "HEAD"]).strip()
+
+
 def _main_ablation(args: argparse.Namespace, tasks: list[Any]) -> int:
     """Real-LLM ablation: same tasks, with-records vs without-records (§5.9)."""
     from evolver.experiment.ablation_llm import run_llm_ablation
@@ -191,6 +229,27 @@ def _main_ablation(args: argparse.Namespace, tasks: list[Any]) -> int:
     # Precedence: file > store > inline. The most explicit source wins, and
     # the winner is recorded in the report — a context with no named source
     # is how a hand-carried file stops being reproducible.
+    if args.stage_exit:
+        if not (args.from_episodes or args.episode_id):
+            print(
+                "stage-exit: requires --from-episodes or --episode-id "
+                "(real episodes only — inline/file context cannot exit the stage)",
+                file=sys.stderr,
+            )
+            return 2
+        if not args.placebo:
+            print(
+                "stage-exit: requires --placebo (the control arm must differ "
+                "by record content only)",
+                file=sys.stderr,
+            )
+            return 2
+        if not args.output:
+            print(
+                "stage-exit: requires --output (the report must land on disk to be replayable)",
+                file=sys.stderr,
+            )
+            return 2
     source = "inline"
     episodes_used: list[str] = []
     if args.record_context_file:
@@ -223,6 +282,25 @@ def _main_ablation(args: argparse.Namespace, tasks: list[Any]) -> int:
         context = args.record_context
         if not context:
             source = "empty"
+    if args.stage_exit:
+        # A file pinned next to --from-episodes would still win the precedence
+        # above — and smuggle a hand-carried context into a stage exit. Only
+        # the episode store may feed this mode.
+        if source not in ("episodes", "episode_id"):
+            print(
+                f"stage-exit: record context must come from the episode store "
+                f"(got source={source})",
+                file=sys.stderr,
+            )
+            return 2
+        if not episodes_used:
+            print(
+                "stage-exit: --from-episodes found no episodes — an exit with "
+                "an empty with_records arm proves nothing",
+                file=sys.stderr,
+            )
+            return 2
+        return _main_stage_exit(args, tasks, context, episodes_used)
     from evolver.experiment.ablation import make_placebo_context
 
     control = make_placebo_context(context) if args.placebo else ""
@@ -281,6 +359,105 @@ def _main_ablation(args: argparse.Namespace, tasks: list[Any]) -> int:
         print(f"Results written to {args.output}", file=sys.stderr)
     else:
         print(output_json)
+    return 0
+
+
+def _main_stage_exit(
+    args: argparse.Namespace,
+    tasks: list[Any],
+    context: str,
+    episodes_used: list[str],
+) -> int:
+    """Stage-exit ablation: the machine-checkable form of ``_main_ablation``.
+
+    Preconditions (exit 2): real episodes, placebo control, ``--output``.
+    Postconditions (in the report, never guessed): task-set integrity and
+    digest, code commit, sampling params, order seed, per-call records, the
+    paired verdict, and the eligibility verdict. The process exit stays 0
+    once the run completes — the verdict carries the weight, not the code.
+    """
+    from evolver.experiment import ablation_llm
+    from evolver.experiment.ablation import (
+        check_stage_eligibility,
+        check_task_set,
+        make_placebo_context,
+        stage_exit_verdict,
+    )
+    from evolver.experiment.llm import LLMError
+
+    try:
+        check_task_set(tasks)
+    except ValueError as exc:
+        print(f"stage-exit: {exc}", file=sys.stderr)
+        return 2
+    try:
+        result = ablation_llm.run_llm_stage_exit(
+            tasks,
+            context,
+            model=args.model,
+            max_tokens=args.max_tokens,
+            budget=args.budget,
+            success_mode=args.success_mode,
+            control_context=make_placebo_context(context),
+            order_seed=args.order_seed,
+            temperature=args.temperature,
+            seed=args.seed,
+        )
+    except LLMError as exc:
+        print(f"stage-exit: {exc}", file=sys.stderr)
+        return 2
+
+    evidence: dict[str, Any] = {
+        "episodes_used": episodes_used,
+        "control": result["control"],
+        "tasks_unique": True,
+        "task_digest": result["task_digest"],
+        "commit": _detect_commit(),
+        "order_seed": result["order_seed"],
+        "sampling": result["sampling"],
+        "report_path": args.output,
+    }
+    eligible, reasons = check_stage_eligibility(evidence)
+    result["record_context_source"] = "episodes"
+    result["episodes_used"] = episodes_used
+    result["record_context_chars"] = len(context)
+    result["stage_exit_evidence"] = evidence
+    verdict = stage_exit_verdict(result)
+    result["stage_exit"] = verdict
+    paired = verdict["paired"]
+    print(
+        f"model={result['model_requested']} served={result['server_models']} "
+        f"budget={result['budget']} seed={result['order_seed']}",
+        file=sys.stderr,
+    )
+    print(
+        f"episodes={episodes_used} digest={result['task_digest'][:19]}... "
+        f"commit={evidence['commit'][:12] or 'unknown'}",
+        file=sys.stderr,
+    )
+    for arm in ("with_records", "without_records"):
+        metrics = result[arm]
+        print(
+            f"{arm}: {metrics['successes']}/{metrics['total']} "
+            f"tokens={metrics['total_tokens']} errors="
+            f"{sum(1 for e in result['errors'] if e['arm'] == arm)}",
+            file=sys.stderr,
+        )
+    print(
+        f"paired={paired.get('verdict')} p={paired.get('p')} "
+        f"discordant={paired.get('discordant')} "
+        f"prompt_balance={result['prompt_token_balance'].get('status')}",
+        file=sys.stderr,
+    )
+    print(
+        f"eligible={eligible} stage={verdict['stage']} basis={verdict.get('signal_basis', 'n/a')}",
+        file=sys.stderr,
+    )
+    if not eligible:
+        print(f"ineligible: {'; '.join(reasons)}", file=sys.stderr)
+    output_json = json.dumps(result, indent=2, default=str)
+    Path(str(args.output)).write_text(output_json, encoding="utf-8")
+    print(f"Results written to {args.output}", file=sys.stderr)
     return 0
 
 

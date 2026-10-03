@@ -28,7 +28,7 @@ uv run evolver mcp          # MCP stdio サーバー（群進化ホスト接続�
 - **ATP マーケットプレース** — 15 の CLI サブコマンド（buy / sell / settle / dispute）
 - **IDE 統合** — Cursor / Claude Code / Codex / Kiro / opencode のランタイムフック
 - **Autopoiesis** — SelfReport + ホメオスタシス + 自己修復（Python オリジナル機能）
-- **消融実験・対照判定（v1.113+、SelfSearch 収穫）** — 過去のエピソード記録が真に自己修復を改善するかを判定する受控アブレーションハーネス（`--ablation`）。プラセボ対照（`--placebo`、同等長の中性プロンプトでシステムロールのバイアスを排除）、サンプル充足度検証（`MIN_N=30`、不足時は `indicative only` を明記）、全ソース（`src/`）を対象とする呼び出しグラフピン（Call-graph Pin）による自己採点ループの完全遮断。
+- **消融実験・対照判定（v1.113+、SelfSearch 収穫）** — 過去のエピソード記録が真に自己修復を改善するかを判定する受控アブレーションハーネス（`--ablation`）。プラセボ対照（`--placebo`、同等長の中性プロンプトでシステムロールのバイアスを排除）、サンプル充足度検証（`MIN_N=30`、不足時は `indicative only` を明記）、全ソース（`src/`）を対象とする呼び出しグラフピン（Call-graph Pin）による自己採点ループの完全遮断。段階出口契約（`--stage-exit`）：実エピソード + プラセボ + 一意タスク + 確定コミット + レポート保存、未充足時は exit 2。
 
 ```bash
 uv run evolver workflow templates               # repair / innovate テンプレート一覧
