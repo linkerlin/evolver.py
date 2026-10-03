@@ -145,3 +145,214 @@ def test_ablation_cli_wires_model_and_context(
     saved = json.loads(out_file.read_text(encoding="utf-8"))
     assert saved["verdict"]["verdict"] == "signal"
     assert "signal" in capsys.readouterr().err
+
+
+# ---------------------------------------------------------------------------
+# --from-episodes: the store-to-ablation bridge (no hand-carried file)
+# ---------------------------------------------------------------------------
+
+
+def _episode_scene(run_id: str, event_id: str) -> dict[str, Any]:
+    return {
+        "event": {
+            "type": "EvolutionEvent",
+            "id": event_id,
+            "run_id": run_id,
+            "timestamp": "2026-10-02T00:00:00.000Z",
+            "gene_id": "gene_a",
+            "mutation": {"id": "mut_1", "category": "repair"},
+            "diff_snapshot": "--- a.py\n+++ b.py\n-x = 1\n+x = 2\n",
+            "outcome": {"status": "success", "score": 1.0},
+            "blast_radius": {"files": 1, "lines": 4},
+        },
+        "validation_result": {"ok": True, "results": []},
+        "fitness_verdict": None,
+        "gate": {"accepted": True, "reason": "improved"},
+    }
+
+
+def _record_two_episodes() -> list[str]:
+    from evolver.gep import episode_record
+
+    ids: list[str] = []
+    for i in (1, 2):
+        body = episode_record.build_episode(_episode_scene(f"run_{i}", f"evt_{i}"))
+        ids.append(str(episode_record.record_episode(body)["id"]))
+    return ids
+
+
+def test_from_episodes_uses_the_shared_renderer(temp_workspace: Path) -> None:
+    """The bridge renders with the dispatch renderer, not a second format."""
+    from evolver.experiment import cli as exp_cli
+
+    ids = _record_two_episodes()
+    context, used = exp_cli.build_record_context_from_episodes(limit=2)
+    assert used == ids  # recording order, oldest first
+    assert context.count("## Previous Episode") == 2
+    for ep_id in ids:
+        assert ep_id in context
+
+
+def test_from_episodes_defaults_to_the_latest(temp_workspace: Path) -> None:
+    """Default limit 1 matches dispatch (the previous round's record)."""
+    from evolver.experiment import cli as exp_cli
+
+    ids = _record_two_episodes()
+    context, used = exp_cli.build_record_context_from_episodes()
+    assert used == [ids[-1]]
+    assert ids[-1] in context
+
+
+def test_from_episodes_empty_store_is_empty_not_an_error(temp_workspace: Path) -> None:
+    """No episodes → ("", []); the CLI says so on stderr, never guesses."""
+    from evolver.experiment import cli as exp_cli
+
+    assert exp_cli.build_record_context_from_episodes() == ("", [])
+
+
+def test_episode_id_pins_one_record(temp_workspace: Path) -> None:
+    from evolver.experiment import cli as exp_cli
+
+    ids = _record_two_episodes()
+    context, used = exp_cli.build_record_context_from_episodes(episode_id=ids[0])
+    assert used == [ids[0]]
+    assert ids[0] in context
+    assert ids[1] not in context
+
+
+def test_episode_id_missing_is_empty(temp_workspace: Path) -> None:
+    from evolver.experiment import cli as exp_cli
+
+    assert exp_cli.build_record_context_from_episodes(episode_id="sha256:dead") == ("", [])
+
+
+def test_cli_from_episodes_reports_provenance(
+    tmp_path: Path, temp_workspace: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """`--from-episodes` reaches the runner; the report names its source."""
+    from evolver.experiment import cli as exp_cli
+
+    ids = _record_two_episodes()
+    tasks_file = tmp_path / "tasks.json"
+    tasks_file.write_text(json.dumps(_tasks()), encoding="utf-8")
+    out_file = tmp_path / "out.json"
+    seen: dict[str, Any] = {}
+
+    def fake_run(tasks: list[dict[str, Any]], context: str, **kwargs: Any) -> dict[str, Any]:
+        seen["context"] = context
+        return {
+            "model_requested": kwargs.get("model"),
+            "server_models": ["deepseek-flash"],
+            "budget": len(tasks),
+            "with_records": {"successes": 1, "total": 2, "total_tokens": 100},
+            "without_records": {"successes": 0, "total": 2, "total_tokens": 100},
+            "comparison": {
+                "success_rate_pct": "+50.0%",
+                "token_delta_pct": "+0.0%",
+            },
+            "verdict": {"verdict": "signal", "conclusion": "changed"},
+            "errors": [],
+        }
+
+    monkeypatch.setattr(ablation_llm, "run_llm_ablation", fake_run)
+    rc = exp_cli.main(
+        [
+            "--tasks",
+            str(tasks_file),
+            "--ablation",
+            "--from-episodes",
+            "--output",
+            str(out_file),
+        ]
+    )
+    assert rc == 0
+    assert "## Previous Episode" in seen["context"]
+    saved = json.loads(out_file.read_text(encoding="utf-8"))
+    assert saved["record_context_source"] == "episodes"
+    assert saved["episodes_used"] == [ids[-1]]
+    assert saved["record_context_chars"] == len(seen["context"])
+
+
+def test_cli_file_wins_over_from_episodes(
+    tmp_path: Path, temp_workspace: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Precedence file > store: the most explicit source wins and is named."""
+    from evolver.experiment import cli as exp_cli
+
+    _record_two_episodes()
+    tasks_file = tmp_path / "tasks.json"
+    tasks_file.write_text(json.dumps(_tasks()), encoding="utf-8")
+    ctx_file = tmp_path / "ctx.txt"
+    ctx_file.write_text("FILE-CONTEXT", encoding="utf-8")
+    out_file = tmp_path / "out.json"
+    seen: dict[str, Any] = {}
+
+    def fake_run(tasks: list[dict[str, Any]], context: str, **kwargs: Any) -> dict[str, Any]:
+        seen["context"] = context
+        return {
+            "model_requested": kwargs.get("model"),
+            "server_models": ["deepseek-flash"],
+            "budget": len(tasks),
+            "with_records": {"successes": 1, "total": 2, "total_tokens": 100},
+            "without_records": {"successes": 0, "total": 2, "total_tokens": 100},
+            "comparison": {
+                "success_rate_pct": "+50.0%",
+                "token_delta_pct": "+0.0%",
+            },
+            "verdict": {"verdict": "signal", "conclusion": "changed"},
+            "errors": [],
+        }
+
+    monkeypatch.setattr(ablation_llm, "run_llm_ablation", fake_run)
+    rc = exp_cli.main(
+        [
+            "--tasks",
+            str(tasks_file),
+            "--ablation",
+            "--record-context-file",
+            str(ctx_file),
+            "--from-episodes",
+            "--output",
+            str(out_file),
+        ]
+    )
+    assert rc == 0
+    assert seen["context"] == "FILE-CONTEXT"
+    saved = json.loads(out_file.read_text(encoding="utf-8"))
+    assert saved["record_context_source"] == "file"
+    assert saved["episodes_used"] == []
+
+
+def test_cli_rejects_nonpositive_episode_budgets(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """--episodes-limit/--episode-max-chars < 1 is exit 2, not a silent clamp."""
+    from evolver.experiment import cli as exp_cli
+
+    tasks_file = tmp_path / "tasks.json"
+    tasks_file.write_text(json.dumps(_tasks()), encoding="utf-8")
+
+    def fake_run(*args: Any, **kwargs: Any) -> dict[str, Any]:
+        raise AssertionError("must not run with a bad budget")
+
+    monkeypatch.setattr(ablation_llm, "run_llm_ablation", fake_run)
+    assert (
+        exp_cli.main(
+            ["--tasks", str(tasks_file), "--ablation", "--from-episodes", "--episodes-limit", "0"]
+        )
+        == 2
+    )
+    assert (
+        exp_cli.main(
+            [
+                "--tasks",
+                str(tasks_file),
+                "--ablation",
+                "--from-episodes",
+                "--episode-max-chars",
+                "0",
+            ]
+        )
+        == 2
+    )
+    assert "must be >= 1" in capsys.readouterr().err

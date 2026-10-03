@@ -449,7 +449,30 @@ def _build_parser() -> argparse.ArgumentParser:
     experiment_p.add_argument(
         "--record-context-file",
         default=None,
-        help="Path to a file holding the record context (wins over --record-context)",
+        help="Path to a file holding the record context (wins over --from-episodes)",
+    )
+    experiment_p.add_argument(
+        "--from-episodes",
+        action="store_true",
+        help="Build the record context from the episode store with the shared "
+        "dispatch renderer (wins over --record-context)",
+    )
+    experiment_p.add_argument(
+        "--episode-id",
+        default=None,
+        help="Pin one episode by id (implies --from-episodes; overrides --episodes-limit)",
+    )
+    experiment_p.add_argument(
+        "--episodes-limit",
+        type=int,
+        default=1,
+        help="How many latest episodes to render (default: 1, same as dispatch)",
+    )
+    experiment_p.add_argument(
+        "--episode-max-chars",
+        type=int,
+        default=2000,
+        help="Per-episode render budget (default: 2000, same as the renderer)",
     )
     experiment_p.add_argument(
         "--model",
@@ -2355,6 +2378,12 @@ def _cmd_experiment(args: argparse.Namespace) -> int:
         experiment_args += ["--record-context", args.record_context]
         if args.record_context_file:
             experiment_args += ["--record-context-file", args.record_context_file]
+        if args.from_episodes:
+            experiment_args += ["--from-episodes"]
+        if args.episode_id:
+            experiment_args += ["--episode-id", args.episode_id]
+        experiment_args += ["--episodes-limit", str(args.episodes_limit)]
+        experiment_args += ["--episode-max-chars", str(args.episode_max_chars)]
         experiment_args += ["--model", args.model]
         experiment_args += ["--success-mode", args.success_mode]
         if args.budget is not None:

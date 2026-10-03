@@ -8,6 +8,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added — 消融取材桥：`--from-episodes`（真实 episode 闭环的取材口）
+
+- **断点接上**：消融的 `record_context` 此前只能手工喂文件（`--record-context-file`），与 dispatch 流水线自动从 episode 库取材（`render_episode_block`）不共享。「用真实 episode 的渲染块作 record_context」（TODO 下一阶段第 2 步）现在一条命令可达：`evolver experiment --ablation --from-episodes [--episodes-limit N] [--episode-max-chars N] [--episode-id <id>]`，顶层 `evolver experiment` 同步透传。
+- **同一渲染器**：取材经 `build_record_context_from_episodes()` 走 `episode_record.render_episode_block`——dispatch 与消融对「有记录」的定义一致；默认取最近 1 条（与 dispatch 取上一轮一致），`--episodes-limit` 取最近 N 条（库内顺序、最老在前），`--episode-id` 钉单条（可复现，隐含 store 模式）。
+- **优先级与诚实**：`--record-context-file` > `--from-episodes`/`--episode-id` > `--record-context`；胜者记入报告（`record_context_source`/`episodes_used`/`record_context_chars`）并打印到 stderr。空库不猜：`source=episodes(empty)` + stderr 明示 with 臂跑空（预期 no_signal）；轮账损坏不吞（`EpisodeConflictError` → exit 1）；`--episodes-limit`/`--episode-max-chars` < 1 直接 exit 2。
+- **边界**：真实 episode 库仍空（`evolver.py-soak/evolution/episodes/` 只有 `clues.jsonl`，零条 episode）——取材口已通，等宿主闭环产出真实 episode 即可一条命令跑通完整闭环。本项只修取材口，不产出新的消融结论。
+
+### Fixed — `test_config` 告警入 warnings summary
+
+- 根因：`env_positive_int` 对非法值主动 `warnings.warn`（设计如此，提醒运维配错），而 `test_env_positive_int_rejects_zero`/`rejects_negative` 触发它却未用 `pytest.warns` 断言——回落行为正确，告警漏进 summary 成噪音；`_ENV_WARNED` 进程级去重又使两测只剩一条。
+- 修法：两测改用 `pytest.warns(UserWarning, match=...)` 断言告警 + `monkeypatch.setattr(config, "_ENV_WARNED", set())` 隔离去重——堵噪音的同时把「非法值必告警」钉成契约。`-W error::UserWarning` 严格模式下仍全过。
+
+**测试**：`test_ablation_llm.py` 增 8 项（共用渲染器/默认取最近/空库为空/单条钉选/缺 id 为空/报告来源标注/文件优先/非法预算 exit 2），定向 61 项全过；`ruff` / `format` / `mypy strict`（346 文件）全绿；全量 `-m "not slow"` **4121 passed**（24 deselected，零 warning）。
+
 ### 阶段末报告 — 经验即证据（round-113，出口裁决已出）
 
 版本保持 **1.113.0**（阶段收束，版本由人切）。

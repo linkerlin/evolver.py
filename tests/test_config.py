@@ -24,12 +24,16 @@ def test_env_int_invalid_returns_fallback(monkeypatch: pytest.MonkeyPatch) -> No
 
 def test_env_positive_int_rejects_zero(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("TEST_POS", "0")
-    assert config.env_positive_int("TEST_POS", 100) == 100
+    monkeypatch.setattr(config, "_ENV_WARNED", set())
+    with pytest.warns(UserWarning, match="is not a positive integer"):
+        assert config.env_positive_int("TEST_POS", 100) == 100
 
 
 def test_env_positive_int_rejects_negative(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("TEST_POS", "-5")
-    assert config.env_positive_int("TEST_POS", 100) == 100
+    monkeypatch.setattr(config, "_ENV_WARNED", set())
+    with pytest.warns(UserWarning, match="is not a positive integer"):
+        assert config.env_positive_int("TEST_POS", 100) == 100
 
 
 def test_resolve_hub_url_default() -> None:

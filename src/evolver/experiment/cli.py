@@ -44,7 +44,30 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser.add_argument(
         "--record-context-file",
         default=None,
-        help="Path to a file holding the record context (wins over --record-context)",
+        help="Path to a file holding the record context (wins over --from-episodes)",
+    )
+    parser.add_argument(
+        "--from-episodes",
+        action="store_true",
+        help="Build the record context from the episode store with the shared "
+        "dispatch renderer (wins over --record-context)",
+    )
+    parser.add_argument(
+        "--episode-id",
+        default=None,
+        help="Pin one episode by id (implies --from-episodes; overrides --episodes-limit)",
+    )
+    parser.add_argument(
+        "--episodes-limit",
+        type=int,
+        default=1,
+        help="How many latest episodes to render (default: 1, same as dispatch)",
+    )
+    parser.add_argument(
+        "--episode-max-chars",
+        type=int,
+        default=2000,
+        help="Per-episode render budget (default: 2000, same as the renderer)",
     )
     parser.add_argument(
         "--model",
@@ -100,14 +123,100 @@ def main(argv: Sequence[str] | None = None) -> int:
     return 0
 
 
+def build_record_context_from_episodes(
+    *,
+    limit: int = 1,
+    max_chars_per_episode: int = 2000,
+    episode_id: str | None = None,
+) -> tuple[str, list[str]]:
+    """Build the with-records context from the episode store.
+
+    Uses the same renderer the dispatch pipeline uses
+    (:func:`evolver.gep.episode_record.render_episode_block`), so "has a
+    record" means the same thing in both paths — the bridge that lets a real
+    episode feed the ablation without a hand-carried file. Returns
+    ``(context, episode_ids)``; an empty store returns ``("", [])`` and the
+    caller says so on stderr rather than guessing. A corrupt index raises
+    (the store fails loudly by contract); the caller turns that into exit 1.
+    """
+    from evolver.gep import episode_record
+
+    if episode_id:
+        body = episode_record.load_episode(episode_id)
+        if body is None:
+            return "", []
+        return (
+            episode_record.render_episode_block(
+                body, ep_id=episode_id, max_chars=max_chars_per_episode
+            ),
+            [episode_id],
+        )
+    entries = episode_record.list_episodes()
+    picked = [e for e in entries if isinstance(e, dict) and e.get("id")][-max(1, limit) :]
+    blocks: list[str] = []
+    used: list[str] = []
+    for entry in picked:
+        ep_id = str(entry.get("id") or "")
+        body = episode_record.load_episode(ep_id) if ep_id else None
+        if body is None:
+            continue
+        blocks.append(
+            episode_record.render_episode_block(body, ep_id=ep_id, max_chars=max_chars_per_episode)
+        )
+        used.append(ep_id)
+    return ("\n\n".join(blocks), used)
+
+
 def _main_ablation(args: argparse.Namespace, tasks: list[Any]) -> int:
     """Real-LLM ablation: same tasks, with-records vs without-records (§5.9)."""
     from evolver.experiment.ablation_llm import run_llm_ablation
     from evolver.experiment.llm import LLMError
+    from evolver.gep.episode_record import EpisodeConflictError
 
-    context = args.record_context
+    limit = args.episodes_limit if args.episodes_limit is not None else 1
+    per_episode = args.episode_max_chars if args.episode_max_chars is not None else 2000
+    if limit < 1:
+        print("ablation: --episodes-limit must be >= 1", file=sys.stderr)
+        return 2
+    if per_episode < 1:
+        print("ablation: --episode-max-chars must be >= 1", file=sys.stderr)
+        return 2
+
+    # Precedence: file > store > inline. The most explicit source wins, and
+    # the winner is recorded in the report — a context with no named source
+    # is how a hand-carried file stops being reproducible.
+    source = "inline"
+    episodes_used: list[str] = []
     if args.record_context_file:
         context = Path(args.record_context_file).read_text(encoding="utf-8")
+        source = "file"
+        if args.from_episodes or args.episode_id:
+            print(
+                "ablation: --record-context-file wins over --from-episodes",
+                file=sys.stderr,
+            )
+    elif args.from_episodes or args.episode_id:
+        try:
+            context, episodes_used = build_record_context_from_episodes(
+                limit=limit,
+                max_chars_per_episode=per_episode,
+                episode_id=args.episode_id,
+            )
+        except EpisodeConflictError as exc:
+            print(f"ablation: episode store unreadable: {exc}", file=sys.stderr)
+            return 1
+        source = "episode_id" if args.episode_id else "episodes"
+        if not episodes_used:
+            source = "episodes(empty)"
+            print(
+                "ablation: --from-episodes found no episodes — with_records runs "
+                "empty (expect no_signal)",
+                file=sys.stderr,
+            )
+    else:
+        context = args.record_context
+        if not context:
+            source = "empty"
     try:
         result = run_llm_ablation(
             tasks,
@@ -122,9 +231,16 @@ def _main_ablation(args: argparse.Namespace, tasks: list[Any]) -> int:
         return 2
 
     verdict = result["verdict"]
+    result["record_context_source"] = source
+    result["episodes_used"] = episodes_used
+    result["record_context_chars"] = len(context)
     print(
         f"model={result['model_requested']} served={result['server_models']} "
         f"budget={result['budget']}",
+        file=sys.stderr,
+    )
+    print(
+        f"context source={source} episodes={episodes_used} chars={len(context)}",
         file=sys.stderr,
     )
     for arm in ("with_records", "without_records"):
