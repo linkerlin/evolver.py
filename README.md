@@ -309,12 +309,7 @@ memory/                 # Runtime data (graph JSONL, reviews JSONL)
 
 ## Implementation Status
 
-> **Overall** (2026-09-27): package version **1.113.0** — the paired-session gate has landed; no candidate beat Parent on the sealed val. The library-as-ruler stage opens.
-> closes the stage. The swarm loop, HITL/HOTL interlock, anchor eval, and
-> RSI P0/P1 mechanisms are in tree. The live plan is [演进方案.md](演进方案.md):
-> a paired evolution session over the frozen bench pack. A candidate publishes
-> only when sealed val strictly beats the parent. The acceptance gate stays in
-> shadow. Percentages below are the 2026-09-05 snapshot, not the work list.
+> **Overall** (2026-10-03): package version **1.113.0**. The paired-session gate closed 2026-09-27; no candidate beat Parent on the sealed val. The live charter is [演进方案.md](演进方案.md): 经验即证据 (experience as evidence). The exit is a with/without-record ablation; the n=3 synthetic run is indicative only. The acceptance gate stays in shadow. Percentages below are the 2026-09-05 snapshot, not the work list.
 
 | Subsystem | Status | Notes |
 |---|---|---|

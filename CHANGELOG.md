@@ -8,6 +8,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed — 章程文件恢复（Demo 覆盖回退）
+
+`289286a`（Demo）用一份过期工作清单覆盖了 `演进方案.md`。正文自 `1e1203e` 恢复，并写入已裁口径：点名裁决 1 不用 test 位；round-112 的 signal 为 indicative only，不关出口。`TODO.md` 开头的「阶段收束」改为「机制已就位，出口未到」。SKILL 与四份 README 的现行阶段行改指经验即证据。一致性钉 `test_the_stage_name_is_present_in_the_stage_files` 的阶段标记从已归档的「库即尺子」改为「经验即证据」。本轮是文档回正，不计阶段进度。版本保持 **1.113.0**。
+
 ### Changed — 消融裁决自带「分量」：样本充足性 / 依据 / 占位对照（外审取舍，round-115）
 
 一份外部勘察报告经逐条 grep 复核后，**只采纳了与本阶段出口直接相关、且代码上可证实的四点**；其余（0/1 饱和 Parent、门影子、GEP 命名、无交叉算子、许可证/署名、版本号/tag、`deepseek-flash` 悬空等）或属本阶段「不做」、或属已披露的设计选择、或经核不成立，**一概不动**。本轮属测量仪器修补，**不计阶段进度**。

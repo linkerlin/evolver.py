@@ -12,13 +12,11 @@ This skill enables an agent to:
 
 ## Current stage
 
-Charter: `演进方案.md`. Work list: `TODO.md`. Version **1.113.0** (paired-session stage closed 2026-09-27: 8 sessions, 16 rejects, 0 accepts — the gate proved it can refuse publication).
+Charter: `演进方案.md`（经验即证据）. Work list: `TODO.md`. Version **1.113.0**. The paired-session gate closed 2026-09-27 (8 sessions, 16 rejects, 0 accepts). Library-as-ruler is archived in `演进方案_库即尺子.md`; its unfinished items stay on the TODO carry-over table.
 
-Do this: follow `演进方案.md` §5 and `TODO.md`. The parent val bar is written only by `evolver bench baseline`. A candidate measurement that finds no bar rejects as `no_baseline` and does not write one. A replicate with any pending val task is unmeasured. The host that writes the candidate does not solve val. A hypothesis `mechanism_check` entry is `{"id","before","after"}` on a train task. `session accept` requires a persisted `accept: true` gate record.
+Do this: follow the charter §5 and §0. The exit is one with/without-record ablation on a real episode. Point-ruling 1 is decided: process metrics only, no test split. A run with fewer than 30 tasks per arm is indicative only. Synthetic record context does not close the exit. Keep `EVOLVER_ACCEPTANCE_SHADOW` on.
 
-This stage is **library-as-ruler**: the evolved object itself becomes the scored object. What is scored is the library snapshot — not the host's carefulness, not another harder micro-task pack. Decisive clauses must be uniquely recoverable from the train before/after observations and never appear in val task text; the Parent solve sees only the Parent snapshot plus val tasks, the candidate solve only the candidate snapshot plus the same tasks, and the host that writes the candidate sees train only (never val, never the grader). An empty-library Parent therefore cannot recover the distilled convention — if it still scores perfect, the host guessed without reading the library and the measurement ends. Solve entries inject the snapshot BY ID via `load_version()` (enrich's `_consult_library` reads `active` and is not this path; nothing but `publish()` moves active). A "sentence in library, sentence in answer" Accept proves only the read path. The first Parent library is written through a dedicated `establish_*` entry solidify cannot reach — never through `publish()`, which stays Accept-only. The hypothesis-ledger hygiene fix landed (round-91): solidify captures the hypothesis text before the cycle burns it.
-
-Do not: port the ontology record schema, add an LLM judge, add RSI P2-6/8/9, rewrite the validator, build ATP commerce, publish to PyPI, or treat another instrument-only dogfood round as stage progress. Keep `EVOLVER_ACCEPTANCE_SHADOW` on. `RSI演进对照.md` and `演进方案_wikiskill对照版.md` are archives.
+Do not: treat an instrument-only or test-only round as stage progress, port an ontology, add an LLM judge, open bandit or niche, rewrite the validator, build ATP commerce, or publish to PyPI. `RSI演进对照.md` and `演进方案_wikiskill对照版.md` are archives.
 
 ## Installation
 
@@ -292,7 +290,7 @@ Env: `EVOLVER_FF_<NAME>=1|0`. Disk layers (low → high): defaults → `evolver/
 - `examples/hub-publish-flow/` — Distill→reuse→publish lifecycle
 - `examples/skill2recipe/` — Skill→Recipe composition
 - `examples/atp-quickstart/` — ATP loop demo
-- `演进方案.md` — current charter (paired session)
+- `演进方案.md` — current charter (经验即证据)
 - `TODO.md` — the work list for that charter
 - `演进方案_wikiskill对照版.md` — archived 2026-09-01 audit
 - `RSI演进对照.md` — archived paper comparison and effective-L5 log
