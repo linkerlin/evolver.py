@@ -8,6 +8,42 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed — 「继续」可转达；tick 在门未就绪时交给人，可选 HOTL
+
+版本保持 **1.113.0**。
+
+用户说「继续」时，宿主转达 `swarm_supervise` action=resume，再重新 `swarm_boot`。`EVOLVER_SWARM_AUTO_HIJACK=1` 时转达仍被拒绝（`host_relay_blocked`），改由人执行 `evolver supervise resume`。
+
+`swarm_tick` 在冻结包未安装或没有 Parent 基线时，于周期之前返回 `next_action=await_human`、`gate_ready=false`、`reason=pack_absent|no_baseline`。不跑周期，也就没有验证级联和注定被拒的 episode。新增 `EVOLVER_SWARM_GATE_HANDOFF`（默认 `human`）：人设为 `hotl` 时 boot 与 tick 照常进入循环，人在环上监督；冻结包门本身不变，照常拒绝、回滚、不发布，绊线照常自动暂停。instrument 状态区显示 `gate_handoff`，并写明宿主不得改这个开关。
+
+### Changed — 开机动作与正文对齐，补首次准备
+
+版本保持 **1.113.0**。仪器修补，不计阶段进度。
+
+`swarm_boot` 在循环已暂停时返回 `await_supervisor_resume`，与 `swarm_tick` 一致；有待固化 run 时仍先固化。常驻 instructions 改为：本条消息若是在要求别的事就做那件事，否则先开机，再用一句话说明实际状态。`await_human` 与 `await_supervisor_resume` 写进停止条件。包未安装后的下一步改为重新 `swarm_boot`，不再写「继续 tick」。`boot_once` 以 JSON 渲染；`train_ids` 超过 20 个时标出总数。首次准备（冻结、另一上下文解 val、建基线）写在 `examples/swarm-quickstart/README.md`，求解命令不进候选提示词。
+
+### Changed — 收回开机过头，停机改回转达
+
+版本保持 **1.113.0**。仪器修补，不计阶段进度。
+
+常驻 instructions 不再要求打招呼之前先开机。本条消息已有任务就做那件事；没有任务时先用一句话告诉用户 evolver 已连接、说「停」即可，再 `swarm_boot`。用户说「停」时宿主调用 `swarm_supervise` action=pause，不必让用户自己敲命令。`boot_once` 只剩会话登记，去掉开机技能同步。冻结包未安装或没有 Parent 基线时，`next_action` 为 `await_human`，不先跑会被门拒绝的一轮。`gate_snapshot` 增加 `train_ids`（不含 val id），供假说引用。
+
+### Changed — 连上即接管：开机步骤由宿主自己做
+
+版本保持 **1.113.0**。仪器修补，不计阶段进度。
+
+常驻 instructions 的第一句改为：打招呼或其他工具之前先调用 `swarm_boot`，按 `instrument_prompt` 与 `boot_once` 执行，不要向用户解释协议。用户本条消息里的具体任务仍然优先。`boot_once` 在没有待固化 run 时是两步：`swarm_hook_event(session_start)` 与 `swarm_skills(sync)`，把会话和技能收进引擎，用户不用记命令。有待固化 run 时列表为空，先 `swarm_solidify`，避免技能同步返回的 `next_action=swarm_tick` 冲掉未落地的修改。技能同步自己的 `next_action` 在正文里写明忽略。
+
+正文增「功能」节：报错、Hooks、工作流模板、基因检索、episode 读取、邮箱，都由宿主自己调用。val 求解命令仍然不出现。
+
+### Changed — MCP 常驻指令改为短循环，instrument 改为逐步协议
+
+版本保持 **1.113.0**。仪器修补，不计阶段进度。
+
+连上 MCP 时宿主看到的 server instructions 不再是 26 个工具的地图，也不再随 `EVOLVER_SWARM_AUTO_HIJACK` 追加「进化优先」。常驻文本约 1000 字符：身份、五步环、停机条件，以及「本条消息没有任务就开始」。全文协议在 `swarm_boot` 与 `evolver_swarm` 的返回里。正文按步只看一个返回字段，附 Gene 与假说的可复制样例；蒸馏会丢弃的 EvolutionEvent / PersonalityState 写在样例旁边。val 的求解命令不出现在正文里（写下候选的这场对话不得看到 val 题面）。`pack_absent`、`no_baseline`、`unmeasured` 与会话 Accept 写成交给人的命令，不写成循环的一步。
+
+`EVOLVER_SWARM_AUTO_HIJACK=1` 只保留原有行为：强制打开 HITL，并拒绝宿主转达 approve / resume / unveto。
+
 ### Added — 失败结算入 episode，并跑了一次不足样本的 placebo 对照
 
 版本保持 **1.113.0**。本轮不切版本，也不判阶段失败。

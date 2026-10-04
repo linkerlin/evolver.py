@@ -50,9 +50,39 @@ swarm_boot ─▶ swarm_status ─▶ swarm_hook_event(信号采集)
 | `claude-code.mcp.json` | Claude Code | 项目根 `.mcp.json` |
 | `cursor-mcp.json` | Cursor | `.cursor/mcp.json` |
 
-接入后对宿主说「启动蜂群进化」，或让它调用 `evolver_swarm` prompt / `swarm_boot` 工具——接管协议（instrument prompt）会指导它执行 `swarm_tick → 执行 → swarm_distill → swarm_solidify → swarm_feedback` 循环，直到终止条件。
+连上之后，本条消息已有别的任务就做那件事。没有别的任务时宿主调用 `swarm_boot`，再用一句话说明实际状态。`boot_once` 只登记会话，不在开机时同步技能。冻结包未装或没有基线时 boot 与 `swarm_tick` 都返回 `await_human`，已暂停时返回 `await_supervisor_resume`，都不进入循环。用户说「停」，宿主调用 `swarm_supervise` action=pause；说「继续」，宿主转达 resume。也可以对它说「启动蜂群进化」。返回的 instrument 按步执行 `swarm_tick → 执行 → swarm_distill → swarm_hypothesis → swarm_solidify → swarm_feedback`，直到终止条件。
 
-无人值守模式：宿主环境变量加 `EVOLVER_SWARM_AUTO_HIJACK=1`，连接即注入接管指令。
+## 首次准备
+
+进化循环在冻结包和 Parent 基线都齐之前不会开始。下面三步在进化对话之外做。
+
+1. 安装冻结包。
+
+```bash
+uv run evolver bench freeze
+```
+
+包写到 `$EVOLVER_HOME/anchor/bench/charter-pack.tasks.json`（默认在 `~/.evomap/anchor/bench/`）。
+
+2. 在另一个上下文里解 val。不要在写下候选的那场对话里解，题面回到那场对话，密封就失效。打开冻结包，对每条 `split` 为 `val` 的题：
+
+```bash
+uv run evolver bench prompt <task-id> --pack "$EVOLVER_HOME/anchor/bench/charter-pack.tasks.json"
+```
+
+按打印出的提示词，把交付物写进包旁边的 `sandboxes/r1/<task-id>/` 和 `sandboxes/r2/<task-id>/`。两遍都要有。
+
+3. 测量基线。
+
+```bash
+uv run evolver bench baseline
+```
+
+沙箱不全会退出，并列出还缺的题。成功之后回到宿主对话，再说一次要开始进化。宿主会重新 `swarm_boot`，这时才进入循环。
+
+不想先做这三步，可以在 MCP 配置的 `env` 里设 `"EVOLVER_SWARM_GATE_HANDOFF": "hotl"`：循环照常跑，人在环上用「停」和 veto 监督。门照常拒绝并回滚每个候选，不发布任何东西。连续降级反馈仍会自动暂停（`EVOLVER_SUPERVISION_AUTO_PAUSE_STREAK`，默认 3）。这个开关由人设，宿主不得自己改。
+
+`EVOLVER_SWARM_AUTO_HIJACK=1` 不改这段文字。它强制打开 HITL，并拒绝宿主转达放行。
 
 ## 运维手册（人在环上）
 

@@ -265,37 +265,53 @@ class TestResources:
 
 
 class TestInstructions:
-    def test_default_instructions_advertise_swarm(self) -> None:
-        server = build_server()
-        assert "EVOLVER SWARM" in (server.instructions or "")
-
-    def test_auto_hijack_instructions_take_over(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        monkeypatch.setattr("evolver.config.SWARM_AUTO_HIJACK", True)
-        server = build_server()
-        instructions = server.instructions or ""
-        assert "TAKEOVER ACTIVE" in instructions
-        assert "EVOLVER SWARM" in instructions
-
-    def test_instructions_are_self_sufficient_bootstrap(self) -> None:
-        """Round-57: a prompt-less host gets the full capability map inline —
-        first action, loop order, and every tool family by name."""
+    def test_default_instructions_start_the_loop(self) -> None:
         server = build_server()
         text = server.instructions or ""
-        # Imperative first action pointing at the full instrument.
-        assert "swarm_boot" in text and "FIRST ACTION" in text
-        # The auto-evolution loop order is stated inline.
-        for needle in ("swarm_tick", "swarm_distill", "swarm_solidify", "swarm_feedback"):
-            assert needle in text, needle
-        # Every registered tool is mapped — derived from list_tools() so a
-        # newly added tool cannot silently miss the map.
-        import asyncio
+        assert "EVOLVER SWARM" in text
+        assert "already asks for something else" in text
+        assert "boot_once" in text
+        assert "停" in text
+        assert "await_human" in text
+        assert "await_supervisor_resume" in text
+        assert "swarm_supervise" in text
+        assert "继续" in text and "action resume" in text
+        assert "actual state" in text
+        assert "start the evolution loop now" not in text
+        assert "has taken you over" not in text
 
-        for tool in asyncio.run(server.list_tools()):
-            assert tool.name in text, tool.name
-        # Read-only resources advertised.
-        assert "evolver://" in text
-        # Steady-state guardrail semantics stated.
+    def test_auto_hijack_does_not_change_instructions(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        plain = build_server().instructions
+        monkeypatch.setattr("evolver.config.SWARM_AUTO_HIJACK", True)
+        hijacked = build_server().instructions or ""
+        assert hijacked == plain
+        assert "TAKEOVER ACTIVE" not in hijacked
+        assert "takes priority" not in hijacked
+
+    def test_instructions_are_a_short_loop(self) -> None:
+        """The standing text is the loop, not a map of every tool.
+
+        A tool map in the connect-time instruction gets followed worse than
+        one imperative. The full protocol stays in ``swarm_boot``.
+        """
+        server = build_server()
+        text = server.instructions or ""
+        assert len(text) < 1200
+        assert "swarm_boot" in text
+        assert "THIS message" in text
         assert "never retry" in text
+        for needle in (
+            "swarm_tick",
+            "swarm_distill",
+            "swarm_hypothesis",
+            "swarm_solidify",
+            "swarm_feedback",
+        ):
+            assert needle in text, needle
+        for absent in ("swarm_workflow_run", "episode_get", "tool_asset_search", "FIRST ACTION"):
+            assert absent not in text, absent
 
 
 class TestCallToolInProcess:

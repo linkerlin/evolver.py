@@ -236,9 +236,17 @@ atp/                Agent 交易协议市场
 ### 蜂群进化（MCP 宿主接管）
 
 「半开环执行断层」之解：引擎不自建 LLM API 调度，宿主 Agent（经 `evolver mcp`，
-stdio）即执行器。注入双通道：MCP prompt `evolver_swarm`（正式 instrument）与
-server instructions + `swarm_boot` 工具（nanoclaw.go 模式，覆盖不渲染 prompt
-之宿主；`EVOLVER_SWARM_AUTO_HIJACK=1` 时 instructions 直接注入接管指令）。
+stdio）即执行器。常驻 instructions：本条消息已有别的任务就做那件事，否则
+`swarm_boot`，再用一句话说明实际状态（循环开始、需要首次准备，或已暂停）。
+用户说「停」时宿主调用 `swarm_supervise` action=pause，说「继续」时转达
+resume，不必让用户敲命令。
+全文协议在 MCP prompt `evolver_swarm` 与 `swarm_boot` 的返回里（覆盖不渲染
+prompt 的宿主）。`boot_once` 只登记会话（`swarm_hook_event` session_start），
+不在开机时同步技能。冻结包未装或没有基线时 boot 与 `swarm_tick` 都返回
+`next_action=await_human`，不跑周期；人设 `EVOLVER_SWARM_GATE_HANDOFF=hotl` 时照常 tick。
+已暂停时 `next_action=await_supervisor_resume`。有待固化 run 时仍先固化，
+此时 `boot_once` 为空。首次准备见 `examples/swarm-quickstart/README.md`。
+`EVOLVER_SWARM_AUTO_HIJACK=1` 不改这段文字，只强制打开 HITL 并拒绝宿主转达放行。
 
 ```
 swarm_tick → 宿主执行 GEP 变异提示词 → swarm_distill → swarm_solidify
@@ -271,11 +279,13 @@ Hooks 双轨（v1.102.0）：宿主支持文件 hooks 者，经 `evolver setup-h
 安装——session 边界信号自动采集进记忆；MCP-only 宿主改用进程内桥
 `swarm_hook_event`（session_start/session_end/signal_detect，payload.content
 过共享信号检测器，检出标签直入 `pending_signals`；事件记 `hook_events.jsonl`）。
-instrument prompt 第三章（Hooks 集成）指导宿主择轨。
+instrument 的「不要做」一节指出两条择轨：`swarm_hooks` 或 `swarm_hook_event`。
 
 要紧者：stdio MCP 下 stdout 为 JSON-RPC 通道，`swarm.py` 全量捕获引擎
-`print()`；`swarm_tick` 遇 user-lock 冲突或 preflight abort 时优雅返回
-`stop_and_report`，不得视为故障重试。
+`print()`。实例锁被占时 `swarm_tick`、`swarm_propose`、`swarm_solidify`
+都返回 `error=instance_lock_held`、`next_action=stop_and_report`；
+`swarm_tick` 遇 preflight abort 同样返回 `stop_and_report`。这些返回是
+稳态信号，不得视为故障重试。
 
 ### GEP 资源存储
 
@@ -401,7 +411,8 @@ instrument prompt 第三章（Hooks 集成）指导宿主择轨。
 | `EVOLVER_OUTCOME_REPORT` | `off` | 结果上报模式——向 Hub 上报复用结果以获归因 (P4-a Slice B) |
 | `EVOLVER_FORCE_UPDATE_RETRY_COOLDOWN_MS` | `300000` (5min) | Hub 推送强制更新的最小间隔冷却 |
 | `A2A_NODE_SECRET_VERSION` | （无） | 节点密钥版本号——Hub 轮换密钥时递增，客户端据此检测陈旧 secret |
-| `EVOLVER_SWARM_AUTO_HIJACK` | `false` | 置 `1` 时 MCP instructions 直接注入接管指令（无人值守蜂群模式） |
+| `EVOLVER_SWARM_AUTO_HIJACK` | `false` | 置 `1` 时强制打开 HITL，并拒绝宿主转达 approve/resume/unveto。不改常驻 instructions |
+| `EVOLVER_SWARM_GATE_HANDOFF` | `human` | 冻结包或基线缺失时：`human` 让 boot/tick 返回 `await_human`；`hotl` 照常 tick（门照常拒绝回滚、不发布，绊线照常自动暂停）。其他值按 `human` |
 | `EVOLVER_SWARM_TICK_LOG_MAX_CHARS` | `8000` | `swarm_tick` 返回之 `engine_log` 尾部截断预算（dispatch prompt 不截断） |
 | `EVOLVER_FEEDBACK_DEGRADED_THRESHOLD` | `0.5` | 蜂群反馈降级阈值——低于此分或 `success=false` 注入 repair-bias 信号 |
 | `EVOLVER_HITL_MODE` | `off` | HITL 审批门——`on`/`true`/`1`/`yes` 打开；`off`/`false`/`0`/`no` 关闭；**未知值（如 `disabled`）fail-closed 为 on**；`AUTO_HIJACK=1` 强制 on |

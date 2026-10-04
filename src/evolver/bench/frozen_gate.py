@@ -648,15 +648,21 @@ def gate_snapshot() -> dict[str, Any]:
     """Cheap state for ``swarm_status`` / the instrument — no grading."""
     loaded = load_frozen_pack()
     if loaded is None:
-        return {"armed": False, "pack": str(frozen_pack_path())}
+        return {"armed": False, "pack": str(frozen_pack_path()), "train_ids": []}
     tasks, digest = loaded
     val_tasks = sum(1 for t in tasks if t.get("split") == GATE_SPLIT)
+    # Train ids only. Val ids stay out of this snapshot: it is pasted into the
+    # candidate-writing host's instrument, and the val reserve is sealed.
+    train_ids = sorted(
+        str(task["id"]) for task in tasks if task.get("split") == "train" and task.get("id")
+    )
     baseline = load_baseline()
     return {
         "armed": True,
         "pack": str(frozen_pack_path()),
         "digest": digest,
         "val_tasks": val_tasks,
+        "train_ids": train_ids,
         "baseline": (float(baseline["score"]) if baseline is not None else None),
         "baseline_digest": (str(baseline.get("pack_digest")) if baseline else None),
     }

@@ -49,7 +49,7 @@ uv run evolver mcp    # stdio；宿主配置见下方「MCP 蜂群进化」章�
 
 ## MCP 蜂群进化（v1.98+ 旗舰能力）
 
-引擎不自建 LLM 调度——宿主 Agent（ZCode / Claude Code / Cursor 等）经 `evolver mcp`（stdio）连接后，由 `evolver_swarm` prompt / `swarm_boot` 工具注入接管协议，**宿主自身成为 GEP 变异提示词的执行器**：
+引擎不自建 LLM 调度——宿主 Agent（ZCode / Claude Code / Cursor 等）经 `evolver mcp`（stdio）连接后，由 `evolver_swarm` prompt / `swarm_boot` 工具注入接管协议，**宿主自身成为 GEP 变异提示词的执行器**。冻结包或 Parent 基线还没有时循环不会开始；首次准备（`evolver bench freeze`、在另一上下文解 val、`evolver bench baseline`）见 [examples/swarm-quickstart/README.md](examples/swarm-quickstart/README.md)。
 
 ```
 swarm_tick → 宿主执行 GEP 变异提示词 → swarm_distill → swarm_solidify
@@ -200,7 +200,8 @@ memory/                 # 运行时数据（graph JSONL、reviews JSONL）
 | `EVOLVER_GATE_SOAK_MIN_RUNS` | `20` | 验收门转正判定之最小 gated 样本数 |
 | `EVOLVER_APPLIED_GENE_COOLDOWN_EVENTS` | `5` | 已应用基因冷却窗口——近期成功固化者选择打分惩罚 |
 | `EVOLVER_APPLIED_GENE_COOLDOWN_PENALTY` | `0.25` | 冷却惩罚乘数（非禁选：唯一匹配仍可选） |
-| `EVOLVER_SWARM_AUTO_HIJACK` | `false` | 置 `1` 时 MCP instructions 直接注入接管指令 |
+| `EVOLVER_SWARM_AUTO_HIJACK` | `false` | 置 `1` 时强制打开 HITL，并拒绝宿主转达放行。不改常驻 instructions |
+| `EVOLVER_SWARM_GATE_HANDOFF` | `human` | 冻结包或基线缺失时：`human` 让 boot/tick 返回 `await_human`；`hotl` 照常 tick（门照常拒绝回滚，不发布） |
 | `EVOLVER_FF_ENABLE_RECALL_INJECT` | `true` | 向 GEP 提示词注入已验证回忆 |
 | `EVOLVER_FF_ENABLE_REFLECTION` | `true` | 固化后调优 personality |
 | `EVOLVER_FF_ENABLE_EXPLORE` | `false` | AST 代码库探索信号 |

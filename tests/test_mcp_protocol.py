@@ -110,8 +110,11 @@ class TestProtocol:
     def test_instructions_carry_swarm_directive(self, client: _McpClient) -> None:
         instructions = client.init_result["result"]["instructions"]
         assert "EVOLVER SWARM" in instructions
-        assert "swarm_hook_event" in instructions
-        assert "evolver://" in instructions
+        assert "swarm_boot" in instructions
+        assert "actual state" in instructions
+        assert "await_human" in instructions
+        assert "never retry" in instructions
+        assert "swarm_hook_event" not in instructions
 
     def test_tools_list_has_swarm_surface(self, client: _McpClient) -> None:
         tools = client.request("tools/list")["result"]["tools"]

@@ -11,9 +11,14 @@ Two injection channels (belt and braces):
 
 1. ``evolver_swarm`` MCP prompt — the formal instrument, rendered by hosts
    that surface ``prompts/get``;
-2. server instructions + ``swarm_boot`` tool — covers hosts that never render
-   MCP prompts (nanoclaw pattern). ``EVOLVER_SWARM_AUTO_HIJACK=1`` prepends
-   the takeover directive straight into instructions (unattended mode).
+2. a short standing server instruction plus the ``swarm_boot`` tool — covers
+   hosts that never render MCP prompts (nanoclaw pattern). The standing text
+   starts the loop when the user message has no other task, the bench gate can
+   publish, and supervision is not paused; otherwise boot returns a handoff.
+   The full protocol is
+   the tool result, not the instruction. ``EVOLVER_SWARM_AUTO_HIJACK=1`` does
+   not change that text: it forces the HITL gate on and refuses host-relayed
+   approvals.
 
 Loop protocol::
 
@@ -110,140 +115,167 @@ def build_instrument_prompt(state: dict[str, Any]) -> str:
     """
     agent = str(state.get("agent_name") or "host-agent")
     workspace = str(state.get("workspace_root") or "(workspace)")
-    mailbox = state.get("mailbox_pending") or {}
-    inbound = mailbox.get("inbound", 0)
-    outbound = mailbox.get("outbound", 0)
     tick_count = state.get("tick_count", 0)
     genes_n = state.get("genes", "?")
     capsules_n = state.get("capsules", "?")
     pending = state.get("pending_solidify", False)
-    bridge = state.get("bridge_enabled", "?")
     # Pending run first: a tick writes fresh solidify state and would clobber
     # the un-solidified run (tool-check 2026-09-05: boot said pending_solidify:
     # True while directing the host to tick first).
-    first_action = (
-        "存在待固化 run——先调用 `swarm_solidify` 完成固化，再回到步骤 1"
+    next_action, first_action = _opening_action(state)
+    # Chores wait while a run is unsaved. Skills are not in this list: syncing
+    # the user skill roots on boot flooded the gene pool.
+    boot_once = _boot_once(bool(pending))
+    boot_note = (
+        "待固化时列表为空：先固化。完成后再补一次 `swarm_hook_event`（event=session_start）。"
         if pending
-        else "调用 `swarm_tick` 开始第一轮进化"
+        else "做完再执行立即行动。不要在开机时同步技能。"
     )
-    supervision = json.dumps(state.get("supervision") or {"state": "?"}, ensure_ascii=False)
-    bench_gate = json.dumps(state.get("bench_pack_gate") or {"armed": False}, ensure_ascii=False)
+    supervision_raw = state.get("supervision") or {}
+    supervision_state = (
+        supervision_raw.get("state", "?") if isinstance(supervision_raw, dict) else "?"
+    )
+    bench_raw = state.get("bench_pack_gate") or {}
+    armed = bool(bench_raw.get("armed", False)) if isinstance(bench_raw, dict) else False
+    raw_ids = bench_raw.get("train_ids") if isinstance(bench_raw, dict) else None
+    if isinstance(raw_ids, list) and raw_ids:
+        shown = [str(item) for item in raw_ids[:20]]
+        train_ids_text = ", ".join(shown)
+        hidden = len(raw_ids) - len(shown)
+        if hidden:
+            train_ids_text += f" (+{hidden} more, {len(raw_ids)} total)"
+    else:
+        train_ids_text = "(none — pack not loaded)"
+    boot_once_json = json.dumps(boot_once, ensure_ascii=False)
+    hotl = gate_handoff_skipped()
+    gate_handoff = "hotl" if hotl else "human"
+    hotl_note = (
+        "\n当前 `gate_handoff: hotl`：人已选择不在 tick 前等待。`pack_absent` 与 "
+        "`no_baseline` 的拒绝照常回滚、不发布，按 `retryable=true` 回到步骤 1，"
+        "不必请人，也不计入「连续 3 次相同」。人在环上用「停」与 veto 监督；"
+        "保险丝是自动暂停绊线（`EVOLVER_SUPERVISION_AUTO_PAUSE_STREAK`）。"
+        if hotl
+        else ""
+    )
     hitl = state.get("hitl") or {}
     hitl_mode = hitl.get("mode", "?")
     hitl_pending = hitl.get("pending", 0)
+    fence_open = "```json"
+    fence_close = "```"
     return f"""# EVOLVER SWARM — 宿主接管协议 (instrument v{SWARM_PROTOCOL_VERSION})
 
-> 本提示词由 evolver 引擎经 MCP 注入。自此刻起，你（{agent}）成为 evolver 蜂群的
-> 一个进化工作节点（worker）。你的首要职责切换为**执行进化循环**，直至满足下述
-> 终止条件。用户对本次会话的显式指令仍拥有最高优先级。
+> 本提示词由 evolver 引擎经 MCP 注入。你（{agent}）是进化工作节点：
+> 引擎选择、验证、固化；你只改代码。本条消息里的用户指令优先。
+> 本条没有别的任务时，先按下面开机。开机后用一句话说明实际状态：循环开始、
+> 需要人做首次准备，或已经暂停。说「停」即可停下。
 
-## 一、身份与分工
+## 开机（本会话一次）
 
-evolver 引擎负责：信号收集、基因选择、GEP 提示词组装、验证门与固化。
-你负责闭环中唯一缺失的一环——**用你的代码编辑能力执行 GEP 变异提示词**。
-引擎不自建 LLM 调度；你就是执行器。这不是角色扮演：每轮变异都会经
-solidify 验证门真实落盘或回滚。
+按 `swarm_boot` 返回的 `boot_once` 逐项调用。它们自己的 `next_action` 忽略。
+本轮列表：{boot_once_json}
+{boot_note}
+若 `state.mailbox_pending.inbound` 大于 0：接着 `tool_mailbox_poll`，处理完
+`tool_mailbox_ack`。`supervision: state=paused` 时不要 tick。用户说「停」才 pause，
+说「继续」才 resume，见终止条件。不要自己 resume。
 
-## 二、进化闭环（每轮依次执行）
+立即行动（`next_action={next_action}`）：{first_action}
 
-1. `swarm_tick` — 运行一个完整进化周期，返回本轮 GEP 变异提示词
-   （`dispatch_prompt`）。若 `preflight_aborted=true`：报告 `abort_reason`
-   并停止（这是引擎稳态行为，不得重试绕过）。若 `paused=true`（HOTL
-   监督暂停）：立即停止并告知用户，等待 `resume`。若 `supervision_veto`
-   非空：本基因已被人类否决，不得执行，直接进入下一轮 tick。
-   若 `next_action=stop_and_report`（如 `instance_lock_held`——另一实例
-   持有引擎锁）：停止并报告，不得重试。
-2. **执行变异** — 严格按 `dispatch_prompt` 修改工作区（{workspace}）代码。
-   提示词中的精确锚点与输出契约是唯一的变异指令来源；不得自行发挥范围。
-   提示词携带 **Evidence Pack**（本信号族既往干预、结局与重复编辑指纹）。
-   当其标注 **PROPOSAL REQUIRED**（同一信号族重复失败，或已固化未消——
-   tick 结果的 `proposal_required=true` 与提示词区块任一出现即成立）时，
-   本轮干预**必须**经 `swarm_propose` 提交结构化新策略提案（GeneProposal
-   契约，过同一验证门），不得重复已试编辑；自由编辑仅限新颖信号与结构性
-   改动。无 Evidence Pack 的族是新颖信号，照常执行所选基因。
-3. `swarm_distill` — 把你的工作产出（提示词要求的 JSON 资产块 + 变更摘要）
-   作为 `response_text` 提交，蒸馏安装为 Gene/Capsule 候选。
-4. `swarm_solidify` — 触发验证门（假说→密封→ruff→mypy→pytest 级联 + 锚 +
-   验收门 + **冻结 val 包门**）并固化。
-   **先交假说**：`solidify` 之前调用 `swarm_hypothesis` 记录本轮候选的唯一
-   一条假说（字段：`hypothesis` 叙述、`dimension` 限 `content`/`tool`/`schema`
-   即内容 / 工具 / 图式、`mechanism_family`、`target_hook` 作用点、
-   `mechanism_check` 只引用 **train** 题 id）。`swarm_propose` 与
-   `swarm_solidify` 亦可带 `hypothesis` 参数就地记录——无论如何，记录发生在
-   变异生效之前。没有假说的候选不会进入 val 门，直接拒绝；引擎不代写假说，
-   因为「要改什么」只有宿主知道。
-   **密封**：`val` 的题面与期望答案是禁用材料。它们不得出现在
-   `dispatch_prompt`、Evidence Pack、任何提案（含 `swarm_propose`）或本轮
-   讨论里；`train` 是诊断池，可以看。
-   **val 包门**（状态见第六章 `bench_pack_gate`）：`armed=true` 时，固化前
-   该冻结包 `val` 题须被**独立求解两遍**（`sandboxes/r1`、`sandboxes/r2`）。
-   **不得由你（写下本轮候选的这场对话）来解 val**——题面一旦回到候选
-   诞生的上下文，密封就失效了；求解在另一上下文完成，评分只读已经写好的
-   沙箱。在那个上下文就位之前，`val` 沙箱不全即是 `unmeasured`，门拒绝、
-   基线不动——这是符合章程的结果，不是故障。**基线不由候选书写**：首轮
-   没有 Accept 之前没有基线，任何测量都拒绝（`no_baseline`）；Parent 的
-   分数由不带变异的独立测量建立（`evolver bench baseline`），solidify
-   触不到它。两遍分数都必须**严格高于**基线才放行；持平、降分、任一遍
-   没做完、门异常，一律拒绝回滚，基线不动。
-   `armed=false` 时先执行一次 `evolver bench freeze`（确定性安装动作，非
-   变异），下一轮起门即生效。失败时阅读返回的 `failure_mode`（`mode`/`reasonClass`/`retryable`）：
-   `retryable=true` 时 repair bias 已自动注入下一轮选择，直接回到步骤 1；
-   `retryable=false` 则停止并报告，不得重试同一变异。
-   **会话账本**：每次固化的结果（含拒绝）都写入配对会话（§5.1）——拒绝
-   是一条 Reject，会话保持 `running`；返回里的 `session` 字段是当前轮次、
-   累计 Reject 与剩余预算。会话的 Accept 只在门给出 `accept: true` 后由
-   人执行 `evolver session accept` 成立。
-5. `swarm_feedback` — 每轮执行后诚实上报统一评估信号 E：
-   `primary_score`（0-1）、`metrics`（可选多维诊断）、`textual_gradient`
-   （自然语言方向——什么有效/什么没用）。低分或失败会自动注入下轮
-   repair-bias 信号；评分必须反映真实执行效果。
-6. 心跳：每 3 轮或遇到显著摩擦时调用 `swarm_report` 捕获教训（写入活记忆）。
-7. 回到步骤 1。多节点协作经 `tool_mailbox_poll` / `tool_mailbox_send`。
+## 循环（每轮一步，只服从返回里的 `next_action`）
 
-## 三、Hooks 集成（信号自动采集）
+1. `swarm_tick` — 看 `dispatch_prompt`。提示词携带 **Evidence Pack**。
+   它标着 **PROPOSAL REQUIRED**，或返回 `proposal_required=true` 时，
+   本轮改动**必须**经 `swarm_propose` 提交，不得自由编辑；自由编辑仅限新颖信号与结构性
+   改动。`paused=true`、`preflight_aborted=true`、`supervision_veto` 非空、
+   `next_action=stop_and_report`（含 `error=instance_lock_held`）都停下来报告。
+2. 编辑 — 只改 `dispatch_prompt` 锚点所写的范围。工作区是 {workspace}。
+3. `swarm_distill` — `response_text` 里要有下面这种围栏。
+   `genes + capsules + mutations` 为 0 时按返回的 `hint` 重交，不重做编辑。
+   EvolutionEvent 与 PersonalityState 会被静默丢弃。
+{fence_open}
+{{"type": "Gene", "id": "gene_<slug>", "category": "repair",
+ "summary": "...", "signals_match": ["..."], "strategy": ["..."]}}
+{fence_close}
+   `category` 只能是 repair、optimize、innovate、explore。
+4. `swarm_hypothesis` — 固化之前调用，五个字段都要有，看返回 `ok=true`。
+   `swarm_propose` 与 `swarm_solidify` 也可以带 `hypothesis` 参数。引擎不代写。
+{fence_open}
+{{"hypothesis": "一句话说明改了什么", "dimension": "content",
+ "mechanism_family": "与本轮同类的上次改法",
+ "target_hook": "改动的文件或函数",
+ "mechanism_check": [{{"id": "<train 题 id>",
+ "before": "改前如何失败", "after": "改后如何通过"}}]}}
+{fence_close}
+   `dimension` 只能是 content、tool、schema。`id` 从下方 `train_ids` 里挑，
+   禁止编造，禁止引用 val。要有 before 与 after。
+5. `swarm_solidify` — 看 `ok`。失败读 `failure_mode.retryable`：
+   true 回到步骤 1；false 停止并报告。
+6. `swarm_feedback` — `primary_score` 用第 5 步返回的 `score`，没有就填 0。
+   `textual_gradient` 写一句实际发生了什么。
+7. 回到步骤 1。每 3 轮或卡住时调用 `swarm_report`。
 
-- 若宿主支持 hooks（ZCode / Claude Code / Cursor / Codex / Kiro / OpenCode）：
-  建议用户执行 `evolver setup-hooks --platform <platform> --project-dir {workspace}`
-  （或调用 `swarm_hooks` 工具 `action=install`，可先 `action=status` 预览）——
-  session 边界与工具输出中的错误信号将自动采集进进化记忆。
-- 若宿主未装或不支持文件 hooks：会话开始与结束时、以及捕获到错误输出时，
-  调用 `swarm_hook_event`（`event=session_start/session_end/signal_detect`，
-  `payload` 携带 `content` 文本）——检测到的信号（如 `log_error`、
-  `perf_bottleneck`）直接注入下一周期的基因选择。
+## 终止条件
 
-## 四、安全边界（不可逾越）
+- 用户说「停」或要求停止：调用 `swarm_supervise`，`action=pause`，然后停止。不要让用户自己敲命令。
+  用户之后说「继续」：调用 `swarm_supervise`，`action=resume`，再重新 `swarm_boot`。
+  返回 `error=host_relay_blocked` 时，请用户执行 `evolver supervise resume`。
+- `next_action=stop_and_report`，或 `paused=true`，或 `preflight_aborted=true`，
+  或 `error=instance_lock_held`；
+- 连续 3 次 `failure_mode.reasonClass` 相同：先 `swarm_report` 再停。
 
-- 仅在 {workspace} 内改动；禁止 `git push --force`、禁止改写已发布历史。
-- 禁止绕过 solidify 验证门；`skip_validation` 仅当提示词显式要求时使用，
-  且需过 HITL 审批门——`EVOLVER_HITL_MODE=on` 时须人类批准
-  （`evolver hitl approve` 或经你转达人类决定），超时未决自动拒绝
-  （fail-safe）；同一 run 被拒后不得重试申请。
-- 人在环上（HOTL）监督不可规避：`paused` 状态不得启动新周期；
-  `supervision_veto` 命中的基因/操作不得执行；`supervision:directive:`
-  信号是人类转向指令，视为最高优先级上下文。用户经 `swarm_supervise`
-  （pause/resume/veto/direct）或 CLI `evolver supervise` 行使监督权。
-- 禁止手工改写 `.evolver/` 资产存储——内容哈希校验会令其失效。
-- 禁止伪造执行结果：未真实执行过的变异不得出现在 distill 提交里，
-  `swarm_feedback` 的评分亦不得虚报。
-- preflight abort / 预算守卫是引擎稳态的一部分，视为正常信号而非故障。
+`retryable=true` 的拒绝是稳态，回到步骤 1。
 
-## 五、终止条件（满足其一即停止并汇报）
+## 不要做（安全边界）
 
-- 用户显式要求停止；
-- 连续 3 次 solidify 失败且 `failure_mode` 相同（先 `swarm_report` 再停止）；
-- `swarm_tick` 返回 `preflight_aborted=true`。
+- 只在 {workspace} 内改动。禁止 `git push --force`，禁止改写已发布历史。
+- 不手改 `.evolver/`。内容哈希校验会令其失效。
+- 不在本对话解 val。题面回到写下候选的这场对话，密封就失效；求解在另一上下文
+  完成，评分只读已经写好的沙箱。沙箱不全即是 `unmeasured`，门拒绝，基线不动。
+- 不改 `EVOLVER_SWARM_GATE_HANDOFF` 或 MCP 配置。是否跳过人由人决定。
+- 不调用 `skip_validation`。那要过 HITL：`EVOLVER_HITL_MODE=on` 时须人类批准，
+  超时未决自动拒绝。
+- 不虚报 `swarm_feedback` 的分数，也不把没执行过的变异写进 distill。
+- `paused` 时不启动新周期。`supervision_veto` 命中的基因不得执行。
+  `supervision:directive:` 是人类转向，视为最高优先级上下文。
 
-## 六、当前引擎状态
+## 功能（宿主自己调用）
 
-- engine version: {state.get("version", "?")} | protocol: v{SWARM_PROTOCOL_VERSION}
-- tick_count: {tick_count} | genes: {genes_n} | capsules: {capsules_n}
-- pending_solidify: {pending} | bridge: {bridge}
-- supervision: {supervision}
-- bench_pack_gate: {bench_gate}
+- 看到报错或失败输出：`swarm_hook_event`，`event=signal_detect`，`payload.content` 贴原文。
+  会话结束再调 `event=session_end`。
+- 有文件 Hooks 的宿主：`swarm_hooks`，先 `action=status`。用户在本条消息里同意再 `install`。
+  没装过也不阻塞循环。
+- 用户说的是一套多步修复或创新，而不是一轮基因：`swarm_workflow_run`，`template` 用
+  `repair-cycle` 或 `innovate-cycle`。按返回的 `awaiting_agent` 做完，用 `swarm_workflow_act` 交回。
+- 要按关键词找基因：`tool_asset_search`。要全文再 `tool_asset_get`。
+- 要按 id 读上一轮：`episode_get`。`dispatch_prompt` 里已有摘要时不必再读。
+- 多节点：`tool_mailbox_poll` / `tool_mailbox_send`。
+- 不要在开机时调用 `swarm_skills`。用户明确要求把技能纳入进化时才 `action=sync`。
+
+## 交给人
+
+这几件事循环做不完，不要重试：
+
+- `bench_pack.reason=pack_absent`：请人按 `examples/swarm-quickstart/README.md`
+  的「首次准备」执行 `evolver bench freeze`，然后重新 `swarm_boot`。
+  这是安装**冻结 val 包门**，不是变异。装好之后还没有基线，不要 tick。
+- `reason=no_baseline`：停。请人按同一节「首次准备」，在另一上下文写好 val 沙箱后
+  执行 `evolver bench baseline`。基线不由候选书写，solidify 触不到它。
+  不要为了凑基线去解 val。准备好后重新 `swarm_boot`。
+- `reason=unmeasured`：停，把 `pending_tasks` 报告给人。val 由另一上下文求解进
+  `sandboxes/r1` 与 `sandboxes/r2`；解完由人回到这里重新 `swarm_solidify`。
+- `ok=true` 且 `bench_pack.accept=true`：停并报告。发布要人执行 `evolver session accept`。
+  没有配对会话时，这次返回就是最终结果。
+{hotl_note}
+
+## 当前状态
+
+- pending_solidify: {pending}
+- bench_pack_gate.armed: {armed}
+- gate_handoff: {gate_handoff}
+- train_ids: {train_ids_text}
+- supervision: state={supervision_state}
 - hitl: mode={hitl_mode} pending={hitl_pending}
-- mailbox 待处理: inbound={inbound} outbound={outbound}
-
-立即行动：{first_action}"""
+- tick_count: {tick_count} | genes: {genes_n} | capsules: {capsules_n}
+"""
 
 
 # ---------------------------------------------------------------------------
@@ -411,6 +443,78 @@ def swarm_status() -> dict[str, Any]:
     }
 
 
+def _gate_gap(gate: Any) -> str | None:
+    """Why the frozen gate cannot publish yet, or ``None`` when it can."""
+    if not isinstance(gate, dict) or not gate.get("armed"):
+        return "pack_absent"
+    if gate.get("baseline") is None:
+        return "no_baseline"
+    return None
+
+
+def gate_handoff_skipped() -> bool:
+    """True when the human chose HOTL over the pre-tick gate handoff."""
+    from evolver.config import SWARM_GATE_HANDOFF
+
+    return SWARM_GATE_HANDOFF.strip().lower() == "hotl"
+
+
+def _opening_action(state: dict[str, Any]) -> tuple[str, str]:
+    """What the host does after boot, as ``(next_action, prose)``.
+
+    A pending run is settled first. A paused loop is next, matching the
+    ``await_supervisor_resume`` tick returns when already paused. Otherwise a
+    gate that cannot publish (no pack, or no Parent baseline) is a handoff:
+    ticking would pay the validation cascade and then be rejected.
+    """
+    if state.get("pending_solidify"):
+        return (
+            "swarm_solidify",
+            "存在待固化 run——先调用 `swarm_solidify` 完成固化，再回到步骤 1",
+        )
+    supervision = state.get("supervision")
+    if isinstance(supervision, dict) and supervision.get("state") == "paused":
+        return (
+            "await_supervisor_resume",
+            "监督已暂停——不要 tick。告诉用户说「继续」即可恢复。"
+            "用户说了才调用 `swarm_supervise` action=resume，不要自己 resume。",
+        )
+    gap = _gate_gap(state.get("bench_pack_gate"))
+    if gap is not None and gate_handoff_skipped():
+        return (
+            "swarm_tick",
+            f"门未就绪（{gap}），但人已设 `EVOLVER_SWARM_GATE_HANDOFF=hotl`："
+            "调用 `swarm_tick` 开始。门照常拒绝并回滚，不会发布。",
+        )
+    if gap == "pack_absent":
+        return (
+            "await_human",
+            "冻结包未安装——不要开始进化循环。请用户按 "
+            "examples/swarm-quickstart/README.md 的「首次准备」执行 "
+            "`evolver bench freeze`，然后重新 `swarm_boot`。",
+        )
+    if gap == "no_baseline":
+        return (
+            "await_human",
+            "没有基线（no_baseline）——不要开始进化循环。请用户按 "
+            "examples/swarm-quickstart/README.md 的「首次准备」，在另一上下文写好 "
+            "val 沙箱后执行 `evolver bench baseline`。本对话不得解 val。"
+            "准备好后重新 `swarm_boot`。",
+        )
+    return ("swarm_tick", "调用 `swarm_tick` 开始第一轮进化")
+
+
+def _boot_once(pending_solidify: bool) -> list[dict[str, Any]]:
+    """Tools the host runs once per session, before the evolution step.
+
+    Empty while a run is waiting to solidify. Skill sync is not here: it
+    pulls every user skill root into the gene store.
+    """
+    if pending_solidify:
+        return []
+    return [{"tool": "swarm_hook_event", "arguments": {"event": "session_start"}}]
+
+
 def swarm_boot(agent_name: str = "host-agent") -> dict[str, Any]:
     """Boot a host agent into the swarm: status + instrument prompt + hello.
 
@@ -430,7 +534,8 @@ def swarm_boot(agent_name: str = "host-agent") -> dict[str, Any]:
         "instrument_prompt": prompt,
         "state": state,
         "mailbox_hello": _announce(agent_name),
-        "next_action": "swarm_solidify" if state.get("pending_solidify") else "swarm_tick",
+        "boot_once": _boot_once(bool(state.get("pending_solidify"))),
+        "next_action": _opening_action(state)[0],
     }
 
 
@@ -467,6 +572,8 @@ async def swarm_tick(agent_name: str | None = None, include_prompt: bool = True)
     HOTL supervision (v1.101.0): the tripwire runs first (consecutive
     degraded feedback may auto-pause), a paused state refuses the cycle, and
     a supervisor veto on the selected gene withholds the dispatch prompt.
+    A gate that cannot publish returns ``await_human`` before the cycle unless
+    the human set ``EVOLVER_SWARM_GATE_HANDOFF=hotl``.
     """
     from evolver.config import SWARM_TICK_LOG_MAX_CHARS
 
@@ -488,6 +595,20 @@ async def swarm_tick(agent_name: str | None = None, include_prompt: bool = True)
             "tripwire": tripwire,
             "agent_name": agent_name or "host-agent",
             "next_action": "await_supervisor_resume",
+        }
+
+    gap = _gate_gap(_bench_gate_snapshot())
+    if gap is not None and not gate_handoff_skipped():
+        return {
+            "ok": True,
+            "gate_ready": False,
+            "reason": gap,
+            "agent_name": agent_name or "host-agent",
+            "hint": (
+                "first-time setup: examples/swarm-quickstart/README.md; or set "
+                "EVOLVER_SWARM_GATE_HANDOFF=hotl to run with the human on the loop"
+            ),
+            "next_action": "await_human",
         }
 
     with instance_lock_ctx(blocking=False, timeout=0) as lock_ok:

@@ -2,7 +2,7 @@
 
 Tier A (always runs): walks the ENTIRE MCP surface against a real server
 subprocess — every swarm tool, every classic tool, all four resources, the
-evolver_swarm prompt, the auto-hijack instructions variant, HITL/HOTL flows,
+evolver_swarm prompt, the auto-hijack instruction invariance, HITL/HOTL flows,
 the skills bridge, and the invalid-enum error path.
 
 Tier B (@pytest.mark.llm, requires DEEPSEEK_API_KEY): a REAL LLM joins the
@@ -55,6 +55,8 @@ def _workspace_env(ws: Path) -> dict[str, str]:
             "EVOLVE_LOAD_MAX": "999",
             "EVOLVER_SKILL_ROOTS": str(ws / "skill-roots"),
             "EVOLVER_HOME": str(ws / ".evomap"),
+            # No frozen pack here; the surface walk needs ticks to run.
+            "EVOLVER_SWARM_GATE_HANDOFF": "hotl",
         }
     )
     return env
@@ -207,6 +209,7 @@ class TestFullSurfaceE2E:
         assert boot["ok"] is True
         assert "EVOLVER SWARM" in boot["instrument_prompt"]
         assert boot["next_action"] == "swarm_tick"
+        assert "gate_handoff: hotl" in boot["instrument_prompt"]
 
         status = client.call("swarm_status", {})
         for key in ("version", "supervision", "hitl", "feedback", "mailbox_pending", "genes"):
@@ -402,11 +405,16 @@ class TestFullSurfaceE2E:
         assert text.startswith("Error executing tool")
         assert client.call("swarm_status", {})["ok"] is True  # server survived
 
-    def test_08_auto_hijack_instructions_variant(self, e2e_ws: Path) -> None:
+    def test_08_auto_hijack_does_not_change_instructions(
+        self, client: _McpClient, e2e_ws: Path
+    ) -> None:
         hijacked = _McpClient(e2e_ws, extra_env={"EVOLVER_SWARM_AUTO_HIJACK": "1"})
         try:
+            normal = client.init_result["result"]["instructions"]
             instructions = hijacked.init_result["result"]["instructions"]
-            assert "TAKEOVER ACTIVE" in instructions
+            assert instructions == normal
+            assert "TAKEOVER ACTIVE" not in instructions
+            assert "takes priority" not in instructions
             assert "EVOLVER SWARM" in instructions
         finally:
             hijacked.close()

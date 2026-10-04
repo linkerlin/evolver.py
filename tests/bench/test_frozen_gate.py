@@ -84,6 +84,7 @@ class TestFreeze:
         assert verdict["reason"] == "pack_absent"
         assert verdict["accept"] is False
         assert frozen_gate.gate_snapshot()["armed"] is False
+        assert frozen_gate.gate_snapshot()["train_ids"] == []
 
     def test_freeze_writes_builtin_pack(self, gate_env: Path) -> None:
         report = frozen_gate.freeze_charter_pack()
@@ -460,6 +461,9 @@ class TestSnapshot:
         assert snap["armed"] is True
         assert snap["val_tasks"] == 5
         assert snap["baseline"] is None
+        val_ids = {t["id"] for t in build_pack() if t["split"] == "val"}
+        assert snap["train_ids"]
+        assert not set(snap["train_ids"]) & val_ids
         assert snap["digest"]
         _complete_val_tasks(build_pack())
         frozen_gate.establish_parent_baseline()

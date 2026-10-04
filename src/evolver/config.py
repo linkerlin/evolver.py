@@ -297,10 +297,17 @@ MEMORY_GRAPH_READ_LIMIT: Final = 1_000
 NARRATIVE_SUMMARY_MAX_CHARS: Final = 3_000
 
 # --- Swarm (MCP host-agent takeover; see evolver.swarm) ---
-# Auto-hijack: prepend the full takeover directive into the MCP server
-# instructions so unattended hosts boot straight into the swarm protocol.
-# Default false — plain instructions merely advertise `evolver_swarm`.
+# Auto-hijack does not change MCP instructions. The standing instruction
+# already starts the loop when the user message has no task. This flag only
+# forces the HITL gate on and blocks host-relayed approve/resume/unveto.
+# Default false.
 SWARM_AUTO_HIJACK: Final = env_bool("EVOLVER_SWARM_AUTO_HIJACK", False)
+# What swarm_tick does when the frozen pack or the Parent baseline is missing.
+# "human" (default; any other value too) returns await_human before the cycle.
+# "hotl" lets the loop run with the human on the loop: the gate still rejects
+# and rolls back every candidate, nothing publishes, and the supervision
+# tripwire still auto-pauses. Set by the human in the MCP config, not by a tool.
+SWARM_GATE_HANDOFF: Final = env_str("EVOLVER_SWARM_GATE_HANDOFF", "human")
 # swarm_tick returns the engine's stdout as `engine_log` (tail-truncated to
 # this budget); the dispatch prompt itself is returned untruncated.
 SWARM_TICK_LOG_MAX_CHARS: Final = 8_000
@@ -558,6 +565,7 @@ __all__ = [
     "SUPERVISION_AUTO_PAUSE_STREAK",
     "SWARM_AUTO_HIJACK",
     "SWARM_FEEDBACK_DEGRADED_THRESHOLD",
+    "SWARM_GATE_HANDOFF",
     "SWARM_TICK_LOG_MAX_CHARS",
     "TARGET_BYTES",
     "VALIDATION_TIMEOUT_MS",

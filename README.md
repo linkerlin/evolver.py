@@ -112,11 +112,11 @@ evolver 通过 stdio MCP server 把**宿主 Agent 变成 GEP 变异提示词的�
 }
 ```
 
-> 常用环境变量：`EVOLVER_SWARM_AUTO_HIJACK=1`（instructions 直接注入接管指令，无人值守模式）；`EVOLVER_HITL_MODE=on`（高危 solidify 需人类批准）；`EVOLVER_SUPERVISION_AUTO_PAUSE_STREAK`（连续降级反馈自动暂停，默认 3）。
+> 常用环境变量：`EVOLVER_SWARM_AUTO_HIJACK=1`（强制打开 HITL，并拒绝宿主转达放行；不改常驻 instructions）；`EVOLVER_HITL_MODE=on`（高危 solidify 需人类批准）；`EVOLVER_SUPERVISION_AUTO_PAUSE_STREAK`（连续降级反馈自动暂停，默认 3）。
 
 ### 接管与闭环
 
-- **注入双通道**：MCP prompt `evolver_swarm`（正式 instrument，宿主经 prompts 渲染）+ `swarm_boot` 工具（覆盖不渲染 prompt 的宿主）
+- **注入**：本条消息已有别的任务就做那件事；没有时 `swarm_boot`，再用一句话说明实际状态。`boot_once` 只登记会话，不在开机时同步技能。包未安装、没有基线，或循环已暂停时不 tick（人可设 `EVOLVER_SWARM_GATE_HANDOFF=hotl` 跳过前两项，门仍拒绝发布）。说「停」「继续」由宿主转达 `swarm_supervise` pause / resume。首次准备（冻结包、另一上下文解 val、建基线）见 [examples/swarm-quickstart/README.md](examples/swarm-quickstart/README.md)。全文协议在 `evolver_swarm` 与 `swarm_boot` 的返回里
 - **闭环协议**：`swarm_tick`（取 GEP 变异提示词）→ 宿主用自己的编辑工具执行变异 → `swarm_distill`（蒸馏 Gene/Capsule）→ `swarm_solidify`（验证门 + 固化）→ `swarm_feedback`（统一评估信号 E，低分自动注入 repair-bias）→ 循环
 - **安全双闸**：HITL 审批门（`evolver hitl list|approve|reject`，超时 fail-safe 拒绝）+ HOTL 监督（`evolver supervise status|pause|resume|direct|veto|unveto`，人在环上随时刹车/否决/转向）
 
@@ -301,7 +301,8 @@ memory/                 # Runtime data (graph JSONL, reviews JSONL)
 | `EVOLVER_APPLIED_GENE_COOLDOWN_PENALTY` | `0.25` | Cooldown score multiplier (not a ban — sole matches stay selectable) |
 | `EVOLVER_HUB_FETCH_RETRIES` | `1` | Hub fetch retry count (exponential backoff; living-memory f001) |
 | `EVOLVER_HUB_FETCH_RETRY_BACKOFF_MS` | `500` | Hub fetch retry backoff base |
-| `EVOLVER_SWARM_AUTO_HIJACK` | `false` | `1` injects takeover instructions directly into MCP server instructions |
+| `EVOLVER_SWARM_AUTO_HIJACK` | `false` | `1` forces HITL on and blocks host-relayed approvals. Standing instructions do not change |
+| `EVOLVER_SWARM_GATE_HANDOFF` | `human` | Frozen pack or baseline missing: `human` makes boot/tick return `await_human`; `hotl` ticks anyway (the gate still rejects and rolls back, nothing publishes) |
 | `EVOLVER_FF_ENABLE_RECALL_INJECT` | `true` | Inject verified recall hints into GEP prompt |
 | `EVOLVER_FF_ENABLE_REFLECTION` | `true` | Tune personality after solidify |
 | `EVOLVER_FF_ENABLE_EXPLORE` | `false` | AST-based codebase exploration signals |

@@ -28,6 +28,7 @@ from evolver.swarm import (
     swarm_report,
     swarm_solidify,
     swarm_status,
+    swarm_supervise,
     swarm_tick,
 )
 from tests.conftest import SYNTHETIC_TRAIN_ID, synth_hypothesis
@@ -47,6 +48,9 @@ def isolated_swarm_env(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
     monkeypatch.setenv("A2A_HUB_URL", "http://127.0.0.1:9")
     # Deterministic preflight: ambient host load must not abort cycles here.
     monkeypatch.setenv("EVOLVE_LOAD_MAX", "999")
+    # These tests drive the loop without a frozen pack; the default handoff
+    # would stop every tick at await_human. Handoff tests set "human" back.
+    monkeypatch.setattr("evolver.config.SWARM_GATE_HANDOFF", "hotl")
     yield tmp_path
 
 
@@ -107,8 +111,41 @@ class TestInstrumentPrompt:
         )
         assert "先调用 `swarm_solidify`" in pending
         assert "调用 `swarm_tick` 开始第一轮进化" not in pending
-        fresh = build_instrument_prompt({"agent_name": "a", "workspace_root": "/ws"})
-        assert "调用 `swarm_tick` 开始第一轮进化" in fresh
+        # No pack in the state: do not start a cycle the gate will reject.
+        unarmed = build_instrument_prompt({"agent_name": "a", "workspace_root": "/ws"})
+        assert "evolver bench freeze" in unarmed
+        assert "调用 `swarm_tick` 开始第一轮进化" not in unarmed
+        assert "next_action=await_human" in unarmed
+        ready = build_instrument_prompt(
+            {
+                "agent_name": "a",
+                "workspace_root": "/ws",
+                "bench_pack_gate": {"armed": True, "baseline": 1.0, "train_ids": ["train-a"]},
+            }
+        )
+        assert "调用 `swarm_tick` 开始第一轮进化" in ready
+        assert "train-a" in ready
+        paused = build_instrument_prompt(
+            {
+                "agent_name": "a",
+                "workspace_root": "/ws",
+                "supervision": {"state": "paused"},
+                "bench_pack_gate": {"armed": True, "baseline": 1.0, "train_ids": ["train-a"]},
+            }
+        )
+        assert "next_action=await_supervisor_resume" in paused
+        assert "调用 `swarm_tick` 开始第一轮进化" not in paused
+        pending_paused = build_instrument_prompt(
+            {
+                "agent_name": "a",
+                "workspace_root": "/ws",
+                "pending_solidify": True,
+                "supervision": {"state": "paused"},
+                "bench_pack_gate": {"armed": True, "baseline": 1.0},
+            }
+        )
+        assert "先调用 `swarm_solidify`" in pending_paused
+        assert "await_supervisor_resume" not in pending_paused
 
     def test_references_real_tool_names(self) -> None:
         prompt = build_instrument_prompt({"agent_name": "a", "workspace_root": "/ws"})
@@ -127,13 +164,20 @@ class TestInstrumentPrompt:
 
 
 class TestBootAndStatus:
-    def test_boot_returns_prompt_state_and_hello(self, isolated_swarm_env: Path) -> None:
+    def test_boot_returns_prompt_state_and_hello(
+        self, isolated_swarm_env: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setattr("evolver.config.SWARM_GATE_HANDOFF", "human")
         result = swarm_boot("zcode-1")
         assert result["ok"] is True
         assert result["agent_name"] == "zcode-1"
         assert "EVOLVER SWARM" in result["instrument_prompt"]
         assert result["state"]["version"] == __version__
-        assert result["next_action"] == "swarm_tick"
+        assert result["next_action"] == "await_human"
+        assert "evolver bench freeze" in result["instrument_prompt"]
+        assert result["boot_once"] == [
+            {"tool": "swarm_hook_event", "arguments": {"event": "session_start"}},
+        ]
 
         from evolver.proxy.mailbox.store import MailboxStore
 
@@ -159,7 +203,56 @@ class TestBootAndStatus:
         assert result["next_action"] == "swarm_solidify", (
             "pending run must direct solidify-first in the structured field"
         )
+        assert result["boot_once"] == []
         assert "swarm_solidify" in result["instrument_prompt"]
+
+    def test_boot_holds_until_the_gate_can_publish(
+        self, isolated_swarm_env: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """A missing pack or baseline is a handoff. Ticking would pay the
+        validation cascade and then be rejected."""
+        _ = isolated_swarm_env
+        monkeypatch.setattr("evolver.config.SWARM_GATE_HANDOFF", "human")
+
+        def ready() -> dict[str, object]:
+            return {"armed": True, "baseline": 0.5, "train_ids": ["train-a"]}
+
+        monkeypatch.setattr("evolver.bench.frozen_gate.gate_snapshot", ready)
+        ticked = swarm_boot("ready")
+        assert ticked["next_action"] == "swarm_tick"
+        assert "train-a" in ticked["instrument_prompt"]
+
+        def bare() -> dict[str, object]:
+            return {"armed": True, "baseline": None, "train_ids": ["train-a"]}
+
+        monkeypatch.setattr("evolver.bench.frozen_gate.gate_snapshot", bare)
+        held = swarm_boot("held")
+        assert held["next_action"] == "await_human"
+        assert "no_baseline" in held["instrument_prompt"]
+        assert "调用 `swarm_tick` 开始第一轮进化" not in held["instrument_prompt"]
+
+        monkeypatch.setattr("evolver.bench.frozen_gate.gate_snapshot", ready)
+        swarm_supervise("pause", reason="hold")
+        paused = swarm_boot("paused")
+        assert paused["next_action"] == "await_supervisor_resume"
+        assert "调用 `swarm_tick` 开始第一轮进化" not in paused["instrument_prompt"]
+        assert "说「继续」即可恢复" in paused["instrument_prompt"]
+
+    def test_hotl_boot_ticks_past_a_missing_gate(
+        self, isolated_swarm_env: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """The human may skip the handoff. Boot then ticks, and the prompt says
+        the gate still rejects."""
+        _ = isolated_swarm_env
+        boot = swarm_boot("hotl")
+        assert boot["next_action"] == "swarm_tick"
+        prompt = boot["instrument_prompt"]
+        assert "gate_handoff: hotl" in prompt
+        assert "EVOLVER_SWARM_GATE_HANDOFF=hotl" in prompt
+        assert "不会发布" in prompt
+
+        monkeypatch.setattr("evolver.config.SWARM_GATE_HANDOFF", "anything-else")
+        assert swarm_boot("fallback")["next_action"] == "await_human"
 
     def test_instrument_renders_supervision_and_hitl(self, isolated_swarm_env: Path) -> None:
         """Round-57: section six carries governance state so a host sees a
@@ -198,6 +291,34 @@ class TestBootAndStatus:
         assert "evolver bench baseline" in prompt
         assert "evolver bench freeze" in prompt
         assert "bench_pack_gate" in prompt
+
+    def test_instrument_carries_copyable_samples(self) -> None:
+        """The host used to learn the distill shape only after a zero-asset
+        rejection. The sample, and the types distill drops, are in the prompt."""
+        prompt = build_instrument_prompt({"agent_name": "a", "workspace_root": "/ws"})
+        assert '"type": "Gene"' in prompt
+        assert "EvolutionEvent" in prompt
+        assert '"dimension": "content"' in prompt
+        assert "evolver session accept" in prompt
+
+    def test_stop_is_a_relayed_pause_and_skills_are_not_booted(self) -> None:
+        """Saying 停 pauses through the host. Skill sync is not a boot step:
+        it would import every user skill root into the gene store."""
+        fresh = build_instrument_prompt({"agent_name": "a", "workspace_root": "/ws"})
+        assert "swarm_supervise" in fresh
+        assert "action=pause" in fresh
+        assert "用户说「停」才 pause" in fresh
+        assert "action=resume" in fresh
+        assert "host_relay_blocked" in fresh
+        assert "不改 `EVOLVER_SWARM_GATE_HANDOFF`" in fresh
+        assert "不要自己 resume 或 pause" not in fresh
+        assert '"tool": "swarm_hook_event"' in fresh
+        assert "不要在开机时调用 `swarm_skills`" in fresh
+        assert "首次准备" in fresh
+        assert "然后继续 tick" not in fresh
+        assert "'tool': 'swarm_skills'" not in fresh
+        assert "evolver bench prompt" not in fresh
+        assert "说「停」即可" in fresh
 
     def test_status_shape(self, isolated_swarm_env: Path) -> None:
         status = swarm_status()
@@ -308,6 +429,20 @@ class TestTick:
         result = await swarm_tick(include_prompt=False)
         assert result["ok"] is True
         assert result["dispatch_prompt"] is None
+
+    async def test_tick_awaits_human_while_the_gate_cannot_publish(
+        self, isolated_swarm_env: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Default handoff: no cycle runs, so no cascade and no rejection
+        episode for a gate that was never going to accept."""
+        monkeypatch.setattr("evolver.config.SWARM_GATE_HANDOFF", "human")
+        result = await swarm_tick(agent_name="gate")
+        assert result["next_action"] == "await_human"
+        assert result["gate_ready"] is False
+        assert result["reason"] == "pack_absent"
+        assert "run_id" not in result
+        state_file = isolated_swarm_env / "evolution" / "swarm_state.json"
+        assert not state_file.exists()
 
     async def test_fresh_tick_carries_no_proposal_mandate(self, isolated_swarm_env: Path) -> None:
         """Charter step 1: the field exists on every dispatched tick; a novel

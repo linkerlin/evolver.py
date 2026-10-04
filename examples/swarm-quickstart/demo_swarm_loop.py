@@ -80,6 +80,8 @@ class McpClient:
                 "A2A_HUB_URL": "http://127.0.0.1:9",
                 "EVOLVE_LOAD_MAX": "999",
                 "EVOLVER_SKILL_ROOTS": str(SKILL_ROOT),
+                # The demo has no frozen pack; run with the human on the loop.
+                "EVOLVER_SWARM_GATE_HANDOFF": "hotl",
             }
         )
         self.proc = subprocess.Popen(
