@@ -54,6 +54,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **自举地图**：instructions 补上漏掉的 `swarm_hypothesis` 与 `episode_get`；覆盖测试改从 `list_tools()` 取全集，新工具漏地图即红。
 - **测试卫生**：拆分名实不符的 `test_episode_get_missing_id_raises`（后半段为丢失函数头的工具面断言）；三处版本号硬编码改对 `evolver.__version__`（DEBUG #51 哑弹同型）。
 
+### Changed — P0 两项人裁：feedback 定性 + MCP 闭环为 episode 产地
+
+版本保持 **1.113.0**。两项皆由人裁决，执行不计阶段进度。
+
+- **P0-1（维持现状并修章程）**：`swarm_feedback` 自报维持现状——可驱动下一轮搜索偏置，永不进入结算。章程 §4 记录分层与 §6.3 判据已按此补笔：转向可逆有日志且信号键自带来源前缀，结算只读引擎现场；「不得单独支撑任何裁决」指结算 verdict，不指搜索转向。
+- **P0-2（MCP 闭环为产地）**：活体验证通过——DeepSeek 宿主经 MCP 全结算（tick → 决策 → distill → 假说 → solidify → episode，`validation_failed` 拒绝轮入 episode），脚本与报告在仓外。结算半环钉进 Tier B（`test_live_host_settles_a_round_into_episodes`，`-m llm` 按需跑）。
+
 ### Fixed — 章程文件恢复（Demo 覆盖回退）
 
 `289286a`（Demo）用一份过期工作清单覆盖了 `演进方案.md`。正文自 `1e1203e` 恢复，并写入已裁口径：点名裁决 1 不用 test 位；round-112 的 signal 为 indicative only，不关出口。`TODO.md` 开头的「阶段收束」改为「机制已就位，出口未到」。SKILL 与四份 README 的现行阶段行改指经验即证据。一致性钉 `test_the_stage_name_is_present_in_the_stage_files` 的阶段标记从已归档的「库即尺子」改为「经验即证据」。本轮是文档回正，不计阶段进度。版本保持 **1.113.0**。

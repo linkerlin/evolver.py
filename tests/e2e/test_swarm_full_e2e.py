@@ -499,6 +499,69 @@ class TestLiveLlmLoopE2E:
         assert second["ok"] is True
         assert second.get("paused") is not True
 
+    def test_live_host_settles_a_round_into_episodes(
+        self, client: _McpClient, e2e_ws: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """P0-2: the MCP loop is the episode产地 — a real LLM host settles.
+
+        tick → DeepSeek decides (gene + hypothesis + edit) → harness applies
+        the edit → distill + hypothesis + solidify → the settled round lands
+        in the episode store. Accept or Reject-with-episode both count; only
+        a non-settlement (no event_id) fails.
+        """
+        import re
+
+        # The server subprocess owns its store env; point this process at the
+        # same directories before reading the episode back.
+        monkeypatch.setenv("GEP_ASSETS_DIR", str(e2e_ws / "gep"))
+        monkeypatch.setenv("EVOLUTION_DIR", str(e2e_ws / "memory" / "evolution"))
+        tick = client.call("swarm_tick", {"agent_name": "deepseek-settler"})
+        assert tick["ok"] is True
+        if tick["dispatch_reason"] != "dispatched" or not tick.get("dispatch_prompt"):
+            pytest.skip(f"no dispatch this cycle: {tick['dispatch_reason']}")
+        system = (
+            "You are the host executor of the EVOLVER SWARM loop. Reply with "
+            "EXACTLY three fenced blocks, nothing else:\n"
+            '```gene\n{"type": "Gene", "id": "gene_live_e2e", '
+            '"category": "repair", "summary": "<one line>", '
+            '"signals_match": ["<keyword>"], "strategy": ["<step>"], '
+            '"preconditions": [], "validation": ["python --version"], '
+            '"avoid": []}\n```\n'
+            '```hypothesis\n{"hypothesis": "<what you change and why>", '
+            '"dimension": "content", "mechanism_family": "<family>", '
+            '"target_hook": "<where>", "mechanism_check": '
+            '[{"id": "scratch-readme-edit", "before": "<observed>", '
+            '"after": "<observed>"}]}\n```\n'
+            "```edit\n<2-4 lines of plain text to append to README.md>\n```\n"
+            "No extra keys anywhere."
+        )
+        answer = _deepseek_chat(system, str(tick["dispatch_prompt"]))
+
+        def fenced(tag: str) -> str:
+            match = re.search(r"```" + tag + r"\s*\n(.*?)```", answer, re.DOTALL)
+            assert match, f"LLM reply missing ```{tag} block"
+            return match.group(1).strip()
+
+        gene_text, hypo_text, edit_text = fenced("gene"), fenced("hypothesis"), fenced("edit")
+        with (e2e_ws / "README.md").open("a", encoding="utf-8") as fh:
+            fh.write("\n" + edit_text + "\n")
+        distilled = client.call(
+            "swarm_distill",
+            {"response_text": f"Executed mutation.\n```json\n{gene_text}\n```\n"},
+        )
+        assert distilled["ok"] is True
+        hyp = client.call("swarm_hypothesis", {"hypothesis": json.loads(hypo_text)})
+        assert hyp.get("ok") is True, hyp
+        settled = client.call("swarm_solidify", {})
+        assert settled.get("event_id"), settled
+        assert (settled.get("episode") or {}).get("ok") is True, settled
+
+        from evolver.gep import episode_record
+
+        stored = episode_record.load_episode(str((settled["episode"] or {}).get("id") or ""))
+        assert stored is not None
+        assert "account" not in stored and "tool_actions" not in stored
+
     def test_llm_reports_signal_from_error_output(self, client: _McpClient) -> None:
         """The LLM also plays the hook bridge: it classifies an error log."""
         log_line = "TypeError: cannot read properties of undefined (reading 'map')"

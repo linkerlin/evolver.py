@@ -69,3 +69,5 @@
 **已接到记录上的结算**：隔离工作区里一次真实 `evolver solidify` 拒绝（`hypothesis_missing`）。回滚前的 diff 在记录里。episode `sha256:ffe36d9e529b728f354e0f5143efae9955551b3583b77775a899234703e1a009`。这不是把 Parent 条拨到 0.0 造出来的 Accept，也不是 soak 宿主轮。运行态在 `C:\Temp\evolver-reject-episode\`，不进产品 git。
 
 **对照**（已跑，不收阶段）：`demo-repair-1` 与 `demo-neutral-1`，n=2，`--from-episodes --placebo`，deepseek-flash。2/2 对 2/2，tokens 553 对 348（+58.9%），`no_signal`，`stage_stop=false`，结论 `indicative only`。relay 覆盖率 0%。数字在 CHANGELOG。版本保持 **1.113.0**。
+
+**P0 人裁（已决，执行中）**：feedback 自报维持现状并修章程（§4/§6.3 已补转向-结算区分）；episode 产地定为 MCP 闭环——DeepSeek 宿主活体全结算已通（`validation_failed` 拒绝轮入 episode），结算半环钉进 Tier B，数字在 CHANGELOG。
