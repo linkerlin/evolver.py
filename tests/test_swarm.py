@@ -14,6 +14,7 @@ from typing import Any
 
 import pytest
 
+from evolver import __version__
 from evolver.swarm import (
     SWARM_PROTOCOL_VERSION,
     build_instrument_prompt,
@@ -23,6 +24,7 @@ from evolver.swarm import (
     swarm_hook_event,
     swarm_hooks,
     swarm_hypothesis,
+    swarm_propose,
     swarm_report,
     swarm_solidify,
     swarm_status,
@@ -130,7 +132,7 @@ class TestBootAndStatus:
         assert result["ok"] is True
         assert result["agent_name"] == "zcode-1"
         assert "EVOLVER SWARM" in result["instrument_prompt"]
-        assert result["state"]["version"] == "1.113.0"
+        assert result["state"]["version"] == __version__
         assert result["next_action"] == "swarm_tick"
 
         from evolver.proxy.mailbox.store import MailboxStore
@@ -832,6 +834,17 @@ class TestHooksSurface:
         journal = isolated_swarm_env / "evolution" / "hook_events.jsonl"
         assert journal.exists() and "signal_detect" in journal.read_text(encoding="utf-8")
 
+    def test_hook_journal_lines_are_closed_json(self, isolated_swarm_env: Path) -> None:
+        """The journal append must flush + close (no lost tail on crash)."""
+        swarm_hook_event("session_start", payload={"content": "hello world"})
+        swarm_hook_event("session_end", payload={"content": "bye world"})
+        journal = isolated_swarm_env / "evolution" / "hook_events.jsonl"
+        lines = journal.read_text(encoding="utf-8").splitlines()
+        assert len(lines) == 2
+        for line in lines:
+            entry = json.loads(line)
+            assert entry["source"] == "host-agent" and "at" in entry
+
     def test_hook_event_session_start_without_signals(self, isolated_swarm_env: Path) -> None:
         result = swarm_hook_event("session_start", payload={"content": "hello world"})
         assert result["ok"] is True
@@ -862,6 +875,51 @@ class TestHooksSurface:
         assert install["ok"] is True
 
         assert swarm_hooks("reinstall")["ok"] is False
+
+
+class TestMutualExclusion:
+    """P1: solidify/propose take the same non-blocking instance lock as tick.
+
+    The daemon `--loop` may hold the lock while a host solidifies or proposes
+    into the same workspace (stash/rollback + file edits). A conflict refuses
+    with stop_and_report instead of interleaving two writers.
+    """
+
+    @staticmethod
+    def _held_lock(monkeypatch: pytest.MonkeyPatch) -> None:
+        import contextlib
+
+        @contextlib.contextmanager
+        def _held(**kwargs: object) -> Iterator[bool]:
+            yield False
+
+        monkeypatch.setattr("evolver.gep.instance_lock.instance_lock_ctx", _held)
+
+    def test_solidify_refuses_under_held_lock(
+        self, isolated_swarm_env: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        self._held_lock(monkeypatch)
+        result = swarm_solidify()
+        assert result["ok"] is False
+        assert result["error"] == "instance_lock_held"
+        assert result["next_action"] == "stop_and_report"
+        assert "event_id" not in result
+
+    def test_propose_refuses_under_held_lock(
+        self, isolated_swarm_env: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        self._held_lock(monkeypatch)
+        target = isolated_swarm_env / "proposed.md"
+        result = swarm_propose(
+            {
+                "action": "patch",
+                "edits": [{"op": "append", "file": "proposed.md", "content": "x\n"}],
+            }
+        )
+        assert result["ok"] is False
+        assert result["error"] == "instance_lock_held"
+        assert result["next_action"] == "stop_and_report"
+        assert not target.exists()
 
 
 class TestCodeStaleness:

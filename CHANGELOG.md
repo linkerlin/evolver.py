@@ -45,6 +45,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 **活体烟雾**（本轮，n=2，indicative only，不收阶段）：隔离仓 MCP 拒绝 episode + 前例两题（`demo-repair-1`/`demo-neutral-1`），deepseek-flash，`--stage-exit --from-episodes --placebo --order-seed 7`。`eligible=True`，`stage=inconclusive`（n<30），`paired=no_significant_difference`（p=1.0，discordant=0），4 次调用延迟 2.1–3.5s 全计时，served 全为 `deepseek-flash`。附带一个真实发现：等字符 placebo 下，两臂服务端 prompt tokens 均值 222 对 129（`delta_pct=+0.7209`，状态 measured）——字符等长确不等于 token 等长，失衡报告不是摆设。provider 回包无 `completion_tokens` 字段，output 分项记 0（未猜）；门拒退出码实测为 2（一次显示 1 系终端管道假象）。报告存仓外，不进产品 git。
 
+### Fixed — MCP 稳定性 P1（外部评审，仪器修补）
+
+版本保持 **1.113.0**。属修仪器，**不计阶段进度**。四项指认经逐条 grep 复核全部属实：
+
+- **互斥**：`swarm_solidify`/`swarm_propose` 与 tick 取同一把非阻塞实例锁（锁穿越整个操作，非 check-then-act）；守护 `--loop` 持有时宿主侧以 `instance_lock_held` + `stop_and_report` 拒绝，不再与 stash 回滚/文件改动交错。
+- **journal**：`swarm_hook_event` 的 `hook_events.jsonl` 改走加锁的 `append_jsonl`（此前裸 `open().write()` 无关闭，崩溃可丢尾）。
+- **自举地图**：instructions 补上漏掉的 `swarm_hypothesis` 与 `episode_get`；覆盖测试改从 `list_tools()` 取全集，新工具漏地图即红。
+- **测试卫生**：拆分名实不符的 `test_episode_get_missing_id_raises`（后半段为丢失函数头的工具面断言）；三处版本号硬编码改对 `evolver.__version__`（DEBUG #51 哑弹同型）。
+
 ### Fixed — 章程文件恢复（Demo 覆盖回退）
 
 `289286a`（Demo）用一份过期工作清单覆盖了 `演进方案.md`。正文自 `1e1203e` 恢复，并写入已裁口径：点名裁决 1 不用 test 位；round-112 的 signal 为 indicative only，不关出口。`TODO.md` 开头的「阶段收束」改为「机制已就位，出口未到」。SKILL 与四份 README 的现行阶段行改指经验即证据。一致性钉 `test_the_stage_name_is_present_in_the_stage_files` 的阶段标记从已归档的「库即尺子」改为「经验即证据」。本轮是文档回正，不计阶段进度。版本保持 **1.113.0**。

@@ -6,6 +6,7 @@ from pathlib import Path
 
 import pytest
 
+from evolver import __version__
 from evolver.mcp_server import (
     asset_get,
     asset_search,
@@ -193,6 +194,10 @@ class TestServerBuild:
     def test_episode_get_missing_id_raises(self) -> None:
         with pytest.raises(LookupError):
             episode_get("sha256:nope")
+
+    def test_swarm_tool_surface_registered(self) -> None:
+        """The MCP tool surface covers the swarm loop (was hiding inside the
+        test above after a lost function header)."""
         import asyncio
 
         server = build_server()
@@ -253,7 +258,7 @@ class TestResources:
         # In-process model exposes .content (serialized as `text` over the wire).
         data = json.loads(first.content)
         assert data["ok"] is True
-        assert data["version"] == "1.113.0"
+        assert data["version"] == __version__
 
         prompt_contents = asyncio.run(server.read_resource("evolver://instrument-prompt"))
         assert "EVOLVER SWARM" in next(iter(prompt_contents)).content
@@ -281,20 +286,12 @@ class TestInstructions:
         # The auto-evolution loop order is stated inline.
         for needle in ("swarm_tick", "swarm_distill", "swarm_solidify", "swarm_feedback"):
             assert needle in text, needle
-        # Every MCP tool family is mapped.
-        for needle in (
-            "swarm_propose",
-            "swarm_status",
-            "tool_asset_search",
-            "tool_mailbox_send",
-            "swarm_supervise",
-            "swarm_approvals",
-            "swarm_hooks",
-            "swarm_hook_event",
-            "swarm_workflow_run",
-            "swarm_skills",
-        ):
-            assert needle in text, needle
+        # Every registered tool is mapped — derived from list_tools() so a
+        # newly added tool cannot silently miss the map.
+        import asyncio
+
+        for tool in asyncio.run(server.list_tools()):
+            assert tool.name in text, tool.name
         # Read-only resources advertised.
         assert "evolver://" in text
         # Steady-state guardrail semantics stated.

@@ -844,8 +844,38 @@ def swarm_propose(
 
     ``hypothesis`` (§5.3) is recorded *before* the proposal is applied: the
     claim about what changes must exist before the change itself.
+
+    Takes the same non-blocking instance lock as tick/solidify: a running
+    daemon loop owns the workspace while it holds the lock, and a host
+    proposal landing mid-cycle would interleave two writers.
     """
+    from evolver.gep.instance_lock import instance_lock_ctx
     from evolver.gep.paths import get_workspace_root
+
+    with instance_lock_ctx(blocking=False, timeout=0) as lock_ok:
+        if not lock_ok:
+            return {
+                "ok": False,
+                "error": "instance_lock_held",
+                "agent_name": agent_name,
+                "next_action": "stop_and_report",
+            }
+        return _swarm_propose_locked(
+            proposal,
+            agent_name=agent_name,
+            hypothesis=hypothesis,
+            workspace_root=get_workspace_root(),
+        )
+
+
+def _swarm_propose_locked(
+    proposal: dict[str, Any],
+    *,
+    agent_name: str,
+    hypothesis: dict[str, Any] | None,
+    workspace_root: Path,
+) -> dict[str, Any]:
+    """Body of :func:`swarm_propose` once the instance lock is held."""
     from evolver.gep.proposal import apply_proposal, parse_proposal
 
     if hypothesis is not None:
@@ -857,7 +887,7 @@ def swarm_propose(
 
     try:
         parsed = parse_proposal(proposal)
-        report = apply_proposal(parsed, get_workspace_root())
+        report = apply_proposal(parsed, workspace_root)
     except Exception as exc:
         return {
             "ok": False,
@@ -900,7 +930,35 @@ def swarm_solidify(
     Optionally accepts a ``proposal`` to mechanically apply before gating (S29).
     ``hypothesis`` (§5.3) is recorded before gating; the host that declines to
     state a claim is refused by the gate rather than measured anyway.
+
+    Takes the same non-blocking instance lock as tick: a running daemon loop
+    owns the workspace while it holds the lock, and a host solidify landing
+    mid-cycle (stash/rollback) would interleave two writers.
     """
+    from evolver.gep.instance_lock import instance_lock_ctx
+
+    with instance_lock_ctx(blocking=False, timeout=0) as lock_ok:
+        if not lock_ok:
+            return {
+                "ok": False,
+                "error": "instance_lock_held",
+                "agent_name": agent_name,
+                "next_action": "stop_and_report",
+            }
+        return _swarm_solidify_locked(
+            skip_validation=skip_validation,
+            proposal=proposal,
+            hypothesis=hypothesis,
+        )
+
+
+def _swarm_solidify_locked(
+    *,
+    skip_validation: bool,
+    proposal: dict[str, Any] | None,
+    hypothesis: dict[str, Any] | None,
+) -> dict[str, Any]:
+    """Body of :func:`swarm_solidify` once the instance lock is held."""
     from evolver.config import SWARM_TICK_LOG_MAX_CHARS
     from evolver.gep import supervision
     from evolver.gep.solidify import solidify
@@ -1114,7 +1172,7 @@ def swarm_hook_event(
     import datetime as _dt
 
     from evolver.adapters.scripts.signal_detect import _extract_content, detect_signals
-    from evolver.gep.asset_store import append_pending_signals
+    from evolver.gep.asset_store import append_jsonl, append_pending_signals
     from evolver.gep.paths import get_evolution_dir
 
     if event not in _HOOK_EVENTS:
@@ -1135,9 +1193,10 @@ def swarm_hook_event(
         "at": _dt.datetime.now(_dt.UTC).isoformat(),
     }
     with contextlib.suppress(OSError):
-        journal = get_evolution_dir() / "hook_events.jsonl"
-        journal.parent.mkdir(parents=True, exist_ok=True)
-        journal.open("a", encoding="utf-8").write(json.dumps(entry, ensure_ascii=False) + "\n")
+        # Locked + closed append (DEBUG #54 family): the daemon loop and the
+        # MCP server are two live processes writing JSONL, and a bare
+        # open().write() without close can lose the tail on crash.
+        append_jsonl(get_evolution_dir() / "hook_events.jsonl", entry)
     return {
         "ok": True,
         "event": event,

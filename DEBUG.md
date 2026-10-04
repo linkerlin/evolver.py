@@ -60,6 +60,7 @@
 | 55 | `test_cli_webui_token_generate_and_revoke` 顺序敏感 flake 复发（token 提取空值 → `--revoke` 无参 SystemExit） | tests/cli | round-104 | v1.113.0 |
 | 56 | 全量回归一次性失败无留存：36% 处红灯后无失败名留存，lastfailed 37 条 id 全陈旧、`--lf` 零命中静默变全量 | tests/测试治理 | 评估会话 | 未发版 |
 | 57 | 失败现场 diff 看不见未跟踪文件：MCP 验证脚本新建 notes.md 走拒绝后 episode diff 为空，成功侧同 helper 同盲区（未修，待单独一轮） | solidify/episode | 评估会话 | 未发版 |
+| 58 | 外部 MCP 评审 P1 四项全属实并修：solidify/propose 未取实例锁、journal 裸句柄、instructions 漏新工具、测试名实不符 + 版本硬编码 | swarm/mcp/tests | 评估会话 | 未发版 |
 
 ## 条目
 
@@ -1093,3 +1094,21 @@
   未跟踪内容 + 钉住两臂一致 + 全量回归）。
 - **经验**：**验证脚本模拟宿主改动必须落在已跟踪文件上**；凡断言 diff
   内容，先确认文件跟踪状态——`git diff HEAD` 类快照默认看不见新文件。
+
+### 58. 外部 MCP 评审 P1 四项（评估会话，全修）
+
+- **症状**（评审指认，逐条 grep 复核属实）：`swarm_solidify`/`swarm_propose`
+  不取实例锁（只有 tick 取，`solidify()` 内部也没有）；`hook_events.jsonl`
+  裸 `open().write()` 无关闭无锁；instructions 自称覆盖全表面却漏
+  `swarm_hypothesis` 与 `episode_get`；`test_episode_get_missing_id_raises`
+  后半段是丢失函数头的工具面断言；三处 `== "1.113.0"` 硬编码。
+- **根因**：互斥只做了一半（tick 拿锁，写同一工作区的两条路没拿）；
+  自举地图用手写清单测试，注册表一加工具就悄悄漏；版本断言抄了字面量。
+- **修复**：solidify/propose 与 tick 同款非阻塞锁（锁穿越整个操作，
+  冲突 `instance_lock_held` + `stop_and_report`，先 TDD 钉住）；journal 改
+  走 `append_jsonl`；instructions 补两项，覆盖测试改从 `list_tools()` 取
+  全集；拆分错位测试，版本断言改对 `evolver.__version__`。
+- **经验**：**互斥锁必须持有穿越整个操作**，check-then-act 是 TOCTOU
+  （与 #52 同族）；**自举地图必须由注册表反推测试**，手写清单迟早漏；
+  版本断言只认唯一真相源（#51 哑弹同型）。另：同一文件多笔 edit 必须
+  逐笔核对行号——本轮曾一笔误伤测试文件，靠语法检查即时发现回滚。

@@ -17,6 +17,8 @@ from pathlib import Path
 
 import pytest
 
+from evolver import __version__
+
 REPO_ROOT = Path(__file__).resolve().parent.parent
 
 
@@ -153,7 +155,7 @@ class TestProtocol:
             "contents"
         ][0]["text"]
         status = json.loads(status_text)
-        assert status["ok"] is True and status["version"] == "1.113.0"
+        assert status["ok"] is True and status["version"] == __version__
 
         prompt_text = client.request("resources/read", {"uri": "evolver://instrument-prompt"})[
             "result"
