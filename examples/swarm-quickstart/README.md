@@ -50,7 +50,7 @@ swarm_boot ─▶ swarm_status ─▶ swarm_hook_event(信号采集)
 | `claude-code.mcp.json` | Claude Code | 项目根 `.mcp.json` |
 | `cursor-mcp.json` | Cursor | `.cursor/mcp.json` |
 
-连上之后，本条消息已有别的任务就做那件事。没有别的任务时宿主调用 `swarm_boot`，再用一句话说明实际状态。`boot_once` 只登记会话，不在开机时同步技能。冻结包未装或没有基线时 boot 与 `swarm_tick` 都返回 `await_human`，已暂停时返回 `await_supervisor_resume`，都不进入循环。用户说「停」，宿主调用 `swarm_supervise` action=pause；说「继续」，宿主转达 resume。也可以对它说「启动蜂群进化」。返回的 instrument 按步执行 `swarm_tick → 执行 → swarm_distill → swarm_hypothesis → swarm_solidify → swarm_feedback`，直到终止条件。
+连上之后，本条消息已有别的任务就做那件事。没有别的任务时宿主调用 `swarm_boot`，再用一句话说明实际状态。`boot_once` 只登记会话，不在开机时同步技能。冻结包未装或没有基线时 boot 与 `swarm_tick` 都返回 `await_human`，已暂停时返回 `await_supervisor_resume`，都不进入循环。用户说「停」，宿主调用 `swarm_supervise` action=pause；说「继续」，宿主转达 resume。也可以对它说「启动蜂群进化」。返回的 instrument 按步执行 `swarm_tick → 执行 → swarm_distill → swarm_hypothesis → swarm_solidify → swarm_feedback`，直到终止条件。`dispatch_prompt` 标 **PROPOSAL REQUIRED** 时改走 `swarm_propose`，不得自由编辑。`next_action=await_human_approval` 停住：`swarm_approvals` 读给人，人决定后才 `swarm_approval_resolve`。
 
 ## 首次准备
 

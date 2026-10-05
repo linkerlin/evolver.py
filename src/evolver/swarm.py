@@ -220,6 +220,9 @@ def build_instrument_prompt(state: dict[str, Any]) -> str:
   返回 `error=host_relay_blocked` 时，请用户执行 `evolver supervise resume`。
 - `next_action=stop_and_report`，或 `paused=true`，或 `preflight_aborted=true`，
   或 `error=instance_lock_held`；
+- `next_action=await_human_approval`：停。`swarm_approvals` 把待决读给人，
+  人决定后才 `swarm_approval_resolve`。返回 `error=host_relay_blocked` 时请人执行
+  `evolver hitl approve` 或 `evolver hitl reject`。不要自己批准。
 - 连续 3 次 `failure_mode.reasonClass` 相同：先 `swarm_report` 再停。
 
 `retryable=true` 的拒绝是稳态，回到步骤 1。
@@ -232,7 +235,7 @@ def build_instrument_prompt(state: dict[str, Any]) -> str:
   完成，评分只读已经写好的沙箱。沙箱不全即是 `unmeasured`，门拒绝，基线不动。
 - 不改 `EVOLVER_SWARM_GATE_HANDOFF` 或 MCP 配置。是否跳过人由人决定。
 - 不调用 `skip_validation`。那要过 HITL：`EVOLVER_HITL_MODE=on` 时须人类批准，
-  超时未决自动拒绝。
+  超时未决自动拒绝。若仍返回 `await_human_approval`，按终止条件转达，不重试。
 - 不虚报 `swarm_feedback` 的分数，也不把没执行过的变异写进 distill。
 - `paused` 时不启动新周期。`supervision_veto` 命中的基因不得执行。
   `supervision:directive:` 是人类转向，视为最高优先级上下文。
@@ -245,8 +248,12 @@ def build_instrument_prompt(state: dict[str, Any]) -> str:
   没装过也不阻塞循环。
 - 用户说的是一套多步修复或创新，而不是一轮基因：`swarm_workflow_run`，`template` 用
   `repair-cycle` 或 `innovate-cycle`。按返回的 `awaiting_agent` 做完，用 `swarm_workflow_act` 交回。
+  要回看全状态用 `swarm_workflow_status`。
 - 要按关键词找基因：`tool_asset_search`。要全文再 `tool_asset_get`。
 - 要按 id 读上一轮：`episode_get`。`dispatch_prompt` 里已有摘要时不必再读。
+- 要看状态、不跑周期：`swarm_status`。资源 `evolver://status` 是同一份。
+- 要看最近周期：`tool_cycle_timeline`，或资源 `evolver://events/recent`。
+  投影陈旧时再 `tool_rebuild_views`。
 - 多节点：`tool_mailbox_poll` / `tool_mailbox_send`。
 - 不要在开机时调用 `swarm_skills`。用户明确要求把技能纳入进化时才 `action=sync`。
 

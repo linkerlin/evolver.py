@@ -145,23 +145,20 @@ class TestProjectionTools:
 
 
 class TestServerBuild:
-    def test_build_server_registers_tools(self) -> None:
+    def test_build_server_registers_the_closed_surface(self) -> None:
+        """Exact tool, prompt, and resource sets. A subset pin let a dropped
+        loop tool stay green."""
         import asyncio
+
+        from tests.mcp_surface import MCP_PROMPT_NAMES, MCP_RESOURCE_URIS, MCP_TOOL_NAMES
 
         server = build_server()
         tools = asyncio.run(server.list_tools())
-        names = {t.name for t in tools}
-        expected = {
-            "tool_asset_search",
-            "tool_asset_get",
-            "episode_get",
-            "tool_mailbox_send",
-            "tool_mailbox_poll",
-            "tool_mailbox_ack",
-            "tool_rebuild_views",
-            "tool_cycle_timeline",
-        }
-        assert expected <= names
+        assert {t.name for t in tools} == MCP_TOOL_NAMES
+        prompts = asyncio.run(server.list_prompts())
+        assert {p.name for p in prompts} == MCP_PROMPT_NAMES
+        resources = asyncio.run(server.list_resources())
+        assert {str(r.uri) for r in resources} == MCP_RESOURCE_URIS
 
     def test_episode_get_returns_a_recorded_round(
         self, temp_workspace: Path, monkeypatch: pytest.MonkeyPatch
@@ -195,29 +192,6 @@ class TestServerBuild:
         with pytest.raises(LookupError):
             episode_get("sha256:nope")
 
-    def test_swarm_tool_surface_registered(self) -> None:
-        """The MCP tool surface covers the swarm loop (was hiding inside the
-        test above after a lost function header)."""
-        import asyncio
-
-        server = build_server()
-        tools = asyncio.run(server.list_tools())
-        names = {t.name for t in tools}
-        assert {
-            "swarm_boot",
-            "swarm_tick",
-            "swarm_distill",
-            "swarm_solidify",
-            "swarm_feedback",
-            "swarm_report",
-            "swarm_status",
-            "swarm_approvals",
-            "swarm_approval_resolve",
-            "swarm_supervise",
-            "swarm_hooks",
-            "swarm_hook_event",
-        } <= names
-
     def test_evolver_swarm_prompt_registered_and_rendered(
         self, temp_workspace: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
@@ -245,13 +219,10 @@ class TestResources:
         monkeypatch.setenv("EVOLVER_REPO_ROOT", str(temp_workspace))
         server = build_server()
 
+        from tests.mcp_surface import MCP_RESOURCE_URIS
+
         uris = {str(r.uri) for r in asyncio.run(server.list_resources())}
-        assert {
-            "evolver://status",
-            "evolver://instrument-prompt",
-            "evolver://dispatch/last",
-            "evolver://events/recent",
-        } <= uris
+        assert uris == MCP_RESOURCE_URIS
 
         contents = asyncio.run(server.read_resource("evolver://status"))
         first = next(iter(contents))
@@ -308,6 +279,11 @@ class TestInstructions:
             "swarm_hypothesis",
             "swarm_solidify",
             "swarm_feedback",
+            "swarm_propose",
+            "PROPOSAL REQUIRED",
+            "await_human_approval",
+            "swarm_approvals",
+            "swarm_approval_resolve",
         ):
             assert needle in text, needle
         for absent in ("swarm_workflow_run", "episode_get", "tool_asset_search", "FIRST ACTION"):

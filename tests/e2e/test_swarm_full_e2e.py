@@ -405,6 +405,73 @@ class TestFullSurfaceE2E:
         assert text.startswith("Error executing tool")
         assert client.call("swarm_status", {})["ok"] is True  # server survived
 
+    def test_09_hypothesis_hooks_workflow_and_episode(
+        self, client: _McpClient, e2e_ws: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """The tools the instrument names and Tier A used to skip."""
+        monkeypatch.setenv("EVOLUTION_DIR", str(e2e_ws / "memory" / "evolution"))
+        from evolver.gep import episode_record
+
+        body = episode_record.build_episode(
+            {
+                "event": {
+                    "type": "EvolutionEvent",
+                    "id": "evt_e2e_episode",
+                    "run_id": "run_e2e_episode",
+                    "timestamp": "2026-10-05T00:00:00.000Z",
+                    "gene_id": "gene_e2e",
+                    "mutation": {"id": "mut_e2e", "category": "repair"},
+                    "diff_snapshot": "+e2e\n",
+                    "outcome": {"status": "success", "score": 1.0},
+                },
+                "validation_result": {"ok": True, "results": []},
+                "fitness_verdict": None,
+                "gate": {"accepted": False},
+            }
+        )
+        stored = episode_record.record_episode(body)
+        got = client.call("episode_get", {"episode_id": stored["id"]})
+        assert got["run_id"] == "run_e2e_episode"
+        assert got["event_id"] == "evt_e2e_episode"
+        missing = client.call_raw_text("episode_get", {"episode_id": "sha256:nope"})
+        assert "episode not found" in missing
+
+        hyp = client.call(
+            "swarm_hypothesis",
+            {
+                "hypothesis": {
+                    "hypothesis": "the e2e surface records one claim",
+                    "dimension": "tool",
+                    "mechanism_family": "e2e-surface",
+                    "target_hook": "README.md",
+                    "mechanism_check": [
+                        {
+                            "id": "scratch-readme",
+                            "before": "README existed before the claim",
+                            "after": "README still exists after the claim",
+                        }
+                    ],
+                }
+            },
+        )
+        assert hyp["ok"] is True, hyp
+
+        hooks = client.call("swarm_hooks", {"action": "status", "platform": "generic"})
+        assert hooks["ok"] is True
+        assert hooks["action"] == "status"
+
+        started = client.call(
+            "swarm_workflow_run", {"template": "innovate", "workflow_id": "e2e-wf"}
+        )
+        assert started["ok"] is True, started
+        assert started["status"] == "waiting_agent"
+        seen = client.call("swarm_workflow_status", {"workflow_id": "e2e-wf"})
+        assert seen["ok"] is True
+        assert seen["status"] == "waiting_agent"
+        cancelled = client.call("swarm_workflow_act", {"workflow_id": "e2e-wf", "action": "cancel"})
+        assert cancelled["ok"] is True
+        assert cancelled["status"] == "cancelled"
+
     def test_08_auto_hijack_does_not_change_instructions(
         self, client: _McpClient, e2e_ws: Path
     ) -> None:

@@ -8,6 +8,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed — instrument 点名每一个已注册工具
+
+版本保持 **1.113.0**。仪器修补，不计阶段进度。
+
+协议正文补上此前只注册、未写给宿主的六个名字：`swarm_approvals` 与 `swarm_approval_resolve`（`await_human_approval` 时转达，不自批）、`swarm_workflow_status`、`swarm_status`、`tool_cycle_timeline`、`tool_rebuild_views`。常驻 instructions 仍不是 26 工具地图，只多两句：`PROPOSAL REQUIRED` 走 `swarm_propose`；`await_human_approval` 列入停止条件，并点名审批两个工具。注册表、prompt、四资源改为全集相等；instrument 缺任何一个已注册工具名即测试失败。Tier A 补走 `episode_get`、`swarm_hypothesis`、`swarm_hooks` status、工作流 run/status/cancel。
+
 ### Changed — 「继续」可转达；tick 在门未就绪时交给人，可选 HOTL
 
 版本保持 **1.113.0**。

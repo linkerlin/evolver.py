@@ -113,23 +113,20 @@ class TestProtocol:
         assert "swarm_boot" in instructions
         assert "actual state" in instructions
         assert "await_human" in instructions
+        assert "await_human_approval" in instructions
+        assert "swarm_propose" in instructions
         assert "never retry" in instructions
         assert "swarm_hook_event" not in instructions
 
-    def test_tools_list_has_swarm_surface(self, client: _McpClient) -> None:
+    def test_tools_list_is_the_closed_surface(self, client: _McpClient) -> None:
+        from tests.mcp_surface import MCP_PROMPT_NAMES, MCP_RESOURCE_URIS, MCP_TOOL_NAMES
+
         tools = client.request("tools/list")["result"]["tools"]
-        names = {t["name"] for t in tools}
-        assert {
-            "swarm_boot",
-            "swarm_tick",
-            "swarm_distill",
-            "swarm_solidify",
-            "swarm_feedback",
-            "swarm_status",
-            "swarm_supervise",
-            "swarm_hooks",
-            "swarm_hook_event",
-        } <= names
+        assert {t["name"] for t in tools} == set(MCP_TOOL_NAMES)
+        prompts = client.request("prompts/list")["result"]["prompts"]
+        assert {p["name"] for p in prompts} == set(MCP_PROMPT_NAMES)
+        resources = client.request("resources/list")["result"]["resources"]
+        assert {r["uri"] for r in resources} == set(MCP_RESOURCE_URIS)
 
     def test_read_only_annotations_present(self, client: _McpClient) -> None:
         tools = {t["name"]: t for t in client.request("tools/list")["result"]["tools"]}

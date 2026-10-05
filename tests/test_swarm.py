@@ -148,11 +148,16 @@ class TestInstrumentPrompt:
         assert "await_supervisor_resume" not in pending_paused
 
     def test_references_real_tool_names(self) -> None:
+        from tests.mcp_surface import MCP_TOOL_NAMES
+
         prompt = build_instrument_prompt({"agent_name": "a", "workspace_root": "/ws"})
-        # MCP-registered names, not bare aliases.
+        # MCP-registered names, not bare aliases. Every registered tool is
+        # named here; a tool that exists only in tools/list is not protocol.
         assert "tool_mailbox_poll" in prompt
         assert "tool_mailbox_send" in prompt
         assert "`mailbox_poll`" not in prompt and "`mailbox_send`" not in prompt
+        missing = sorted(name for name in MCP_TOOL_NAMES if name not in prompt)
+        assert missing == []
 
     def test_evidence_pack_and_proposal_escape_hatch(self) -> None:
         """RSI P1-4: the executor is told about the failure-side evidence pack

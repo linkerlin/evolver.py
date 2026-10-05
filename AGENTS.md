@@ -247,9 +247,13 @@ prompt 的宿主）。`boot_once` 只登记会话（`swarm_hook_event` session_s
 已暂停时 `next_action=await_supervisor_resume`。有待固化 run 时仍先固化，
 此时 `boot_once` 为空。首次准备见 `examples/swarm-quickstart/README.md`。
 `EVOLVER_SWARM_AUTO_HIJACK=1` 不改这段文字，只强制打开 HITL 并拒绝宿主转达放行。
+常驻文本仍不是工具地图。它多两条环内规则：`PROPOSAL REQUIRED`（或
+`proposal_required=true`）改走 `swarm_propose`；`next_action=await_human_approval`
+停止，`swarm_approvals` 读给人，人决定后才 `swarm_approval_resolve`。
+instrument 正文点名每一个已注册工具。
 
 ```
-swarm_tick → 宿主执行 GEP 变异提示词 → swarm_distill → swarm_solidify
+swarm_tick → 宿主执行 GEP 变异提示词 → swarm_distill → swarm_hypothesis → swarm_solidify
      ↑                        ↓                                            │
      └── swarm_feedback（评估信号 E，低分注入 repair-bias）◀────────────────┘
      └──────────── swarm_report（心跳）+ mailbox（多节点协调）◀──────────────┘
