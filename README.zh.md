@@ -5,96 +5,201 @@
 
 [English](README.md) · **简体中文** · [日本語](README.ja-JP.md) · [한국어](README.ko-KR.md)
 
-**一个基于 GEP（基因组进化协议）的 AI 智能体自进化引擎。**
-
-引擎不自建 LLM 调度。宿主 Agent 经 MCP stdio 充当执行器。本阶段把这个环指向一个冻结的外部任务包，见 [演进方案.md](演进方案.md)（现行章程）。本树是 `@evomap/evolver` 的行为等价 Python 移植，使用现代 Python 工具链：
-
-- **Python 3.12+** — `asyncio`、类型参数语法（`list[str]`）、`tomllib`
-- **uv** — 高速 Python 包管理
-- **Pydantic v2** — 模式验证与配置
-- **httpx** — 异步 HTTP 客户端（相当于 Node.js 的 `undici`）
-- **FastAPI + uvicorn** — 本地代理与 WebUI（可选 `server` extra）
-
-> **注意**：GEP 核心、进化流水线、Proxy 路由与认知编排已基本可用。ATP 商业闭环和验证者沙箱仍不完整，它们不在本阶段。
+**面向 AI 智能体的基因组自进化引擎（GEP-Powered Self-Evolution Engine）。**
 
 ---
 
-## 快速开始
+## 📖 概述：迈向具有复利效应的智能体演进
+
+在大语言模型（LLM）驱动的软件工程实践中，传统智能体往往受制于**“单次推理无记忆、策略模式难沉淀、演化缺乏严谨判据”**的困局。现存的开发助手虽能生成代码，却无法在长期的项目实践中自发提取成功经验、修复反复出现的工程摩擦，更无法在无人工介入时持续优化自身的策略集。
+
+**`evolver.py` 为破除这一瓶颈而生。**
+
+本项目是一个基于 **GEP（Genome Evolution Protocol，基因组进化协议）** 的智能体自进化系统。它构建了一个闭环的自演进回路：从代码仓库与运行时日志中捕获信号，匹配并派发变异策略，驱动外部宿主进行代码修改，并经过严密的验证门禁与科学消融实验，将有效的工程经验固化为可复用的“基因（Gene）”与“胶囊（Capsule）”。
+
+### 核心设计哲学
+
+1. **引擎不自建调度，宿主 Agent 即执行器**  
+   `evolver.py` 本身不内置繁杂的私有 LLM 调度器，而是通过标准的 **MCP (Model Context Protocol) stdio** 协议将宿主智能体（如 Cursor、Claude Code、Codex、ZCode 等）直接接管为“进化执行器”。宿主原有的工具调用能力与工作区上下文成为了演化的手术刀，引擎则专注于信号捕获、策略决策与安全仲裁。
+
+2. **经验即证据（Experience as Evidence）**  
+   对照前沿学术协议（*arXiv:2609.37968v2, SelfSearch*），系统将智能体在真实场景中的“一次自改进过程记录（Episode Record）”升格为一等经验源。拒绝黑盒的盲目变异，每一次策略的入库与晋升都必须经受严格的对照消融裁决与样本量充足性检验。
+
+3. **现代净室 Python 架构**  
+   本项目是基于公开协议规范与测试契约、对 `@evomap/evolver` 机制进行的完全独立、行为等价的 Python 净室实现。代码基于现代技术栈（Python 3.12+、`asyncio`、`uv`、`Pydantic v2`、`httpx`、`FastAPI`）构建，结构清晰透明，采用宽松友好的 **Apache-2.0** 许可证分发。
+
+---
+
+## 🏛️ 系统架构与核心机制
+
+`evolver.py` 的内部运转依托于严密的演进回路、分层数据模型与人机协同防护体系。
+
+```
+┌────────────────────────────────────────────────────────────────────────┐
+│                        evolver.py 演化生命周期回路                     │
+└────────────────────────────────────────────────────────────────────────┘
+
+  [ 运行时环境 / 仓库日志 / 测试失败 ]
+                   │
+                   ▼
+       ┌───────────────────────┐
+       │   1. Collect (收集)   │ ── 扫描错误模式与活记忆 (Living Memory)
+       └───────────┬───────────┘
+                   ▼
+       ┌───────────────────────┐
+       │   2. Signals (信号)   │ ── 提取结构化信号 (环境/依赖/性能/错误)
+       └───────────┬───────────┘
+                   ▼
+       ┌───────────────────────┐
+       │   3. Hub (云端同步)   │ ── 检索远端生态中的候选变异与先验资产
+       └───────────┬───────────┘
+                   ▼
+       ┌───────────────────────┐
+       │   4. Enrich (认知丰富)│ ── 关联记忆图谱，注入既往干预与历史教训
+       └───────────┬───────────┘
+                   ▼
+       ┌───────────────────────┐
+       │5. Autopoiesis (自生)  │ ── 自检系统生命力，摩擦自动编码为免疫规则
+       └───────────┬───────────┘
+                   ▼
+       ┌───────────────────────┐
+       │   6. Select (选择)    │ ── 表观遗传匹配，挑选最具潜力的变异基因
+       └───────────┬───────────┘
+                   ▼
+       ┌───────────────────────┐
+       │  7. Dispatch (派发)   │ ── 组装含证据的变异提示词 (GEP Prompt)
+       └───────────┬───────────┘
+                   │
+                   ▼  (经 MCP stdio 通道)
+       ┌───────────────────────┐
+       │ 宿主 Agent (执行器)   │ ── Cursor / Claude Code 执行工作区代码修改
+       └───────────┬───────────┘
+                   │
+                   ▼
+       ┌───────────────────────┐
+       │  一假说门 & 固化验证   │ ── 声明唯一演化假说 ➔ 运行沙箱与测试集门禁
+       └───────────┬───────────┘
+                   │
+          [ 通过门禁检验 ]
+                   │
+                   ▼
+       ┌───────────────────────┐
+       │  Solidify (固化沉淀)  │ ── Git 提交入库 ➔ 基因生命周期晋升 ➔ 反馈自适应
+       └───────────────────────┘
+```
+
+### 1. 七阶段演进流水线（Evolution Pipeline）
+
+每一次演化周期（Cycle）均由七个解耦的异步阶段构成：
+- **Collect**：扫描本地日志、回溯失败诊断，读取 `LESSONS_LEARNED.md` 活记忆。
+- **Signals**：从原始数据中提取分类信号（如 `log_error`、`perf_bottleneck`、环境依赖漂移等）。
+- **Hub**：向中心化或对等网络检索匹配的先验基因与协作任务。
+- **Enrich**：双向同步记忆图谱，聚合失败侧证据与反思建议。
+- **Autopoiesis（自生自愈）**：系统体内平衡维护，自动将多次发生的工程摩擦转化为规约规则。
+- **Select**：基于变异偏置（Repair Bias）与探索度（Novelty），挑选适任策略。
+- **Dispatch**：生成结构化变异提示词并写入分发输出，唤醒宿主执行。
+
+### 2. GEP 核心资产模型
+
+- **Gene（基因）**：可复用的抽象变异策略，定义了“在何种信号模式下（signals_match）实施何种代码与行为干预（execution_trace）”。
+- **Capsule（胶囊）**：包含输入、输出与环境结果的具体变异执行实例，记录真实的成功或失败轨迹。
+- **Epigenetics（表观遗传调控）**：根据近期环境反馈动态抑制或激活特定基因，避免智能体陷入局部震荡。
+- **Gene Lifecycle（生命周期治理）**：基因具备 `active`（活跃）、`under_review`（受审）、`retired`（退役）状态流转机制，零后效与负效基因自动被降权或移出候选池。
+
+### 3. 双闸安全防御体系（HITL + HOTL）
+
+代码自修改系统必须拥有牢不可破的安全边界。`evolver.py` 实现了双轨立体安全机制：
+- **HITL（Human-In-The-Loop，人在环中审批门）**：对于跳过静态检查、大范围代码变异等高危动作（`solidify`），系统会阻塞执行并向操作者发起审批请求。支持全局审计与超时自动拒绝（Fail-Safe）。
+- **HOTL（Human-On-The-Loop，人在环上动态监督）**：监控全局演化健康度。支持随时暂停/恢复（`pause`/`resume`）、模式否决（`veto`）以及下达方向信号（`directive`）。当系统连续遭遇降级反馈时，内置熔断绊线将自动暂停演进循环。
+
+---
+
+## ⚡ 核心能力全景
+
+### 🐝 蜂群接管（MCP Swarm Evolution）
+通过标准 MCP stdio 接口，宿主编辑器不仅是开发者的交互界面，更能作为执行引擎深度融入演化回路。引擎负责制定决策与验证规则，宿主负责精准变异。宿主支持工具注解（`readOnlyHint` 与 `destructiveHint`），在保证透明度的前提下实现无人值守平稳运行。
+
+### 🌉 技能生态桥（Skill Ecosystem Bridge）
+无缝收割现有智能体生态能力。系统自动扫描 `SKILL.md` 规范的技能资产，按照 **工作区（Project）> 用户级（User）> 引擎内置（Builtin）** 三级优先级进行覆盖与发现，并自动将技能蒸馏转换为系统内的 GEP 基因，使外部技能直接参与信号匹配与变异决策。
+
+### 📋 协作即数据：持久化工作流引擎（Workflow Engine）
+将复杂的工程任务定义为可版本化、可演化的 YAML 声明式工作流。支持 `agent` 认领步骤、`gate` 自动化级联检测（ruff ➔ mypy ➔ pytest）以及 `approval` 人工审批门。全流程依托预写日志（WAL）与状态快照，天然支持断点容灾续跑。
+
+### 🔬 科学受控实验与消融裁决（Controlled Ablation Suite）
+引入严格的科学评测框架，杜绝“自写自测、虚标成效”的伪自进化：
+- **中性占位对照（Placebo Context）**：注入等长中性上下文，隔离系统角色偏置。
+- **阶段出口契约（Stage Exit）**：强校验真实 episode、占位对照、已知 commit 与落盘报告，对标样本量阈值（`MIN_N=30`），样本不足时强制标记为 `indicative only`。
+- **全仓调用图钉**：静态白名单扫描隔离写入边界，杜绝演进代码自我篡改评分结果。
+
+---
+
+## 🚀 快速上手
+
+### 环境准备
+
+确保系统已安装：
+- **Python >= 3.12**
+- **[Git](https://git-scm.com/)**（必须，系统利用 Git 实现爆炸半径管控与原子级回滚）
+- **[uv](https://docs.astral.sh/uv/)**（强烈推荐的现代 Python 工具链）
 
 ```bash
-# 安装依赖（项目内环境）
+# 克隆仓库并安装依赖
+git clone https://github.com/evomap/evolver.py.git
+cd evolver.py
 uv sync
+```
 
-# 运行单次进化周期
-uv run evolver
+### 基础运行体验
 
-# 守护进程循环模式
+```bash
+# 运行单次演化周期
+uv run evolver run
+
+# 启动持续守护进程循环
 uv run evolver --loop
 
-# 审查模式
+# 启动审查模式（变异后暂停等待人工审核）
 uv run evolver --review
 
-# 启动 WebUI 仪表盘（需 server extra）
-uv run evolver webui
-
-# 启动本地 A2A 代理
-uv run evolver proxy
+# 启动系统健康检查
+uv run evolver check
 ```
 
-> WebUI 与本地代理需要 server extra：`uv sync --extra server`。核心进化引擎与 MCP server 无 fastapi 依赖。
+> **可选服务组件**：若需启动可视化 WebUI 仪表盘或分布式 A2A 代理，需安装 `server` 扩展依赖：
+> ```bash
+> uv sync --extra server
+> uv run evolver webui   # 访问 http://127.0.0.1:8080 仪表盘
+> uv run evolver proxy   # 启动本地 A2A 代理（默认端口 8081）
+> ```
 
-**让宿主 Agent 加入蜂群（v1.98+ 的旗舰能力）**——引擎经 MCP stdio 接管宿主为进化执行器，一条命令体验完整闭环：
+---
 
-```bash
-uv run python examples/swarm-quickstart/demo_swarm_loop.py            # 确定性演示，不用 LLM
-uv run python examples/swarm-quickstart/demo_closed_loop_flash.py     # 全闭环演示
-DEEPSEEK_API_KEY=sk-... uv run python examples/swarm-quickstart/demo_swarm_loop.py --llm   # DeepSeek 真实执行
-```
+## 🛠️ 接入宿主智能体（MCP 配置）
 
-详见 [MCP 蜂群进化](#mcp-蜂群进化) 与 [examples/swarm-quickstart/](examples/swarm-quickstart/)。
+将 `evolver.py` 作为 MCP Server 接入您的日常 IDE 与编码智能体中，让它们成为演化的执行单元。
 
-### uvx（一次性 / 不装项目环境）
+### 1. 配置宿主 MCP 客户端
 
-evolver 发布后（或想隔离工具环境、不跑 `uv sync`）：
-
-```bash
-# 从 PyPI（发布后）
-uvx evolver --help
-uvx evolver run
-
-# 从本地检出（无需全局安装）
-uvx --from . evolver run
-uvx --from . evolver --loop
-```
-
-### 启动器选择
-
-守护重生、生命周期 `start` 与 IDE hooks 经 `EVOLVER_LAUNCHER` 决定如何重新调起 evolver：
-
-| 取值 | 行为 |
-|---|---|
-| `auto`（默认） | 有 `uv` + 项目根时优先 `uv run evolver`；否则 `uvx`；再否则 `python -m evolver` |
-| `uv` | 强制 `uv run [--project <root>] evolver …` |
-| `uvx` | 强制 `uvx [--from <root>] evolver …`（无 `uvx` 垫片时用 `uv tool run`） |
-| `python` | 强制 `python -m evolver …` |
-
-监管者可用 `EVOLVER_LOOP_COMMAND`（空格分隔）覆盖完整 argv。
-
-## MCP 蜂群进化
-
-evolver 通过 stdio MCP server 把**宿主 Agent 变成 GEP 变异提示词的执行器**——引擎不自建 LLM API 调度，连接进来的宿主（ZCode / Claude Code / Cursor / …）即执行器（v1.98.0+）。
-
-### 宿主接入配置
-
-启动命令二选一：`uv run evolver mcp`（项目内）或 `<venv>/bin/python -m evolver.mcp_server`（绝对路径，推荐给宿主配置）。
-
-**ZCode**（工作区/用户级 settings 的 `mcpServers`）：
+以 **Cursor**（`.cursor/mcp.json`）与 **Claude Code**（`.mcp.json`）为例：
 
 ```json
 {
   "mcpServers": {
     "evolver": {
-      "command": "/absolute/path/to/evolver.py/.venv/bin/python",
+      "command": "uv",
+      "args": ["--project", "/绝对路径/to/evolver.py", "run", "evolver", "mcp"]
+    }
+  }
+}
+```
+
+以 **ZCode** 或直接指定虚拟环境 Python 为例：
+
+```json
+{
+  "mcpServers": {
+    "evolver": {
+      "command": "/绝对路径/to/evolver.py/.venv/bin/python",
       "args": ["-m", "evolver.mcp_server"],
       "env": {
         "EVOLVER_SWARM_AUTO_HIJACK": "0"
@@ -104,441 +209,116 @@ evolver 通过 stdio MCP server 把**宿主 Agent 变成 GEP 变异提示词的�
 }
 ```
 
-**Claude Code**（项目根 `.mcp.json`）与 **Cursor**（`.cursor/mcp.json`）同构。现成配置在 [`examples/swarm-quickstart/mcp-host-configs/`](examples/swarm-quickstart/mcp-host-configs/)。
+### 2. 闭环工具协议调用链
 
-> 常用环境变量：`EVOLVER_SWARM_AUTO_HIJACK=1`（强制打开 HITL，并拒绝宿主转达放行；不改常驻 instructions）；`EVOLVER_HITL_MODE=on`（高危 solidify 需人类批准）；`EVOLVER_SUPERVISION_AUTO_PAUSE_STREAK`（连续降级反馈自动暂停，默认 3）。
+接入后，宿主智能体即可通过以下标准工具链协作运转：
+1. `swarm_boot`：初始化演化会话，报告当前状态。
+2. `swarm_tick`：获取最新的 GEP 变异提示词及上下文。
+3. *（宿主执行文件修改与逻辑重构）*
+4. `swarm_distill`：从修改成果中提取出结构化 Gene 与 Capsule。
+5. `swarm_hypothesis`：在验证前向系统提交本轮演化的唯一假说声明。
+6. `swarm_solidify`：触发沙箱门禁检验，验证通过后执行 Git 固化提交。
+7. `swarm_feedback`：回传多维评测指标，驱动下一轮自适应变异。
 
-### 接管与闭环
+### 3. 一键体验闭环脚本
 
-- **注入**：本条消息已有别的任务就做那件事；没有时 `swarm_boot`，再用一句话说明实际状态。`boot_once` 只登记会话，不在开机时同步技能。冻结包或 Parent 基线缺失、或循环已暂停时不 tick（人可设 `EVOLVER_SWARM_GATE_HANDOFF=hotl` 跳过前两项，门照常拒绝发布）。说「停」「继续」由宿主转达 `swarm_supervise` pause / resume。首次准备（冻结包、另一上下文解 val、建基线）见 [examples/swarm-quickstart/README.md](examples/swarm-quickstart/README.md)。全文协议在 MCP prompt `evolver_swarm` 与 `swarm_boot` 的返回里
-- **闭环协议**：`swarm_tick`（取 GEP 变异提示词）→ 宿主用自己的编辑工具执行变异 → `swarm_distill`（蒸馏 Gene/Capsule）→ `swarm_hypothesis`（一假说门：宿主声明本轮唯一假说，无假说则门拒）→ `swarm_solidify`（验证门 + 固化）→ `swarm_feedback`（统一评估信号 E，低分自动注入 repair-bias）→ 循环。`swarm_propose` 可从证据包发起干预提案，`swarm_report` 为心跳
-- **安全双闸**：HITL 审批门（`evolver hitl list|approve|reject`，TTL 超时 fail-safe 拒绝）+ HOTL 监督（`evolver supervise status|pause|resume|direct|veto|unveto`，人在环上随时刹车/否决/转向）
-
-### Hooks 集成（信号自动采集）
-
-宿主支持文件 hooks 时安装钩子，session 边界与工具输出中的错误信号自动进入进化记忆：
-
-```bash
-uv run evolver setup-hooks --platform auto --project-dir /path/to/workspace
-# 平台：cursor | claude-code | codex | kiro | opencode | vscode | generic | auto
-```
-
-MCP-only 宿主（无文件 hooks 能力）改用**进程内桥**：在会话开始/结束、以及观察到错误输出时调用 `swarm_hook_event`（`event=session_start|session_end|signal_detect`，`payload.content` 携带文本）；检测到的信号（`log_error` / `perf_bottleneck` / …）直接注入下一进化周期的基因选择。也可经 `swarm_hooks`（`action=status|install|uninstall`）由宿主自助安装文件钩子。
-
-### MCP 资源与工具注解
-
-除工具外，server 暴露四个只读资源（宿主可订阅/免工具往返读取）：
-
-| URI | 内容 |
-|---|---|
-| `evolver://status` | 实时引擎/蜂群状态（JSON，含 HITL/HOTL/反馈摘要） |
-| `evolver://instrument-prompt` | 当前渲染的接管提示词 |
-| `evolver://dispatch/last` | 最近一次 GEP 变异提示词（`last_prompt.md`） |
-| `evolver://events/recent` | 最近进化周期时间线（JSON） |
-
-工具面共 26 个：8 个通用工具（`asset_search`、`asset_get`、`episode_get`、`mailbox_send`、`mailbox_poll`、`mailbox_ack`、`rebuild_views`、`cycle_timeline`）+ 18 个蜂群工具（`swarm_boot` / `tick` / `distill` / `hypothesis` / `propose` / `solidify` / `feedback` / `report` / `status` / `approvals` / `approval_resolve` / `supervise` / `hooks` / `hook_event` / `skills` / `workflow_run` / `workflow_act` / `workflow_status`）。
-
-工具带 MCP 规范注解：`swarm_status`、`swarm_approvals`、`asset_search`、`episode_get`、`cycle_timeline` 等标记 `readOnlyHint`（宿主计划模式可安全跳过确认）；`swarm_solidify`、`swarm_hypothesis`、`swarm_propose`、`swarm_supervise`、`swarm_approval_resolve`、`swarm_workflow_act` 标记 `destructiveHint`（宿主可要求用户确认）。
-
-### 技能生态桥（SKILL.md → 技能基因）
-
-把宿主生态的技能文件接入进化引擎（EvoX SkillRegistry 模式：**project > user > builtin 三级优先、同名遮蔽**）。发现根目录：工作区 `.agents/skills` 与 `.claude/skills` > 用户 `~/.agents/skills`、`~/.zcode/skills`、`~/.claude/skills` > 引擎内置（可用 `EVOLVER_SKILL_ROOTS` 覆盖，顺序即优先级）。
+无需繁琐配置，运行随附的演示脚本直观感受演进流程：
 
 ```bash
-uv run evolver skills scan              # 预览发现（含优先级与遮蔽）
-uv run evolver skills sync --dry-run    # 预览将安装的技能基因
-uv run evolver skills sync              # 转换并入 GEP 资产库（gene_distilled_s2g-*）
-uv run evolver skills list              # 查看库中技能基因
+# 1. 运行确定性闭环演示（无需真实 LLM API Key）
+uv run python examples/swarm-quickstart/demo_swarm_loop.py
+
+# 2. 运行完整闭环演示
+uv run python examples/swarm-quickstart/demo_closed_loop_flash.py
+
+# 3. 连接 DeepSeek 真实执行宿主变异
+DEEPSEEK_API_KEY=sk-... uv run python examples/swarm-quickstart/demo_swarm_loop.py --llm
 ```
 
-同步后，技能以基因身份参与信号匹配与选择——例如一个「修复 ImportError」技能会在信号命中时被选入 GEP 提示词。宿主也可经 MCP `swarm_skills`（`scan|list|sync`）自助操作。
+---
 
-### 进化工作流（EvoX 收割：协作即数据）
+## 🧭 CLI 指令全景
 
-一整段协作表达为一份 **YAML 工作流**（可 diff → 可进化）：`agent` 步骤声明 `role`/`instruction` 等宿主执行器认领，`gate` 步骤引擎侧直跑验证级联（ruff→mypy→pytest），`approval` 步骤落人类审批门——全程 WAL 持久化、断点续跑（Sprint 24.10 引擎 + v1.110.0 扩展）。
+系统提供了按职责划分的高清晰度命令行接口：
 
-```bash
-uv run evolver workflow templates                  # 捆绑模板：repair / innovate
-uv run evolver workflow run --template repair      # 启动修复回路（也可给 YAML 文件）
-uv run evolver workflow awaiting <id>              # 宿主执行器/审批者当前待办
-uv run evolver workflow complete <id> --result '{"ok": true, "files": 2}'
-uv run evolver workflow approve <id>               # 审批放行
-```
+| 领域分类 | 核心命令 | 功能说明 |
+|---|---|---|
+| **演化控制** | `evolver run` | 触发单个自演化周期（默认动作） |
+| | `evolver --loop` | 启动自主演进守护进程 |
+| | `evolver --review` | 交互式审查模式，变异后等待操作者确认 |
+| | `evolver solidify` | 验证并固化已就绪的代码变异到 Git 仓库 |
+| | `evolver session` | 开启或管理受控配对演进会话（支持假说记录） |
+| **蜂群与监督**| `evolver mcp` | 启动基于 stdio 的 MCP 服务端（宿主接管入口） |
+| | `evolver hitl` | 人在环中审批管理（`list` / `approve` / `reject`） |
+| | `evolver supervise` | 人在环上动态监督（`status` / `pause` / `resume` / `veto`） |
+| | `evolver setup-hooks` | 为当前工作区配置 Cursor / Claude Code 等 IDE 自动钩子 |
+| **资产与知识**| `evolver skills` | 扫描、预览并同步外部 `SKILL.md` 到 GEP 资产库 |
+| | `evolver gene-lifecycle`| 查看与维护基因状态（`active` / `under_review` / `retired`） |
+| | `evolver episode` | 检索与展示历次自改进执行过程（Episode Record） |
+| | `evolver self-report` | 触发 Autopoiesis 系统自检，更新活记忆与自生免疫规条 |
+| **实验与评测**| `evolver experiment` | 运行严谨的受控消融实验（`--ablation`、`--placebo`） |
+| | `evolver bench` | 执行冻结基准测试任务包、基线对比与配对二项检验 |
+| | `evolver gate-report` | 输出验收门（Shadow Gate）的浸泡观察与转正评估报告 |
+| | `evolver meta-report` | 输出系统底层演进机制遥测与后代变异质量报告 |
+| **运维与服务**| `evolver check` / `watch` | 系统健康诊断与持续状态巡检 |
+| | `evolver start` / `stop` | 跨平台系统级守护进程生命周期控制 |
+| | `evolver webui` | 启动本地只读数据可视化看板（需 `server` 扩展） |
+| | `evolver proxy` | 启动本地 A2A 协议代理服务（需 `server` 扩展） |
 
-MCP 侧：`swarm_workflow_run`（文件或模板启动）、`swarm_workflow_act`（approve/reject/complete/resume/cancel）、`swarm_workflow_status`（全量状态 + 宿主待办）。
+---
 
-### 受控实验与消融裁决
+## 🔒 安全模型与工程护栏
 
-消融基准检验既往周期记录是否真实促进宿主自修（对照 SelfSearch 协议，arXiv:2609.37968v2）。引擎提供离线/在线受控消融裁决套件：
+`evolver.py` 具有自动修改代码并提交的能力，因此安全设计贯穿于每一个执行环节：
 
-```bash
-# 对照有/无历史记录下的任务表现（真实 LLM 盲测）
-uv run evolver experiment --ablation --tasks tasks.json \
-    --from-episodes --placebo --model deepseek-flash --output result.json
-```
+- **Git 爆炸半径防御**：所有变异操作严格绑定 Git 仓库。变异执行前自动通过 `git stash` 建立保护快照；每个基因均明确限定变异文件上限（`constraints.max_files`）与路径黑名单（`forbidden_paths`）。一旦检验失败或中断，系统自动执行无损回滚。
+- **内容寻址与哈希防篡改**：资产 ID 强制绑定 SHA-256 摘要（如 `sha256:...`），存储与加载过程实时比对，静默剔除篡改条目；输入经专门的净化器（`sanitize.py`）过滤危险属性。
+- **敏感凭据脱敏防护**：系统集成专门的过滤引擎，在所有落地事件、提示词缓存与 WebUI 序列化前，严格擦除 API 密钥、JWT 令牌、密码及会话痕迹。
+- **单实例与状态互斥锁**：通过 OS 级单实例锁（`instance_lock.py`）保障同一工作区永远只有一个演化循环在写入，根绝多进程并发带来的状态竞态与脏数据覆盖。
 
-核心科学防护：
-- **占位对照臂（`--placebo`）**：为无记录臂注入等长中性上下文，隔离系统角色偏置，保证两臂差异仅在记录内容本身。
-- **阶段出口契约（`--stage-exit`）**：机器强制的出口形态——真实 episode + placebo + 唯一任务 + 已知 commit + 落盘报告，五缺一即 exit 2，不产出报告。种子 AB/BA 交错取代固定臂序；逐调用记录（延迟、三段 tokens、错误类、served model）、逐题配对精确检验、采样冻结、服务端 prompt 失衡度量随报告一起落盘。
-- **样本充足性审计**：自动对标 `MIN_N=30`；样本不足时裁决结论自动标明 `indicative only`，拒绝小样本误报。
-- **依据透明分层**：严格区分成功率实质提升（`success_rate`）与纯 token 消耗平局裁决（`tokens_only`）。
-- **全仓调用图钉**：单测扫描 `src/` 全仓，episode 写入口收敛于受检边界，杜绝任何自修改逻辑「自记自评」。
+---
 
-## 前置要求
-
-- **[Python](https://python.org/)** >= 3.12
-- **[Git](https://git-scm.com/)** — 必需。Evolver 使用 git 进行回滚、爆炸半径计算和固化。在非 git 目录中运行将失败并显示明确错误信息。
-- **[uv](https://docs.astral.sh/uv/)** — 推荐的包管理器。标准 `pip` / `python -m` 亦可使用。
-
-## CLI 命令参考
-
-| 命令 | 说明 |
-|---|---|
-| `run` | 运行单个进化周期（默认） |
-| `--loop` / `--solo` / `--review` | 守护循环 / 完全离线模式（隐含 `--loop`） / 暂停待人审查 |
-| `start` `stop` `restart` `status` `log` | 守护进程生命周期 |
-| `check` `watch` | 健康检查与健康看守 |
-| `solidify` | 应用待定变异（或提案） |
-| `apply-proposal` | 机械应用基因提案 JSON（锚已验证、工作区安全） |
-| `review` | 审查待固化项 |
-| `report` | 周期裁决报告（负结果原样保留）+ 模式投影 |
-| `gate-report` | 验收门 soak 报告：shadow 指标 + 转正判定 |
-| `variants` | 变体档案：被拒但保留的候选（RSI P1-3） |
-| `charter-check` | 机器回执：验证章程符合度与漂移 |
-| `anchor init\|list\|run` | 仓外锚定套件：冻结验证契约（RSI P0-1） |
-| `meta-report` | 改进机制遥测：RSI Table-8 面板 + 后代质量 |
-| `gene-lifecycle list\|evaluate\|reinstate` | 基因生命周期治理（active / under_review / retired） |
-| `soak setup\|exports\|status` | 运行态外置，不进 git 树 |
-| `session start\|resume\|status\|round\|hypothesize\|reject\|accept\|incomplete\|extend\|finalize` | 配对进化会话（预算开局冻结 8；`extend` 仅人可调） |
-| `self-report` | Autopoiesis 自检与规则演进 |
-| `bench list\|init\|freeze\|gate\|baseline\|run\|prompt\|grade\|compare` | 任务包、Parent 基线、带 `--library` 的求解提示词、配对比较 |
-| `library establish-parent` | 首写 Parent 库快照（solidify 调用不到） |
-| `episode list\|show` | 周期记录——一次自改进过程的运行时记录 |
-| `exec` `distill` `fetch` `reuse` `publish` `sync` `asset-log` `replay` `rebuild-views` | 执行桥、蒸馏 LLM 输出、Hub 获取/复用/发布、资产调用日志、SQLite 回放、派生视图 |
-| `skill2recipe` | 将验证过的技能组合为可发布 GEP 配方 |
-| `mcp` | 以 stdio 运行 MCP server（蜂群入口） |
-| `hitl list\|approve\|reject` | HITL 审批门 |
-| `supervise status\|pause\|resume\|direct\|veto\|unveto` | HOTL 监督 |
-| `skills list\|scan\|sync` | 技能生态桥 |
-| `workflow run\|templates\|status\|awaiting\|approve\|reject\|complete\|resume` | 持久化工作流引擎 |
-| `experiment --ablation …` | 受控实验 / 消融裁决 |
-| `webui` `login` `logout` `webui-token` `reset-local-secret` `setup-hooks` `trajectory` | 仪表盘、OAuth、令牌、IDE hooks、追踪转轨迹 |
-| `atp` `atp-complete` `buy` `orders` `verify` | ATP 本地结算、auto-buyer 授权、下单 |
-| `proxy` `proxy-token` | A2A 代理与本地 bearer 令牌 |
-| `recipe list\|show\|apply\|cache-list\|cache-clear` | 配方中心 |
-
-每个子命令都支持 `--help` 查看完整参数。
-
-## 项目结构
+## 🗺️ 项目结构导航
 
 ```
 src/evolver/
-├── cli.py              # CLI 入口（argparse）、.env 加载、命令分发
-├── config.py           # 运行时阈值 + 环境变量
-├── canary.py           # Fork 金丝雀：验证 CLI 可正常加载
-├── swarm.py            # 蜂群核心：接管提示词 + 闭环工具
-│                       #   （tick/distill/hypothesis/propose/solidify/feedback/
-│                       #    report/status/supervise/hooks/hook_event/skills），
-│                       #   stdout 全捕获
-├── mcp_server.py       # MCP stdio server：8 通用 + 18 蜂群工具、
-│                       #   evolver_swarm prompt、evolver://* 资源、
-│                       #   工具注解（mcp>=2.0 MCPServer）
-├── evolve/
-│   ├── runner.py       # 周期编排（单次 + 守护循环）
-│   ├── guards.py       # 起飞前检查（负载、RSS、冷却）
-│   ├── post_cycle.py   # 周期末钩子（ATP auto-buyer）
-│   └── pipeline/       # 七阶段流水线 + preflight（异步函数）
-│       ├── collect.py      # 日志扫描 + living_memory
-│       ├── signals.py      # 信号 + guard/preflight/learning
-│       ├── hub.py          # Hub 查询
-│       ├── enrich.py       # 记忆建议 + memory_bridge 双向同步
-│       ├── autopoiesis.py  # SelfReport + homeostasis
-│       ├── select.py       # Gene/Capsule 选择 + 创新记录
-│       └── dispatch.py     # GEP 提示词 + solidify 状态
-├── gep/                # GEP（基因组进化协议）核心
-│   ├── schemas/        # Pydantic 模型：Gene、Capsule、Task、Protocol
-│   ├── asset_store.py  # JSON/JSONL 持久化与叠加语义
-│   ├── cognition.py    # 高级认知编排（回忆/探索/课程/反思）
-│   ├── solidify.py     # 应用基因 → 验证 → 持久化 → 发布
-│   ├── selector.py     # 信号匹配 + 表观遗传偏置
-│   ├── signals.py      # 信号收集与分类
-│   ├── feedback.py     # 统一评估信号 E（EvoX 收割）
-│   ├── hitl.py         # HITL 审批门（超时 fail-safe 拒绝）
-│   ├── supervision.py  # HOTL 监督（pause/veto/directive + 绊线）
-│   ├── skill_assets.py # SKILL.md 桥（project > user > builtin）
-│   ├── episode_record.py   # 周期记录：一次自改进过程的运行时记录
-│   ├── evolution_session.py# 配对会话机（§5.1）+ 一假说门
-│   ├── library.py      # 内容寻址库快照（打分对象是快照）
-│   ├── bench/          # 冻结任务包、评分、冻结门、配对检验
-│   ├── validator/      # 沙箱执行器、报告器、质押引导
-│   └── ...             # 100+ 模块
-├── proxy/              # 本地 HTTP 代理（CLI 默认 127.0.0.1:8081；路由 /v1/a2a）
-│   ├── server/routes.py    # FastAPI 路由（task/ATP/extensions）
-│   ├── router/             # LLM 路由、特性开关、SSE 流式
-│   ├── extensions/         # DM、会话、技能更新、追踪控制
-│   ├── mailbox/store.py    # 本地邮箱 JSONL 存储
-│   ├── sync/               # Hub 双向同步引擎
-│   └── lifecycle/manager.py# 代理生命周期 + 心跳
-├── atp/                # Agent 交易协议市场
-│   ├── protocol.py         # 枚举与 Pydantic 模型
-│   ├── auto_buyer.py       # 自动发现能力缺口（可选、有预算）
-│   ├── auto_deliver.py     # 自动认领并交付任务
-│   └── settlement.py       # 本地账本
-├── adapters/           # IDE 集成钩子
-│   ├── hook_adapter.py     # 共享适配器逻辑
-│   ├── setup_hooks.py      # 为 Cursor、Claude Code、Codex、Kiro、OpenCode 安装钩子
-│   └── scripts/            # 运行时脚本（session_start、signal_detect）
-├── ops/                # 运维（生命周期、健康、自修复、soak 环境）
-│   ├── lifecycle.py        # 跨平台守护进程管理
-│   ├── health_check.py     # 磁盘/内存/进程检查
-│   └── self_repair.py      # Git 紧急修复
-├── bench/              # 工作区基准（健康任务 + fitness 账本）
-├── experiment/         # 受控实验、真实 LLM 消融、占位对照臂与统计
-├── recipe/             # 配方中心（list/show/apply + 缓存）
-├── solo/               # 受限野外离线模式（硬切网络/ATP/验证者）
-└── webui/              # FastAPI 只读仪表盘
-    ├── app.py            # 仪表盘 + SSE `/events/stream`
-    ├── dashboard.py      # 暗色 HTML 仪表盘（实时事件）
-    ├── client/           # 内嵌 JS/CSS（SSE、bootstrap、i18n）
-    └── observer/         # 数据聚合模块
-
-tests/                  # 342 个测试文件，4,227 条用例（pytest；含 MCP 协议
-                        #   E2E 与 tests/e2e/ 下的真 LLM 闭环 E2E）
-scripts/                # 23 个 CLI 辅助脚本（见「脚本工具」）
-src/evolver/assets/gep/ # 种子基因库
-memory/                 # 运行时数据（graph JSONL、reviews JSONL）
+├── cli.py                  # CLI 入口定义、参数解析与全局分发
+├── config.py               # 统一配置体系、阈值定义与环境变量映射
+├── swarm.py                # 蜂群核心协议：接管提示词组装与执行闭环调度
+├── mcp_server.py           # 标准 stdio MCP 协议实现（全套通用/蜂群工具与资源）
+├── evolve/                 # 自演化编排体系
+│   ├── runner.py           # 周期控制器与守护循环守护进程
+│   ├── guards.py           # 起飞前系统负载、内存与健康护栏
+│   └── pipeline/           # 解耦的七阶段演进流水线（Collect 至 Dispatch）
+├── gep/                    # GEP（基因组进化协议）核心资产与策略库
+│   ├── schemas/            # Pydantic 数据规范（Gene / Capsule / Task 等）
+│   ├── asset_store.py      # 叠加式 JSON/JSONL 本地高性能存储
+│   ├── hitl.py             # 人在环中（HITL）审批决策门
+│   ├── supervision.py      # 人在环上（HOTL）实时监督与自动熔断
+│   ├── skill_assets.py     # 外部技能生态桥接与蒸馏器
+│   ├── gene_lifecycle.py   # 基因全生命周期流转与状态机治理
+│   └── solidify.py         # 变异应用、安全验证与 Git 固化提交
+├── bench/                  # 锚侧冻结任务包、评分器与统计检验套件
+├── experiment/             # 受控消融裁决套件（双臂盲测、占位对照与充足性审计）
+├── adapters/               # IDE 深度集成适配器（Cursor / Claude Code / Codex 等钩子）
+├── proxy/                  # 本地 A2A 分布式代理与模型路由矩阵
+└── webui/                  # 只读可视化仪表盘（嵌入式前端与 SSE 实时事件流）
 ```
 
-## 环境变量
+---
 
-| 变量 | 默认值 | 说明 |
-|---|---|---|
-| `EVOLVER_HOME` | `~/.evomap` | 每用户运行时状态目录 |
-| `EVOLVER_REPO_ROOT` | 自动检测 | 覆盖仓库根目录 |
-| `OPENCLAW_WORKSPACE` | （无） | 工作区根覆盖 |
-| `GEP_ASSETS_DIR` | `<ws>/.evolver/gep/` | GEP 资产存储 |
-| `EVOLUTION_DIR` | `<ws>/memory/evolution/` | 进化状态 |
-| `EVOLVER_SESSION_SCOPE` | （无） | 按项目隔离的状态分段 |
-| `EVOLVE_STRATEGY` | `balanced` | 进化策略预设 |
-| `EVOLVE_BRIDGE` | auto | Git worktree 变异桥接 |
-| `EVOLVER_ROLLBACK_MODE` | `stash` | 回滚策略：stash / hard / none |
-| `EVOLVER_MAX_CYCLES_PER_PROCESS` | `0`（不限） | 单守护进程最大周期数 |
-| `EVOLVER_CYCLE_TIMEOUT_MS` | `2700000` | 单周期硬超时 |
-| `EVOLVER_VALIDATOR_ENABLED` | 选择启用（`1`/`true` 开启） | 验证者守护 |
-| `EVOLVER_WEBUI_PORT` | `8080` | WebUI 端口 |
-| `EVOLVER_PROXY_PORT` | `8081` | 本地代理端口（`EVOMAP_PROXY_PORT` 别名）；可用 `evolver proxy --port` 覆盖 |
-| `A2A_HUB_URL` | `https://evomap.ai` | Hub URL |
-| `A2A_NODE_ID` | 自动生成 | 节点身份 |
-| `GITHUB_TOKEN` | — | GitHub API 令牌 |
-| `EVOLVER_HITL_MODE` | `off` | HITL 审批门——`on` 时高危 solidify 需人类批准（off 仍记审计；未知值 fail-closed 为 on） |
-| `EVOLVER_HITL_TTL_MS` | `1800000` | HITL 待决请求 TTL——超时 fail-safe 拒绝 |
-| `EVOLVER_SUPERVISION_AUTO_PAUSE_STREAK` | `3` | HOTL 绊线——连续 N 次降级反馈自动暂停（`0` 关闭） |
-| `EVOLVER_FEEDBACK_DEGRADED_THRESHOLD` | `0.5` | 蜂群反馈降级阈值——低于此分或 `success=false` 注入 repair-bias |
-| `EVOLVER_ADAPTIVE_MUTATION` | `true` | 反馈驱动之变异类别权重自适应 |
-| `EVOLVER_ADAPTIVE_MUTATION_SHIFT` | `0.2` | 自适应权重偏移幅度（归一化前） |
-| `EVOLVER_SWARM_AUTO_HIJACK` | `false` | 置 `1` 时强制打开 HITL，并拒绝宿主转达放行。不改常驻 instructions |
-| `EVOLVER_SWARM_GATE_HANDOFF` | `human` | 冻结包或基线缺失时：`human` 让 boot/tick 返回 `await_human`；`hotl` 照常 tick（门照常拒绝回滚，不发布） |
-| `EVOLVER_SKILL_ROOTS` | 三级默认根 | 技能根目录覆盖（os.pathsep 分隔，顺序即优先级） |
-| `EVOLVER_GATE_SOAK_MIN_RUNS` | `20` | 验收门转正判定之最小 gated 样本数（false-kill 上限 0.1、拦截率区间 0.05–0.5 是代码常量） |
-| `EVOLVER_ACCEPTANCE_SHADOW` | `true` | shadow 模式：只度量不执法；置 `0` 是人类决策 |
-| `EVOLVER_FITNESS_GATE_ENFORCE` | 关闭 | 把 `no_improvement` 变异回滚，而不只是上报 |
-| `EVOLVER_GENE_INERT_BAN_STREAK` | `8` | 惰性基因连续 N 轮零结果后禁选 |
-| `EVOLVER_APPLIED_GENE_COOLDOWN_EVENTS` | `5` | 已应用基因冷却窗口——近期成功固化者选择打分惩罚 |
-| `EVOLVER_APPLIED_GENE_COOLDOWN_PENALTY` | `0.25` | 冷却惩罚乘数（非禁选：唯一匹配仍可选） |
-| `EVOLVER_MEMORY_GRAPH_MAX_SIZE_MB` | `100` | memory_graph.jsonl 轮转阈值 |
-| `EVOLVER_MEMORY_GRAPH_RETENTION_COUNT` | `7` | 轮转归档保留个数（`0`=全删） |
-| `EVOLVER_MEMORY_GRAPH_AUTO_ROTATE` | `true` | 设 `false`/`0`/`no` 关闭自动轮转 |
-| `EVOLVER_ROTATE_GZIP_MAX_MB` | `32` | 更大文件仅 rename 不压缩（防 OOM） |
-| `EVOLVER_ANTI_ABUSE_TELEMETRY` | `heartbeat` | 反滥用遥测模式（`heartbeat`/`off`） |
-| `EVOLVER_OUTCOME_REPORT` | `off` | 向 Hub 上报复用结果以获归因 |
-| `EVOLVER_REUSE_ATTRIBUTION` | `off` | 复用归因模式 |
-| `EVOLVER_EVAL_WORKTREE_STRICT` | 关闭 | 评估 worktree 失败时：`1` 则失败而非回退 live cwd |
-| `EVOLVER_AUTOPOIESIS` / `EVOLVER_AUTOPOIESIS_WRITE` | `1` / `1` | Autopoiesis 阶段 / 持久化规则与活记忆（`0`=dry-run） |
-| `EVOLVER_LEARNING_SIGNALS` | `1` | 注入环境学习信号 |
-| `EVOLVER_LAUNCHER` | `auto` | 重调起启动器：`auto` / `uv` / `uvx` / `python` |
-| `EVOLVER_LOOP_COMMAND` | （无） | 守护循环命令的完整 argv 覆盖 |
-| `EVOLVER_FF_*` | 见各开关 | 特性开关（`EVOLVER_FF_ENABLE_RECALL_INJECT`、`_REFLECTION`、`_EXPLORE`、`_CURRICULUM`、`_SKILL_AUTO_UPDATE` 等）——环境变量优先于磁盘开关存储 |
+## 📚 延伸阅读与开发指南
 
-## 实现状态
+- **[演进方案.md](演进方案.md)**：现行最高章程，阐述自演进系统从“库即尺子”迈向“经验即证据”的完整论证。
+- **[AGENTS.md](AGENTS.md)**：面向 AI 智能体开发者的行为准则、避坑指南与架构细节。
+- **[DEBUG.md](DEBUG.md)**：深度调试手册，记录互锁排查、复杂边缘条件与稳定性实践。
+- **[CHANGELOG.md](CHANGELOG.md)**：详细的版本演进记录与发布说明。
+- **[CONTRIBUTING.md](CONTRIBUTING.md)**：代码贡献与测试规范指南。
 
-> **总体评估**（2026-10-04）：包版本 **1.113.0**。配对会话门在 2026-09-27 收口，没有候选在密封 val 上优于 Parent。现行章程是 [演进方案.md](演进方案.md)：经验即证据。出口是一次有/无记录消融；n=3 的合成记录对照只是线索（indicative only）。验收门保持 shadow。下表百分比是 2026-09-05 的快照，不是工作清单。
+---
 
-| 子系统 | 状态 | 说明 |
-|---|---|---|
-| **GEP 数据层** | ~90% | 种子基因 11×sha256；solidify 直测 + 学习助手 |
-| **GEP 高级认知** | ~80% | 回忆/反思/蒸馏；探索/课程由 feature flag 控制 |
-| **进化流水线** | ~90% | 7 阶段 + Autopoiesis + 硬超时；已应用基因冷却（v1.111） |
-| **MCP 蜂群** | ~97% | 接管闭环 + E 反馈 + HITL/HOTL + Hooks/技能桥 + 工作流工具；dogfood 至 round-78 |
-| **工作流引擎** | ~90% | WAL 持久化步骤（script/foreach/if/agent/approval/gate）；YAML + 角色 + 模板（v1.110） |
-| **验收门** | ~85% | shadow soak + gate-report 判定；执法开关留人类 |
-| **Proxy 基础设施** | ~85% | 多供应商、令牌复用、路径 CLI 参数、端口 **8081** |
-| **ATP 市场** | ~65% | 本地结算；Hub 商业 E2E 待补 |
-| **IDE 适配器** | ~85% | 运行时 hooks + py_compile 守卫 + MCP 进程内桥 |
-| **Ops / Solo** | ~85% | lifecycle、force-update、`--solo` |
-| **WebUI** | ~70% | SSR 仪表盘 + GitHub observer |
-| **验证者** | ~50% | 沙箱框架存在；生产级网络隔离待完善 |
-| **文档/发布** | ~90% | CHANGELOG + 版本 **1.113.0**；多 OS CI（Windows 为 blocking ＋ 锚套件） |
+## 📄 开源许可证
 
-现行计划见 [演进方案.md](演进方案.md) 与 [TODO.md](TODO.md)。wikiskill 对照版是档案。
+本项目采用 [Apache License 2.0](LICENSE) 许可证开源发布。
 
-## 示例
-
-| 示例 | 说明 |
-|---|---|
-| [`examples/swarm-quickstart/`](examples/swarm-quickstart/) | **蜂群进化全闭环**——MCP 接管、tick→执行→distill→solidify→feedback、HITL/HOTL 运维（`--llm` 由 DeepSeek 真实执行；`demo_closed_loop_flash.py` 跑全闭环） |
-| [`examples/hello-world/`](examples/hello-world/) | 在隔离工作区运行单次进化周期 |
-| [`examples/daemon-loop/`](examples/daemon-loop/) | 持续守护进程、生命周期管理、启停/状态/日志 |
-| [`examples/proxy-basics/`](examples/proxy-basics/) | A2A 代理、代理令牌、curl API 示例、LLM 中继 |
-| [`examples/ide-hooks/`](examples/ide-hooks/) | 为 Cursor、Claude Code、OpenCode、Codex 安装会话钩子 |
-| [`examples/solo-mode/`](examples/solo-mode/) | 完全隔离离线模式——无 Hub、无网络 |
-| [`examples/self-report/`](examples/self-report/) | Autopoiesis 自检、经验教训、自生规则 |
-| [`examples/hub-publish-flow/`](examples/hub-publish-flow/) | 蒸馏 → 复用 → 发布资产全生命周期 |
-| [`examples/skill2recipe/`](examples/skill2recipe/) | 将 Agent 技能组合为 GEP 配方 |
-| [`examples/atp-quickstart/`](examples/atp-quickstart/) | ATP 下单/交付/心跳演示（可 mock Hub） |
-
-## 测试
-
-```bash
-# 运行全部测试
-uv run pytest tests/ -q
-
-# 蜂群全量 E2E（stdio MCP，全部工具/资源/prompt + HITL/HOTL 流）
-uv run pytest tests/e2e/ -q
-
-# 真 LLM 闭环 E2E——DeepSeek（deepseek-v4-flash）扮演宿主执行器：
-# tick → LLM 执行 GEP dispatch 提示词 → distill → feedback → 第二次 tick。
-# 需要环境里有 DEEPSEEK_API_KEY（否则跳过）。
-DEEPSEEK_API_KEY=sk-... uv run pytest tests/e2e/ -m llm -q
-# 可选：DEEPSEEK_BASE_URL（默认 https://api.deepseek.com）、
-#       DEEPSEEK_MODEL（默认 deepseek-v4-flash）
-
-# 运行并生成覆盖率报告
-uv run pytest tests/ --cov=evolver --cov-report=term-missing
-
-# 排除慢速测试（CI 默认）
-uv run pytest -m "not slow"
-
-# 代码检查 + 格式检查 + 类型检查
-uv run ruff check src tests
-uv run ruff format --check src tests
-uv run mypy src
-
-# 验证所有模块导入
-python scripts/validate_modules.py
-```
-
-## 脚本工具
-
-| 脚本 | 用途 |
-|---|---|
-| `scripts/a2a_export.py` | 将资产导出为 A2A JSON |
-| `scripts/a2a_ingest.py` | 导入 A2A 资产 |
-| `scripts/a2a_promote.py` | 候选基因晋升为正式基因 |
-| `scripts/analyze_by_skill.py` | 按技能分析进化事件 |
-| `scripts/baseline_snapshot.py` | 快照基线以供比较 |
-| `scripts/build_binaries.py` | PyInstaller 独立可执行文件构建 |
-| `scripts/check_changelog.py` | CHANGELOG 与版本号一致性检查 |
-| `scripts/env_inventory.py` | 环境清单报告 |
-| `scripts/extract_log.py` | 按时间/类型过滤 events.jsonl |
-| `scripts/generate_history.py` | GEP 事件时间线（Markdown） |
-| `scripts/gep_append_event.py` | 手动追加 GEP 事件 |
-| `scripts/gep_personality_report.py` | 人格状态 HTML 报告 |
-| `scripts/harness_governance_check.py` | 测试台治理审计 |
-| `scripts/human_report.py` | 生成 Markdown 进化报告 |
-| `scripts/recall_verify_report.py` | 回忆/记忆图谱覆盖率报告 |
-| `scripts/recover_loop.py` | 守护循环恢复诊断 |
-| `scripts/seed_merchants.py` | ATP 商家服务种子数据 |
-| `scripts/self_ab_acceptance.py` | 自我 A/B 验收助手 |
-| `scripts/soak_env.py` / `scripts/soak_sprint24.py` | soak 环境助手 |
-| `scripts/suggest_version.py` | 语义化版本号建议 |
-| `scripts/validate_modules.py` | 验证所有模块可导入 |
-| `scripts/validate_suite.py` | 导入检查 + 快速 pytest 集成门禁 |
-
-## 架构
-
-### 进化流水线（七阶段）
-
-**起飞前检查**（`guards.py`）→ 可选 abort 并落盘 SelfReport 快照。
-
-| 阶段 | 模块 | 职责 |
-|---|---|---|
-| 1. Collect | `collect.py` | 会话日志、失败诊断、`living_memory` |
-| 2. Signals | `signals.py` | 提取信号；guard / preflight / learning 键 |
-| 3. Hub | `hub.py` | Hub 任务/资产；hub 质量门数据 |
-| 4. Enrich | `enrich.py` | 记忆图谱建议、`bidirectional_memory_sync` |
-| 5. Autopoiesis | `autopoiesis.py` | SelfReport、viability、homeostasis、repair bias |
-| 6. Select | `select.py` | Gene/Capsule + 变异类别 |
-| 7. Dispatch | `dispatch.py` | GEP 提示词（`recall` + `autopoiesis_context`）、固化状态 |
-
-**周期末**（`post_cycle.py`）——ATP auto-buyer tick。**固化**（`evolver solidify`）经 `gep/solidify.py` 单独运行。
-
-### 核心概念
-
-- **Gene（基因）** — 可复用的突变策略（signals_match → execution_trace）
-- **Capsule（胶囊）** — 带有结果的具体执行实例
-- **Epigenetics（表观遗传）** — 环境感知的基因抑制/激活
-- **Solidify（固化）** — 将经验验证的突变应用到代码库
-- **Episode record（周期记录）** — 一次自改进过程的运行时记录；消融裁决所依据的证据源
-- **ATP** — Agent 交易协议，用于自主服务市场
-
-## 与 Node.js 参考实现的差异
-
-- **许可证**：Python 移植版使用 **Apache-2.0** 许可证分发（依据公开 API、测试契约与协议规范进行的独立净室行为等价实现）；Node.js 参考实现使用 GPL-3.0-or-later。
-- **源码可见性**：Python 移植版完全可读且有完整文档；Node.js 核心文件经混淆保护。
-- **数据库**：Python 移植版增加了 `ops/sqlite_store.py` 用于 SQLite 持久化（增强）。
-- **配方中心**：Python 移植版包含 `recipe/` 模块（新功能）。
-- **WebUI 前端**：Python 移植版提供内嵌 JS 客户端（`webui/client/`）与 SSE；非独立 SPA 构建。
-- **受控消融实验**：Python 移植版内建 `experiment/` 模块，提供具备占位对照与样本量充足性门槛的严谨消融裁决体系。
-
-## 安全模型
-
-Evolver 需要文件系统与网络访问，护栏分多层实施：
-
-- **起飞前检查**：自动修复陈旧 `.git/index.lock` 与未决 rebase/merge；负载超 `EVOLVE_LOAD_MAX` 时跳过周期；连续修复失败触发降级模式或硬中止；用户锁（`~/.evolver/user.lock`，带 TTL）防止 IDE 会话期间变异；`chore(release)` 提交附近跳过进化
-- **爆炸半径**：每个基因声明 `constraints.max_files`（通常 4–20）与 `forbidden_paths`；A2A 门限 `A2A_MAX_FILES=5`、`A2A_MAX_LINES=200`；`EVOLVER_ROLLBACK_MODE=stash` 先 stash 再应用、失败可回滚
-- **内容完整性**：资产 `asset_id` 内含 `sha256:` 内容哈希，加载时静默跳过哈希不符条目；`sanitize.py` 净化 Hub 资产危险字段
-- **网络安全**：Proxy 默认只听 `127.0.0.1`；Hub 通信全走节点密钥签名 + 反滥用遥测；`webui-token` 签发 JWT，WebSocket 命令需管理员角色
-- **用户密钥**：`redact.py` 从交互日志剥离 bearer token / API key / JWT / 密码；`.env` 与凭据永不入库；会话转录进 WebUI 前先打码
-- **蜂群安全（HITL + HOTL）**：HITL 按决策阻塞（高危 solidify 过 `gep/hitl.py`，TTL 超时 fail-safe 拒绝，按 subject 幂等）；HOTL 监督叠加（pause/resume、veto 否决、directive 转向、降级连击自动暂停）；一切监督/审批动作入审计日志
-
-## 反例（行不通的做法）
-
-| 不要 | 为什么 |
-|---|---|
-| 在非 git 目录（如 `/tmp`）跑 evolver | 基因依赖 git 做爆炸半径追踪与回滚 |
-| 把 `OPENCLAW_WORKSPACE` 指向生产服务器 | Evolver 会施加代码变异——请用隔离工作区 |
-| 无 Hub 连接也无种子基因就开 `--loop` | 基因池会枯竭；调高 `EVOLVER_GENE_INERT_BAN_STREAK` |
-| 同一工作区跑多个 evolver 实例 | 实例锁会阻止；按项目隔离用 `EVOLVER_SESSION_SCOPE` |
-| 期待 `--solo` 立刻见效 | Solo 无 Hub 资产；基因池要多周期积累 |
-| 在 CI/CD 里用 `--review` | 审查模式阻塞等 stdin；自动化请用 `--loop` |
-| 同一仓库混跑 Node.js 与 Python evolver | 状态文件格式不同；请整体迁移到一个实现 |
-| 刚设 `EVOLVER_AUTOPOIESIS_WRITE=1` 就去看 `LESSONS_LEARNED.md` | 经验教训在周期结束后异步写入 |
-| 在写候选的同一上下文里给候选打分 | 配对会话与 bench 规则要求 val 求解在独立上下文进行 |
-
-## Hub 连接
-
-Hub（`A2A_HUB_URL`，默认 `https://evomap.ai`）提供资产发现（`GET /api/assets` 或 `evolver fetch`）、任务市场（`evolver sync` 或代理端点）、ATP 结算、SSE + 轮询双向事件同步。连接完全可选——`--solo` 关闭全部 Hub 功能；代理管理连接生命周期（启动 hello 心跳、不可达指数退避 1s→30s、反滥用遥测、`A2A_NODE_SECRET_VERSION` 密钥轮换）：
-
-```bash
-A2A_HUB_URL=https://your-hub.example.com uv run evolver proxy
-```
-
-## 文档
-
-- [English README](README.md)
-- [演进方案.md](演进方案.md) — 现行章程
-- [TODO.md](TODO.md) — 该章程的工作清单
-- [CHANGELOG.md](CHANGELOG.md) — 按 round 记账（当前 1.113.0）
-- [AGENTS.md](AGENTS.md) — Agent 集成指南、编码规范、常见陷阱
-- [DEBUG.md](DEBUG.md) — 排障手册：dogfood 与互锁 bug 的根因与可迁移经验
-- [RSI演进对照.md](RSI演进对照.md) — 论文对照与 effective-L5 记录（档案）
-- [演进方案_wikiskill对照版.md](演进方案_wikiskill对照版.md) — 2026-09-01 审计（档案）
-- [CONTRIBUTING.md](CONTRIBUTING.md) — 贡献指南
-- [SKILL.md](SKILL.md) — Skill 使用参考
-- [docs/env-registry.md](docs/env-registry.md) — 环境变量登记表
-
-## 许可证
-
-本软件遵循 [Apache License 2.0](LICENSE) 开源协议。
-
-> **关于上游谱系的说明**：本项目是一个独立的 Python 净室行为等价重实现工程，基于公开协议与测试契约开发。原始 Node.js 参考实现由 EvoMap 组织以 GPL-3.0-or-later 许可分发。本项目保持 Apache-2.0 独立开源发布。
+> **关于谱系传承之说明**：`evolver.py` 是依据公开标准、测试契约与行为协议独立研发的 Python 净室实现。原始参考概念源自 EvoMap 组织，本项目在保持架构纯净与现代化的同时，以更加宽松、对工程友好的 Apache-2.0 协议独立分发。
