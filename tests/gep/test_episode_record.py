@@ -300,6 +300,56 @@ def test_render_episode_block_truncates_past_the_budget(episode_env: Path) -> No
     assert "truncated" in block
 
 
+_CEILING_TIE_NOTE = "- 基线已满分，分数持平，这一轮测不出假说对错。"
+
+
+def _ceiling_tie_scene(**outcome_overrides: object) -> dict[str, object]:
+    raw = scene()
+    event = raw["event"]
+    assert isinstance(event, dict)
+    outcome = {
+        "status": "failed",
+        "score": 1.0,
+        "error": "bench_pack_rejected",
+        "pack_reason": "flat",
+    }
+    outcome.update(outcome_overrides)
+    event["outcome"] = outcome
+    event["bench_pack"] = {"baseline": 1.0, "score": 1.0, "reason": outcome["pack_reason"]}
+    return raw
+
+
+def test_a_perfect_baseline_tie_is_named_unresolved(episode_env: Path) -> None:
+    body = episode_record.build_episode(_ceiling_tie_scene())
+    assert episode_record.ceiling_tie_note(body) == _CEILING_TIE_NOTE
+    # The shared summary stays a status-and-score view. The ablation record
+    # arm renders it too, so the note is a separate line, not part of it.
+    assert _CEILING_TIE_NOTE not in episode_record.render_episode_block(body)
+
+
+def test_a_tie_below_the_ceiling_says_nothing(episode_env: Path) -> None:
+    raw = _ceiling_tie_scene()
+    event = raw["event"]
+    assert isinstance(event, dict)
+    bench = event["bench_pack"]
+    assert isinstance(bench, dict)
+    bench["baseline"] = 0.5
+    assert episode_record.ceiling_tie_note(episode_record.build_episode(raw)) == ""
+
+
+def test_a_drop_against_a_perfect_baseline_says_nothing(episode_env: Path) -> None:
+    body = episode_record.build_episode(_ceiling_tie_scene(pack_reason="drop", score=0.0))
+    assert episode_record.ceiling_tie_note(body) == ""
+
+
+def test_a_flat_rejection_without_a_baseline_says_nothing(episode_env: Path) -> None:
+    raw = _ceiling_tie_scene()
+    event = raw["event"]
+    assert isinstance(event, dict)
+    del event["bench_pack"]
+    assert episode_record.ceiling_tie_note(episode_record.build_episode(raw)) == ""
+
+
 # ---------------------------------------------------------------------------
 # Val seal (经验即证据 §5.3): a leak must not get a content address
 # ---------------------------------------------------------------------------

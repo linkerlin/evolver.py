@@ -189,6 +189,29 @@ def render_episode_block(body: dict[str, Any], *, ep_id: str = "", max_chars: in
     return block if len(block) <= max_chars else block[:max_chars] + "\n... (truncated)"
 
 
+def ceiling_tie_note(body: dict[str, Any]) -> str:
+    """One line when a tied score against a perfect baseline resolved nothing.
+
+    The summary above shows status and score. A flat pack rejection at
+    baseline 1.0 did not test the hypothesis: the gate had no headroom.
+    Kept out of :func:`render_episode_block` because the ablation record arm
+    shares that text. Every other body, including a missing field, returns "".
+    """
+    outcome = body.get("outcome")
+    if not isinstance(outcome, dict):
+        return ""
+    if outcome.get("error") != "bench_pack_rejected" or outcome.get("pack_reason") != "flat":
+        return ""
+    gates = body.get("gates")
+    bench = gates.get("bench_pack") if isinstance(gates, dict) else None
+    baseline = bench.get("baseline") if isinstance(bench, dict) else None
+    if isinstance(baseline, bool) or not isinstance(baseline, (int, float)):
+        return ""
+    if float(baseline) != 1.0:
+        return ""
+    return "- 基线已满分，分数持平，这一轮测不出假说对错。"
+
+
 # ---------------------------------------------------------------------------
 # Build
 # ---------------------------------------------------------------------------
@@ -489,6 +512,7 @@ __all__ = [
     "MAX_RECORD_CHARS",
     "EpisodeConflictError",
     "build_episode",
+    "ceiling_tie_note",
     "episode_id",
     "episode_path",
     "episodes_dir",

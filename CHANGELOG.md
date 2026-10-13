@@ -8,6 +8,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed — 满分基线上的持平拒绝在下一轮提示词里可见
+
+版本保持 **1.113.0**。提示词补一行，不计阶段进度。
+
+上一轮 episode 摘要只渲染结局状态和分数。包门拒绝、`pack_reason=flat`、基线为 1 时，dispatch 在摘要后加一句：基线已满分，分数持平，这一轮测不出假说对错。`render_episode_block` 不变，消融的 `--from-episodes` 臂看不到这句。其余结局不加字。
+
 ### Changed — instrument 点名每一个已注册工具
 
 版本保持 **1.113.0**。仪器修补，不计阶段进度。

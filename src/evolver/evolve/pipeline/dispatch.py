@@ -284,6 +284,12 @@ async def dispatch_phase(ctx: dict[str, Any]) -> dict[str, Any]:
             body = episode_record.load_episode(latest_id) if latest_id else None
             if body is not None:
                 episode_block = episode_record.render_episode_block(body, ep_id=latest_id)
+                # After the shared summary, not inside it: a perfect-baseline
+                # tie is not a refutation, and the ablation arm must not see
+                # this sentence.
+                note = episode_record.ceiling_tie_note(body)
+                if note:
+                    episode_block = f"{episode_block}\n{note}"
                 ctx["episode_block"] = body
     except Exception as exc:  # prompt assembly must never abort dispatch
         ctx["episode_block_error"] = str(exc)

@@ -158,6 +158,33 @@ def test_dispatch_embeds_the_latest_episode_before_evidence(
     assert "## Previous Episode" in prompt
     assert second["id"] in prompt  # the latest round, not the older one
     assert prompt.index("## Previous Episode") < prompt.index("## Evidence Pack")
+    assert "测不出假说对错" not in prompt
+    capsys.readouterr()
+
+
+def test_dispatch_names_a_ceiling_tie_after_the_episode(
+    _ws: Path,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture,
+) -> None:
+    """A perfect-baseline tie is named in the next prompt, right after the episode."""
+    from evolver.gep import episode_record
+
+    monkeypatch.setenv("EVOLUTION_DIR", str(tmp_path / "evolution"))
+    scene = _episode_scene("r1", "e1")
+    scene["event"]["outcome"] = {
+        "status": "failed",
+        "score": 1.0,
+        "error": "bench_pack_rejected",
+        "pack_reason": "flat",
+    }
+    scene["event"]["bench_pack"] = {"baseline": 1.0, "score": 1.0, "reason": "flat"}
+    stored = episode_record.record_episode(episode_record.build_episode(scene))
+    prompt = asyncio.run(dispatch_phase(_ctx()))["dispatch_prompt"]
+    note = "基线已满分，分数持平，这一轮测不出假说对错。"
+    assert note in prompt
+    assert prompt.index(stored["id"]) < prompt.index(note) < prompt.index("## Selected Gene")
     capsys.readouterr()
 
 
