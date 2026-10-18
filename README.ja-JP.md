@@ -215,9 +215,13 @@ uv run evolver check
 2. `swarm_tick`：最新の GEP 変異プロンプトとコンテキストを取得。
 3. *（ホストがエディタ上でコード差分を適用）*
 4. `swarm_distill`：改修内容から構造化された Gene / Capsule を抽出。
-5. `swarm_hypothesis`：検証前に当サイクルの単一仮説を宣言。
-6. `swarm_solidify`：検証ゲートを通過した改修を Git コミットとして固化。
+5. `swarm_hypothesis`：検証前に当サイクルの単一仮説を宣言（任意の `expected_outcome` で通過見込みの検査を指定）。
+6. `swarm_solidify`：検証ゲートを通過した改修を Git コミットとして固化し、`expected_outcome` と実検査結果を照合して `prediction_delta` を記録。
 7. `swarm_feedback`：多面的評価メトリクスを返し、次サイクルの適応を支援。
+
+前サイクルの検査出力や diff が切り詰められた場合や、コンテキスト圧縮の直前には、次の 2 ツールを併用します：
+- **切り詰められた原文の参照（`episode_inspect`）**：プロンプトには上限付きの要約のみが入ります（例：`stdout truncated at 400/2208 chars; call episode_inspect to zoom in`）。推測で書き直すのではなく、具体的な質問と行範囲（例：`{"kind":"check","name":"pytest","offset_lines":0,"limit_lines":80}`）を渡して元の出力を読み戻します。`episode.json` は書き換えません。
+- **圧縮前の作業メモ退避（`swarm_checkpoint_working`）**：`precompact` フックや 4 回連続の固化失敗が発生すると変異ツールが一時停止し、現在の仮説・棄却した案・主要 episode ID を `WORKING_SESSION.md`（上限 16,000 文字）に書くまで再開しません。次の `swarm_boot` が全文を返し、dispatch プロンプトは `[host_working]` 手がかりとして添付します。セッション終了時にはアーカイブ後に削除され、恒久記憶を汚しません。
 
 ### 3. ワンコマンドデモ
 
@@ -251,7 +255,7 @@ DEEPSEEK_API_KEY=sk-... uv run python examples/swarm-quickstart/demo_swarm_loop.
 | | `evolver setup-hooks` | Cursor / Claude Code などの IDE フックをセットアップ |
 | **資産・知識** | `evolver skills` | 外部 `SKILL.md` を走査・同期して遺伝子化 |
 | | `evolver gene-lifecycle`| 遺伝子の状態管理（`active`/`under_review`/`retired`） |
-| | `evolver episode` | 過去の自己改善実行記録（Episode Record）を閲覧 |
+| | `evolver episode` | 過去の自己改善記録（Episode Record）の閲覧と、`episode inspect` による切り詰め原文の参照 |
 | | `evolver self-report` | 自己診断を実行し、生きた記憶と防護規則を更新 |
 | **ベンチマーク** | `evolver experiment` | 厳格な対照アブレーション実験を実行（`--ablation`） |
 | | `evolver bench` | 凍結タスクパック、ベースライン検証、二項検定 |
@@ -306,6 +310,7 @@ src/evolver/
 
 ## 📚 関連資料
 
+- **[ステップバイステップ実践チュートリアル（tutorials/）](tutorials/README.md)**：専門用語に頼らず、具体例と実験から `evolver.py` の仕組みを解き明かす全 5 回の実践ガイド（中国語）。
 - **[演进方案.md](演进方案.md)**：現行章程。「経験こそが証拠」への転換を論理づける設計文書（中国語）。
 - **[AGENTS.md](AGENTS.md)**：AI エージェント開発者向けの実装規約、注意点、設計指針。
 - **[DEBUG.md](DEBUG.md)**：排他制御やエッジケースに対処するためのトラブルシューティング手引き。

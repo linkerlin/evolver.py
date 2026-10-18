@@ -215,9 +215,13 @@ uv run evolver check
 2. `swarm_tick`: 최신 GEP 변이 프롬프트 및 문맥 획득.
 3. *(호스트가 에디터에서 파일 수정 및 리팩터링 수행)*
 4. `swarm_distill`: 변경 사항으로부터 구조화된 Gene 및 Capsule 추출.
-5. `swarm_hypothesis`: 검증 전 해당 사이클의 유일한 과학적 가설 선언.
-6. `swarm_solidify`: 샌드박스 게이트를 거쳐 검증된 변경 사항을 Git 커밋으로 고착.
+5. `swarm_hypothesis`: 검증 전 해당 사이클의 유일한 가설을 선언하며, 선택적으로 통과를 예상하는 검사를 `expected_outcome`에 기록.
+6. `swarm_solidify`: 샌드박스 게이트를 거쳐 검증된 변경 사항을 Git 커밋으로 고착하고, `expected_outcome`과 실제 검사 결과를 대조해 `prediction_delta`를 기록.
 7. `swarm_feedback`: 다차원 평가 지표를 반환하여 후속 사이클의 가중치 자가적응 유도.
+
+이전 사이클의 검사 출력이나 diff가 잘렸거나 컨텍스트 압축이 임박했을 때는 다음 두 도구를 함께 사용합니다:
+- **잘린 원문 재조회 (`episode_inspect`)**: 프롬프트에는 요약본만 포함됩니다(예: `stdout truncated at 400/2208 chars; call episode_inspect to zoom in`). 추측으로 재작성하지 않고 구체적인 질문과 줄 범위(예: `{"kind":"check","name":"pytest","offset_lines":0,"limit_lines":80}`)를 전달해 원문을 읽기 전용으로 확인합니다. `episode.json`은 수정되지 않습니다.
+- **압축 전 작업 메모 저장 (`swarm_checkpoint_working`)**: `precompact` 훅이나 4회 연속 고착 실패가 발생하면 변이 도구가 일시 잠기며, 현재 가설·기각한 접근·주요 episode ID를 `WORKING_SESSION.md`(16,000자 상한)에 기록해야 풀립니다. 다음 `swarm_boot`가 전문을 반환하고 dispatch 프롬프트는 증거 팩 뒤에 `[host_working]` 단서로 첨부하며, 세션 종료 시 아카이브 후 삭제되어 장기 기억을 오염시키지 않습니다.
 
 ### 3. 원클릭 데모 스크립트
 
@@ -251,7 +255,7 @@ DEEPSEEK_API_KEY=sk-... uv run python examples/swarm-quickstart/demo_swarm_loop.
 | | `evolver setup-hooks` | Cursor, Claude Code 등 IDE 자동 텔레메트리 훅 설치 |
 | **자산 및 지식** | `evolver skills` | 외부 `SKILL.md` 스캔, 미리보기 및 GEP 유전자 동기화 |
 | | `evolver gene-lifecycle`| 유전자 수명 주기 관리 (`active`/`under_review`/`retired`) |
-| | `evolver episode` | 과거 자기 개선 실행 기록(Episode Record) 조회 |
+| | `evolver episode` | 자기 개선 실행 기록(Episode Record) 조회 및 `episode inspect`로 잘린 원문 확인 |
 | | `evolver self-report` | 자생(Autopoiesis) 시스템 진단 및 방어 규칙 갱신 |
 | **벤치 및 평가** | `evolver experiment` | 엄격한 대조 절제 실험 수행 (`--ablation`, `--placebo`) |
 | | `evolver bench` | 동결 벤치마크 태스크 팩 실행, 베이스라인 검증 및 통계 검정 |
@@ -306,6 +310,7 @@ src/evolver/
 
 ## 📚 관련 문서 및 개발 안내
 
+- **[단계별 실습 튜토리얼 (tutorials/)](tutorials/README.md)**: 전문 용어 암기 없이 구체적인 실험과 원리부터 `evolver.py`를 파헤치는 5부작 실습 가이드 (중국어).
 - **[演进方案.md](演进方案.md)**: 현행 최상위 헌장 문서. "경험이 곧 증거"로 나아가는 완전한 논리 체계 (중국어).
 - **[AGENTS.md](AGENTS.md)**: AI 코딩 에이전트 개발자를 위한 행동 강령, 주의사항 및 아키텍처 상세.
 - **[DEBUG.md](DEBUG.md)**: 프로세스 락, 경합 조건, 복합 엣지 케이스 해결을 위한 현장 디버깅 가이드.

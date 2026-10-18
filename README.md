@@ -215,9 +215,13 @@ Once connected, host agents communicate via standardized tool calls:
 2. `swarm_tick`: Retrieves the latest GEP mutation prompt and context.
 3. *(Host edits code and applies refactorings)*
 4. `swarm_distill`: Extracts structured Gene and Capsule data from the diff.
-5. `swarm_hypothesis`: Declares the single testable hypothesis for the round.
-6. `swarm_solidify`: Executes validation gates and commits changes via Git.
+5. `swarm_hypothesis`: Declares the single testable hypothesis for the round, with an optional `expected_outcome` listing the checks expected to pass.
+6. `swarm_solidify`: Executes validation gates, commits accepted changes via Git, and records `prediction_delta` by comparing `expected_outcome` against the checks that actually ran.
 7. `swarm_feedback`: Reports multi-dimensional metrics to steer future cycles.
+
+When the previous round's check output or diff is clipped, or when the host is about to compact its context, two companion tools keep the loop grounded:
+- **Zoom into truncated evidence (`episode_inspect`)**: The prompt carries a bounded summary (for example, `stdout truncated at 400/2208 chars; call episode_inspect to zoom in`). Instead of guessing, the host passes a concrete question and a line window (such as `{"kind":"check","name":"pytest","offset_lines":0,"limit_lines":80}`) to read the raw scene without modifying `episode.json`.
+- **Save session scratch before compaction (`swarm_checkpoint_working`)**: A `precompact` hook or four consecutive failed solidifications pauses mutation tools until the host writes the active hypothesis, ruled-out approaches, and key episode IDs to `WORKING_SESSION.md` (16,000-char cap). `swarm_boot` returns the full text, the next dispatch prompt appends a `[host_working]` clue after the evidence pack, and session boundaries archive and unlink the file so scratch never leaks into durable memory.
 
 ### 3. One-Command Demos
 
@@ -253,7 +257,7 @@ Commands are organized logically by lifecycle and domain:
 | | `evolver setup-hooks` | Install automated IDE telemetry hooks (Cursor, Claude Code, etc.) |
 | **Assets & Memory**| `evolver skills` | Scan, preview, and synchronize `SKILL.md` files into GEP assets |
 | | `evolver gene-lifecycle`| Audit and govern gene states (`active`/`under_review`/`retired`) |
-| | `evolver episode` | Inspect past self-improvement records (Episode Records) |
+| | `evolver episode` | List or show Episode Records, or zoom into truncated output with `episode inspect` |
 | | `evolver self-report` | Run Autopoiesis self-diagnosis and update living memory |
 | **Bench & Eval** | `evolver experiment` | Run controlled ablation experiments (`--ablation`, `--placebo`) |
 | | `evolver bench` | Run frozen benchmark packs, baseline gates, and paired tests |
@@ -308,6 +312,7 @@ src/evolver/
 
 ## 📚 References & Further Reading
 
+- **[Step-by-Step Hands-On Tutorials (tutorials/)](tutorials/README.md)** *(Chinese)*: A 5-part, jargon-free guide that builds `evolver.py` from concrete experiments and first principles.
 - **[演进方案.md](演进方案.md)** *(Evolution Charter)*: Foundational design treatise explaining the shift toward "Experience as Evidence".
 - **[AGENTS.md](AGENTS.md)**: Guidelines, conventions, and architectural rules for AI coding agents.
 - **[DEBUG.md](DEBUG.md)**: Field debugging guide for distributed locking, race conditions, and dogfooding edge cases.

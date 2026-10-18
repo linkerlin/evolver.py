@@ -216,9 +216,13 @@ uv run evolver check
 2. `swarm_tick`：获取最新的 GEP 变异提示词及上下文。
 3. *（宿主执行文件修改与逻辑重构）*
 4. `swarm_distill`：从修改成果中提取出结构化 Gene 与 Capsule。
-5. `swarm_hypothesis`：在验证前向系统提交本轮演化的唯一假说声明。
-6. `swarm_solidify`：触发沙箱门禁检验，验证通过后执行 Git 固化提交。
+5. `swarm_hypothesis`：在验证前向系统提交本轮演化的唯一假说声明，可选 `expected_outcome` 写明预计通过的检查。
+6. `swarm_solidify`：触发沙箱门禁检验，验证通过后执行 Git 固化提交；结算时对照 `expected_outcome` 与实际检查，写入 `prediction_delta`。
 7. `swarm_feedback`：回传多维评测指标，驱动下一轮自适应变异。
+
+当上一轮的检查输出或 diff 因预算被截断、或上下文即将压缩时，还有两条配套动作：
+- **按问题读回截断原文（`episode_inspect`）**：提示词只保留有界摘要（如 `stdout truncated at 400/2208 chars; call episode_inspect to zoom in`）。宿主不凭猜测重写，而是传入具体问题与行号窗口（如 `{"kind":"check","name":"pytest","offset_lines":0,"limit_lines":80}`）只读拉取原始现场。调用不修改 `episode.json`。
+- **压缩前留存草稿（`swarm_checkpoint_working`）**：收到 `precompact` 钩子或连续 4 次固化失败时，变异工具会暂停，要求宿主先把当前假说、已排除方案与关键 episode 写入 `WORKING_SESSION.md`（16000 字上限）。下一轮 `swarm_boot` 交回全文，dispatch 提示词在证据包之后附上 `[host_working]` 线索；会话结束时自动归档并清除，不污染长期记忆。
 
 ### 3. 一键体验闭环脚本
 
@@ -254,7 +258,7 @@ DEEPSEEK_API_KEY=sk-... uv run python examples/swarm-quickstart/demo_swarm_loop.
 | | `evolver setup-hooks` | 为当前工作区配置 Cursor / Claude Code 等 IDE 自动钩子 |
 | **资产与知识**| `evolver skills` | 扫描、预览并同步外部 `SKILL.md` 到 GEP 资产库 |
 | | `evolver gene-lifecycle`| 查看与维护基因状态（`active` / `under_review` / `retired`） |
-| | `evolver episode` | 检索与展示历次自改进执行过程（Episode Record） |
+| | `evolver episode` | 检索历次自改进记录（Episode Record），或用 `episode inspect` 按问题读回截断原文 |
 | | `evolver self-report` | 触发 Autopoiesis 系统自检，更新活记忆与自生免疫规条 |
 | **实验与评测**| `evolver experiment` | 运行严谨的受控消融实验（`--ablation`、`--placebo`） |
 | | `evolver bench` | 执行冻结基准测试任务包、基线对比与配对二项检验 |
@@ -309,6 +313,7 @@ src/evolver/
 
 ## 📚 延伸阅读与开发指南
 
+- **[循序渐进实战教程（tutorials/）](tutorials/README.md)**：不背术语、从零拆解 `evolver.py` 运作机制的五讲中文动手指南。
 - **[演进方案.md](演进方案.md)**：现行最高章程，阐述自演进系统从“库即尺子”迈向“经验即证据”的完整论证。
 - **[AGENTS.md](AGENTS.md)**：面向 AI 智能体开发者的行为准则、避坑指南与架构细节。
 - **[DEBUG.md](DEBUG.md)**：深度调试手册，记录互锁排查、复杂边缘条件与稳定性实践。
