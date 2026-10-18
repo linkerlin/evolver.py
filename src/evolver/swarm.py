@@ -162,12 +162,25 @@ def build_instrument_prompt(state: dict[str, Any]) -> str:
     hitl_pending = hitl.get("pending", 0)
     fence_open = "```json"
     fence_close = "```"
-    return f"""# EVOLVER SWARM — 宿主接管协议 (instrument v{SWARM_PROTOCOL_VERSION})
+    from evolver.gep.prompt import EVOLVER_CHARTER
+
+    working = state.get("working_session") if isinstance(state.get("working_session"), dict) else {}
+    preview = str((working or {}).get("preview") or "").strip()
+    working_block = (
+        "\n## WORKING_SESSION.md（当轮草稿，线索层，不进验收）\n" + preview + "\n"
+        if preview
+        else ""
+    )
+    prompt = f"""# EVOLVER SWARM — 宿主接管协议 (instrument v{SWARM_PROTOCOL_VERSION})
 
 > 本提示词由 evolver 引擎经 MCP 注入。你（{agent}）是进化工作节点：
 > 引擎选择、验证、固化；你只改代码。本条消息里的用户指令优先。
 > 本条没有别的任务时，先按下面开机。开机后用一句话说明实际状态：循环开始、
 > 需要人做首次准备，或已经暂停。说「停」即可停下。
+
+## 宪章
+
+{EVOLVER_CHARTER}
 
 ## 开机（本会话一次）
 
@@ -207,6 +220,8 @@ def build_instrument_prompt(state: dict[str, Any]) -> str:
 {fence_close}
    `dimension` 只能是 content、tool、schema。`id` 从下方 `train_ids` 里挑，
    禁止编造，禁止引用 val。要有 before 与 after。
+   可选 `expected_outcome`：`{{"expected_checks_to_pass": ["pytest"]}}`，写你预计
+   会通过的检查命令片段。结算时引擎对照实际检查写 `prediction_delta`，不影响门。
 5. `swarm_solidify` — 看 `ok`。失败读 `failure_mode.retryable`：
    true 回到步骤 1；false 停止并报告。
 6. `swarm_feedback` — `primary_score` 用第 5 步返回的 `score`，没有就填 0。
@@ -251,6 +266,9 @@ def build_instrument_prompt(state: dict[str, Any]) -> str:
   要回看全状态用 `swarm_workflow_status`。
 - 要按关键词找基因：`tool_asset_search`。要全文再 `tool_asset_get`。
 - 要按 id 读上一轮：`episode_get`。`dispatch_prompt` 里已有摘要时不必再读。
+- 摘要写了 truncated：`episode_inspect`，必须带 `question`，按 `views` 看未截断现场。
+- 返回 `next_action=call_swarm_checkpoint_working`：先 `swarm_checkpoint_working` 把假设、
+  已排除路径和 episode id 写入 WORKING_SESSION.md，再压缩或开新会话。
 - 要看状态、不跑周期：`swarm_status`。资源 `evolver://status` 是同一份。
 - 要看最近周期：`tool_cycle_timeline`，或资源 `evolver://events/recent`。
   投影陈旧时再 `tool_rebuild_views`。
@@ -272,7 +290,7 @@ def build_instrument_prompt(state: dict[str, Any]) -> str:
 - `ok=true` 且 `bench_pack.accept=true`：停并报告。发布要人执行 `evolver session accept`。
   没有配对会话时，这次返回就是最终结果。
 {hotl_note}
-
+{working_block}
 ## 当前状态
 
 - pending_solidify: {pending}
@@ -283,6 +301,7 @@ def build_instrument_prompt(state: dict[str, Any]) -> str:
 - hitl: mode={hitl_mode} pending={hitl_pending}
 - tick_count: {tick_count} | genes: {genes_n} | capsules: {capsules_n}
 """
+    return prompt
 
 
 # ---------------------------------------------------------------------------
@@ -447,6 +466,70 @@ def swarm_status() -> dict[str, Any]:
         "supervision": supervision_summary(),
         "bench_pack_gate": _bench_gate_snapshot(),
         "mailbox_pending": mailbox,
+        "working_session": _working_snapshot(),
+    }
+
+
+def _working_snapshot() -> dict[str, Any]:
+    """Scratch-pad preview plus whether a compact checkpoint is waiting."""
+    try:
+        from evolver.gep.compact_gate import checkpoint_pending
+        from evolver.gep.working_memory import read_working
+
+        text = read_working()
+        return {
+            "present": bool(text.strip()),
+            "chars": len(text),
+            "preview": text[:400],
+            "compact_checkpoint_pending": checkpoint_pending(),
+        }
+    except Exception:
+        return {
+            "present": False,
+            "chars": 0,
+            "preview": "",
+            "compact_checkpoint_pending": False,
+        }
+
+
+def _checkpoint_block() -> dict[str, Any] | None:
+    from evolver.gep.compact_gate import pending_block
+
+    block = pending_block()
+    if block is None:
+        return None
+    refused = dict(block)
+    refused["working_session"] = _working_snapshot()
+    return refused
+
+
+def _settled_run_barrier(run_id: str) -> dict[str, Any] | None:
+    """Return the recorded episode when this run is already landed.
+
+    A run that is still pending (a failed solidify the host may retry) is
+    left open. Sealing those would trap boot on ``solidify first`` forever.
+    """
+    if not run_id or run_id == "unknown" or _pending_solidify_state():
+        return None
+    from evolver.gep import episode_record
+
+    try:
+        ep_id = episode_record.find_episode_id_for_run(run_id)
+    except Exception:
+        return None
+    if not ep_id:
+        return None
+    return {
+        "ok": True,
+        "status": "already_settled",
+        "run_id": run_id,
+        "episode_id": ep_id,
+        "episode": {"ok": True, "reason": "already_stored", "id": ep_id},
+        "next_action": "swarm_tick",
+        "steer_message": (
+            "This run_id is already settled. The recorded episode id is returned; "
+            "call swarm_tick for a new cycle instead of solidifying again."
+        ),
     }
 
 
@@ -534,7 +617,7 @@ def swarm_boot(agent_name: str = "host-agent") -> dict[str, Any]:
     """
     state = swarm_status()
     prompt = build_instrument_prompt({**state, "agent_name": agent_name})
-    return {
+    payload: dict[str, Any] = {
         "ok": True,
         "protocol_version": SWARM_PROTOCOL_VERSION,
         "agent_name": agent_name,
@@ -544,6 +627,21 @@ def swarm_boot(agent_name: str = "host-agent") -> dict[str, Any]:
         "boot_once": _boot_once(bool(state.get("pending_solidify"))),
         "next_action": _opening_action(state)[0],
     }
+    from evolver.gep.working_memory import read_working
+
+    try:
+        working_text = read_working()
+    except Exception:  # a broken scratch file must not block takeover
+        working_text = ""
+    if working_text.strip():
+        payload["working_session_text"] = working_text
+        payload["working_session_source"] = "host_working"
+    blocked = _checkpoint_block()
+    if blocked is not None:
+        payload["next_action"] = blocked["next_action"]
+        payload["checkpoint"] = blocked
+        payload["steer_message"] = blocked["steer_message"]
+    return payload
 
 
 def _announce(agent_name: str) -> str | None:
@@ -591,6 +689,10 @@ async def swarm_tick(agent_name: str | None = None, include_prompt: bool = True)
     except ImportError as exc:
         # Stale long-lived host: in-memory modules predate the on-disk tree.
         return _stale_import_error(exc)
+
+    blocked = _checkpoint_block()
+    if blocked is not None:
+        return blocked
 
     tripwire = supervision.auto_pause_check()
     if supervision.is_paused():
@@ -719,6 +821,7 @@ async def _swarm_tick_locked(
             "stop_and_report" if aborted else ("swarm_tick" if not prompt else "execute_prompt")
         ),
         "tripwire": tripwire,
+        "working_session": _working_snapshot(),
     }
     _record_tick(result)
     return result
@@ -761,6 +864,9 @@ def swarm_distill(response_text: str, dry_run: bool = False) -> dict[str, Any]:
     result now carries a ``hint`` with the expected asset-block shape so one
     round-trip fixes the submission.
     """
+    blocked = _checkpoint_block()
+    if blocked is not None:
+        return blocked
     try:
         from evolver.gep.distill import DISTILL_FORMAT_HINT, distill_text, install_distilled
     except ImportError as exc:
@@ -940,6 +1046,9 @@ def swarm_hypothesis(hypothesis: dict[str, Any], agent_name: str = "host-agent")
 
     Declaring is not passing: the gate re-reads the record and can still refuse.
     """
+    blocked = _checkpoint_block()
+    if blocked is not None:
+        return blocked
     if not isinstance(hypothesis, dict):
         return {
             "ok": False,
@@ -977,6 +1086,9 @@ def swarm_propose(
     daemon loop owns the workspace while it holds the lock, and a host
     proposal landing mid-cycle would interleave two writers.
     """
+    blocked = _checkpoint_block()
+    if blocked is not None:
+        return blocked
     from evolver.gep.instance_lock import instance_lock_ctx
     from evolver.gep.paths import get_workspace_root
 
@@ -1093,6 +1205,12 @@ def _swarm_solidify_locked(
 
     meta = _pending_solidify_meta()
     run_id = meta["run_id"]
+    settled = _settled_run_barrier(str(run_id or ""))
+    if settled is not None:
+        return settled
+    blocked = _checkpoint_block()
+    if blocked is not None:
+        return blocked
 
     if hypothesis is not None:
         recorded = _record_host_hypothesis(_hypothesis_payload(hypothesis, run_id))
@@ -1165,7 +1283,52 @@ def _swarm_solidify_locked(
             result["episode"] = episode_record.record_round(event_id=str(result["event_id"]))
         except Exception as exc:
             result["episode"] = {"ok": False, "error": f"episode_record_failed: {exc}"}
+    if isinstance(result, dict):
+        try:
+            from evolver.gep.compact_gate import note_outcome
+
+            note_outcome(bool(result.get("ok")))
+        except Exception:
+            pass
     return result
+
+
+def swarm_checkpoint_working(content: str) -> dict[str, Any]:
+    """Crystallize session scratch and clear a pending compaction marker.
+
+    The host writes the hypothesis, ruled-out approaches, and episode ids.
+    Mutation tools stay refused until this succeeds while the marker is set.
+    """
+    from evolver.gep.compact_gate import clear_checkpoint
+    from evolver.gep.working_memory import write_working
+
+    try:
+        written = write_working(content)
+    except ValueError as exc:
+        return {
+            "ok": False,
+            "error": "checkpoint_rejected",
+            "message": str(exc),
+            "next_action": "call_swarm_checkpoint_working",
+            "steer_message": (
+                "Write a non-empty WORKING_SESSION.md within 16000 characters, "
+                "then call swarm_checkpoint_working again."
+            ),
+        }
+    cleared = clear_checkpoint()
+    return {
+        "ok": True,
+        "path": written["path"],
+        "chars": written["chars"],
+        "redacted": written["redacted"],
+        "checkpoint_cleared": cleared,
+        "source": "host_working",
+        "next_action": "compact_or_new_session",
+        "steer_message": (
+            "WORKING_SESSION.md is saved. Compact or open a new session. "
+            "swarm_boot reloads this scratch; it is a clue, not a gate input."
+        ),
+    }
 
 
 def swarm_report(
@@ -1279,7 +1442,7 @@ def swarm_supervise(
     return {"ok": False, "error": f"unknown_action:{action}"}
 
 
-_HOOK_EVENTS: Final = ("session_start", "session_end", "signal_detect")
+_HOOK_EVENTS: Final = ("session_start", "session_end", "signal_detect", "precompact")
 
 
 def swarm_hook_event(
@@ -1308,6 +1471,20 @@ def swarm_hook_event(
             "ok": False,
             "error": f"unknown_event:{event}",
             "supported": list(_HOOK_EVENTS),
+        }
+    if event == "precompact":
+        from evolver.gep.compact_gate import request_checkpoint
+
+        path = request_checkpoint("precompact")
+        return {
+            "ok": True,
+            "event": event,
+            "source": source,
+            "marker": str(path),
+            "next_action": "call_swarm_checkpoint_working",
+            "steer_message": (
+                "Compaction was requested. Call swarm_checkpoint_working before any mutation tool."
+            ),
         }
     content, file_path = _extract_content(payload or {})
     signals = detect_signals(content)
@@ -1508,6 +1685,7 @@ __all__ = [
     "SWARM_PROTOCOL_VERSION",
     "build_instrument_prompt",
     "swarm_boot",
+    "swarm_checkpoint_working",
     "swarm_distill",
     "swarm_feedback",
     "swarm_hook_event",

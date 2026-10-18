@@ -1550,7 +1550,7 @@ def _solidify_cycle(
     try:
         from evolver.gep.hypothesis import (
             HypothesisError,
-            clear_hypothesis,
+            consume_hypothesis,
             load_hypothesis,
             require_for_gate,
         )
@@ -1569,7 +1569,7 @@ def _solidify_cycle(
         logger.warning("[hypothesis-gate] record unusable — rejecting", exc_info=True)
         return _hypothesis_rejection(last_run, cwd, "hypothesis record unreadable")
     else:
-        clear_hypothesis()
+        consume_hypothesis(str(last_run.get("run_id") or ""))
 
     validation_result: dict[str, Any] | None = None
     validation_report: dict[str, Any] | None = None

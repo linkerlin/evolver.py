@@ -3,7 +3,11 @@
 Tier A (always runs): walks the ENTIRE MCP surface against a real server
 subprocess — every swarm tool, every classic tool, all four resources, the
 evolver_swarm prompt, the auto-hijack instruction invariance, HITL/HOTL flows,
-the skills bridge, and the invalid-enum error path.
+the skills bridge, and the invalid-enum error path. Two further tests close
+the loops added with the VISTA harness: the PreCompact hook and the MCP
+server share one checkpoint, and a settled round's prediction delta plus
+its truncated check output come back through episode_inspect and the next
+dispatch prompt.
 
 Tier B (@pytest.mark.llm, requires DEEPSEEK_API_KEY): a REAL LLM joins the
 loop — DeepSeek (deepseek-v4-flash) plays the host executor: it receives the
@@ -194,6 +198,63 @@ def _deepseek_chat(system: str, user: str, max_tokens: int = 4000) -> str:
         except (httpx.HTTPError, KeyError) as exc:
             last_error = exc
     raise AssertionError(f"DeepSeek call failed after retries: {last_error!r}")
+
+
+_PASSING_TEST = """def test_add() -> None:
+    assert 1 + 1 == 2
+"""
+
+_LONG_FAILURE = """def test_long_failure() -> None:
+    print("\\n".join(f"diag-line-{i:03d}" for i in range(60)))
+    print("TAIL-NEEDLE")
+    raise AssertionError("compound case still broken")
+"""
+
+_SANDBOX_PROJECT = """[project]
+name = "e2e-sandbox"
+version = "0.0.0"
+requires-python = ">=3.12"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+"""
+
+_SANDBOX_APP = """def add(left: int, right: int) -> int:
+    return left + right
+"""
+
+
+def _commit_all(ws: Path, message: str) -> None:
+    subprocess.run(["git", "add", "-A"], cwd=ws, check=True, capture_output=True)
+    subprocess.run(
+        ["git", "-c", "commit.gpgsign=false", "commit", "-q", "-m", message],
+        cwd=ws,
+        check=True,
+        capture_output=True,
+    )
+
+
+def _commit_python_project(ws: Path) -> None:
+    """A clean tree whose own checks pass, so the later edit is the mutation."""
+    (ws / "pyproject.toml").write_text(_SANDBOX_PROJECT, encoding="utf-8")
+    (ws / "src").mkdir()
+    (ws / "src" / "app.py").write_text(_SANDBOX_APP, encoding="utf-8")
+    (ws / "tests").mkdir()
+    (ws / "tests" / "test_app.py").write_text(_PASSING_TEST, encoding="utf-8")
+    _commit_all(ws, "seed a passing project")
+
+
+def _run_precompact_hook(ws: Path) -> dict[str, Any]:
+    """The Claude hook as its own process, aimed at this workspace's state."""
+    completed = subprocess.run(
+        [sys.executable, "-m", "evolver.adapters.scripts.compact_checkpoint"],
+        cwd=ws,
+        env=_workspace_env(ws),
+        capture_output=True,
+        text=True,
+        check=True,
+    )
+    return json.loads(completed.stdout)
 
 
 # ---------------------------------------------------------------------------
@@ -471,6 +532,153 @@ class TestFullSurfaceE2E:
         cancelled = client.call("swarm_workflow_act", {"workflow_id": "e2e-wf", "action": "cancel"})
         assert cancelled["ok"] is True
         assert cancelled["status"] == "cancelled"
+
+    def test_10_precompact_hook_shares_the_checkpoint_with_mcp(
+        self, client: _McpClient, e2e_ws: Path
+    ) -> None:
+        """The hook process and the MCP server must see one EVOLUTION_DIR.
+
+        A block holds compaction until swarm_checkpoint_working, which
+        releases exactly one later compaction. The scratch then rides back
+        out of swarm_boot whole, and into the next dispatch prompt clipped.
+        """
+        scratch = "ruled out the rename\n" + ("x" * 3100) + "\nRULED-OUT-NEEDLE\n"
+        first = _run_precompact_hook(e2e_ws)
+        assert first["decision"] == "block"
+        assert "swarm_checkpoint_working" in first["reason"]
+        refused = client.call("swarm_distill", {"response_text": "not yet"})
+        assert refused["error"] == "checkpoint_required"
+
+        saved = client.call("swarm_checkpoint_working", {"content": scratch})
+        assert saved["ok"] is True, saved
+        assert _run_precompact_hook(e2e_ws) == {}
+
+        booted = client.call("swarm_boot", {"agent_name": "e2e-working"})
+        assert booted["working_session_text"] == scratch
+        assert booted["working_session_source"] == "host_working"
+        assert "RULED-OUT-NEEDLE" not in booted["state"]["working_session"]["preview"]
+        assert "falsifiable hypothesis" in booted["instrument_prompt"]
+
+        client.call(
+            "swarm_hook_event",
+            {"event": "signal_detect", "payload": {"content": "ImportError: cannot import name"}},
+        )
+        tick = client.call("swarm_tick", {"agent_name": "e2e-working"})
+        prompt = tick.get("dispatch_prompt") or ""
+        assert prompt, tick.get("dispatch_reason")
+        assert "- [host_working] ruled out the rename" in prompt
+        assert "swarm_boot returns the full text" in prompt
+        assert "RULED-OUT-NEEDLE" not in prompt
+        assert prompt.index("## Host Clues") < prompt.index("[host_working]")
+
+    def test_11_settled_round_feeds_the_next_prompt(
+        self, client: _McpClient, e2e_ws: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """A real cascade failure keeps the declared expectation and the clip.
+
+        The host edits a committed tree, declares which checks should pass,
+        and solidify runs the engine's own commands. The episode then names
+        the miss and the truncation; episode_inspect reads past the clip
+        without touching the episode, and the following tick quotes both.
+        """
+        _commit_python_project(e2e_ws)
+        (e2e_ws / "tests" / "test_app.py").write_text(_LONG_FAILURE, encoding="utf-8")
+        client.call(
+            "swarm_hook_event",
+            {"event": "signal_detect", "payload": {"content": "ValueError: invalid literal"}},
+        )
+        tick = client.call("swarm_tick", {"agent_name": "e2e-delta"})
+        run_id = str(tick.get("run_id") or "")
+        assert run_id and tick.get("dispatch_prompt"), tick.get("dispatch_reason")
+
+        declared = client.call(
+            "swarm_hypothesis",
+            {
+                "hypothesis": {
+                    "hypothesis": "the long failure goes green",
+                    "dimension": "content",
+                    "mechanism_family": "repair",
+                    "target_hook": "tests/test_app.py",
+                    "mechanism_check": [
+                        {
+                            "id": "test_app",
+                            "before": "the suite failed",
+                            "after": "the suite passed",
+                        }
+                    ],
+                    "expected_outcome": {"expected_checks_to_pass": ["ruff", "mypy", "pytest"]},
+                }
+            },
+        )
+        assert declared["ok"] is True, declared
+
+        solidified = client.call("swarm_solidify", {})
+        assert solidified.get("error") == "validation_failed", solidified
+        episode = solidified.get("episode") or {}
+        assert episode.get("ok") is True, solidified
+        ep_id = str(episode["id"])
+
+        evolution = e2e_ws / "memory" / "evolution"
+        assert not (evolution / "hypothesis.json").exists()
+        consumed = json.loads((evolution / "hypothesis.consumed.json").read_text(encoding="utf-8"))
+        assert consumed["consumed_for_run"] == run_id
+
+        body_path = evolution / "episodes" / ep_id.replace(":", "_", 1) / "episode.json"
+        before = body_path.read_bytes()
+        body = json.loads(before)
+        delta = body["gates"]["prediction_delta"]
+        assert delta["matched"] is False
+        assert delta["unmet_expectations"] == ["pytest"]
+        assert delta["unexpected_failures"] == []
+        pytest_check = next(
+            row for row in body["scene_index"]["checks"] if "pytest" in row["command"]
+        )
+        assert pytest_check["stdout_chars"] > pytest_check["stdout_stored_chars"]
+
+        refused = client.call(
+            "episode_inspect", {"episode_id": ep_id, "question": "  ", "views": []}
+        )
+        assert refused["ok"] is False and refused["error"] == "empty_question"
+        zoomed = client.call(
+            "episode_inspect",
+            {
+                "episode_id": ep_id,
+                "question": "which case is still failing past the clip",
+                "views": [
+                    {"kind": "check", "name": "pytest", "offset_lines": 0, "limit_lines": 200}
+                ],
+            },
+        )
+        assert zoomed["ok"] is True, zoomed
+        assert "TAIL-NEEDLE" in zoomed["views"][0]["text"]
+        assert body_path.read_bytes() == before
+        logged = [
+            json.loads(line)
+            for line in (evolution / "episodes" / "inspect_calls.jsonl")
+            .read_text(encoding="utf-8")
+            .splitlines()
+        ]
+        assert len(logged) == 1
+        assert logged[0]["episode_id"] == ep_id
+        assert logged[0]["view_kinds"] == ["check"]
+        assert "still failing" not in str(logged)
+
+        monkeypatch.setenv("EVOLUTION_DIR", str(evolution))
+        from evolver.gep.episode_record import load_inspect_calls
+        from evolver.ops.meta_report import build_meta_report
+
+        panel = build_meta_report([], inspect_calls=load_inspect_calls())["panel"]["improver_tools"]
+        assert panel["episode_inspect_calls"] == 1
+
+        follow = client.call("swarm_tick", {"agent_name": "e2e-delta"})
+        prompt = follow.get("dispatch_prompt") or ""
+        assert "prediction_delta: matched=False" in prompt, follow.get("dispatch_reason")
+        assert 'unmet=["pytest"]' in prompt
+        assert "stdout truncated at" in prompt
+        assert "episode_inspect" in prompt
+        # Printed by the failing test at runtime, so only the clipped check
+        # output could have carried it. The source line stays in the diff.
+        assert "diag-line-050" not in prompt
 
     def test_08_auto_hijack_does_not_change_instructions(
         self, client: _McpClient, e2e_ws: Path

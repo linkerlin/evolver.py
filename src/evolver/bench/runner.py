@@ -49,8 +49,11 @@ def run_health(*, record: bool = True, source: str = "bench") -> dict[str, Any]:
     Tasks whose executable is missing from PATH are skipped (same degradation
     rule as the solidify cascade). Returns ``{"score", "per_task", "verdict"}``.
     """
+    from evolver.gep.validation_env import scrub_eval_subprocess_env, validation_env
+
     cwd = get_workspace_root()
     per_task: list[dict[str, Any]] = []
+    child_env = scrub_eval_subprocess_env(validation_env())
     total_weight = 0.0
     earned = 0.0
     for spec in HEALTH_TASKS:
@@ -68,6 +71,7 @@ def run_health(*, record: bool = True, source: str = "bench") -> dict[str, Any]:
                 timeout=float(spec.get("timeout_s", HEALTH_TASK_TIMEOUT_S)),
                 check=False,
                 shell=False,
+                env=child_env,
             )
             ok = proc.returncode == 0
         except (subprocess.TimeoutExpired, OSError):

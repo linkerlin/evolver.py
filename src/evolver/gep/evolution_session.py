@@ -209,6 +209,7 @@ class EvolutionSession:
         running = self.latest_run()
         if running is not None and running.get("status") == RUNNING:
             raise EvolutionError(f"Run {running['run_id']} is still running; resume it instead")
+        self._archive_working("session_start")
 
         run_id = f"run_{self._next_run_number()}"
         budget = self._resolve_budget(max_rounds)
@@ -496,6 +497,7 @@ class EvolutionSession:
         # where it was: not yet understood is not yet consumed.
         run["cursor"] = _advance_cursor(accepted_at, str(run.get("run_id") or ""))
         self._save_run()
+        self._archive_working("accept")
         return str(published)
 
     def mark_incomplete(self, reason: str) -> dict[str, Any]:
@@ -531,7 +533,14 @@ class EvolutionSession:
         run["status"] = INCOMPLETE
         run["end_reason"] = normalized
         self._save_run()
+        self._archive_working("incomplete")
         return dict(run)
+
+    def _archive_working(self, reason: str) -> None:
+        """Move session scratch out of the live file when a boundary is crossed."""
+        from evolver.gep.working_memory import archive_and_clear
+
+        archive_and_clear(reason)
 
     # ---- accessors --------------------------------------------------------
 

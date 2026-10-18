@@ -174,6 +174,20 @@ class TestProtocol:
         pending = json.loads((tmp_path / "gep" / "pending_signals.json").read_text())
         assert "perf_bottleneck" in pending["signals"]
 
+    def test_precompact_event_gates_until_checkpoint(
+        self, client: _McpClient, tmp_path: Path
+    ) -> None:
+        hook = client.call_tool("swarm_hook_event", {"event": "precompact"})
+        assert hook["next_action"] == "call_swarm_checkpoint_working"
+        assert (tmp_path / "evolution" / "compact_checkpoint.requested").is_file()
+
+        refused = client.call_tool("swarm_distill", {"response_text": "x"})
+        assert refused["error"] == "checkpoint_required"
+
+        saved = client.call_tool("swarm_checkpoint_working", {"content": "ruled out: A"})
+        assert saved["ok"] is True
+        assert not (tmp_path / "evolution" / "compact_checkpoint.requested").exists()
+
     def test_invalid_enum_gets_structured_feedback(self, client: _McpClient) -> None:
         res = client.request(
             "tools/call", {"name": "swarm_hook_event", "arguments": {"event": "bogus"}}

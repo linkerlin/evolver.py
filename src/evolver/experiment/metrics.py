@@ -9,9 +9,31 @@ over baseline, and per-category breakdowns.
 
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, Final
 
 from evolver.experiment.agent_runner import TaskResult
+
+#: Cap copied from VISTA's step-efficiency term. Reference rounds default to 2:
+#: finishing on round 2 scores 1.0; finishing on round 1 scores the cap.
+RERE_CAP: Final = 1.15
+RERE_REF_ROUNDS: Final = 2.0
+
+
+def rere_score(
+    *,
+    accepted: bool,
+    rounds_used: int,
+    r_ref: float = RERE_REF_ROUNDS,
+) -> float:
+    """Relative evolution-round efficiency. Observational only — not a gate.
+
+    ``min(cap, (r_ref / rounds_used) ** 2)`` when the session was accepted.
+    A rejection scores 0. Extra rounds are punished on a square, so a fix
+    that lands on round 1 outranks one that lands on round 4.
+    """
+    if not accepted or rounds_used < 1 or r_ref <= 0:
+        return 0.0
+    return round(min(RERE_CAP, (r_ref / float(rounds_used)) ** 2), 4)
 
 
 def compute_metrics(results: list[TaskResult]) -> dict[str, Any]:
@@ -98,4 +120,11 @@ def format_report(
     return "\n".join(lines)
 
 
-__all__ = ["compare_metrics", "compute_metrics", "format_report"]
+__all__ = [
+    "RERE_CAP",
+    "RERE_REF_ROUNDS",
+    "compare_metrics",
+    "compute_metrics",
+    "format_report",
+    "rere_score",
+]

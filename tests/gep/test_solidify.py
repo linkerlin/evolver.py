@@ -245,6 +245,43 @@ def test_hypothesis_rejection_leaves_a_recordable_scene(git_ws: Path) -> None:
     assert "tool_actions" not in body
 
 
+def test_prediction_delta_survives_the_gate_consuming_the_hypothesis(
+    git_ws: Path,
+    declared_hypothesis: dict[str, Any],
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path_factory: pytest.TempPathFactory,
+) -> None:
+    """The gate consumes hypothesis.json before validation; the boundary record
+    still sees what this round expected."""
+    _ = git_ws
+    # Runtime state lives outside the product tree, as soak routing arranges.
+    monkeypatch.setenv("EVOLUTION_DIR", str(tmp_path_factory.mktemp("evolution_outside")))
+    declared_hypothesis["redeclare"](  # type: ignore[operator]
+        expected_outcome={"expected_checks_to_pass": ["sys.exit"]}
+    )
+    set_flag("enable_fitness_cascade", False, persist=False)
+    write_state_for_solidify(
+        _last_run(
+            mutation={
+                "id": "mut_delta",
+                "validation": [[sys.executable, "-c", "import sys; sys.exit(1)"]],
+            }
+        )
+    )
+    result = solidify()
+    assert result["error"] == "validation_failed"
+    from evolver.gep.episode_record import load_episode, record_round
+    from evolver.gep.hypothesis import load_hypothesis
+
+    assert load_hypothesis() is None
+    stored = record_round(event_id=str(result["event_id"]))
+    body = load_episode(stored["id"])
+    assert body is not None
+    delta = body["gates"]["prediction_delta"]
+    assert delta["matched"] is False
+    assert delta["unmet_expectations"] == ["sys.exit"]
+
+
 def test_solidify_validation_failed(git_ws: Path, declared_hypothesis: dict[str, Any]) -> None:
     _ = git_ws
     _ = declared_hypothesis

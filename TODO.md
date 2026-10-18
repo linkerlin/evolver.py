@@ -4,6 +4,7 @@
 > 台账：[`CHANGELOG.md`](CHANGELOG.md)。史料：[`演进方案_库即尺子.md`](演进方案_库即尺子.md)、[`TODO_库即尺子.md`](TODO_库即尺子.md)、[`RSI演进对照.md`](RSI演进对照.md)、[`演进方案_wikiskill对照版.md`](演进方案_wikiskill对照版.md)——史料里的「下一步」不开工。
 > 2026-10-02 起，对照 arXiv:2609.37968v2（SelfSearch）。旧清单的账不回填，只带走未竟项。
 > **机制已就位，出口未关。** 点名裁决 1 已裁（不用 test 位）。分量口径（2026-10-03）：证据是一条引擎记下的结算，加上一次 `--from-episodes --placebo` 对照。每臂 n < 30 时 signal 与 no_signal 都只写 indicative only，不切版本，也不判阶段失败。n ≥ 30 且无信号才判负并停。不为凑 30 造题。失败结算与成功结算同一形状，仍只在周期边界记。
+> VISTA 机械套具（不替换本阶段出口，不改验收门）：[`VISTA演进方案.md`](VISTA演进方案.md) 的落地清单在 [`TODO_VISTA.md`](TODO_VISTA.md)。
 
 ## 带走（库即尺子未竟，不作废）
 

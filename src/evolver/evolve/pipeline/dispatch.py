@@ -297,11 +297,15 @@ async def dispatch_phase(ctx: dict[str, Any]) -> dict[str, Any]:
     # The clue layer: host-reported material, separately tagged, weakest last.
     clue_block = ""
     try:
-        from evolver.gep import episode_clue
+        from evolver.gep import episode_clue, working_memory
 
         clues = episode_clue.recent_clues()
-        if clues:
+        working_clue = working_memory.render_working_clue()
+        if clues or working_clue:
             clue_block = episode_clue.render_clue_block(clues)
+            if working_clue:
+                clue_block = f"{clue_block}\n{working_clue}"
+        if clues:
             ctx["clue_block"] = clues
     except Exception as exc:  # prompt assembly must never abort dispatch
         ctx["clue_block_error"] = str(exc)

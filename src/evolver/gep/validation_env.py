@@ -47,4 +47,43 @@ def validation_env() -> dict[str, str]:
     return env
 
 
-__all__ = ["validation_env"]
+#: Credentials and engine control knobs that must not enter a grading child.
+_EVAL_SECRET_KEYS: frozenset[str] = frozenset(
+    {
+        "OPENAI_API_KEY",
+        "ANTHROPIC_API_KEY",
+        "DEEPSEEK_API_KEY",
+        "ARC_API_KEY",
+        "CLAUDE_CODE_OAUTH_TOKEN",
+        "AZURE_OPENAI_API_KEY",
+        "GEMINI_API_KEY",
+        "GROQ_API_KEY",
+        "OPENROUTER_API_KEY",
+        "HF_TOKEN",
+        "HUGGINGFACE_API_KEY",
+        "EVOLVER_HITL_MODE",
+        "EVOLVER_ACCEPTANCE_SHADOW",
+        "EVOLVER_SWARM_AUTO_HIJACK",
+        "EVOLVER_SWARM_GATE_HANDOFF",
+    }
+)
+
+
+def _eval_secret_key(name: str) -> bool:
+    upper = name.upper()
+    if upper in _EVAL_SECRET_KEYS:
+        return True
+    return upper.endswith("_API_KEY") or upper.endswith("_API_TOKEN")
+
+
+def scrub_eval_subprocess_env(env: dict[str, str]) -> dict[str, str]:
+    """Copy *env* without API keys or engine privilege switches.
+
+    Used by bench graders that execute task code. The engine's own validation
+    cascade keeps :func:`validation_env` (PATH repair, no key dropping) so a
+    repo's pytest still sees the operator environment it was launched with.
+    """
+    return {key: value for key, value in env.items() if not _eval_secret_key(key)}
+
+
+__all__ = ["scrub_eval_subprocess_env", "validation_env"]

@@ -77,6 +77,19 @@ def build_hooks(evolver_root: Path) -> dict[str, Any]:
                     ],
                 },
             ],
+            "PreCompact": [
+                {
+                    "hooks": [
+                        {
+                            "type": "command",
+                            "command": hook_command_string(
+                                "evolver.adapters.scripts.compact_checkpoint"
+                            ),
+                            "timeout": 5,
+                        },
+                    ],
+                },
+            ],
         },
     }
 

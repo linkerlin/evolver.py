@@ -89,6 +89,27 @@ def asset_get(asset_id: str) -> dict[str, Any]:
     raise LookupError(f"asset not found locally: {asset_id}")
 
 
+def episode_inspect(
+    episode_id: str,
+    question: str,
+    views: list[dict[str, Any]],
+) -> dict[str, Any]:
+    """Read a line window of the lossless scene behind one episode.
+
+    ``question`` is required and is recorded only as a host clue in the
+    reply. The call does not write the episode, the library, or any pointer;
+    a successful call appends one row to the inspect side log.
+    """
+    import contextlib
+
+    from evolver.gep import episode_record
+
+    result = episode_record.inspect_episode_scene(episode_id, question=question, views=views)
+    with contextlib.suppress(Exception):  # the side log must never fail the read
+        episode_record.note_inspect_call(result)
+    return result
+
+
 def episode_get(episode_id: str) -> dict[str, Any]:
     """Fetch one episode record by id (read-only).
 
@@ -273,7 +294,9 @@ def build_server() -> Any:
 
         Fields: hypothesis (what you claim), dimension (content|tool|schema),
         mechanism_family, target_hook, mechanism_check (train task refs only —
-        the validation reserve is sealed). The host owns the claim; the engine
+        the validation reserve is sealed). Optional expected_outcome
+        ({"expected_checks_to_pass": [...]}) lets the engine record a
+        prediction_delta at settlement. The host owns the claim; the engine
         never invents one. Declaring is not passing: the gate re-reads it.
         """
         from evolver.swarm import swarm_hypothesis
@@ -410,8 +433,14 @@ def build_server() -> Any:
             dry_run=dry_run,
         )
 
+    def tool_swarm_checkpoint_working(content: str) -> dict[str, Any]:
+        """Write WORKING_SESSION.md and clear a pending compaction checkpoint."""
+        from evolver.swarm import swarm_checkpoint_working
+
+        return swarm_checkpoint_working(content)
+
     def tool_swarm_hook_event(
-        event: Literal["session_start", "session_end", "signal_detect"],
+        event: Literal["session_start", "session_end", "signal_detect", "precompact"],
         payload: dict[str, Any] | None = None,
         source: str = "host-agent",
     ) -> dict[str, Any]:
@@ -553,6 +582,7 @@ def build_server() -> Any:
         ("tool_asset_search", read_only),
         ("tool_asset_get", read_only),
         ("episode_get", read_only),
+        ("episode_inspect", read_only),
         ("tool_mailbox_send", None),
         ("tool_mailbox_poll", read_only),
         ("tool_mailbox_ack", None),
@@ -563,6 +593,7 @@ def build_server() -> Any:
         "tool_asset_search": tool_asset_search,
         "tool_asset_get": tool_asset_get,
         "episode_get": episode_get,
+        "episode_inspect": episode_inspect,
         "tool_mailbox_send": tool_mailbox_send,
         "tool_mailbox_poll": tool_mailbox_poll,
         "tool_mailbox_ack": tool_mailbox_ack,
@@ -587,6 +618,7 @@ def build_server() -> Any:
         ("swarm_supervise", tool_swarm_supervise, destructive),
         ("swarm_hooks", tool_swarm_hooks, None),
         ("swarm_hook_event", tool_swarm_hook_event, None),
+        ("swarm_checkpoint_working", tool_swarm_checkpoint_working, None),
         ("swarm_skills", tool_swarm_skills, None),
         ("swarm_workflow_run", tool_swarm_workflow_run, None),
         ("swarm_workflow_act", tool_swarm_workflow_act, destructive),
@@ -619,6 +651,7 @@ __all__ = [
     "build_server",
     "cycle_timeline",
     "episode_get",
+    "episode_inspect",
     "mailbox_ack",
     "mailbox_poll",
     "mailbox_send",

@@ -43,6 +43,7 @@
 | 求解带库（库即尺子） | `uv run evolver bench prompt <id> --pack <path> --library <snapshot_id>`（按 id 读快照正文贴进 prompt；Parent 解注 Parent id、候选解注候选 id；active 不动） |
 | 配对会话（§5.3） | `uv run evolver session hypothesize --json='{...}'`（宿主声明本轮唯一假说；`--stdin` 或 `@file` 亦可。无假说则门拒，引擎不代笔） |
 | 消融裁决（§5.8/§5.9） | `uv run evolver experiment --ablation --tasks <file> [--from-episodes] [--placebo] [--model deepseek-flash]`（经验即证据出口：同预算有/无记录盲测；`--placebo` 注入等长中性上下文隔离系统角色偏置；`MIN_N=30` 充足性校验；`--stage-exit` 为机器契约形态：真实 episode + placebo + 唯一任务 + 已知 commit + 落盘报告才受理，否则 exit 2，详见 `experiment/cli.py::_main_stage_exit`） |
+| 经验重注视（VISTA） | `uv run evolver episode inspect <id> --question="..." --view='{"kind":"check","name":"pytest","offset_lines":0,"limit_lines":80}'`（只读；空 question 拒绝；切片过 val-seal。清单：[`TODO_VISTA.md`](TODO_VISTA.md)） |
 | 评估隔离 worktree | 默认开启（`enable_eval_worktree`）。失败回退 live cwd 并告警；`EVOLVER_EVAL_WORKTREE_STRICT=1` 时回退改为失败 |
 | 守护进程生命周期 | `uv run evolver start` / `stop` / `restart` / `status` / `log` |
 | 健康检查 | `uv run evolver check` / `watch` |

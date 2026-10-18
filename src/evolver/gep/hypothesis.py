@@ -38,6 +38,7 @@ DIMENSION_LABELS: dict[str, str] = {
 }
 
 HYPOTHESIS_FILENAME: str = "hypothesis.json"
+CONSUMED_FILENAME: str = "hypothesis.consumed.json"
 SCHEMA_VERSION: int = 1
 
 #: Why a round was refused. Kept exhaustive so callers report, not guess.
@@ -52,6 +53,7 @@ REASON_CHECK_NOT_OBSERVATION: str = "mechanism_check_not_observation"
 REASON_VAL_REF: str = "mechanism_check_references_val"
 REASON_UNKNOWN_REF: str = "mechanism_check_unknown_id"
 REASON_RUN_MISMATCH: str = "hypothesis_belongs_to_another_round"
+REASON_BAD_EXPECTED: str = "bad_expected_outcome"
 
 REASON_MESSAGES: dict[str, str] = {
     REASON_MISSING_RECORD: "no hypothesis was recorded for this Candidate",
@@ -71,6 +73,10 @@ REASON_MESSAGES: dict[str, str] = {
     REASON_RUN_MISMATCH: (
         "the recorded hypothesis belongs to another round — declare one for "
         "this Candidate (one Candidate, one hypothesis, §5.3)"
+    ),
+    REASON_BAD_EXPECTED: (
+        "'expected_outcome' must be an object with optional "
+        "expected_checks_to_pass (list of strings) and expected_invariants (string)"
     ),
 }
 
@@ -133,6 +139,39 @@ def clear_hypothesis() -> None:
     path = Path(hypothesis_path())
     if path.is_file():
         path.unlink()
+
+
+def consume_hypothesis(run_id: str) -> None:
+    """Take the record off the gate, keeping a copy for this run's boundary record.
+
+    The gate reads only ``hypothesis.json``; the copy is stamped with the run
+    that consumed it and is never read by the gate.
+    """
+    from pathlib import Path
+
+    recorded = load_hypothesis()
+    if recorded is not None and run_id:
+        consumed = dict(recorded)
+        consumed["consumed_for_run"] = run_id
+        target = Path(hypothesis_root()) / CONSUMED_FILENAME
+        target.write_text(json.dumps(consumed, ensure_ascii=False, indent=2), encoding="utf-8")
+    clear_hypothesis()
+
+
+def load_consumed_hypothesis(run_id: str) -> dict[str, Any] | None:
+    """The record the gate consumed for ``run_id``, or ``None``."""
+    from pathlib import Path
+
+    path = Path(hypothesis_root()) / CONSUMED_FILENAME
+    if not run_id or not path.is_file():
+        return None
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return None
+    if not isinstance(payload, dict) or payload.get("consumed_for_run") != run_id:
+        return None
+    return payload
 
 
 def _task_ids() -> dict[str, list[str]]:
@@ -203,7 +242,66 @@ def validate_record(payload: dict[str, Any] | None) -> tuple[bool, str]:
             return False, REASON_CHECK_NOT_OBSERVATION
         if not _observed(item.get("before")) or not _observed(item.get("after")):
             return False, REASON_CHECK_NOT_OBSERVATION
+    if not _valid_expected(payload.get("expected_outcome")):
+        return False, REASON_BAD_EXPECTED
     return True, ""
+
+
+def _valid_expected(expected: Any) -> bool:
+    """``expected_outcome`` is optional. When present it has a fixed shape."""
+    if expected is None:
+        return True
+    if not isinstance(expected, dict):
+        return False
+    if set(expected) - {"expected_checks_to_pass", "expected_invariants"}:
+        return False
+    names = expected.get("expected_checks_to_pass", [])
+    if not isinstance(names, list):
+        return False
+    if any(not isinstance(item, str) or not item.strip() for item in names):
+        return False
+    invariants = expected.get("expected_invariants", "")
+    return isinstance(invariants, str)
+
+
+def compute_prediction_delta(
+    expected: dict[str, Any],
+    checks: list[Any],
+) -> dict[str, Any]:
+    """Engine comparison of a pre-declared expectation against observed checks.
+
+    The host lists checks it expected to pass. Failures outside that list are
+    unexpected; listed checks that did not pass are unmet. Invariant prose is
+    recorded only as a boolean — the text stays in the hypothesis file and
+    does not enter the episode.
+    """
+    raw_names = expected.get("expected_checks_to_pass") or []
+    names = [item.strip() for item in raw_names if isinstance(item, str) and item.strip()]
+    failed: list[str] = []
+    for check in checks:
+        if not isinstance(check, dict) or check.get("ok"):
+            continue
+        command = str(check.get("command") or "check")
+        failed.append(command[:120])
+    unmet = [
+        name
+        for name in names
+        if checks
+        and not any(
+            isinstance(check, dict) and check.get("ok") and name in str(check.get("command") or "")
+            for check in checks
+        )
+    ]
+    unexpected = [command for command in failed if not any(name in command for name in names)]
+    matched: bool | None = (not unmet and not unexpected) if names and checks else None
+    invariants = expected.get("expected_invariants")
+    return {
+        "matched": matched,
+        "unexpected_failures": unexpected,
+        "unmet_expectations": unmet,
+        "invariants_recorded": isinstance(invariants, str) and bool(invariants.strip()),
+        "source": "engine",
+    }
 
 
 def validate_for_gate(
@@ -302,14 +400,18 @@ def _now() -> str:
 
 
 __all__ = [
+    "CONSUMED_FILENAME",
     "DIMENSIONS",
     "DIMENSION_LABELS",
     "HYPOTHESIS_FILENAME",
     "REASON_MESSAGES",
     "HypothesisError",
     "clear_hypothesis",
+    "compute_prediction_delta",
+    "consume_hypothesis",
     "hypothesis_path",
     "hypothesis_root",
+    "load_consumed_hypothesis",
     "load_hypothesis",
     "record_hypothesis",
     "require_for_gate",

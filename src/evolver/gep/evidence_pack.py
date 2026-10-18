@@ -218,6 +218,41 @@ def _prior_attribution(
     return ""
 
 
+def _bucket_key(attempt: dict[str, Any]) -> str:
+    """Identity of one noisy failure. Empty when there is nothing to merge on."""
+    from evolver.gep.sanitize import quantize_diagnostic_signature
+
+    reason = quantize_diagnostic_signature(str(attempt.get("reason") or ""))
+    digest = str(attempt.get("digest") or "")
+    if not reason and not digest:
+        return ""
+    status = str(attempt.get("status") or "")
+    return f"{status}|{digest}|{reason}"
+
+
+def collapse_quantized_attempts(attempts: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Newest-first rows. Same quantized signature and digest share one row.
+
+    The attempt ledger itself is not rewritten: callers that score mandates
+    still see every try. Rendering uses this collapse so line numbers and
+    temp paths do not spend the character budget twice.
+    """
+    kept: list[dict[str, Any]] = []
+    index_by_key: dict[str, int] = {}
+    for attempt in reversed(attempts):
+        row = dict(attempt)
+        row["count"] = 1
+        key = _bucket_key(attempt)
+        if key and key in index_by_key:
+            prior = kept[index_by_key[key]]
+            prior["count"] = int(prior.get("count") or 1) + 1
+            continue
+        if key:
+            index_by_key[key] = len(kept)
+        kept.append(row)
+    return kept
+
+
 def _attempt_line(attempt: dict[str, Any]) -> str:
     landed = ",".join(attempt["landed_gene_ids"]) or "-"
     gene = attempt["gene_id"] or "-"
@@ -227,6 +262,9 @@ def _attempt_line(attempt: dict[str, Any]) -> str:
     )
     if attempt["reason"]:
         line += f" | {attempt['reason']}"
+    count = int(attempt.get("count") or 1)
+    if count > 1:
+        line += f" count={count}"
     return line
 
 
@@ -270,10 +308,11 @@ def render_evidence_pack(
     rows: list[str] = []
     used = 0
     omitted = 0
-    for attempt in reversed(attempts):  # newest first
+    rendered_attempts = collapse_quantized_attempts(attempts)
+    for attempt in rendered_attempts:  # newest first; same signature collapsed
         line = _attempt_line(attempt)
         if used + len(line) + 1 > budget:
-            omitted = len(attempts) - len(rows)
+            omitted = len(rendered_attempts) - len(rows)
             break
         rows.append(line)
         used += len(line) + 1
@@ -300,5 +339,6 @@ __all__ = [
     "EVIDENCE_PACK_MAX_CHARS",
     "EVIDENCE_PACK_MAX_EVENTS",
     "build_evidence_pack",
+    "collapse_quantized_attempts",
     "render_evidence_pack",
 ]

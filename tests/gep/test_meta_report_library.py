@@ -66,6 +66,20 @@ def test_improver_tool_panel_empty_without_episodes() -> None:
     assert panel["rounds"] == 0
     assert panel["improver_tool_rounds"] == 0
     assert panel["usage_rate"] is None
+    assert panel["episode_inspect_calls"] == 0
+    assert panel["episode_inspect_sessions"] == 0
+
+
+def test_improver_tool_panel_counts_host_inspect_calls() -> None:
+    calls = [
+        {"episode_id": "sha256:a", "session_run_id": "run_1", "view_kinds": ["check"]},
+        {"episode_id": "sha256:a", "session_run_id": "run_1", "view_kinds": ["diff"]},
+        {"episode_id": "sha256:b", "session_run_id": None, "view_kinds": ["check"]},
+    ]
+    report = build_meta_report([], [], None, [], None, calls)
+    panel = report["panel"]["improver_tools"]
+    assert panel["episode_inspect_calls"] == 3
+    assert panel["episode_inspect_sessions"] == 1
 
 
 class TestFaithfulUse:

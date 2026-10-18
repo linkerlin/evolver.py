@@ -28,7 +28,7 @@ from __future__ import annotations
 import json
 import re
 from pathlib import Path
-from typing import Any, Final
+from typing import Any, Final, TypeGuard
 
 from evolver.gep.asset_store import atomic_write_json, with_file_lock
 from evolver.gep.content_hash import canonicalize, compute_asset_id
@@ -39,6 +39,7 @@ INDEX_FILENAME: Final = "index.json"
 EPISODE_FILENAME: Final = "episode.json"
 EPISODE_FORMAT: Final = "evolver.episode_record.v0"
 EPISODE_INDEX_FORMAT: Final = "evolver.episode_index.v0"
+INSPECT_CALLS_FILENAME: Final = "inspect_calls.jsonl"
 
 #: A record is a citation, not a transcript: bounded so the next improver can
 #: read it whole. The full scene stays in ``gep/evidence``.
@@ -46,6 +47,12 @@ MAX_DIFF_CHARS: Final = 4000
 MAX_CHECKS: Final = 20
 MAX_CHECK_OUTPUT_CHARS: Final = 400
 MAX_RECORD_CHARS: Final = 64_000
+#: One inspect call may request this many slices. Each slice is capped so a
+#: zoom cannot paste the whole scene back into context.
+MAX_INSPECT_VIEWS: Final = 8
+MAX_INSPECT_VIEW_CHARS: Final = 2_000
+MAX_INSPECT_QUESTION_CHARS: Final = 500
+MAX_INSPECT_LIMIT_LINES: Final = 200
 
 #: The record holds what the engine observed. Host-reported material has its
 #: own channel (the prompt's clue block) and must not enter here.
@@ -59,6 +66,7 @@ ENGINE_SIDE_FIELDS: Final = (
     "checks",
     "gates",
     "outcome",
+    "scene_index",
 )
 HOST_SIDE_KEYS: Final = (
     "account",
@@ -181,6 +189,8 @@ def render_episode_block(body: dict[str, Any], *, ep_id: str = "", max_chars: in
         f"outcome: {outcome.get('status') or 'unknown'}  score: {outcome.get('score')}",
         f"- checks: {ok_count}/{len(checks)} ok",
         f"- gates: acceptance={acceptance.get('accepted') if acceptance else 'none'}",
+        *_prediction_delta_line(gates),
+        *_inspect_anchors(body),
         "```diff",
         diff or "(no diff)",
         "```",
@@ -233,6 +243,9 @@ def build_episode(scene: dict[str, Any]) -> dict[str, Any]:
     mutation: dict[str, Any] = raw_mutation if isinstance(raw_mutation, dict) else {}
     raw_outcome = event.get("outcome")
     outcome: dict[str, Any] = raw_outcome if isinstance(raw_outcome, dict) else {}
+    raw_diff = _text(event.get("diff_snapshot"))
+    stored_diff = _clip(raw_diff, MAX_DIFF_CHARS)
+    checks, check_index = _bounded_checks(scene.get("validation_result"))
     body: dict[str, Any] = {
         "format": EPISODE_FORMAT,
         "run_id": _text(event.get("run_id")),
@@ -245,34 +258,54 @@ def build_episode(scene: dict[str, Any]) -> dict[str, Any]:
             "mutation_id": _text(mutation.get("id")),
             "category": _text(mutation.get("category")),
         },
-        "diff": _clip(event.get("diff_snapshot"), MAX_DIFF_CHARS),
-        "checks": _bounded_checks(scene.get("validation_result")),
+        "diff": stored_diff,
+        "checks": checks,
         "gates": _bounded_gates(scene.get("gate"), event),
         "outcome": outcome,
+        "scene_index": {
+            "diff_chars": len(raw_diff),
+            "diff_stored_chars": len(stored_diff),
+            "checks": check_index,
+        },
     }
     return validate_episode(body)
 
 
-def _bounded_checks(validation: Any) -> list[dict[str, Any]]:
+def _bounded_checks(validation: Any) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
     results = validation.get("results") if isinstance(validation, dict) else None
     if not isinstance(results, list):
-        return []
+        return [], []
     checks: list[dict[str, Any]] = []
+    index: list[dict[str, Any]] = []
     for entry in results[:MAX_CHECKS]:
         if not isinstance(entry, dict):
             continue
+        stdout_raw = _text(entry.get("stdout"))
+        stderr_raw = _text(entry.get("stderr"))
+        stdout = _clip(stdout_raw, MAX_CHECK_OUTPUT_CHARS)
+        stderr = _clip(stderr_raw, MAX_CHECK_OUTPUT_CHARS)
+        command = _text(entry.get("command"))
         checks.append(
             {
-                "command": _text(entry.get("command")),
+                "command": command,
                 "ok": bool(entry.get("ok")),
                 "duration_ms": entry.get("duration_ms")
                 if isinstance(entry.get("duration_ms"), (int, float))
                 else None,
-                "stdout": _clip(entry.get("stdout"), MAX_CHECK_OUTPUT_CHARS),
-                "stderr": _clip(entry.get("stderr"), MAX_CHECK_OUTPUT_CHARS),
+                "stdout": stdout,
+                "stderr": stderr,
             }
         )
-    return checks
+        index.append(
+            {
+                "command": command,
+                "stdout_chars": len(stdout_raw),
+                "stdout_stored_chars": len(stdout),
+                "stderr_chars": len(stderr_raw),
+                "stderr_stored_chars": len(stderr),
+            }
+        )
+    return checks, index
 
 
 def _bounded_gates(gate: Any, event: dict[str, Any]) -> dict[str, Any]:
@@ -425,12 +458,131 @@ def record_round(event_id: str, run_id: str = "") -> dict[str, Any]:
 
     The cycle boundary (CLI / MCP) calls this after a settled round. The
     scene is looked up in ``gep.evidence`` — the record is derived from what
-    the engine already stored, never from what the host reports.
+    the engine already stored, never from what the host reports. When the
+    host declared ``expected_outcome`` beforehand, the engine writes
+    ``gates.prediction_delta`` from the checks it actually observed.
     """
     scene = _find_scene(event_id, run_id)
     if scene is None:
         return {"ok": False, "error": "scene_missing", "event_id": event_id}
-    return record_episode(build_episode(scene))
+    return record_episode(_attach_prediction_delta(build_episode(scene)))
+
+
+def find_episode_id_for_run(run_id: str) -> str | None:
+    """Latest episode id whose index row cites ``run_id``. Read-only."""
+    if not run_id:
+        return None
+    for row in reversed(list_episodes()):
+        if str(row.get("run_id") or "") == run_id and row.get("id"):
+            return str(row["id"])
+    return None
+
+
+def inspect_calls_path() -> Path:
+    return episodes_dir() / INSPECT_CALLS_FILENAME
+
+
+def note_inspect_call(result: dict[str, Any]) -> None:
+    """Append one successful host inspect to a side log; episodes stay untouched.
+
+    A row names the episode, its cycle run, the paired session running at the
+    time (the join key for the RERE panel), and the view kinds. The question
+    text is not logged.
+    """
+    if not result.get("ok"):
+        return
+    from datetime import UTC, datetime
+
+    from evolver.gep.evolution_session import active_session
+
+    session = active_session()
+    views = result.get("views")
+    row = {
+        "at": datetime.now(UTC).isoformat(),
+        "episode_id": result.get("source_episode_id"),
+        "run_id": result.get("run_id"),
+        "session_run_id": session.get("run_id") if session else None,
+        "view_kinds": [str(view.get("kind")) for view in views or [] if isinstance(view, dict)],
+    }
+    path = inspect_calls_path()
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with path.open("a", encoding="utf-8") as handle:
+        handle.write(json.dumps(row, ensure_ascii=False) + "\n")
+
+
+def load_inspect_calls() -> list[dict[str, Any]]:
+    """Rows of the inspect side log, oldest first. Unreadable lines are skipped."""
+    path = inspect_calls_path()
+    if not path.is_file():
+        return []
+    rows: list[dict[str, Any]] = []
+    for line in path.read_text(encoding="utf-8").splitlines():
+        try:
+            row = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        if isinstance(row, dict):
+            rows.append(row)
+    return rows
+
+
+def inspect_episode_scene(
+    ep_id: str,
+    *,
+    question: str,
+    views: list[dict[str, Any]],
+) -> dict[str, Any]:
+    """Slice the lossless scene behind one episode. Read-only.
+
+    The prompt carries a clipped view. This reads ``gep/evidence`` for the
+    run and returns the requested line window, val-sealed. An empty question
+    is refused: the host must say what it is looking for. The question is
+    returned as a host clue and is not written into the episode.
+    """
+    asked = question.strip() if isinstance(question, str) else ""
+    if not asked:
+        return _inspect_error(
+            "empty_question",
+            "Pass a non-empty question describing what you expect to find in this slice.",
+        )
+    if len(asked) > MAX_INSPECT_QUESTION_CHARS:
+        return _inspect_error(
+            "question_too_long",
+            f"question must be at most {MAX_INSPECT_QUESTION_CHARS} characters.",
+        )
+    if not isinstance(views, list) or not 1 <= len(views) <= MAX_INSPECT_VIEWS:
+        return _inspect_error(
+            "bad_views",
+            f"views must be a list of 1 to {MAX_INSPECT_VIEWS} slice objects.",
+        )
+    body = load_episode(ep_id)
+    if body is None:
+        return _inspect_error("episode_not_found", f"episode not found: {ep_id}")
+    run_id = str(body.get("run_id") or "")
+    event_id = str(body.get("event_id") or "")
+    scene = _load_scene(run_id, event_id)
+    if scene is None:
+        return _inspect_error(
+            "scene_missing",
+            "The episode cites no lossless scene. There is nothing further to zoom into.",
+        )
+    sliced: list[dict[str, Any]] = []
+    for index, view in enumerate(views, start=1):
+        try:
+            sliced.append(_slice_view(scene, view, index))
+        except ValueError as exc:
+            return _inspect_error("bad_view", str(exc))
+    from evolver.gep.val_seal import redact
+
+    sealed_question, _report = redact(asked, where="episode_inspect")
+    return {
+        "ok": True,
+        "source_episode_id": ep_id,
+        "run_id": run_id,
+        "current_state_unchanged": True,
+        "question": {"text": sealed_question, "source": "host_query"},
+        "views": sliced,
+    }
 
 
 def _find_scene(event_id: str, run_id: str = "") -> dict[str, Any] | None:
@@ -483,6 +635,203 @@ def _index_entry(body: dict[str, Any], ep_id: str, key: str) -> dict[str, Any]:
 # ---------------------------------------------------------------------------
 
 
+def _attach_prediction_delta(body: dict[str, Any]) -> dict[str, Any]:
+    """Fold the engine's check-vs-expectation delta into ``gates`` when declared.
+
+    Reads the record the gate consumed for this run; absent ``expected_outcome``
+    leaves the body unchanged. The delta is computed here, at the cycle
+    boundary, from the checks already in the episode — the host does not
+    supply it.
+    """
+    from evolver.gep.hypothesis import compute_prediction_delta, load_consumed_hypothesis
+
+    recorded = load_consumed_hypothesis(str(body.get("run_id") or ""))
+    if recorded is None:
+        return body
+    expected = recorded.get("expected_outcome")
+    if not isinstance(expected, dict):
+        return body
+    delta = compute_prediction_delta(expected, body.get("checks") or [])
+    gates = dict(body.get("gates") or {})
+    gates["prediction_delta"] = delta
+    updated = dict(body)
+    updated["gates"] = gates
+    return updated
+
+
+def _prediction_delta_line(gates: dict[str, Any]) -> list[str]:
+    """Empty without a recorded delta, so older bodies render byte-identically."""
+    delta = gates.get("prediction_delta")
+    if not isinstance(delta, dict):
+        return []
+    unmet = json.dumps(delta.get("unmet_expectations") or [], ensure_ascii=False)
+    unexpected = json.dumps(delta.get("unexpected_failures") or [], ensure_ascii=False)
+    return [
+        f"- prediction_delta: matched={delta.get('matched')} unmet={unmet} unexpected={unexpected}"
+    ]
+
+
+def _inspect_anchors(body: dict[str, Any]) -> list[str]:
+    """One line per field the bounded view actually clipped."""
+    index = body.get("scene_index")
+    if not isinstance(index, dict):
+        return []
+    notes: list[str] = []
+    original = index.get("diff_chars")
+    stored = index.get("diff_stored_chars")
+    if isinstance(original, int) and isinstance(stored, int) and original > stored:
+        notes.append(
+            f"- diff truncated at {stored}/{original} chars; call `episode_inspect` to zoom in"
+        )
+    raw_checks = index.get("checks")
+    if isinstance(raw_checks, list):
+        for meta in raw_checks:
+            if not isinstance(meta, dict):
+                continue
+            command = str(meta.get("command") or "check")[:80]
+            for total_key, stored_key, label in (
+                ("stdout_chars", "stdout_stored_chars", "stdout"),
+                ("stderr_chars", "stderr_stored_chars", "stderr"),
+            ):
+                total = meta.get(total_key)
+                kept = meta.get(stored_key)
+                if isinstance(total, int) and isinstance(kept, int) and total > kept:
+                    notes.append(
+                        f"- check `{command}` {label} truncated at {kept}/{total} chars; "
+                        "call `episode_inspect` to zoom in"
+                    )
+    return notes
+
+
+def _inspect_error(code: str, steer: str) -> dict[str, Any]:
+    return {
+        "ok": False,
+        "error": code,
+        "next_action": "revise_episode_inspect",
+        "steer_message": steer,
+        "current_state_unchanged": True,
+    }
+
+
+def _load_scene(run_id: str, event_id: str) -> dict[str, Any] | None:
+    from evolver.gep.evidence import load_evidence
+
+    if run_id and event_id and _SAFE_ID_RE.match(run_id) and _SAFE_ID_RE.match(event_id):
+        scene = load_evidence(run_id, event_id)
+        if isinstance(scene, dict):
+            return scene
+    if event_id:
+        return _find_scene(event_id, run_id)
+    return None
+
+
+def _slice_view(scene: dict[str, Any], view: Any, index: int) -> dict[str, Any]:
+    if not isinstance(view, dict):
+        raise ValueError(f"View {index}: selection must be an object.")
+    kind = view.get("kind")
+    offset, limit = _line_window(view, index)
+    if kind == "check":
+        text, total = _check_text(scene, view, index)
+    elif kind == "diff":
+        text, total = _diff_text(scene, view, index)
+    else:
+        raise ValueError(f"View {index}: kind must be 'check' or 'diff'.")
+    window, truncated = _window_text(text, offset, limit)
+    from evolver.gep.val_seal import redact
+
+    sealed, _report = redact(window, where="episode_inspect")
+    return {
+        "index": index,
+        "kind": kind,
+        "name": view.get("name"),
+        "path_glob": view.get("path_glob"),
+        "offset_lines": offset,
+        "limit_lines": limit,
+        "total_lines": total,
+        "truncated": truncated,
+        "text": sealed,
+        "source": "engine",
+    }
+
+
+def _line_window(view: dict[str, Any], index: int) -> tuple[int, int]:
+    offset = view.get("offset_lines", 0)
+    limit = view.get("limit_lines", 80)
+    if not _plain_int(offset) or offset < 0:
+        raise ValueError(f"View {index}: offset_lines must be an integer >= 0.")
+    if not _plain_int(limit) or not 1 <= limit <= MAX_INSPECT_LIMIT_LINES:
+        raise ValueError(
+            f"View {index}: limit_lines must be an integer from 1 to {MAX_INSPECT_LIMIT_LINES}."
+        )
+    return offset, limit
+
+
+def _check_text(scene: dict[str, Any], view: dict[str, Any], index: int) -> tuple[str, int]:
+    name = view.get("name")
+    if not isinstance(name, str) or not name.strip():
+        raise ValueError(f"View {index}: check views need a name.")
+    validation = scene.get("validation_result")
+    results = validation.get("results") if isinstance(validation, dict) else None
+    if not isinstance(results, list):
+        raise ValueError(f"View {index}: the scene has no check results.")
+    needle = name.strip().lower()
+    for entry in results:
+        if not isinstance(entry, dict):
+            continue
+        command = _text(entry.get("command"))
+        if needle not in command.lower():
+            continue
+        stdout = _text(entry.get("stdout"))
+        stderr = _text(entry.get("stderr"))
+        text = f"$ {command}\nstdout:\n{stdout}\nstderr:\n{stderr}"
+        return text, len(text.splitlines())
+    raise ValueError(f"View {index}: no check named {name!r}.")
+
+
+def _diff_text(scene: dict[str, Any], view: dict[str, Any], index: int) -> tuple[str, int]:
+    from pathlib import PurePosixPath
+
+    pattern = view.get("path_glob")
+    if not isinstance(pattern, str) or not pattern.strip():
+        raise ValueError(f"View {index}: diff views need a path_glob.")
+    event = scene.get("event")
+    diff = _text(event.get("diff_snapshot") if isinstance(event, dict) else "")
+    chunks = _split_diff(diff)
+    matched = [
+        text for path, text in chunks if path == "*" or PurePosixPath(path).match(pattern.strip())
+    ]
+    if not matched:
+        raise ValueError(f"View {index}: no diff hunk matches {pattern!r}.")
+    text = "\n".join(matched)
+    return text, len(text.splitlines())
+
+
+def _split_diff(diff: str) -> list[tuple[str, str]]:
+    matches = list(re.finditer(r"(?m)^diff --git a/(.+?) b/(.+)$", diff))
+    if not matches:
+        return [("*", diff)]
+    chunks: list[tuple[str, str]] = []
+    for index, match in enumerate(matches):
+        end = matches[index + 1].start() if index + 1 < len(matches) else len(diff)
+        chunks.append((match.group(2), diff[match.start() : end]))
+    return chunks
+
+
+def _window_text(text: str, offset: int, limit: int) -> tuple[str, bool]:
+    lines = text.splitlines()
+    window = "\n".join(lines[offset : offset + limit])
+    truncated = offset + limit < len(lines)
+    if len(window) > MAX_INSPECT_VIEW_CHARS:
+        window = window[:MAX_INSPECT_VIEW_CHARS] + "\n... (inspect window truncated)"
+        truncated = True
+    return window, truncated
+
+
+def _plain_int(value: Any) -> TypeGuard[int]:
+    """True for an int that is not a bool (bool is a subclass of int)."""
+    return isinstance(value, int) and not isinstance(value, bool)
+
+
 def _text(value: Any) -> str:
     return value if isinstance(value, str) else ("" if value is None else str(value))
 
@@ -506,9 +855,14 @@ __all__ = [
     "EPISODE_INDEX_FORMAT",
     "HOST_SIDE_KEYS",
     "INDEX_FILENAME",
+    "INSPECT_CALLS_FILENAME",
     "MAX_CHECKS",
     "MAX_CHECK_OUTPUT_CHARS",
     "MAX_DIFF_CHARS",
+    "MAX_INSPECT_LIMIT_LINES",
+    "MAX_INSPECT_QUESTION_CHARS",
+    "MAX_INSPECT_VIEWS",
+    "MAX_INSPECT_VIEW_CHARS",
     "MAX_RECORD_CHARS",
     "EpisodeConflictError",
     "build_episode",
@@ -516,10 +870,15 @@ __all__ = [
     "episode_id",
     "episode_path",
     "episodes_dir",
+    "find_episode_id_for_run",
     "index_path",
+    "inspect_calls_path",
+    "inspect_episode_scene",
     "list_episodes",
     "load_episode",
     "load_index",
+    "load_inspect_calls",
+    "note_inspect_call",
     "record_episode",
     "record_round",
     "render_episode_block",

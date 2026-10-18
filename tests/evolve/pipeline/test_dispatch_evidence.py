@@ -208,3 +208,35 @@ def test_dispatch_episode_failure_never_aborts(
     assert result.get("dispatch_prompt"), "dispatch must survive episode failure"
     assert result.get("episode_block_error")
     capsys.readouterr()
+
+
+def test_dispatch_carries_working_scratch_as_a_clue_after_evidence(
+    _ws: Path,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture,
+) -> None:
+    from evolver.gep.working_memory import WORKING_CLUE_MAX_CHARS, write_working
+
+    monkeypatch.setenv("EVOLUTION_DIR", str(tmp_path / "evolution"))
+    write_working("ruled out: retry loop\n" + "x" * (WORKING_CLUE_MAX_CHARS + 500))
+    prompt = asyncio.run(dispatch_phase(_ctx(recent_events=[_family_fail_event()])))[
+        "dispatch_prompt"
+    ]
+    assert "- [host_working] ruled out: retry loop" in prompt
+    assert "swarm_boot returns the full text" in prompt
+    assert prompt.index("## Evidence Pack") < prompt.index("## Host Clues")
+    assert prompt.index("## Host Clues") < prompt.index("[host_working]")
+    capsys.readouterr()
+
+
+def test_dispatch_without_scratch_has_no_clue_block(
+    _ws: Path,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture,
+) -> None:
+    monkeypatch.setenv("EVOLUTION_DIR", str(tmp_path / "evolution"))
+    prompt = asyncio.run(dispatch_phase(_ctx()))["dispatch_prompt"]
+    assert "## Host Clues" not in prompt
+    capsys.readouterr()

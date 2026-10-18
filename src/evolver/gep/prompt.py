@@ -6,7 +6,7 @@ Equivalent to evolver/src/gep/prompt.js (obfuscated).
 from __future__ import annotations
 
 import json
-from typing import Any
+from typing import Any, Final
 
 from evolver.config import PROMPT_MAX_CHARS
 from evolver.gep.schemas.protocol import (
@@ -16,6 +16,16 @@ from evolver.gep.schemas.protocol import (
     VALID_TRACE_STAGES,
     render_enum,
     render_enum_list,
+)
+
+#: Short standing rule. Mechanical gates carry the rest, at the moment they fire.
+EVOLVER_CHARTER: Final = (
+    "Before mutating, state one falsifiable hypothesis and the expected check change; "
+    "after verification, compare the engine-recorded outcome against your expectation. "
+    "Prefer the simplest minimal diff consistent with Previous Episode and Evidence Pack. "
+    "When a gate rejects or truncates output, use episode_inspect to examine raw evidence "
+    "rather than guessing. Record durable laws in genes and lessons; keep current-session "
+    "scratch in WORKING_SESSION.md."
 )
 
 _PREVIEW_STRIP_FIELDS = {
@@ -142,6 +152,9 @@ def build_gep_prompt(
         "",
         "You are participating in the Genome Evolution Protocol.",
         "Your output MUST be one valid JSON object conforming to the schemas below.",
+        "",
+        "## Charter",
+        EVOLVER_CHARTER,
         "",
         "## Schemas",
         "",
@@ -276,6 +289,8 @@ def build_inplace_gep_prompt(
     sigs = [str(s) for s in (signals or [])]
     lines = [
         "# IN-PLACE MODE (PARAMETER-ONLY)",
+        "",
+        EVOLVER_CHARTER,
         "",
         "You are operating in **IN-PLACE MODE**.",
         "Apply **PARAMETER-ONLY** changes — no architecture rewrites, no new modules.",

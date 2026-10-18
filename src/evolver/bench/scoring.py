@@ -46,6 +46,8 @@ def grade(task: dict[str, Any], sandbox: Path) -> float:
                 node = node[int(part)] if isinstance(node, list) else node[part]
             return float(node == grader["expected"])
         if gtype == "code_stdout":
+            from evolver.gep.validation_env import scrub_eval_subprocess_env, validation_env
+
             proc = subprocess.run(
                 [sys.executable, str((sandbox / grader["script"]).resolve())],
                 cwd=str(sandbox),
@@ -54,6 +56,7 @@ def grade(task: dict[str, Any], sandbox: Path) -> float:
                 timeout=CODE_STDOUT_TIMEOUT_S,
                 check=False,
                 shell=False,
+                env=scrub_eval_subprocess_env(validation_env()),
             )
             return float(_normalize(proc.stdout or "") == _normalize(grader["expected"]))
         return 0.0

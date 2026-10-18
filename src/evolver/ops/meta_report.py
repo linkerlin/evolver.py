@@ -140,7 +140,9 @@ def _descendant_quality(events: list[dict[str, Any]]) -> list[dict[str, Any]]:
     return rows
 
 
-def _improver_tool_panel(episodes: list[dict[str, Any]]) -> dict[str, Any]:
+def _improver_tool_panel(
+    episodes: list[dict[str, Any]], inspect_calls: list[dict[str, Any]]
+) -> dict[str, Any]:
     """Improver-tool usage (经验即证据 §5.4): how often the applied gene was an
     improver-tool gene, counted once per round.
 
@@ -149,6 +151,10 @@ def _improver_tool_panel(episodes: list[dict[str, Any]]) -> dict[str, Any]:
     records written before the field existed. This is the engine's selection
     rate of the improver's tool surface, not the host's self-reported tool
     invocation: the same honesty rule as the rest of the panel.
+
+    ``episode_inspect`` calls come from the engine's own side log at the MCP
+    boundary; ``episode_inspect_sessions`` counts the paired sessions they
+    fell in, the key the RERE panel is keyed on.
     """
     from evolver.gep.asset_store import load_genes
 
@@ -178,10 +184,17 @@ def _improver_tool_panel(episodes: list[dict[str, Any]]) -> dict[str, Any]:
         gene_id = str(gene.get("id") or episode.get("gene_id") or "")
         if _is_improver(gene_id, gene):
             improver_rounds += 1
+    inspect_sessions = {
+        str(call["session_run_id"])
+        for call in inspect_calls
+        if isinstance(call, dict) and call.get("session_run_id")
+    }
     return {
         "rounds": total,
         "improver_tool_rounds": improver_rounds,
         "usage_rate": (round(improver_rounds / total, 3) if total else None),
+        "episode_inspect_calls": len(inspect_calls),
+        "episode_inspect_sessions": len(inspect_sessions),
         "note": (
             "fraction of recorded rounds whose applied gene is an improver-tool "
             "gene (target_hook=improver_tool); counted once per round, recomputed "
@@ -190,11 +203,65 @@ def _improver_tool_panel(episodes: list[dict[str, Any]]) -> dict[str, Any]:
     }
 
 
+def rere_panel(sessions: list[dict[str, Any]] | None) -> dict[str, Any]:
+    """Mean RERE over accepted sessions. Missing sessions stay unmeasured.
+
+    This panel is a report. It is not read by the frozen acceptance gate.
+    """
+    from evolver.experiment.metrics import rere_score
+
+    if not sessions:
+        return {
+            "rere_score": None,
+            "accepted_scored": 0,
+            "sessions": 0,
+            "note": "unmeasured",
+        }
+    scores: list[float] = []
+    for run in sessions:
+        if not isinstance(run, dict) or run.get("status") != "accepted":
+            continue
+        rounds = run.get("round")
+        if not isinstance(rounds, int) or isinstance(rounds, bool) or rounds < 1:
+            continue
+        scores.append(rere_score(accepted=True, rounds_used=rounds))
+    mean = round(sum(scores) / len(scores), 4) if scores else None
+    return {
+        "rere_score": mean,
+        "accepted_scored": len(scores),
+        "sessions": len(sessions),
+        "note": "observational; r_ref=2; not a gate input",
+    }
+
+
+def load_session_runs() -> list[dict[str, Any]]:
+    """Best-effort load of paired-session ``run.json`` files."""
+    from evolver.gep.evolution_session import session_root
+
+    root = session_root()
+    if not root.is_dir():
+        return []
+    runs: list[dict[str, Any]] = []
+    for child in sorted(root.iterdir()):
+        path = child / "run.json"
+        if not path.is_file():
+            continue
+        try:
+            payload = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            continue
+        if isinstance(payload, dict):
+            runs.append(payload)
+    return runs
+
+
 def build_meta_report(
     events: list[dict[str, Any]],
     feedback: list[dict[str, Any]] | None = None,
     lifecycle: dict[str, str] | None = None,
     episodes: list[dict[str, Any]] | None = None,
+    sessions: list[dict[str, Any]] | None = None,
+    inspect_calls: list[dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
     """Aggregate the improvement-mechanism panel. Read-only.
 
@@ -409,8 +476,9 @@ def build_meta_report(
                 "lifecycle": status_counts,
                 "faithful_use": faithful_use,
             },
-            "improver_tools": _improver_tool_panel(episodes or []),
+            "improver_tools": _improver_tool_panel(episodes or [], inspect_calls or []),
             "cost": cost_panel,
+            "rere": rere_panel(sessions),
         },
         "mechanism_audit": mechanism_rows,
         "descendant_quality": dq,
@@ -440,4 +508,6 @@ __all__ = [
     "META_MECHANISM_SURFACES",
     "build_meta_report",
     "load_feedback_events",
+    "load_session_runs",
+    "rere_panel",
 ]

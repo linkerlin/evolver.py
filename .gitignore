@@ -218,8 +218,10 @@ __marimo__/
 # Streamlit
 .streamlit/secrets.toml
 
-# 本地私有规划文档（保留本地，不入库）
+# 本地私有规划与方案文档（保留本地，不入库）
 设计方案.md
+VISTA演进方案.md
+*方案*.md
 
 evolver/.config/
 

@@ -44,6 +44,7 @@ HOOK_SCRIPT_NAMES = [
     "signal_detect.py",
     "session_end.py",
     "task_recall.py",
+    "compact_checkpoint.py",
 ]
 
 

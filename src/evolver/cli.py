@@ -645,6 +645,18 @@ def _build_parser() -> argparse.ArgumentParser:
     ep_show = episode_sub.add_parser("show", help="Print one episode body by id")
     ep_show.add_argument("episode_id", help="Content-addressed episode id (sha256:...)")
     ep_show.add_argument("--json", action="store_true", help="Output raw JSON")
+    ep_inspect = episode_sub.add_parser(
+        "inspect",
+        help="Read a line window of the lossless scene behind one episode",
+    )
+    ep_inspect.add_argument("episode_id", help="Content-addressed episode id (sha256:...)")
+    ep_inspect.add_argument("--question", required=True, help="Why this slice is needed")
+    ep_inspect.add_argument(
+        "--view",
+        action="append",
+        default=[],
+        help="JSON slice object, repeatable (kind=check|diff)",
+    )
     webui_p = sub.add_parser("webui", help="Launch the WebUI dashboard")
     webui_p.add_argument("--host", default="127.0.0.1", help="Bind host")
     webui_p.add_argument(
@@ -1419,13 +1431,19 @@ def _load_episode_index() -> list[dict[str, Any]]:
 def _cmd_meta_report(args: argparse.Namespace) -> int:
     """Improvement-mechanism telemetry (RSI P0-2): the effective-L5 panel."""
     from evolver.gep.asset_store import read_all_events
+    from evolver.gep.episode_record import load_inspect_calls
     from evolver.gep.gene_lifecycle import load_lifecycle, status_map
-    from evolver.ops.meta_report import build_meta_report, load_feedback_events
+    from evolver.ops.meta_report import build_meta_report, load_feedback_events, load_session_runs
 
     events = read_all_events()[-max(1, args.limit) :]
     episodes = _load_episode_index()
     report = build_meta_report(
-        events, load_feedback_events(), status_map(load_lifecycle(strict=False)), episodes
+        events,
+        load_feedback_events(),
+        status_map(load_lifecycle(strict=False)),
+        episodes,
+        load_session_runs(),
+        load_inspect_calls(),
     )
     if args.json:
         print(json.dumps(report, ensure_ascii=False, indent=2))
@@ -1447,6 +1465,10 @@ def _cmd_meta_report(args: argparse.Namespace) -> int:
     imp_rate = imp.get("usage_rate")
     imp_note = f" | rate {imp_rate}" if imp_rate is not None else ""
     print(f"improver tools: {imp['improver_tool_rounds']}/{imp['rounds']} rounds{imp_note}")
+    print(
+        f"episode_inspect: {imp['episode_inspect_calls']} calls"
+        f" in {imp['episode_inspect_sessions']} sessions"
+    )
     eff = panel["efficiency"]
     ms_per_gain = eff.get("validation_ms_per_validated_gain")
     time_note = f" | {ms_per_gain} ms validation/gain" if ms_per_gain else ""
@@ -2489,6 +2511,21 @@ def _cmd_episode(args: argparse.Namespace) -> int:
                 return 2
             print(_json.dumps(body, ensure_ascii=False, indent=2, sort_keys=True))
             return 0
+        if action == "inspect":
+            views: list[dict[str, Any]] = []
+            for raw in getattr(args, "view", None) or []:
+                parsed = _json.loads(raw)
+                if not isinstance(parsed, dict):
+                    print("episode inspect: each --view must be a JSON object", file=sys.stderr)
+                    return 2
+                views.append(parsed)
+            result = episode_record.inspect_episode_scene(
+                str(getattr(args, "episode_id", "") or ""),
+                question=str(getattr(args, "question", "") or ""),
+                views=views,
+            )
+            print(_json.dumps(result, ensure_ascii=False, indent=2, sort_keys=True))
+            return 0 if result.get("ok") else 2
     except Exception as exc:
         print(f"episode failed: {exc}", file=sys.stderr)
         return 1

@@ -16,7 +16,7 @@ from __future__ import annotations
 import json
 import os
 import re
-from typing import Any
+from typing import Any, Final
 
 # --- Pattern catalogue --------------------------------------------------
 # Mirrors the credential patterns in evolver/src/gep/sanitize.js, including
@@ -150,6 +150,33 @@ def full_leak_check(payload: dict[str, Any] | str) -> dict[str, Any]:
         "env_leaks": env_leaks,
         "safe": not pattern_leaks and not env_leaks,
     }
+
+
+_LINE_COLON: Final = re.compile(r":\d+:")
+_LINE_WORD: Final = re.compile(r"\bline\s+\d+\b", re.IGNORECASE)
+_MEM_ADDR: Final = re.compile(r"\b0x[0-9a-fA-F]+\b")
+_UUID: Final = re.compile(
+    r"\b[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}\b"
+)
+_PYTEST_OF: Final = re.compile(r"pytest-of-[^\s/\\]+")
+_TEMP_PATH: Final = re.compile(r"(?:/tmp/|/var/folders/|[A-Za-z]:\\Temp\\)[^\s]+")
+
+
+def quantize_diagnostic_signature(text: str) -> str:
+    """Collapse line numbers, addresses, and temp paths so one bug is one bucket.
+
+    Same idea as VISTA's 4-bit color quantize: high-frequency noise (a line
+    number, a heap address, a pytest temp dir) must not look like a new
+    failure. File names and exception types stay.
+    """
+    if not isinstance(text, str) or not text:
+        return ""
+    out = _LINE_COLON.sub(":L*:", text)
+    out = _LINE_WORD.sub("line L*", out)
+    out = _MEM_ADDR.sub("0xADDR", out)
+    out = _UUID.sub("UUID", out)
+    out = _PYTEST_OF.sub("pytest-of-TMP", out)
+    return _TEMP_PATH.sub("TMP/", out)
 
 
 def sanitize_payload(payload: dict[str, Any] | str) -> str:
