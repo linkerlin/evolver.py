@@ -8,6 +8,36 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added — 进化闭环接上 VISTA 的重注视、草稿、压缩门与预期落差，并跑了去饱和的 `--stage-exit` 对照
+
+版本保持 **1.113.0**。本轮不切版本，也不收阶段；落地清单见 [`TODO_VISTA.md`](TODO_VISTA.md)。
+
+**八项机械套具与评审六条（`bbdeba2`）**：
+
+- **经验重注视与降噪（Tier 1 + R2/R5）**：`evolver episode inspect` 与只读 MCP `episode_inspect` 按行从无损 `evidence/<run_id>/` 读回被 400/4000 字截断的检查输出与 diff，空 `question` 拒绝，输出过 `val_seal.redact`；成功调用记入 `<EVOLUTION_DIR>/episodes/inspect_calls.jsonl`（不存 `question`）并汇总进 `meta-report` 的 `panel.improver_tools`。`quantize_diagnostic_signature` 在证据包渲染时坍缩行号、地址、临时路径与 UUID 并标 `count`，账本条数与 mandate 不并。假说支持可选 `expected_outcome`；`solidify` 过门时改为 `consume_hypothesis(run_id)` 移入 `hypothesis.consumed.json`，使 `record_round` 能由引擎检查结果写入 `gates.prediction_delta`，`render_episode_block` 仅在该字段存在时多一行。
+- **工作草稿与压缩门（Tier 2 + R1/R3/R4）**：`WORKING_SESSION.md` 限 16,000 字，会话 `start`/`accept`/`incomplete` 时先归档至 `working_archive/` 再 `unlink`。`compact_checkpoint.requested`（Claude `PreCompact` hook、MCP `swarm_hook_event(event="precompact")` 或连续 4 次 solidify 失败）置位时，变异工具一律返回 `checkpoint_required`，`swarm_checkpoint_working` 写完草稿才放行；Claude `PreCompact` hook 先走 `maybe_route_to_soak()`，同一请求阻塞一次以防卡死满上下文。dispatch 在 `## Host Clues` 末尾附 `- [host_working]`（上限 3,000 字），`swarm_boot` 返回全文 `working_session_text`。GEP prompt 与 swarm instrument 置顶极简宪章 `EVOLVER_CHARTER`。
+- **沙盒剥离与效率标尺（Tier 3）**：评分子进程剥离 `*_API_KEY` 与引擎控制变量；已落地且有 episode 的 `run_id` 再次 `swarm_solidify` 幂等返回原 episode id（仍 pending 的失败 run 保留重试路径）；`rere_score`（`r_ref=2`，上限 1.15）入 `meta-report` 的 `panel.rere`，不进验收门。
+
+**真实 MCP 闭环记录与去饱和对照（R6）**：
+
+仓外沙盒 `C:\Temp\evolver-r6\`（不进产品 git），经真 stdio 调 `evolver mcp`。种子项目 `src/durations.py` 含复合时长与裸数字两个缺口，候选轮只交 `_PART = re.compile(r"(\d+)([hms])")` 并声明 `expected_outcome` 为 pytest 通过。引擎记下拒绝轮 episode `sha256:23c67dce1601661217556886705d311e205f0a1c4584275c160a3792fd0c8a78`（渲染 953 字符），含 `prediction_delta: matched=False unmet=["pytest"] unexpected=[]` 与 `check pytest -m not slow -q stdout truncated at 400/2208 chars; call episode_inspect to zoom in`；`episode_inspect` 读回被截断的裸数字失败详情（`'45'`、`' 7 '`）。
+
+初版 `tasks.json` 因选项文字自带“re-read the previous round's full check output with episode_inspect”而把 placebo 臂也引向 `INSPECT`（第二次采样 8/8 对 8/8，饱和无效）。重做选项完全对称、题干不泄密的 [`tasks_grounded.json`](file:///C:/Temp/evolver-r6/tasks_grounded.json)（`task_digest=sha256:a4ca0586641bb6751bcdefe83a5121fda6dfab7a4ff211418d7ac3d4667bbd9a`，6 道过程决策题 + 2 道基线对照题，$n=8$），在 `commit=c21db58801dddcdb797e9ab94a3761951dd2f49e`、模型 `deepseek-flash`（served `['deepseek-flash']`）下连跑两次 `--stage-exit --from-episodes --placebo`（`--order-seed 7` 与 `--order-seed 13`）：
+
+| 批次 / 指标 | with_records | without_records (placebo) | Δ / 配对检验 |
+|---|---|---|---|
+| `seed=7` 成功率 | 8/8 (100.0%) | 2/8 (25.0%，仅过 2 道对照) | +75.0% (`wins_a=6, wins_b=0, ties=2, p=0.03125`) |
+| `seed=7` tokens / 均延迟 | 4,263 (2.44s) | 10,901 (6.67s，题 1 无记录空转 8,562 tokens) | -60.9% tokens |
+| `seed=13` 成功率 | 8/8 (100.0%) | 2/8 (25.0%，仅过 2 道对照) | +75.0% (`wins_a=6, wins_b=0, ties=2, p=0.03125`) |
+| `seed=13` tokens / 均延迟 | 4,633 (2.43s) | 4,174 (2.96s) | +11.0% tokens |
+| 服务端 prompt tokens 均值 | 465.0 | 300.0 | `delta_pct=+0.55` (`status=measured`) |
+
+两次运行均满足 `eligible=True`、`paired=a_better`（`favors=with_records`）、`errors=[]`。因每臂 $n=8 < 30$，`sample_adequate=False`，`stage=inconclusive`，结论记为 `records changed the improvement behavior (indicative only: n=8 per arm < 30)`，`stage_stop=False`。**未测量**：relay 覆盖率 0%（直连 API）；provider 回包无 `completion_tokens` 拆分（`output_tokens=0`）；门通过率与工具跨轮复用率未在单步消融内测量。
+
+### Docs — 五篇动手教程讲清蜂群跨轮闭环（`c21db58`）
+
+版本保持 **1.113.0**。文档补充，不计阶段进度。新增 [`tutorials/`](tutorials/README.md) 五篇渐进式实操教程（安装跑通、假说与证据回执、`episode_inspect` 放大截断日志与 `WORKING_SESSION.md` 接力、封存测试集与父代基线、团队监督与经验共享），并同步中/英/日/繁四语 README 导航。
+
 ### Changed — 满分基线上的持平拒绝在下一轮提示词里可见
 
 版本保持 **1.113.0**。提示词补一行，不计阶段进度。
