@@ -54,3 +54,31 @@ def test_render_clue_block_truncates_past_the_budget(episode_env: Path) -> None:
 def test_empty_clue_store_renders_header_only(episode_env: Path) -> None:
     assert episode_clue.recent_clues() == []
     assert "Host Clues" in episode_clue.render_clue_block([])
+
+
+def test_clue_layer_never_feeds_a_gate_verdict() -> None:
+    """现在做 #4 的判据钉: 去掉线索块不改变任何门的裁决.
+
+    线索层只允许出现在提示词侧 (swarm.py 写入 / dispatch.py 渲染).
+    结算与门模块不得引用它——引用即此测试失败, 记录分层护栏由机器执守.
+    """
+    import evolver
+
+    gates = [
+        "gep/solidify.py",
+        "gep/hypothesis.py",
+        "gep/policy_check.py",
+        "gep/llm_review.py",
+        "gep/anchor.py",
+        "bench/frozen_gate.py",
+        "bench/regression_guard.py",
+        "bench/compare.py",
+        "experiment/ablation.py",
+        "experiment/ablation_llm.py",
+        "experiment/comparison.py",
+    ]
+    root = Path(evolver.__file__).parent
+    for rel in gates:
+        text = (root / rel).read_text(encoding="utf-8")
+        for symbol in ("episode_clue", "render_clue_block", "clue_block"):
+            assert symbol not in text, f"{rel} references {symbol}: clues must not feed a gate"

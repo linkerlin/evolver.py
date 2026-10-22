@@ -8,6 +8,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Test — 线索层判据钉：结算与门模块不得引用线索层（round-117，测试针）
+
+版本保持 **1.113.0**。测试针，不计阶段进度。
+
+TODO「现在做」第 4 项的判据——**去掉线索块不改变任何门的裁决**——此前只写在文档里。新增 `test_clue_layer_never_feeds_a_gate_verdict`（`tests/gep/test_episode_clue.py`）：扫描 solidify / hypothesis / policy_check / llm_review / anchor / frozen_gate / regression_guard / compare / ablation / ablation_llm / comparison 十一个结算与门模块，出现 `episode_clue` / `render_clue_block` / `clue_block` 任一引用即失败。线索层现状只有 `swarm.py`（写入）与 `dispatch.py`（渲染进提示词）两处引用，与钉一致；记录分层护栏（宿主上报只作线索、不单独支撑裁决）自此由机器执守。TODO「现在做」十项至此全部带落地标记。
+
 ### Docs — 全仓盘点对齐文档与代码现状，起草下一阶段提议（round-116，文档轮）
 
 版本保持 **1.113.0**。文档补充，不计阶段进度；不动源码与任何门。
