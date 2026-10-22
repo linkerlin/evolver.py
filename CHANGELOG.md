@@ -8,6 +8,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### 阶段出口 — 经验即证据出口已裁：n=32 两独立种子双 signal（round-119）
+
+版本保持 **1.113.0**（章程：signal → 人切版本收阶段；切 minor 由人执，本轮不代办）。真实运行＋落账，源码零改动。
+
+两项人裁（2026-10-23，实录见 [`TODO.md`](TODO.md) 提议节末）开闸：① 题源＝从真实结算派生（R6 纪律：选项对称、题干不泄密、digest + commit 冻结入账）；② 战役开跑。仓外沙盒 `C:\Temp\evolver-stage-exit\`（不进产品 git）以真 stdio MCP 闭环跑满 **30 条真实结算**：空骨架＋30 个微模块三类 bug（12 运行时 / 10 类型 / 8 未用导入）每轮引入一个，宿主 DeepSeek 全链 tick→决策→distill→hypothesis→solidify→feedback（hotl 手口下发布门照常拒绝回滚，失败集逐轮累积），VISTA 压缩门触发一次并按设计以 `swarm_checkpoint_working` 应答。题集按 R6 纪律派生并冻结：32 题（30 结算题三模板轮换＋2 对照），锚点全用 run id 且经程序验证在 30 条渲染块（1000 字/条，共 20,274 字符）内可见，digest `sha256:4579f5a9…33b` 绑引擎 commit `b059d8e`。
+
+`--stage-exit --from-episodes --placebo --model deepseek-flash`（served `['deepseek-flash']`；episodes digest `sha256:aac5f054…0b77`；`n_per_arm=32`、`sample_adequate=True`；64 次调用零错误；prompt_token_balance `status=measured`）两个独立交错种子：
+
+| 批次 | with_records | without_records (placebo) | 逐题配对精确检验 |
+|---|---|---|---|
+| `order_seed=7` | 32/32（均 7,654.7 tokens / 2.84s） | 2/32（仅过 2 对照题；均 4,499.1 tokens / 6.25s） | `wins_a=30, wins_b=0, ties=2, p=1.86e-09`，`a_better` |
+| `order_seed=13` | 32/32（均 7,655.0 tokens / 2.68s） | 6/32（2 对照＋4 题四选一盲猜；均 4,302.3 tokens / 5.06s） | `wins_a=26, wins_b=0, ties=6, p=2.98e-08`，`a_better` |
+
+两批均 `verdict=signal`（`signal_basis=success_rate`，非 tokens-only）、`stage=positive`、`eligible=True`。无记录臂对结算题如实答 `unrecorded` 或四选一盲猜，对照题两臂全过——排除「臂间可答性不对等」读法；服务端 prompt token 均值 7,584.1 对 3,799.1（placebo 按字符等长，token 差如实记录，不进裁决基）。**本阶段出口（消融裁决，章程 §5.8）就此关上**，剩余动作只有人切 minor 版本。报告 `stage_exit_seed7.json` / `stage_exit_seed13.json` 与全部运行态留在沙盒。点名裁决 2/3（solve_receipt 执法、线索层升证据判据）仍由人持，归下一阶段提议。
+
 ### Test — 出口战役试点：单轮真实结算 11.7 秒（round-118，试点）
 
 版本保持 **1.113.0**。测试运行，不计阶段进度。

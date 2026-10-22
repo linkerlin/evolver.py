@@ -3,7 +3,7 @@
 > 章程：[`演进方案.md`](演进方案.md)（**经验即证据**，版本 **1.113.0**，同日按自审意见修订）。
 > 台账：[`CHANGELOG.md`](CHANGELOG.md)。史料：[`演进方案_库即尺子.md`](演进方案_库即尺子.md)、[`TODO_库即尺子.md`](TODO_库即尺子.md)、[`RSI演进对照.md`](RSI演进对照.md)、[`演进方案_wikiskill对照版.md`](演进方案_wikiskill对照版.md)——史料里的「下一步」不开工。
 > 2026-10-02 起，对照 arXiv:2609.37968v2（SelfSearch）。旧清单的账不回填，只带走未竟项。
-> **机制已就位，出口未关。** 点名裁决 1 已裁（不用 test 位）。分量口径（2026-10-03）：证据是一条引擎记下的结算，加上一次 `--from-episodes --placebo` 对照。每臂 n < 30 时 signal 与 no_signal 都只写 indicative only，不切版本，也不判阶段失败。n ≥ 30 且无信号才判负并停。不为凑 30 造题。失败结算与成功结算同一形状，仍只在周期边界记。
+> **机制已就位，出口已关（round-119，2026-10-23 两独立种子双 signal；切版本由人执）。** 点名裁决 1 已裁（不用 test 位）。分量口径（2026-10-03）：证据是一条引擎记下的结算，加上一次 `--from-episodes --placebo` 对照。每臂 n < 30 时 signal 与 no_signal 都只写 indicative only，不切版本，也不判阶段失败。n ≥ 30 且无信号才判负并停。不为凑 30 造题。失败结算与成功结算同一形状，仍只在周期边界记。
 > VISTA 机械套具（不替换本阶段出口，不改验收门）：[`VISTA演进方案.md`](VISTA演进方案.md) 的落地清单在 [`TODO_VISTA.md`](TODO_VISTA.md)。
 
 ## 带走（库即尺子未竟，不作废）
@@ -36,8 +36,8 @@
 | 5 | improver 工具面进库 | 1c + 带走 1 | **已落地（round-104）**：3 个 improver 工具基因入种子（`target_hook=improver_tool` / `mechanism_family=improver_tools`，asset_id 经 `compute_asset_id` 校验）；`record_episode` 存储前从基因库附着 `target_hook`/`mechanism_family`（记录自包含）；`meta_report` 新增 `improver_tools` 面板（从 episode record 复算使用率，每轮计一次，库回退）。**宿主装/卸的闭环**依赖带走 1（Parent 库首写），未决 |
 | 6 | 双向记录路线（影子） | 2 | **已落地（round-105）**：`gep/record_route.py`——两条定性方向（capability / adaptive）并行产出记录，各出内容寻址记录、互见对方记录（`build_direction_block` 按 id 互引）、不打分、archive 全留。**是记录路线不是种群择优**，`MULTI_PROPOSE_ROUTES` 保持 1。生产形态（LLM 驱动双 lineage）留后续 |
 | 7 | 成本与配置采集先行 | 1a | **已落地（round-106）**：receipt schema 增 `cost`/`model`（默认 `null` = unmeasured）；`bench/cost.py` 的 `record_cost` 求解后回填（token 来自 relay `extract_usage`，model 以 relay 观测为准、`AGENT_MODEL` 只作线索）；观测不到出 `unmeasured`，不猜不零填。**此步之前不出效率/迁移结论** |
-| 8 | 消融裁决（**本阶段出口**） | 2 + 7；**点名裁决 1 须先裁** | **机制已落（round-107）**：`experiment/ablation.py`——同预算同题、有/无记录影子对照，报告均值与成本差；只比代码真测的成功率与 token（门通过率、工具复用率未测），结论只可写「记录改变了改进行为」。n < 30 的 signal 与 no_signal 都只写 indicative only，不判阶段失败；n ≥ 30 且无信号才判负并停。**已跑（round-112）**：deepseek-flash（served `['deepseek-flash']`），同 3 题同合成记录——with 2/3（均 625 tokens）vs without 0/3（均 3668.3），delta +66.7%，tokens −83.0%，verdict=signal；CLI 入口已立，可复算。**测量仪器加固（round-115）**：`ablation_verdict` 新增 `n_per_arm`/`sample_adequate`（`MIN_N=30`，不足自注 `indicative only`）与 `signal_basis`（区分 `success_rate` 与 `tokens_only`）；新增 `make_placebo_context` 与 `--placebo` 占位对照（等长中性块隔离系统角色偏置）；`test_the_record_writer_is_confined_to_a_declared_boundary` 扩展为 `src/` 全仓白名单扫描。**阶段出口机器契约（本轮，仪器修补）**：`--stage-exit`——种子 AB/BA 交错、逐调用记录（延迟/三段 tokens/错误类/served model 全计时）、逐题配对精确检验、采样冻结 + 服务端 prompt 失衡度量；真实 episode + placebo + 唯一任务 + 已知 commit + `--output` 落盘，五缺一 exit 2；38 测试钉住，活体 n=2 烟雾 `eligible/inconclusive`（数字在 CHANGELOG）。**不关出口**：n=3、合成记录、空对照臂，读作线索 |
-| 9 | 阶段末报告 | 8 | **报告已入账（round-113），阶段未收**：均值（2/3 vs 0/3，+66.7pp）、成本（−83.0%）、消融结论（signal，只到过程指标）一并入 CHANGELOG；relay 覆盖率 **0%（unmeasured，消融直连 API）**；全部 unmeasured 项列明（receipt cost/model 零张、latency 未计时、improver 使用率索引空、token 为自报）。round-115 起该 signal 读作 indicative only。**待人**：切版本 |
+| 8 | 消融裁决（**本阶段出口**） | 2 + 7；**点名裁决 1 须先裁** | **机制已落（round-107）**：`experiment/ablation.py`——同预算同题、有/无记录影子对照，报告均值与成本差；只比代码真测的成功率与 token（门通过率、工具复用率未测），结论只可写「记录改变了改进行为」。n < 30 的 signal 与 no_signal 都只写 indicative only，不判阶段失败；n ≥ 30 且无信号才判负并停。**已跑（round-112）**：deepseek-flash（served `['deepseek-flash']`），同 3 题同合成记录——with 2/3（均 625 tokens）vs without 0/3（均 3668.3），delta +66.7%，tokens −83.0%，verdict=signal；CLI 入口已立，可复算。**测量仪器加固（round-115）**：`ablation_verdict` 新增 `n_per_arm`/`sample_adequate`（`MIN_N=30`，不足自注 `indicative only`）与 `signal_basis`（区分 `success_rate` 与 `tokens_only`）；新增 `make_placebo_context` 与 `--placebo` 占位对照（等长中性块隔离系统角色偏置）；`test_the_record_writer_is_confined_to_a_declared_boundary` 扩展为 `src/` 全仓白名单扫描。**阶段出口机器契约（本轮，仪器修补）**：`--stage-exit`——种子 AB/BA 交错、逐调用记录（延迟/三段 tokens/错误类/served model 全计时）、逐题配对精确检验、采样冻结 + 服务端 prompt 失衡度量；真实 episode + placebo + 唯一任务 + 已知 commit + `--output` 落盘，五缺一 exit 2；38 测试钉住，活体 n=2 烟雾 `eligible/inconclusive`（数字在 CHANGELOG）。**不关出口**：n=3、合成记录、空对照臂，读作线索。**出口已裁（round-119）**：30 条真实结算（仓外沙盒 MCP 闭环）＋32 题冻结包（digest `sha256:4579f5a9…` 绑 commit `b059d8e`），两独立种子 `--stage-exit --from-episodes --placebo` 均 `signal`——`p=1.86e-09` / `2.98e-08`，`n_per_arm=32`、`sample_adequate=True`、`signal_basis=success_rate`。出口关上，剩人切版本 |
+| 9 | 阶段末报告 | 8 | **报告已入账（round-113），出口已裁（round-119 双种子 signal）**：均值（2/3 vs 0/3，+66.7pp）、成本（−83.0%）、消融结论（signal，只到过程指标）一并入 CHANGELOG；出口终裁数字在 CHANGELOG round-119；relay 覆盖率 **0%（unmeasured，消融直连 API）**；全部 unmeasured 项列明（receipt cost/model 零张、latency 未计时、improver 使用率索引空、token 为自报）。round-115 起该 signal 读作 indicative only。**待人**：切版本 |
 
 ## 守住
 
@@ -73,6 +73,8 @@
 
 **最强对照（R6，2026-10-18，仍 indicative）**：真实 MCP 闭环先产出带截断锚点与 `prediction_delta` 的 episode（`sha256:23c67dce…`），再在去饱和对称题包 `tasks_grounded.json`（6 过程决策 + 2 对照，n=8，digest 入账、选项对称不泄题）上跑两次 `--stage-exit --from-episodes --placebo`（`--order-seed 7`/`13`）：两批均 with_records 8/8 对 without 2/8，配对 `p=0.03125`、`eligible=True`、`paired=a_better`；n=8 < 30 → `stage=inconclusive`，只记 indicative only，不收阶段。出口仍卡「合法的 ≥30 题来源」，下一阶段提议见文末。
 
+**出口裁决（2026-10-23，round-119，出口关上）**：两项人裁（题源＝从真实结算派生、纪律照 R6；战役开跑）后，沙盒 `C:\Temp\evolver-stage-exit\` MCP 闭环积满 30 条真实结算；32 题冻结包两独立种子 `--stage-exit --from-episodes --placebo --model deepseek-flash`——`order_seed=7`：with_records 32/32 对 without 2/32（仅过对照题），`p=1.86e-09`；`order_seed=13`：with_records 32/32 对 without 6/32，`p=2.98e-08`。均 `signal`（`signal_basis=success_rate`）、`eligible=True`。**消融出口就此关上；切 minor 由人执。**数字在 CHANGELOG（round-119），实录在文末提议节。
+
 **P0 人裁（已决，执行中）**：feedback 自报维持现状并修章程（§4/§6.3 已补转向-结算区分）；episode 产地定为 MCP 闭环——DeepSeek 宿主活体全结算已通（`validation_failed` 拒绝轮入 episode），结算半环钉进 Tier B，数字在 CHANGELOG。
 
 ## 下一阶段（提议，待人裁）：外部尺子与真实闭环
@@ -96,3 +98,19 @@
 **不做**（沿章程）：不为凑 30 造题；外部基准只当尺子不当信号；不移植 DGM/HGM 本体；不在此阶段内同时开两条战线——出口未关之前，适配器不开工。
 
 > **2026-10-22 会话实录**：两项裁决（题源 ①、战役 ②）已当面问过、未获作答——按默认保守，不开工，全量战役与题面派生均未启动。试点数据已采：Tier B `test_live_host_settles_a_round_into_episodes` 单轮真实结算 **11.7 秒 / API 成本美分级**（tick→DeepSeek 决策→应用编辑→distill→hypothesis→solidify→episode 落库，`1 passed in 11.72s`）。据此 ≥30 条结算的战役量级约十分钟、成本可忽略——裁 ② 的实际风险只剩「要不要现在动 API」本身。①+② 落笔即执行。
+
+> **2026-10-23 人裁落笔（本人回复原样入账）**：
+> 「① 派生，纪律照 R6，题面我过目
+> ② 开跑」
+> 即：题源走「从真实结算派生」一路（选项对称、题干不泄密、digest + commit 冻结入账），题面在冻结前送人过目；战役获 go，仓外沙盒真实 MCP 闭环积累 ≥30 条结算后跑 `--stage-exit --from-episodes --placebo` 出口裁决。执行实录逐轮补记于下。
+
+> **2026-10-23 执行实录（战役完成，待题面过目）**：沙盒 `C:\Temp\evolver-stage-exit\`。种子为空骨架＋30 个微模块三类 bug（12 运行时 / 10 类型 / 8 未用导入），每轮引入一个（hotl 手口下发布门照常拒绝回滚，失败集逐轮累积——真实节奏）；宿主 DeepSeek 经真 stdio MCP 走 tick→决策→distill→hypothesis→solidify→feedback，VISTA 压缩门按设计触发过一次（驱动以 `swarm_checkpoint_working` 应答后续跑）。**30 条结算入 episode 店**（全程约 12 分钟；混合 `bench_pack_rejected/pack_absent`、`validation_failed`、checks 3/3–2/3–1/2–0/1、matched 真/假、截断锚 ruff/mypy/pytest 各异）。题面按 R6 纪律派生：32 题（30 结算题三模板轮换＋2 对照），锚点全用 run id 并经程序验证在 30 条渲染块（1000 字/条，共 20,274 字符）内可见；题集在 `tasks_stage_exit.json`、送审版 `tasks_for_review.md`。**冻结与 `--stage-exit` 裁决待人过目题面后执行。**
+
+> **2026-10-23 冻结（人随后裁「请您自行决策，继续完善」，过目权下放）**：题集冻结为 `tasks_stage_exit.json`（32 题）——`sha256:4579f5a995a95e29c06b6ad7f8618ca487c85c8199eff1b276eb62be79b6c33b`，绑定引擎 commit `b059d8e`；结算源＝沙盒 episode 店 30 条（`--episodes-limit 30 --episode-max-chars 1000`，渲染 20,274 字符）。跑 `--stage-exit --from-episodes --placebo --model deepseek-flash`，两次独立交错种子（order_seed=7 / 13，照 R6 惯例）。
+
+> **2026-10-23 出口裁决（两独立种子双 signal，阶段出口关上）**：
+> - `order_seed=7`：with_records **32/32**（均 7,654.7 tokens / 2.84s）对 without_records **2/32**（仅过 2 对照题）——`wins_a=30, wins_b=0, ties=2, p=1.86e-09`，`a_better`。
+> - `order_seed=13`：with_records **32/32**（均 7,655.0 tokens / 2.68s）对 without_records **6/32**（2 对照＋4 题四选一盲猜命中）——`wins_a=26, wins_b=0, ties=6, p=2.98e-08`，`a_better`。
+> - 两批 `n_per_arm=32`、`sample_adequate=True`、`verdict=signal`（`signal_basis=success_rate`，非 tokens-only）、`stage=positive`、`eligible=True`；64 次调用零错误，served `['deepseek-flash']`；episodes digest `sha256:aac5f054…0b77`（30 条真实结算）。
+> - prompt_token_balance `measured`：with 均值 7,584.1 对 without 3,799.1——placebo 按字符等长，token 差如实记录；裁决基是成功率而非 token。无记录臂对结算题如实答 `unrecorded` 或盲猜、对照题两臂全过——排除「臂间可答性不对等」读法。
+> - **按章程 signal → 人切版本收阶段**：切 minor 由人执（不代办）；点名裁决 2/3（solve_receipt 执法、线索层升证据判据）归下一阶段提议。报告 `stage_exit_seed7.json` / `stage_exit_seed13.json` 在沙盒，不入产品 git。
