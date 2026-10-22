@@ -8,6 +8,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Test — 出口战役试点：单轮真实结算 11.7 秒（round-118，试点）
+
+版本保持 **1.113.0**。测试运行，不计阶段进度。
+
+为给「真实 episode 规模化战役」的裁决提供成本与节奏数据，实跑 Tier B `test_live_host_settles_a_round_into_episodes` 一次（真实 DeepSeek 宿主全链结算）：**1 passed in 11.72s**，API 成本美分级。据此 ≥30 条结算约十分钟量级。两项裁决（题源二选一、战役 go）已问未答，按默认保守悬置，实录记于 [`TODO.md`](TODO.md) 提议节末。
+
 ### Test — 线索层判据钉：结算与门模块不得引用线索层（round-117，测试针）
 
 版本保持 **1.113.0**。测试针，不计阶段进度。
