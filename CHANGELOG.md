@@ -8,6 +8,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Docs — 全仓盘点对齐文档与代码现状，起草下一阶段提议（round-116，文档轮）
+
+版本保持 **1.113.0**。文档补充，不计阶段进度；不动源码与任何门。
+
+全仓系统性盘点（布局、命令面、运行态、章程口径）后同步文档与树：
+
+- **AGENTS.md**：源码布局按实况重排——`gep/`（150+ 模块）按功能分簇，补入经验即证据/VISTA 承重模块（`episode_record` / `episode_clue` / `record_route` / `working_memory` / `compact_gate` 等，此前全部缺席）与门、记忆、Hub、存储各簇长尾；顶层补 `cli_options` / `cycle_control` / `force_update` / `uv_runtime` / `solo/` / `recipe/`，`evolve/pipeline` 补 `diagnosis` / `session_format`，`bench` 补 `cost`，`ops` 补 `charter_check` / `meta_report` 等，`atp` / `adapters` / `proxy` 长尾归并。命令表补 `episode list|show`、`charter-check`、`variants`、`report`、`trajectory`、`--solo` 与完整命令面指引。蜂群节补「经验重注视与工作草稿」段（episode_inspect / WORKING_SESSION / checkpoint_required / prediction_delta），hooks 枚举补 `precompact`。运行态清单补 `episodes/`、`hypothesis.consumed.json`、`WORKING_SESSION.md`、`compact_checkpoint.*`、`library/`。演进篇补并行补充方案（VISTA / Schema）与设计方案.md 的史料定位一句。
+- **TODO.md**：出口节补记 R6 n=8 去饱和对照（两次独立 `--stage-exit`，8/8 对 2/8，p=0.03125，`eligible=True`，indicative only）；文末新增「下一阶段（提议）：外部尺子与真实闭环」（agent 起草、待人裁，人裁前不开工）。
+- **演进方案.md**：§0 已裁口径只增一条——R6 对照（至今最强、仍不关出口）。
+- **设计方案.md**（本地私有文档，`.gitignore` `*方案*.md` 不入库）：头部版本（1.93.0 → 1.113.0）与日期校正，补「2026-07-31 之后新增的架构面」增量索引；正文未逐节重核（现行模块清单以 AGENTS.md 为准）。
+- **公共面核验续轮**：四语 README 与 SKILL.md 经核对已覆盖 `--stage-exit` / `episode_inspect` / `swarm_checkpoint_working`，无需改动；`docs/` 三件为自带日期的审计快照，保留。CONTRIBUTING.md 三处实错修正——mypy 文件数（177 → 不写死）、测试基线（2026-09-30 / 4078 → 2026-10-22 / 4244 not-slow / 349 files）、PR 指引的现行章程摘要从「配对会话过冻结包」更正为「经验即证据：记录分层 + 消融裁决出口」。设计方案.md 补 §4（差距矩阵）与 §11（下一步行动）两处档案横幅——§11 所列条目已绝大多数落地、许可证建议与实际决定相反（本仓保持 Apache-2.0）——删除「活文档/随实现持续更新」声明，尾注改为定格 2026-07-31 的档案说明。
+
+工具链核验：`uv run ruff check src tests` 通过、`uv run ruff format --check` 720 文件已格式化、`uv run mypy src` 0 错误（349 文件）。全量 `pytest -m "not slow"` 首轮 **4244 passed** / 25 deselected；文档定稿后复跑为 4243 passed + 1 failed——`test_ops_health_check.py::test_disk_warning` 随宿主内存水位间歇翻车（该测试只 mock 磁盘却断言聚合 status，宿主内存 98% 时 `memory` 检查把总状态抬成 error）。测试针修补（不计阶段进度）：补 `psutil.virtual_memory` 健康值 mock，断言只剩磁盘一项说话；根因、修法与「聚合断言继承所有未 mock 检查项」经验回填 [`DEBUG.md`](DEBUG.md) #59，修补后该文件全绿。
+
 ### Added — 进化闭环接上 VISTA 的重注视、草稿、压缩门与预期落差，并跑了去饱和的 `--stage-exit` 对照
 
 版本保持 **1.113.0**。本轮不切版本，也不收阶段；落地清单见 [`TODO_VISTA.md`](TODO_VISTA.md)。

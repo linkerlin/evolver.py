@@ -27,7 +27,7 @@ uv run pytest tests/ --cov=evolver --cov-report=term-missing
 # Run linting
 uv run ruff check src tests
 
-# Run type checking (strict, 177 source files)
+# Run type checking (strict)
 uv run mypy src
 ```
 
@@ -51,7 +51,7 @@ pytest tests/ -q
 
 All new code must pass `uv run mypy src` (strict) before submission. The full `ruff check` suite may report pre-existing style warnings; fix any issues in files you touch.
 
-Current baseline (2026-09-30): **4078 tests** (`pytest`), **mypy strict 0 errors** (339 files). CI runs the lint gate plus fast/slow test tracks on ubuntu, a blocking windows track, and the anchor suite (`anchor init` + `anchor run`) on both platforms — Windows-specific and probe-drift failures are real defects, not noise.
+Current baseline (2026-10-22): **4244 tests pass** on the not-slow track (`pytest -m "not slow"`), **mypy strict 0 errors** (349 files), ruff clean. CI runs the lint gate plus fast/slow test tracks on ubuntu, a blocking windows track, and the anchor suite (`anchor init` + `anchor run`) on both platforms — Windows-specific and probe-drift failures are real defects, not noise.
 
 ## Testing
 
@@ -89,7 +89,7 @@ Current baseline (2026-09-30): **4078 tests** (`pytest`), **mypy strict 0 errors
 3. Ensure lint passes: `uv run ruff check src tests`
 4. Ensure type check passes: `uv run mypy src`
 5. Update documentation if your change affects user-facing behavior (`README.md`, `AGENTS.md`, `SKILL.md`).
-6. If modifying architecture or adding new modules, update [`演进方案.md`](演进方案.md) and [`TODO.md`](TODO.md). Do not reopen [`演进方案_wikiskill对照版.md`](演进方案_wikiskill对照版.md) as a roadmap. New work must fit the current charter: a paired evolution session over the frozen bench pack (`swarm_propose` stays in force). Do not port an ontology schema, add an LLM judge, add RSI P2-6/8/9, validator/ATP/PyPI scope, or another instrument-only dogfood round and call it stage progress.
+6. If modifying architecture or adding new modules, update [`演进方案.md`](演进方案.md) and [`TODO.md`](TODO.md). Do not reopen [`演进方案_wikiskill对照版.md`](演进方案_wikiskill对照版.md) as a roadmap. New work must fit the current charter (经验即证据): episode records as first-class evidence with the record-layering guardrail (engine-recorded + relay-observed as evidence, host reports as clues only), and the stage exit is the ablation adjudication (`experiment --ablation` / `--stage-exit`, indicative only below n=30 per arm) — `swarm_propose` stays in force. Do not port an ontology schema, add an LLM judge, add RSI P2-6/8/9, validator/ATP/PyPI scope, or another instrument-only dogfood round and call it stage progress.
 7. Open a PR with a clear description of the change and motivation.
 
 ## Architecture Decisions

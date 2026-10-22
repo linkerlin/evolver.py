@@ -69,6 +69,11 @@ def test_disk_warning(monkeypatch: pytest.MonkeyPatch) -> None:
     mock_usage.total = 100 * 1024 * 1024
     mock_usage.used = 85 * 1024 * 1024
     monkeypatch.setattr("shutil.disk_usage", lambda _p: mock_usage)
+    # 断言的是聚合 status: 不钉住 memory, 宿主内存过阈值会把总状态
+    # 抬成 error, 压过磁盘的 warning (DEBUG #59)
+    mock_mem = MagicMock()
+    mock_mem.percent = 60.0
+    monkeypatch.setattr(psutil, "virtual_memory", lambda: mock_mem)
 
     report = health_check.run_health_check()
     assert report.status == "warning"

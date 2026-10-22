@@ -1112,3 +1112,20 @@
   （与 #52 同族）；**自举地图必须由注册表反推测试**，手写清单迟早漏；
   版本断言只认唯一真相源（#51 哑弹同型）。另：同一文件多笔 edit 必须
   逐笔核对行号——本轮曾一笔误伤测试文件，靠语法检查即时发现回滚。
+
+### 59. `test_disk_warning` 随宿主内存水位间歇翻车（round-116 文档轮实证，已修）
+
+- **症状**：同日两轮全量 `pytest -m "not slow"`，首轮 4244 全过、次轮
+  `tests/test_ops_health_check.py::test_disk_warning` 独失败（`'error' != 'warning'`），
+  源码零改动、隔离单跑也稳定失败。
+- **根因**：该测试只 mock 了 `shutil.disk_usage`，却断言**聚合** `report.status`；
+  `memory` 检查项读真实 `psutil.virtual_memory()`，宿主内存到 98% 时
+  severity=critical 把总状态抬成 error，压过磁盘 85% 的 warning。隔离缺陷
+  一直在，只是机器内存常在阈值下未爆。`test_disk_critical` 断言 error，
+  宿主状态只会抬高级别、不会压低，故不受累（内存高时它「因错为对」地过）。
+- **修复**：`test_disk_warning` 按 `test_memory_ok` 同款惯语补
+  `monkeypatch.setattr(psutil, "virtual_memory", ...)`（60% 健康），让断言
+  只剩磁盘一项在说话。测试针修补，不计阶段进度。
+- **经验**：**断言聚合状态就继承了每一个未 mock 的检查项**——钉聚合
+  verdict 的测试必须把「会大声的邻居」全部钉住，否则它测的是宿主机而非
+  被测逻辑。间歇失败 + 零改动 = 先找环境读数泄漏，别急着重跑碰运气。

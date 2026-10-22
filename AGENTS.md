@@ -12,6 +12,8 @@
 
 [`RSI演进对照.md`](RSI演进对照.md)、[`演进方案_wikiskill对照版.md`](演进方案_wikiskill对照版.md)、[`演进方案_库即尺子.md`](演进方案_库即尺子.md) 与 [`TODO_库即尺子.md`](TODO_库即尺子.md) 是史料。史料里的「下一步」不得当作当前排期。
 
+并行补充方案（不改章程、不另开出口）：[`VISTA演进方案.md`](VISTA演进方案.md)——零参数机械套具，Tier 1–3 八项与评审六条已于 2026-10-18 合入主干，落地清单 [`TODO_VISTA.md`](TODO_VISTA.md)；[`Schema演进方案.md`](Schema演进方案.md)——只取思想，除一句提示词外未排期。（VISTA 方案与 [`设计方案.md`](设计方案.md) 是本地私有文档，`.gitignore` `*方案*.md` 规则不入库；设计方案正文停在 2026-07-31，现行模块清单以本文件源码布局为准。）
+
 ## 命令篇
 
 | 操作 | 命令 |
@@ -44,6 +46,13 @@
 | 配对会话（§5.3） | `uv run evolver session hypothesize --json='{...}'`（宿主声明本轮唯一假说；`--stdin` 或 `@file` 亦可。无假说则门拒，引擎不代笔） |
 | 消融裁决（§5.8/§5.9） | `uv run evolver experiment --ablation --tasks <file> [--from-episodes] [--placebo] [--model deepseek-flash]`（经验即证据出口：同预算有/无记录盲测；`--placebo` 注入等长中性上下文隔离系统角色偏置；`MIN_N=30` 充足性校验；`--stage-exit` 为机器契约形态：真实 episode + placebo + 唯一任务 + 已知 commit + 落盘报告才受理，否则 exit 2，详见 `experiment/cli.py::_main_stage_exit`） |
 | 经验重注视（VISTA） | `uv run evolver episode inspect <id> --question="..." --view='{"kind":"check","name":"pytest","offset_lines":0,"limit_lines":80}'`（只读；空 question 拒绝；切片过 val-seal。清单：[`TODO_VISTA.md`](TODO_VISTA.md)） |
+| episode 只读面 | `uv run evolver episode list\|show <id>`（读运行态记录；写入只在周期边界） |
+| 章程符合性回执 | `uv run evolver charter-check`（机器回执：章程合规与漂移核对，演进方案 §11.4 P1） |
+| 变体档案（RSI P1-3） | `uv run evolver variants`（拒绝但保留的候选，DGM 式 archive 全留） |
+| 周期报告（S27.4） | `uv run evolver report`（逐周期裁决，负结果如实入账） |
+| 轨迹导出（G10.1） | `uv run evolver trajectory`（proxy trace → 编码轨迹） |
+| 单人离线模式 | `uv run evolver --solo`（受限野生离线运行，solo/ 断路器 + git 守卫） |
+| 完整命令面 | `uv run evolver --help`（60+ 子命令：exec / login / apply-proposal / replay / rebuild-views / asset-log / webui-token / …） |
 | 评估隔离 worktree | 默认开启（`enable_eval_worktree`）。失败回退 live cwd 并告警；`EVOLVER_EVAL_WORKTREE_STRICT=1` 时回退改为失败 |
 | 守护进程生命周期 | `uv run evolver start` / `stop` / `restart` / `status` / `log` |
 | 健康检查 | `uv run evolver check` / `watch` |
@@ -67,98 +76,216 @@
 
 ```
 cli.py              CLI 入口（argparse）、.env 加载、命令分发
+cli_options.py      CLI 公共路径选项（home/store/settings/env-file 解析）
 config.py           全部运行时阈值/超时、环境变量覆盖
 canary.py           Fork-canary：验证 CLI 加载不出崩溃
+cycle_control.py    周期硬超时、进度心跳、守护重生辅助
+force_update.py     强制更新引擎：Hub 触发版本过期时自更新
+uv_runtime.py       uv/uvx/python 启动器解析（spawn evolver 进程用）
+solo/               单人离线模式（--solo / Mad Dog）：受限野生运行 + 断路器 + git 守卫
+recipe/             Recipe Hub 客户端与缓存（skill2recipe 的发布/应用面）
 experiment/         受控实验与消融裁决（经验即证据 §5.8/§5.9）：ablation / ablation_llm /
                     cli / stats / metrics / comparison / llm；--placebo 等长中性占位；
                     --stage-exit 机器契约（种子交错/逐调用记录/配对检验/eligibility 门）；
+                    agent_runner（单 agent 单题执行）、trigger_shift（触发漂移离线复评）；
                     全仓调用图钉白名单隔离
 swarm.py            蜂群进化核心：instrument prompt（宿主接管协议）+ 闭环工具
-                    （boot/tick/distill/solidify/report/status），stdout 全捕获
+                    （boot/tick/distill/solidify/report/status…），stdout 全捕获
 mcp_server.py       MCP stdio server（薄工具面）：asset/mailbox/timeline 工具 +
-                    swarm 工具（含 workflow 三工具：run/act/status）+
+                    swarm 工具（含 workflow 三工具）+ episode_get / episode_inspect +
                     `evolver_swarm` prompt（mcp>=2.0 之 MCPServer）+
-                    四只读资源（evolver://status 等）+ 工具注解（readOnly/
+                    只读资源（evolver://status 等）+ 工具注解（readOnly/
                     destructive hint）；协议 E2E 测试见 tests/test_mcp_protocol.py
-gep/                GEP（基因组进化协议）核心
+gep/                GEP（基因组进化协议）核心。150+ 模块，下按功能分簇；注解给
+                    承重模块，完整清单以目录为准
   schemas/          Pydantic 模型：Gene、Capsule、Task、Protocol
-  asset_store.py    JSON/JSONL 持久化，叠加语义（生产级）
-  paths.py          中心化路径解析，支持环境变量覆盖
-  a2a_protocol.py   Agent 间 Hub 协议（HTTP）
-  bridge.py         Git worktree 变异桥接
-  content_hash.py   SHA-256 内容寻址资源 ID
-  crypto.py         本地密钥管理
-  distill.py        从 LLM 文本输出中提取 Gene/Capsule
-  feedback.py       统一评估反馈 E（EvoX 概念收割）：primary_score/metrics/
-                    textual_gradient 三分离，日志 + repair-bias 信号注入
-  adaptive.py       反馈驱动变异偏置（EvoX 自适应变异率收割）：降级连击→
-                    repair 权重，收敛平台→novelty 枢转，混合样本中性
-  gene_lifecycle.py 基因全生命周期治理（RSI P1-5，Library Drift 防治）：
-                    零后效证据 active→under_review→retired 状态机；选择器
-                    禁选 retired / 降权 under_review；人工 `reinstate` 才可复活；
-                    JSON 状态 + JSONL 审计；纯事件推导、幂等、损坏 fail-open
+
+  ── 记录与经验源（经验即证据 + VISTA）────────────────
+  episode_record.py episode record e_k（§5.1）：引擎自记的一次自改进结算
+                    （选中基因、diff、检查结果、门裁决），内容寻址、写后
+                    不可变、同轮幂等；写入只在周期边界，白名单外引用即测试
+                    失败；inspect_episode_scene 只读重注视（空 question 拒绝、
+                    切片过 val-seal、记 inspect_calls.jsonl 侧日志）
+  episode_clue.py   线索层（§5.2）：宿主上报材料与记录分账，逐条标来源，
+                    不单独支撑裁决、不进验收维
+  record_route.py   双向记录路线（§5.6，影子）：capability/adaptive 两方向
+                    并行产出、记录互见、不打分；非种群择优
+  evidence.py       不可变证据层（S28.1）：逐 run 现场快照（重注视的无损底稿）
   evidence_pack.py  证据包派发（RSI P1-4，失败侧证据）：按信号族聚合既往干预/
                     结局/拒绝原因/已试编辑指纹；2400 字符硬预算、省略显式
-                    计数；注入 GEP 提示词（证据先于基因建议）；配套 instrument
-                    第二章「干预提议」——族内持续失败可经 swarm_propose 提案
+                    计数；渲染时诊断串量化并标 count；注入 GEP 提示词
+                    （证据先于基因建议）；配套 instrument 第二章「干预提议」——
+                    族内持续失败可经 swarm_propose 提案
+  working_memory.py 会话草稿 WORKING_SESSION.md（VISTA）：16k 字配额；
+                    会话 start/accept/incomplete 归档后 unlink
+  compact_gate.py   压缩门（VISTA）：checkpoint_required 置位时锁变异工具，
+                    swarm_checkpoint_working 写完草稿才放行；PreCompact hook 同源
+
+  ── 门与治理 ──────────────────────────────────────
+  hypothesis.py     一假说门（§5.3）：record/load/clear + require_for_gate
+                    （周期 id ∪ 会话轮 id 双 scope；expected_outcome 可选，
+                    过门 consume_hypothesis 后由引擎检查结果写 gates.prediction_delta）
+  val_seal.py       密封 val（§5.2）：val 专用串抽取/打码/扫描；episode_record
+                    亦入 SEAL_TARGETS；train 共享材料为公共、短答案弱信号永不裁决
   hitl.py           HITL 审批门（EvoX HITLManager 概念收割）：高危操作人类
                     批准，按 subject 幂等，TTL 超时 fail-safe 拒绝，全程审计
   supervision.py    HOTL 人在环上监督：running/paused 状态机 + veto 模式
                     否决 + directive 转向信号 + 降级连击绊线自动暂停
-  skill_assets.py   技能生态桥（EvoX SkillRegistry 概念收割）：多根优先发现
-                    （project > user > builtin，同名遮蔽）+ 同步入库；转换
-                    复用 skill2gep 层（基因 id 前缀 gene_distilled_s2g-）
-  fetch.py          从 Hub 下载并安装资源
-  git_ops.py        Git diff/回滚/状态辅助函数
-  instance_lock.py  单实例守护（守护循环）：OS 锁为唯一真相（活持有者任何年龄不可窃；崩溃残留自然复用；release 只删自己持有的；PID 仅诊断），round-97
-  canonical_identity_lock.py  进程身份感知规范锁（node_id 元组，v1.92.0）
-  node_identity.py  规范 node_id 解析/持久化/state-path 后缀（proxy↔A2A 统一）
-  validation_report.py  标准化 ValidationReport（vr_* + 内容寻址）
-  asset_call_log.py  资产调用 JSONL 日志 + 复用归因 rollup
-  savings_core.py   savings-core 规范公式（conformance 黄金向量）
-  memory_graph.py   JSONL 记忆图谱存储与信号键查询
-  cognition.py      高级认知编排：recall/explore/curriculum/reflection/distill 接线
+  policy_check.py   安全策略引擎：solidify 前强制门
+  llm_review.py     LLM 评审门：diff 未过评审则阻塞 solidify
+  gene_lifecycle.py 基因全生命周期治理（RSI P1-5，Library Drift 防治）：
+                    零后效证据 active→under_review→retired 状态机；选择器
+                    禁选 retired / 降权 under_review；人工 `reinstate` 才可复活；
+                    JSON 状态 + JSONL 审计；纯事件推导、幂等、损坏 fail-open
+  a2a_gate.py       A2A 资产门：爆炸半径限额、广播资格、置信度缩放
+  hub_gate.py       Hub 质量门：review/verify 编排（pipeline + WebUI）
+  anchor.py         仓外锚定评测（RSI P0-1）：冻结契约守护验证者
+
+  ── 变异·选择·固化·会话 ────────────────────────────
   mutation.py       变异引擎：类别选择、变体生成
-  personality.py    人格配置文件（严谨度、风险容忍度）
-  prompt.py         GEP 提示词组装
-  sanitize.py       资源字段输入净化
   selector.py       Gene/Capsule 与信号匹配（含 living_memory 评分调节）
-  signals.py        信号收集与分类
+  strategy.py       进化策略选择
+  adaptive.py       反馈驱动变异偏置（EvoX 自适应变异率收割）：降级连击→
+                    repair 权重，收敛平台→novelty 枢转，混合样本中性
+  epigenetics.py    表观遗传引擎：环境感知的基因抑制/激活（配置差异当折价）
+  multi_proposer.py 机制多样多提案者（记录路线的产出端之一）
+  population.py     种群编排：eval worktree 上 K=2 候选搜索（择优语义未解禁）
+  candidate_eval.py 候选评估器：多变体排序择优
+  candidate_isolation.py 进程内候选隔离（Python 模块面）
+  eval_worktree.py  S26.5：干净 git worktree 中评估变异（enable_eval_worktree；
+                    失败回退 live cwd 并告警，STRICT=1 改为失败）
   solidify.py       应用基因 → 验证 → 持久化 → 发布（折账在进周期前取假说正文，
                     round-91）
+  solidify_helpers.py 固化过程辅助（v1.94.0 parity）
+  proposal.py       基因提案（S29）：结构化变异 + 机械应用（apply-proposal）
+  variant_archive.py 变体档案（RSI P1-3，DGM）：拒绝但保留的候选
+  ttt_inspired.py   TTT 式进化辅助（预测增益、前沿、多基因）
   evolution_session.py 配对会话机（§5.1）：三态、开局预算冻结 8、extend 仅人；
                     begin_round 折账 + cycle_ref 幂等
-  hypothesis.py     一假说门（§5.3）：record/load/clear + require_for_gate
-                    （周期 id ∪ 会话轮 id 双 scope；mechanism_check 须 train
-                    前后观察）
-  val_seal.py       密封 val（§5.2）：val 专用串抽取/打码/扫描；train 共享材料
-                    为公共、短答案弱信号永不裁决
   cursor.py         进化游标（§5.5）：只在 Accept 推进；reminder 只提醒不开会话
   library.py        库快照（库即尺子）：内容寻址版本；publish 保持 Accept-only；
                     establish_parent_library 首写（solidify 调用不到，有测试钉）；
                     load_version 按 id 读不动 active；render_prompt_block
-  autopoiesis.py    Autopoiesis 编排（SelfReport + homeostasis + viability）
-  self_report.py    摩擦捕获 → autopoiesis_rules.json + LESSONS_LEARNED.md
-  living_memory.py  活记忆加载（LESSONS_LEARNED YAML frontmatter）
-  memory_bridge.py  living_memory ↔ memory_graph ↔ signals 桥接
-  autopoiesis_rules.py  guard 规则 → pending/autopoiesis 信号
-  learning_signals.py   平台/依赖环境学习信号
-  strategy.py       进化策略选择
-  sync.py           Hub 同步：获取任务、下载资源
   workflow.py       持久化工作流引擎（WAL+快照）：script/foreach/if/agent/
                     approval/gate 步骤；YAML spec + 角色 + 级联门 + 模板（EvoX 收割）
+  cycle_state_machine.py 周期状态机：显式阶段格 + 事件→阶段映射
+
+  ── 记忆·认知·自检 ────────────────────────────────
+  memory_graph.py   JSONL 记忆图谱存储与信号键查询
+  memory_graph_adapter.py 记忆图谱高级查询接口
+  cognition.py      高级认知编排：recall/explore/curriculum/reflection/distill 接线
+  recall_inject.py  回忆注入：既往成功策略浮上 GEP 提示词
+  recall_verifier.py 回忆校验：注入的记忆是否仍有效
+  reflection.py     反思引擎：周期性自评与人格调参
+  narrative_memory.py 叙事记忆：演化史压缩成可读叙事
+  curriculum.py     课程管理：GEP 渐进任务序列
+  explore.py        探索引擎：发现未访代码路径并生成探针
+  wiki.py / wiki_projection.py  Wiki 知识层（S27）：永不回滚的证据 + 人读投影
+  living_memory.py  活记忆加载（LESSONS_LEARNED YAML frontmatter）
+  memory_bridge.py  living_memory ↔ memory_graph ↔ signals 桥接
+  autopoiesis.py    Autopoiesis 编排（SelfReport + homeostasis + viability）
+  self_report.py    摩擦捕获 → autopoiesis_rules.json + LESSONS_LEARNED.md
+  autopoiesis_rules.py  guard 规则 → pending/autopoiesis 信号
+
+  ── 提示词·信号·调度 ──────────────────────────────
+  prompt.py         GEP 提示词组装：三块序 ## Previous Episode → ## Evidence
+                    Pack → ## Host Clues（含 host_working 尾注）；EVOLVER_CHARTER
+                    置顶（VISTA 极简宪章）
+  signals.py        信号收集与分类
+  feedback.py       统一评估反馈 E（EvoX 概念收割）：primary_score/metrics/
+                    textual_gradient 三分离，日志 + repair-bias 信号注入
+  feedback_envelope.py 标量反馈归一为带类型元数据之信封
+  analyzer.py       故障分析器：失败的结构化根因
+  candidates.py     能力候选：expandSignals + extractCapabilityCandidates
+  diagnostic_ledger.py 跨组件诊断账本（RSI P2-7，round-74）
+  host_error_classifier.py 宿主/LLM 客户端错误分类（信号归因护栏 #571）
+  local_state_awareness.py 本地状态感知：GEP 用的全项目快照
+  learning_signals.py   平台/依赖环境学习信号
+  personality.py    人格配置文件（严谨度、风险容忍度）
+  trigger_engine.py 触发引擎：WFQ 调度、问题价值模型、日预算
+  idle_scheduler.py 闲时感知调度：按用户活动调进化强度
+
+  ── 蒸馏与技能 ────────────────────────────────────
+  distill.py        从 LLM 文本输出中提取 Gene/Capsule
+  auto_distill_llm.py / auto_distill_conv.py  LLM 响应 / 会话史自动蒸馏
+  conversation_distiller.py / conversation_sniffer.py  会话→资产（确定性、无 LLM）
+  skill_assets.py   技能生态桥（EvoX SkillRegistry 概念收割）：多根优先发现
+                    （project > user > builtin，同名遮蔽）+ 同步入库；转换
+                    复用 skill2gep 层（基因 id 前缀 gene_distilled_s2g-）
+  skill2gep.py / skill2gep_audit.py  技能→基因转换 + 私字面量泄漏审计
+  skill2recipes.py / skill_distiller.py / skill_publisher.py  Recipe 组合 /
+                    技能蒸馏 / ATP 发布
+  fetch.py          从 Hub 下载并安装资源
+  sync_asset.py     Hub 资产本地安装归一化（sync 管线）
+  material.py       物料基质：水印增量摄取 + 消费组
+
+  ── Hub·身份·对外 ─────────────────────────────────
+  a2a_protocol.py   Agent 间 Hub 协议（HTTP）
+  sync.py           Hub 同步：获取任务、下载资源
+  hub_fetch / hub_search / hub_review / hub_verify / hub_health / directory_client
+                    ——Hub 客户端族：韧性拉取 / 语义搜索 / 互评 / 核验 /
+                    端点健康（粘性 404）/ 目录服务
+  mailbox_transport.py 经本地代理的邮件收发；router.py A2A 消息路由；
+                    discovery.py 分布式节点发现；task_receiver.py 外部任务拉取注入
+  crypto.py         本地密钥管理
+  workspace_keychain.py 工作区密钥链：每工作区秘密安全存储
+  privacy_client.py GEP 敏感数据静态加解密；device_id.py 匿名硬件指纹
+  node_identity.py  规范 node_id 解析/持久化/state-path 后缀（proxy↔A2A 统一）
+  oauth_login.py    OAuth 2.0 设备码登录
+  canonical_identity_lock.py  进程身份感知规范锁（node_id 元组，v1.92.0）
+  instance_lock.py  单实例守护（守护循环）：OS 锁为唯一真相（活持有者任何年龄不可窃；崩溃残留自然复用；release 只删自己持有的；PID 仅诊断），round-97
+  anti_abuse_telemetry.py 反滥用遥测：可疑演化模式检测上报
+  question_generator.py 为 Hub 主动生成悬赏问题；reuse_attribution.py 复用
+                    归因块 + 结果上报（P4-a）；cli_contracts.py reuse.v1/publish.v1 契约
+  self_pr.py / open_pr_registry.py / issue_reporter.py  对外出口：高置信变异
+                    自动 PR / 未决 PR 登记 / 重复故障自动 Issue
+
+  ── 存储与基础设施 ────────────────────────────────
+  asset_store.py    JSON/JSONL 持久化，叠加语义（生产级）
+  paths.py          中心化路径解析，支持环境变量覆盖
+  content_hash.py   SHA-256 内容寻址资源 ID；hash_utils.py FNV-1a 稳定哈希
+  bridge.py         Git worktree 变异桥接
+  exec_bridge.py    执行桥：Windows 上安全解析 spawn 目标
+  git_ops.py        Git diff/回滚/状态辅助函数
+  validation_report.py  标准化 ValidationReport（vr_* + 内容寻址）
+  validation_env.py 评分子进程环境（VISTA Tier 3：剥离 *_API_KEY 与控制变量）
+  fitness_state.py  适应度台账：严格改进门的 r_best 状态（S26.3）
+  asset_call_log.py 资产调用 JSONL 日志 + 复用归因 rollup
+  savings_core.py   savings-core 规范公式（conformance 黄金向量）
+  token_savings.py  token 节省追踪；env_fingerprint.py 环境 fingerprint
+  event_projection.py 事件投影：重放事件日志重建派生视图
+  execution_trace.py 为 capsule 构建脱敏执行轨迹
+  surface.py        表面快照：可编辑表面的稳定基线
+  portable.py       .gepx 可携归档：工作区 GEP 资产导出/导入
+  report.py         进化 run 报告（S27.4）：逐周期裁决、如实负结果
+  llm_template.py   外置可复现 LLM 调用模板
+  assets.py         资产归一化（模型 id 规范化、预览格式化）
+  sanitize.py       资源字段输入净化
+  feature_flags.py  特性开关（EVOLVER_FF_*，GEP 与 proxy 同源）
+  idempotency.py    持久化 once(cycle_id, op_key) 去重
+
+  ── 子包 ──────────────────────────────────────────
+  trajectory/       轨迹导出：proxy trace → 编码轨迹（cursor_vscdb / gemini_cli /
+                    kimi_wire 等采集器）
+  acceptance/       Self-Harness 验收门层（opt-in）：t0_frozen 冻结契约
+  diagnosis/        Self-Harness 因果诊断层（opt-in）：终端原因优先归因
+  hooks/            Self-Harness hooks 包：AST 合并 / taxonomy / 校验
   validator/        验证者守护进程（文件存在，安全模型待完善）
 evolve/             进化流水线
   runner.py         编排器：单周期 + 守护循环
   guards.py         起飞前检查（负载、RSS、冷却）
+  utils.py          流水线公共辅助（惰性 hashlib、行剥离模式）
   pipeline/         七阶段流水线 + preflight + post_cycle（各为 async 函数，取/返 ctx）
     collect.py      扫描 memory/ 之运行时日志与错误模式
     signals.py      从收集数据中分类信号
     hub.py          向 Hub 查询匹配之资源与任务
     enrich.py       以 Hub 数据丰富上下文 + 认知蒸馏/回忆 + living_memory 桥接
     autopoiesis.py  SelfReport / homeostasis（enrich 之后、select 之前）
+    diagnosis.py    诊断阶段：失败事件的终端原因优先归因
     select.py       选择最佳 Gene/Capsule（repair bias + innovation 记录）
-    dispatch.py     生成 GEP 提示词（含回忆 + autopoiesis_context），写入分发输出
+    dispatch.py     生成 GEP 提示词（三块序 + 回忆 + autopoiesis_context），
+                    写入分发输出
+    session_format.py 多智能体会话日志格式化（Sprint 15.6）
   post_cycle.py     周期末钩子（ATP auto-buyer、task pickup）
 bench/              锚侧任务包与外部适应度（章程 §5.2 / 库即尺子）
   tasks.py          任务模式校验（slug/split/沙箱名安全）+ 沙箱物化（force 删
@@ -169,6 +296,9 @@ bench/              锚侧任务包与外部适应度（章程 §5.2 / 库即尺
   prompts.py        求解提示词：绝对 workdir + 禁离场 + library_block 贴库
   runner.py         包执行：prompt 物化（--library 按 id 注入 + 求解回执
                     solve_receipt.v0）、评分、聚合进 fitness ledger
+  cost.py           求解成本采集（经验即证据 §5.7）：token 取 relay
+                    extract_usage、model 以 relay 观测为准；观测不到记
+                    unmeasured，不自报补位
   frozen_gate.py    冻结包门：val ≤ 6 两遍严格高于 Parent；大包走 compare.py
                     配对检验；基线只由 establish_parent_baseline 首写、
                     绑 pack digest + anchor epoch
@@ -185,40 +315,51 @@ proxy/              本地 HTTP 代理（CLI 默认 127.0.0.1:8081；路由前�
   extensions/       DM/会话/技能更新/追踪控制 + SkillUpdateLoop + AtpDeliverLoop
   task/monitor.py   任务监控（已接入 routes）
   trace/store.py    请求追踪环形缓冲（Hub 转发诊断）
+  token.py / inject.py / envelope.py / asset_publish.py / client_settings.py
+                    本地令牌铸造、请求注入、消息信封、资产发布、客户端设置
 webui/              FastAPI 只读仪表盘
   server/http.py    `create_app()` 统一工厂 + `WebUiServer` 嵌入式服务
+  server/routes.py  只读路由矩阵（observer 数据出面）
   app.py            向后兼容：`app = create_app()`
   dashboard.py      暗色 HTML 仪表盘（实时事件表）
   observer/         数据聚合模块（已实现）
   client/           内嵌 JS/CSS（sse、bootstrap、i18n、static）
-ops/                健康检查、清理、叙事日志
+ops/                健康检查、清理、叙事日志、遥测
   lifecycle.py      跨平台守护进程管理（较完整）
   health_check.py   系统健康检查（较完整）
   self_repair.py    Git 紧急修复
   cleanup.py        日志与产物清理
-  narrative.py      叙事日志
+  narrative.py      叙事日志；commentary.py 中文评注（RUF001 豁免）
   sqlite_store.py   SQLite 持久化增强
   skills_monitor.py 技能健康监控（已实现）
   innovation.py     创新追踪（已实现）
   trigger.py        外部触发器（已实现）
+  charter_check.py  章程符合性机器回执（`evolver charter-check`）
+  meta_report.py    改进机制遥测面板（Table-8 六维 + improver_tools + panel.rere）
+  soak_env.py       soak 运行态环境辅助
+  auth_middleware.py / capability_trace.py  WebUI 鉴权中间件 / 能力追踪
 adapters/           IDE 钩子生成器
   hook_adapter.py   共享适配器逻辑（较完整）
   setup_hooks.py    CLI 入口：adapter 平台运行时 hooks + vscode/generic 静态配置
+  auth.py / reset_secret.py  宿主鉴权与本地秘密重置
   cursor.py         Cursor hooks.json 适配器
-  scripts/          运行时脚本（session_start, signal_detect, session_end 深度有限）
+  scripts/          运行时脚本（session_start, signal_detect, session_end,
+                    compact_checkpoint[PreCompact→压缩门], memory_filtering；深度有限）
   claude_code.py    Claude Code 适配器（已实现）
   codex.py          Codex 适配器（已实现，功能略少于 Cursor）
   kiro.py           Kiro 适配器（已实现）
   opencode.py       OpenCode 适配器（已实现）
 atp/                Agent 交易协议市场
   protocol.py       枚举与 Pydantic 模型（完整）
-  hub_client.py     Hub API 客户端（中等）
+  hub_client.py / client.py  Hub API 客户端（中等）
   auto_buyer.py     自动消费代理（缺口检测 + run_tick + 预算去重）
   auto_deliver.py   自动商家交付（轮询 + default_handler 认领交付）
-  consumer_agent.py 消费者代理模板（骨架）
-  merchant_agent.py 商家代理模板（骨架）
+  consumer_agent.py / merchant_agent.py  代理模板（骨架）
   settlement.py     本地账本（较完整）
   default_handler.py 默认处理器（已实现）
+  atp_execute.py / atp_task_pickup.py / heartbeat_signals_handler.py /
+    question_composer.py / service_helper.py  任务执行、拾取、心跳信号、
+    悬赏问题组装、服务辅助
 ```
 
 ### 数据流（单周期）
@@ -282,9 +423,20 @@ HOTL 人在环上监督（`gep/supervision.py`，与 HITL 正交）：HITL 决�
 Hooks 双轨（v1.102.0）：宿主支持文件 hooks 者，经 `evolver setup-hooks` 或 MCP
 `swarm_hooks`（status/install/uninstall，包装 `adapters.setup_hooks.install_hooks`）
 安装——session 边界信号自动采集进记忆；MCP-only 宿主改用进程内桥
-`swarm_hook_event`（session_start/session_end/signal_detect，payload.content
+`swarm_hook_event`（session_start/session_end/signal_detect/precompact，payload.content
 过共享信号检测器，检出标签直入 `pending_signals`；事件记 `hook_events.jsonl`）。
 instrument 的「不要做」一节指出两条择轨：`swarm_hooks` 或 `swarm_hook_event`。
+
+经验重注视与工作草稿（VISTA，2026-10-18 合入）：episode 里的检查输出被
+400/4000 字截断时，宿主用只读 `episode_inspect`（与 CLI `evolver episode
+inspect` 同源）按行放大读回——空 question 拒绝、切片过 val-seal、成功调用
+记 `episodes/inspect_calls.jsonl`。宿主的跨轮草稿落 `WORKING_SESSION.md`
+（16k 字配额，会话收口归档后删），dispatch 在 `## Host Clues` 末尾以
+`- [host_working]` 尾注 3k 字进提示词，全文由 `swarm_boot` 返回；压缩前
+`checkpoint_required` 锁住全部变异工具，`swarm_checkpoint_working` 写完
+草稿才放行（连续 4 次 solidify 失败或 hook precompact 置位）。假说可带
+`expected_outcome`，过门 consume 后由引擎检查结果写 `gates.prediction_delta`
+回 episode——宿主的事后解释不进记录。
 
 要紧者：stdio MCP 下 stdout 为 JSON-RPC 通道，`swarm.py` 全量捕获引擎
 `print()`。实例锁被占时 `swarm_tick`、`swarm_propose`、`swarm_solidify`
@@ -314,6 +466,14 @@ instrument 的「不要做」一节指出两条择轨：`swarm_hooks` 或 `swarm
 - `autopoiesis_state.json`——跨周期 Hub 降级标志
 - `autopoiesis_preflight_abort.json`——上次 preflight abort 快照（成功周期后清除）
 - `swarm_state.json`——蜂群 tick 计数与上次 tick 摘要（不含 prompt 全文）
+- `episodes/`——episode record 不可变载体（内容寻址正文 + `index.json` 轮账 +
+  `clues.jsonl` 线索层 + `inspect_calls.jsonl` 重注视侧日志；`evidence/<run_id>/`
+  为无损现场）。写后不可变；写入只在周期边界；损坏即抛、不猜
+- `hypothesis.json` + `hypothesis.consumed.json`——本轮唯一假说与已被消费的
+  假说（过门即 consume，移档并盖消费它的 run）
+- `WORKING_SESSION.md` + `working_archive/`——会话草稿与归档（16k 字配额）
+- `compact_checkpoint.requested` / `.ready`——压缩检查点标记（置位时锁变异工具）
+- `library/`——库快照版本与 `parent.json` 首写指针（库即尺子；运行态不进产品 git）
 - `feedback.jsonl`——统一评估反馈日志（EvoX EvaluationFeedback 契约）
 - `hitl_approvals.json` + `hitl_approvals.jsonl`——HITL 审批状态与审计日志
 - `swarm_supervision.json` + `supervision_events.jsonl`——HOTL 监督状态与审计日志

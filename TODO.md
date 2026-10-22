@@ -71,4 +71,26 @@
 
 **对照**（已跑，不收阶段）：`demo-repair-1` 与 `demo-neutral-1`，n=2，`--from-episodes --placebo`，deepseek-flash。2/2 对 2/2，tokens 553 对 348（+58.9%），`no_signal`，`stage_stop=false`，结论 `indicative only`。relay 覆盖率 0%。数字在 CHANGELOG。版本保持 **1.113.0**。
 
+**最强对照（R6，2026-10-18，仍 indicative）**：真实 MCP 闭环先产出带截断锚点与 `prediction_delta` 的 episode（`sha256:23c67dce…`），再在去饱和对称题包 `tasks_grounded.json`（6 过程决策 + 2 对照，n=8，digest 入账、选项对称不泄题）上跑两次 `--stage-exit --from-episodes --placebo`（`--order-seed 7`/`13`）：两批均 with_records 8/8 对 without 2/8，配对 `p=0.03125`、`eligible=True`、`paired=a_better`；n=8 < 30 → `stage=inconclusive`，只记 indicative only，不收阶段。出口仍卡「合法的 ≥30 题来源」，下一阶段提议见文末。
+
 **P0 人裁（已决，执行中）**：feedback 自报维持现状并修章程（§4/§6.3 已补转向-结算区分）；episode 产地定为 MCP 闭环——DeepSeek 宿主活体全结算已通（`validation_failed` 拒绝轮入 episode），结算半环钉进 Tier B，数字在 CHANGELOG。
+
+## 下一阶段（提议，待人裁）：外部尺子与真实闭环
+
+> 2026-10-22 由 agent 起草（round-116 文档轮），尚未经人裁。人裁之前的默认：不开工；本节不构成排期。点名裁决 2（solve_receipt 执法）、3（线索层升证据判据）仍由人持，本提议不代答。
+
+**判断**：「经验即证据」的**机制面**已全部就位——记录（写后不可变＋调用图钉）→ 打码（val-seal）→ 提示词（三块序）→ 重注视（episode_inspect）→ 预期落差（prediction_delta）→ 消融机器契约（`--stage-exit` 五门）；VISTA 套具补齐了过程侧可用性；治理面（HITL/HOTL/anchor/级联/假说门）领先对照对象。剩下的缺口全部在**证据面**：真实 episode 只有个位数结算；所有对照 n < 30 只能 indicative；relay 覆盖率 0%（token/latency/模型全靠自报）；效率与迁移维无测量面。章程自己已两处把下一步指向外部基准（点名裁决 1 的「下游能力评测留待外部基准适配器」、§7 的「这是下一步，不是本阶段」）——本提议把这条线接起来。
+
+**目标**：先用合法的 ≥30 题把本阶段出口关上；再用同一批外部尺子承接下游能力读数，把效率/迁移维从 `unmeasured` 变成可测。机制不再新增，新增的只有运行与尺子。
+
+**步骤**：
+
+1. **真实 episode 规模化**（不改章程即可做）：soak / 仓外沙盒里用 MCP 闭环跑多轮真实配对会话，积累成功与拒绝同形状的结算，目标 ≥30 条。引擎不造题、不代跑；产出归运行态不进产品 git。
+2. **合法题源（须人裁其一）**：(a) 从真实结算派生对称过程决策题——R6 方法的规模化（选项对称、题干不泄密、digest + commit 冻结入账），前提是人裁「从引擎记录派生不算造题」并定题面纪律；(b) 人点名一份外部基准任务集当题源。两条路 `--stage-exit` 五门都不变。
+3. **出口裁决**：n ≥ 30 的 `--stage-exit --from-episodes --placebo`。signal → 人切版本收阶段；无信号 → 判负并停（章程口径原样）。relay 观测转正可与 1 并行（求解/消融经本地代理记账，token/latency/model 从自报升为观测；属仪器修补，不计阶段进度）。
+4. **外部基准适配器（新阶段主体）**：SWE-bench Verified 子集 / Terminal-Bench 适配器，仓外冻结（对齐 anchor 的「验证面在环外」）。先只做**能力读数**（承接点名裁决 1 的留位），不进任何门、不当搜索信号；「更难的微任务包」由此获得合法来源。
+5. **效率/迁移维在此之后才有结论**：SelfSearch 的 −38.5% 共享题成本与跨模型族迁移，在 relay 覆盖与外部读数就位前一律保持 `unmeasured` 书写。
+
+**为什么是这个顺序**：出口（1–3）不需要新机制，只需要真实运行——引擎无法自主产出真实 episode，这正是 round-108 把它列为下一阶段入口的原因；外部适配器（4）既承接已裁的留位，又不碰任何门；relay（3 并行）是所有效率主张的前置。三者都不解禁种群择优、都不让引擎改自己的源码、都不动冻结包与验收门。
+
+**不做**（沿章程）：不为凑 30 造题；外部基准只当尺子不当信号；不移植 DGM/HGM 本体；不在此阶段内同时开两条战线——出口未关之前，适配器不开工。
