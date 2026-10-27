@@ -5,6 +5,7 @@
 > 2026-10-02 起，对照 arXiv:2609.37968v2（SelfSearch）。旧清单的账不回填，只带走未竟项。
 > **机制已就位，出口已关（round-119，2026-10-23 两独立种子双 signal；切版本由人执）。** 点名裁决 1 已裁（不用 test 位）。分量口径（2026-10-03）：证据是一条引擎记下的结算，加上一次 `--from-episodes --placebo` 对照。每臂 n < 30 时 signal 与 no_signal 都只写 indicative only，不切版本，也不判阶段失败。n ≥ 30 且无信号才判负并停。不为凑 30 造题。失败结算与成功结算同一形状，仍只在周期边界记。
 > VISTA 机械套具（不替换本阶段出口，不改验收门）：[`VISTA演进方案.md`](VISTA演进方案.md) 的落地清单在 [`TODO_VISTA.md`](TODO_VISTA.md)。
+> Harness2 机械套具（对照 arXiv:2610.14224v1，不替换本阶段出口，不改验收门）：[`Harness2演进方案.md`](Harness2演进方案.md) 的落地清单在 [`TODO_HARNESS2.md`](TODO_HARNESS2.md)。
 
 ## 带走（库即尺子未竟，不作废）
 
@@ -12,7 +13,7 @@
 |---|---|---|
 | 1 | ~~Parent 库首写调用~~ | **已落地（round-109）**：`evolver library establish-parent --from=<file>` 执行，Parent = 种子基因库快照（20 基因含 3 个 improver + 0 capsules），`parent.json` 写入 `sha256:fcfb1cae...`，`active` 未动（Accept-only）。**决策**：用种子（出厂完整能力）而非实时库（18 基因、缺 improver——种子加进但未 propagate 到实时库，另记于 #56）。后续可重立（`previous` 可追） |
 | 2 | 条款来自 train，val 题面不含条款 | 判定规则见旧章程 §4 末段（旧设计已废）。决定性条款须能从 train 前后观察唯一收回；空库 Parent 满分即测量结束，不改题面再测。不点名不写题 |
-| 3 | 按快照 id 求解调用 | `bench prompt --library <snapshot_id>` 已落（`load_version(id)` 只读、未知 id 报错）。**剩调用**：Parent 解注 Parent id、候选解注候选 id（候选 id 来自 `save_version()`，不来自 `publish()`） |
+| 3 | 按快照 id 求解调用 | `bench prompt --library <snapshot_id>` 已落（`load_version(id)` 只读、未知 id 报错）；`bench/runner.py::prepare_paired_library_solves` 已落（Parent 解注 Parent id、候选经 `save_version()` 落快照并注候选 id，全程 `active` 不动） |
 
 ## 点名裁决（不先猜，未决前只捕获）
 

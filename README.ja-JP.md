@@ -22,8 +22,8 @@
 1. **エンジンは推論を直接スケジューリングしない：ホストエージェントが実行器となる**  
    `evolver.py` は独自のプロプライエタリな LLM 呼び出し機構を持ちません。標準の **MCP (Model Context Protocol) stdio** 経由で、普段利用しているホストエージェント（Cursor、Claude Code、Codex、ZCode など）を進化の実行器として接続します。ホストの強力なツール環境やワークスペース文脈を変異のメスとし、エンジン側は意思決定・記憶管理・安全統制に専念します。
 
-2. **経験こそが証拠（Experience as Evidence）**  
-   最先端の自律研究プロトコル（*arXiv:2609.37968v2, SelfSearch*）に基づき、エージェントの実際の自己改善実行記録（Episode Record）を第一級の証拠として扱います。ブラックボックスな当て推量や単純な自己採点を排し、厳格な対照アブレーション実験と統計的サンプルサイズ充足性監査によって進化を判定します。
+2. **経験こそが証拠・再帰的ハーネス工学（Experience as Evidence & Recursive Harness Engineering）**  
+   最先端の自律研究プロトコル（*arXiv:2609.37968v2, SelfSearch*；*arXiv:2610.14224v1, Harness2*）に基づき、エージェントの実際の自己改善実行記録（Episode Record）を第一級の証拠として扱い、機械的な 4 方向コンポーネント帰属、ラウンド間行動対比差分、および複数提案の選択的合成を組み合わせます。ブラックボックスな当て推量や単純な自己採点を排し、事前整合性ゲート・厳格な対照アブレーション実験・統計的サンプルサイズ充足性監査によって進化を判定します（実 MCP 決済 30 件・凍結ペア課題 32 問の `--stage-exit` 出口検証にて 2 つの独立シードともに有意な `signal` を達成：`p = 1.86e-09` / `2.98e-08`）。
 
 3. **クリーンルーム Python 実装**  
    公開仕様とテスト規約に基づき、`@evomap/evolver` の動作等価な Python 実装としてゼロから構築されています。最新の Python スタック（Python 3.12+、`asyncio`、`uv`、`Pydantic v2`、`httpx`、`FastAPI`）を採用し、寛容な **Apache-2.0** ライセンスで公開されています。
@@ -92,11 +92,11 @@
 
 各進化サイクルは 7 つの独立した非同期フェーズで構成されます：
 - **Collect**：ローカル実行ログの分析、失敗診断の収集、`LESSONS_LEARNED.md`（生きた記憶）の読み込み。
-- **Signals**：生データから構造化された信号（例: `log_error`、`perf_bottleneck`、依存関係の乖離）を抽出。
+- **Signals**：生データから構造化された信号（例: `log_error`、`perf_bottleneck`、依存関係の乖離）を抽出し、問題価値と WFQ 飢餓防止キューで優先順位付けを行い、アイドルスケジューラ強度（`signal_only` / `standard` / `deep`）に応じて探索枠を調整。
 - **Hub**：中央または P2P ハブに問い合わせ、マッチする既存戦略やタスクを発見。
 - **Enrich**：記憶グラフとの双方向同期、過去の介入結果や失敗要因の紐付け。
 - **Autopoiesis（自己創出・自生）**：頻出する摩擦をガードルールとして自己符号化し、ホメオスタシス（恒常性）を維持。
-- **Select**：修復バイアス（Repair Bias）と探索性を加味し、最適な変異戦略を選択。
+- **Select**：修復バイアス（Repair Bias）と探索性を加味して最適な変異戦略を選択し、直前エピソードが `hurt` 帰属の場合は当該遺伝子を自動クールダウンして修復へピボット。
 - **Dispatch**：詳細な証拠を含む GEP 変異プロンプトを構築し、ホストへ配信。
 
 ### 2. GEP 資産モデル
@@ -130,6 +130,13 @@
 - **プラセボ対照（`--placebo`）**：同等長の無害な文脈を注入し、プロンプト長やロールのバイアスを排除。
 - **ステージ終了規約（`--stage-exit`）**：実エピソード、対照群、固定コミット、レポート出力を満たさない限り完了と見なさない強固な規約。サンプル充足性（`MIN_N=30`）を監査し、小サンプル時は `indicative only` と明記。
 - **改変防止ハーネス**：変異ロジックが自身の評価ハーネスを改ざんできないよう静的ホワイトリストで保護。
+
+### 🧩 再帰的ハーネス工学と選択的合成（Harness2）
+オンライン LLM 審査のコストを増やすことなく、*Harness2*（*arXiv:2610.14224v1*）の機械的帰属と対比合成を取り入れています：
+- **4 方向コンポーネント帰属（`H2-1`）とラウンド間行動対比（`H2-5`）**：各ラウンドの編集を `helped | hurt | no_observed_effect | confounded` に自動分類し、検査遷移（`newly_passed`、`regressed`、`persistent_failures`）を算出して配信プロンプトに `[attribution]` と `[contrast]` を注入。複数コンポーネントが混在した `confounded` ラウンドが恒久遺伝子ライブラリを汚染するのを機械的に遮断します。
+- **転移可能経験の三つ組とワークスペース事実の隔離（`H2-2`）**：恒久遺伝子に対して `cue + lesson + evidence` の三つ組（`--strict-transferable`）を強制し、`in this workspace:` などの局所的戦術事実はセッション限定の `WORKING_SESSION.md` に隔離（セッション終了時に自動アーカイブ・削除）。
+- **`INV × DOM` 直交スコープと選択的コンポーザー（`H2-3`）**：不変条件／検証側（`INV`）とドメイン実装（`DOM`）の提案を直交分離し、競合しない `helped` 編集を機械的に合成（`compose_proposals`）するか安全に `KEEP_BASE` へフォールバック。また単一コンポーネントの救済可能バリアント（`~`）を `evolver variants` で可視化します。
+- **コンポーネントコスト階層ゲート（`H2-4`）とライブラリ系譜追跡（`H2-6`）**：`Skill > Script > Subagent > Hook > Always-On Text` の静的契約検査（`validate_harness_component_integrity`）および 6 軸成果物適合性検証を実施し、$\mathcal{H}_0 + \mathcal{R}_t$ ペアライブラリ解決と `evolver meta-report` における `library_provenance`（`direct_copy / adapted / novel`）パネルを提供します。
 
 ---
 
@@ -212,12 +219,13 @@ uv run evolver check
 
 接続後、ホストは標準化されたツールを通じて連携します：
 1. `swarm_boot`：セッション初期化と状態報告。
-2. `swarm_tick`：最新の GEP 変異プロンプトとコンテキストを取得。
-3. *（ホストがエディタ上でコード差分を適用）*
-4. `swarm_distill`：改修内容から構造化された Gene / Capsule を抽出。
-5. `swarm_hypothesis`：検証前に当サイクルの単一仮説を宣言（任意の `expected_outcome` で通過見込みの検査を指定）。
-6. `swarm_solidify`：検証ゲートを通過した改修を Git コミットとして固化し、`expected_outcome` と実検査結果を照合して `prediction_delta` を記録。
-7. `swarm_feedback`：多面的評価メトリクスを返し、次サイクルの適応を支援。
+2. `swarm_tick`：最新の GEP 変異プロンプトとコンテキスト（前エピソードの `[attribution]` および `[contrast]` 注記を含む）を取得。
+3. `swarm_propose`*（任意）*：編集前に構造化遺伝子提案の `H2-4` コンポーネントコスト階層整合性（`check_component_integrity`）を検証、または複数の `INV × DOM` 候補提案を選択的に機械合成（`candidates`）。
+4. *（ホストがエディタ上でコード差分を適用）*
+5. `swarm_distill`：改修内容から構造化された Gene / Capsule を抽出（`strict_transferable` 三つ組検証および `confounded` ラウンドの自動フィルタリングに対応）。
+6. `swarm_hypothesis`：検証前に当サイクルの単一仮説を宣言（任意の `expected_outcome` で通過見込みの検査を指定）。
+7. `swarm_solidify`：検証ゲートを通過した改修を Git コミットとして固化し、`expected_outcome` と実検査結果を照合して `prediction_delta` を記録。
+8. `swarm_feedback`：多面的評価メトリクスを返し、次サイクルの適応を支援。
 
 前サイクルの検査出力や diff が切り詰められた場合や、コンテキスト圧縮の直前には、次の 2 ツールを併用します：
 - **切り詰められた原文の参照（`episode_inspect`）**：プロンプトには上限付きの要約のみが入ります（例：`stdout truncated at 400/2208 chars; call episode_inspect to zoom in`）。推測で書き直すのではなく、具体的な質問と行範囲（例：`{"kind":"check","name":"pytest","offset_lines":0,"limit_lines":80}`）を渡して元の出力を読み戻します。`episode.json` は書き換えません。
@@ -248,19 +256,25 @@ DEEPSEEK_API_KEY=sk-... uv run python examples/swarm-quickstart/demo_swarm_loop.
 | | `evolver --loop` | 継続的自律進化デーモンを起動 |
 | | `evolver --review` | 変異適用前に確認を挟む対話型レビューモード |
 | | `evolver solidify` | 保留中の変異を検証し Git リポジトリへコミット |
+| | `evolver apply-proposal` | 単一提案の適用、または複数 `INV × DOM` 提案の機械的選択合成 |
 | | `evolver session` | ペア進化セッションおよび仮説管理 |
 | **群・安全統制** | `evolver mcp` | stdio MCP サーバーを起動（ホスト連携口） |
 | | `evolver hitl` | 人間承認ゲートの管理（`list`/`approve`/`reject`） |
 | | `evolver supervise` | 人間によるリアルタイム監督（`status`/`pause`/`resume`/`veto`） |
 | | `evolver setup-hooks` | Cursor / Claude Code などの IDE フックをセットアップ |
+| | `evolver charter-check` | 実行環境および現行章程への適合性を検証 |
 | **資産・知識** | `evolver skills` | 外部 `SKILL.md` を走査・同期して遺伝子化 |
+| | `evolver distill` | LLM 応答から Gene / Capsule を蒸留（`--strict-transferable` 対応） |
 | | `evolver gene-lifecycle`| 遺伝子の状態管理（`active`/`under_review`/`retired`） |
+| | `evolver variants` | 棄却・保存されたバリアントアーカイブの閲覧（`*` 再配信可、`~` 意味的救済可） |
+| | `evolver library` | コンテンツアドレス指定のライブラリスナップショット管理（`establish-parent`/`publish`） |
 | | `evolver episode` | 過去の自己改善記録（Episode Record）の閲覧と、`episode inspect` による切り詰め原文の参照 |
 | | `evolver self-report` | 自己診断を実行し、生きた記憶と防護規則を更新 |
-| **ベンチマーク** | `evolver experiment` | 厳格な対照アブレーション実験を実行（`--ablation`） |
-| | `evolver bench` | 凍結タスクパック、ベースライン検証、二項検定 |
+| **ベンチマーク** | `evolver experiment` | 厳格な対照アブレーション実験を実行（`--ablation`、`--placebo`、`--stage-exit`） |
+| | `evolver bench` | 凍結タスクパック、ベースライン検証、ペアライブラリスナップショット解決 |
+| | `evolver anchor` | リポジトリ外の凍結アンカー検証スイートの管理・実行 |
 | | `evolver gate-report` | 受け入れゲートの監視・正式採用判定レポート |
-| | `evolver meta-report` | 進化メカニズムのリモート測定と変異品質レポート |
+| | `evolver meta-report` | Table-8 6 軸テレメトリ、子孫変異品質、`library_provenance` 系譜レポート |
 | **運用・サービス** | `evolver check` / `watch`| システム診断とバックグラウンド監視 |
 | | `evolver start` / `stop` | プラットフォーム共通デーモンライフサイクル管理 |
 | | `evolver webui` | 可視化ダッシュボードを起動（`server` 必要） |
@@ -293,6 +307,13 @@ src/evolver/
 │   └── pipeline/           # 非同期 7 段階進化パイプライン（Collect 〜 Dispatch）
 ├── gep/                    # GEP（ゲノム進化プロトコル）コア
 │   ├── schemas/            # Pydantic モデル定義（Gene、Capsule、Task など）
+│   ├── episode_record.py   # コンテンツアドレス指定 Episode Record、4 方向帰属・対比差分
+│   ├── working_memory.py   # セッション限定 WORKING_SESSION.md とワークスペース事実隔離
+│   ├── record_route.py     # 双方向記録ルートと INV × DOM 直交スコープ検証
+│   ├── proposal.py         # 構造化遺伝子提案と機械的選択コンポーザー
+│   ├── policy_check.py     # 安全ポリシー、コスト階層ゲート、6 軸成果物適合性検査
+│   ├── variant_archive.py  # DGM 式棄却バリアントアーカイブと単一コンポーネント救済
+│   ├── library.py          # コンテンツアドレス指定ライブラリスナップショット
 │   ├── asset_store.py      # レイヤード JSON/JSONL 資産永続化
 │   ├── hitl.py             # 人間承認ゲート（HITL）
 │   ├── supervision.py      # リアルタイム監督と自動停止トリップワイヤー（HOTL）
@@ -312,6 +333,7 @@ src/evolver/
 
 - **[ステップバイステップ実践チュートリアル（tutorials/）](tutorials/README.md)**：専門用語に頼らず、具体例と実験から `evolver.py` の仕組みを解き明かす全 5 回の実践ガイド（中国語）。
 - **[演进方案.md](演进方案.md)**：現行章程。「経験こそが証拠」への転換を論理づける設計文書（中国語）。
+- **[TODO_VISTA.md](TODO_VISTA.md) & [TODO_HARNESS2.md](TODO_HARNESS2.md)**：VISTA（現場再注視・圧縮ゲート）および Harness2（`H2-1`..`H2-6` 帰属・事実隔離・選択的合成）の機械的ハーネス実装リスト。
 - **[AGENTS.md](AGENTS.md)**：AI エージェント開発者向けの実装規約、注意点、設計指針。
 - **[DEBUG.md](DEBUG.md)**：排他制御やエッジケースに対処するためのトラブルシューティング手引き。
 - **[CHANGELOG.md](CHANGELOG.md)**：詳細な変更履歴。

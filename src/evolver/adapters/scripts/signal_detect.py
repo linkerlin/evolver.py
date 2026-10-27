@@ -13,8 +13,10 @@ false positives. Supports Claude Code's PostToolUse payload shape
 from __future__ import annotations
 
 import json
+import os
 import re
 import sys
+from contextlib import suppress
 
 # Signal keyword catalogue (mirrors evolver-signal-detect.js).
 SIGNAL_KEYWORDS: dict[str, list[str]] = {
@@ -153,6 +155,15 @@ def build_signal_output(input_data: dict[str, object]) -> dict[str, str]:
     signals = detect_signals(content)
     if not signals:
         return {}
+    if (
+        os.environ.get("EVOLUTION_DIR")
+        or os.environ.get("OPENCLAW_WORKSPACE")
+        or os.environ.get("EVOLVER_REPO_ROOT")
+    ):
+        with suppress(Exception):
+            from evolver.gep.asset_store import append_pending_signals
+
+            append_pending_signals(signals)
     ctx = (
         f"[Evolution Signal] Detected: [{', '.join(signals)}] in "
         f"{file_path or 'edited file'}. Consider recording this outcome."

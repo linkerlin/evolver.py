@@ -21,10 +21,9 @@ into a variant archive:
 * :func:`re_dispatchable_variants` — pure predicate: an entry is
   re-dispatchable iff it was environmentally rejected, its signal family
   recurs, and its fingerprint has not been superseded by a later success.
-
-The K=2 parallel-worktree half of P1-3 (population dispatch + dual
-validation, touches frozen solidify semantics) lands separately with an
-anchor epoch bump; this half only ADDS an archive beside the rejection flow.
+* :func:`salvageable_semantic_variants` — Harness2 (§3.2) Sequential Recursion
+  predicate: salvages earlier semantically rejected single-component variants
+  when they were non-confounded and a later round failed on a distinct blocker.
 """
 
 from __future__ import annotations
@@ -35,6 +34,7 @@ from pathlib import Path
 from typing import Any, Final
 
 from evolver.gep.asset_store import append_candidate_jsonl, candidates_path
+from evolver.gep.episode_record import _extract_touched_files
 from evolver.gep.evidence_pack import _attempt_digest
 
 logger = logging.getLogger(__name__)
@@ -167,10 +167,6 @@ def re_dispatchable_variants(
     2. signal-family overlap with the current dispatch's heads;
     3. fingerprint not superseded — no LATER success carries the same edit
        digest (it already landed; the archive row is history).
-
-    Semantically rejected entries stay archived but are not auto-eligible:
-    their blocker is a real defect, and "what changed since" is not yet a
-    mechanical fact (future work with the K=2 half).
     """
     current = set(_heads(current_signals))
     if not current:
@@ -192,6 +188,74 @@ def re_dispatchable_variants(
             continue
         out.append(entry)
     return out
+
+
+def salvageable_semantic_variants(
+    entries: list[dict[str, Any]],
+    current_signals: list[str] | tuple[str, ...] | None,
+    events: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    """Harness2 (§3.2) Sequential Recursion: salvage isolated semantic variants.
+
+    An archived ``semantic`` variant is eligible for cross-round composition when:
+    1. Its signal heads overlap with *current_signals*;
+    2. Its edit fingerprint has not been superseded by a subsequent success;
+    3. Its replayable unified diff modifies a single isolated component file
+       (``len(touched_files) == 1``, never ``confounded``);
+    4. Either the entry carries ``attribution_verdict == "helped"`` on a sub-check
+       or a later failed event in the same signal family failed with a *distinct*
+       rejection reason (indicating the search moved to a complementary blocker).
+    """
+    current = set(_heads(current_signals))
+    if not current:
+        return []
+    superseded: set[str] = set()
+    recent_failure_reasons: set[str] = set()
+    for ev in events:
+        status = (ev.get("outcome") or {}).get("status")
+        if status == "success":
+            digest = _attempt_digest(ev)
+            if digest:
+                superseded.add(digest)
+        elif status == "failed" and (set(_heads(ev.get("signals"))) & current):
+            err = str((ev.get("outcome") or {}).get("error") or "").strip()
+            if err:
+                recent_failure_reasons.add(err)
+
+    salvageable: list[dict[str, Any]] = []
+    for entry in entries:
+        if entry.get("rejection_class") != "semantic":
+            continue
+        heads = set(entry.get("signal_heads") or [])
+        if not heads & current:
+            continue
+        if entry.get("fingerprint") in superseded:
+            continue
+        replay = entry.get("replay") or {}
+        diff_text = str(replay.get("diff") or "")
+        touched = _extract_touched_files(diff_text)
+        if len(touched) != 1:
+            continue
+        verdict = str(entry.get("attribution_verdict") or "")
+        entry_reason = str(entry.get("rejection_reason") or "").strip()
+        has_distinct_later_blocker = any(r != entry_reason for r in recent_failure_reasons)
+        if verdict == "helped" or has_distinct_later_blocker:
+            enriched = dict(entry)
+            enriched["isolated_component"] = touched[0]
+            salvageable.append(enriched)
+    return salvageable
+
+
+__all__ = [
+    "ENVIRONMENTAL_MARKERS",
+    "apply_variant",
+    "classify_rejection",
+    "load_variants",
+    "re_dispatchable_variants",
+    "record_variant",
+    "salvageable_semantic_variants",
+    "variant_entry",
+]
 
 
 def apply_variant(entry: dict[str, Any], cwd: Path) -> dict[str, Any]:
@@ -245,14 +309,3 @@ def apply_variant(entry: dict[str, Any], cwd: Path) -> dict[str, Any]:
         "variant_id": entry.get("variant_id"),
         "applied_diff_chars": len(diff),
     }
-
-
-__all__ = [
-    "ENVIRONMENTAL_MARKERS",
-    "apply_variant",
-    "classify_rejection",
-    "load_variants",
-    "re_dispatchable_variants",
-    "record_variant",
-    "variant_entry",
-]

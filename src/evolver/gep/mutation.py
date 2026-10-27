@@ -179,6 +179,9 @@ def build_mutation(
     expected_effect = (
         f"Address signals: {', '.join(signals[:5])}" if signals else "No specific signal"
     )
+    extra: dict[str, Any] = {}
+    if isinstance(selected_gene, dict) and isinstance(selected_gene.get("validation"), list):
+        extra["validation"] = list(selected_gene["validation"])
 
     return Mutation(
         type="Mutation",
@@ -190,6 +193,7 @@ def build_mutation(
         risk_level=risk_level,
         drift_enabled=drift_enabled,
         gene_id=target,
+        **extra,
     )
 
 

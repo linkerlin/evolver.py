@@ -1391,7 +1391,7 @@ def _solidify_cycle(
 
     proposal_report: dict[str, Any] | None = None
     if proposal is not None:
-        from evolver.gep.proposal import apply_proposal, parse_proposal
+        from evolver.gep.proposal import apply_proposal, compose_proposals, parse_proposal
 
         try:
             if isinstance(proposal, (str, Path)):
@@ -1422,18 +1422,35 @@ def _solidify_cycle(
             }
 
         try:
-            if isinstance(proposal, (str, Path)):
-                parsed_p = parse_proposal(json.loads(raw_proposal))
+            raw_obj = json.loads(raw_proposal) if isinstance(proposal, (str, Path)) else proposal
+            if isinstance(raw_obj, dict) and isinstance(raw_obj.get("candidates"), list):
+                composed = compose_proposals(
+                    raw_obj["candidates"],
+                    root=cwd,
+                    apply=True,
+                    gene_id=str(raw_obj.get("gene_id") or "") or None,
+                )
+                comp_prop = composed.get("proposal")
+                action_str = (
+                    str(comp_prop.get("action") or "no_action")
+                    if isinstance(comp_prop, dict)
+                    else str(getattr(comp_prop, "action", None) or "no_action")
+                )
+                apply_rep = composed.get("apply_report")
+                proposal_report = dict(apply_rep) if isinstance(apply_rep, dict) else {}
+                proposal_report["decision"] = composed.get("decision")
+                proposal_report["composition_ledger"] = composed.get("composition_ledger", [])
             else:
-                parsed_p = parse_proposal(proposal)
-            proposal_report = apply_proposal(parsed_p, cwd)
+                parsed_p = parse_proposal(raw_obj)
+                proposal_report = apply_proposal(parsed_p, cwd)
+                action_str = parsed_p.action
         except Exception as exc:
             return {
                 "ok": False,
                 "error": "proposal_rejected",
                 "message": str(exc),
             }
-        if parsed_p.action == "no_action":
+        if action_str == "no_action":
             return {
                 "ok": True,
                 "action": "no_action",

@@ -15,16 +15,12 @@ Panels (Table-8 of the paper, adapted to available telemetry):
   improvement machinery itself, with their descendants' outcomes
 - library      : RSI P1-5 retrieval quality — landed-gene resolution rate,
   lifecycle status counts, zero-work candidates (retirement triggers)
+- library_provenance : Harness2 (Figure 10) origin attribution — classifies
+  evaluated rounds into ``direct_copy``, ``adapted``, or ``novel`` relative to
+  the library snapshot and tracks success rate by origin.
 
 Descendant quality: per landed gene, the K rounds after landing — did its
 trigger signals recur (unresolved) or vanish (resolved)?
-
-Honesty notes: file-level attribution parses ``diff --git`` headers from the
-truncated ``diff_snapshot`` (first ~2k chars) — a heuristic audit, not a
-complete diff registry; cost accounting is count-based until per-stage
-durations land on events. ``library.lifecycle`` needs the caller to pass the
-lifecycle status map (pure data, no I/O here); absent → all counted active.
-No Node.js equivalent; self-research addition.
 """
 
 from __future__ import annotations
@@ -145,16 +141,6 @@ def _improver_tool_panel(
 ) -> dict[str, Any]:
     """Improver-tool usage (经验即证据 §5.4): how often the applied gene was an
     improver-tool gene, counted once per round.
-
-    Recomputed from the episode record — the record carries the applied gene's
-    target_hook (attached at record time), with a gene-library fallback for
-    records written before the field existed. This is the engine's selection
-    rate of the improver's tool surface, not the host's self-reported tool
-    invocation: the same honesty rule as the rest of the panel.
-
-    ``episode_inspect`` calls come from the engine's own side log at the MCP
-    boundary; ``episode_inspect_sessions`` counts the paired sessions they
-    fell in, the key the RERE panel is keyed on.
     """
     from evolver.gep.asset_store import load_genes
 
@@ -234,6 +220,119 @@ def rere_panel(sessions: list[dict[str, Any]] | None) -> dict[str, Any]:
     }
 
 
+def _extract_added_lines_text(diff_snapshot: str) -> str:
+    """Return non-header added lines from a unified diff."""
+    lines: list[str] = []
+    for raw in diff_snapshot.splitlines():
+        if raw.startswith("+") and not raw.startswith("+++"):
+            content = raw[1:].strip()
+            if content:
+                lines.append(content)
+    return "\n".join(lines)
+
+
+def _library_corpus_texts(library_entries: list[dict[str, Any]] | None) -> list[str]:
+    """Extract comparable strategy/code strings from library gene entries."""
+    if not library_entries:
+        return []
+    texts: list[str] = []
+    for item in library_entries:
+        if not isinstance(item, dict):
+            continue
+        parts: list[str] = []
+        for key in ("summary", "lesson", "cue", "content", "diff_snapshot"):
+            val = item.get(key)
+            if isinstance(val, str) and val.strip():
+                parts.append(val.strip())
+        for list_key in ("strategy", "validation"):
+            seq = item.get(list_key)
+            if isinstance(seq, list):
+                parts.extend(str(x).strip() for x in seq if str(x).strip())
+        joined = "\n".join(parts)
+        if len(joined) >= 6:
+            texts.append(joined)
+    return texts
+
+
+def _trigram_set(text: str) -> set[str]:
+    norm = " ".join(text.lower().split())
+    if len(norm) < 3:
+        return {norm} if norm else set()
+    return {norm[i : i + 3] for i in range(len(norm) - 2)}
+
+
+def _candidate_provenance_score(candidate_text: str, ref_text: str) -> float:
+    """Fraction of *candidate_text* character 3-grams present in *ref_text*."""
+    cand_grams = _trigram_set(candidate_text)
+    ref_grams = _trigram_set(ref_text)
+    if not cand_grams or not ref_grams:
+        return 0.0
+    return len(cand_grams & ref_grams) / len(cand_grams)
+
+
+def library_provenance_panel(
+    events: list[dict[str, Any]],
+    library_entries: list[dict[str, Any]] | None = None,
+) -> dict[str, Any]:
+    """Harness2 (Figure 10) Library Provenance panel: Direct Copy / Adapted / Novel.
+
+    Classifies each event with editable text against the library corpus using
+    candidate character 3-gram overlap:
+    - ``direct_copy``: overlap >= 0.65
+    - ``adapted``    : 0.20 <= overlap < 0.65
+    - ``novel``      : overlap < 0.20
+    """
+    corpus = _library_corpus_texts(library_entries)
+    counts = {"direct_copy": 0, "adapted": 0, "novel": 0}
+    successes = {"direct_copy": 0, "adapted": 0, "novel": 0}
+
+    for ev in events:
+        if not isinstance(ev, dict):
+            continue
+        diff_raw = str(ev.get("diff_snapshot") or "")
+        added = _extract_added_lines_text(diff_raw)
+        mut = ev.get("mutation")
+        mut_effect = str(mut.get("expected_effect") or "") if isinstance(mut, dict) else ""
+        candidate_text = added or mut_effect
+        if len(candidate_text.strip()) < 6:
+            continue
+
+        best_score = 0.0
+        for ref_text in corpus:
+            score = _candidate_provenance_score(candidate_text, ref_text)
+            best_score = max(best_score, score)
+
+        if best_score >= 0.65:
+            origin = "direct_copy"
+        elif best_score >= 0.20:
+            origin = "adapted"
+        else:
+            origin = "novel"
+
+        counts[origin] += 1
+        is_ok = (ev.get("outcome") or {}).get("status") == "success"
+        if is_ok:
+            successes[origin] += 1
+
+    evaluated = sum(counts.values())
+    library_backed = counts["direct_copy"] + counts["adapted"]
+    success_rate_by_origin = {
+        key: (round(successes[key] / counts[key], 3) if counts[key] else None)
+        for key in ("direct_copy", "adapted", "novel")
+    }
+    return {
+        "evaluated_events": evaluated,
+        "origins": counts,
+        "library_backed_events": library_backed,
+        "library_backed_rate": (round(library_backed / evaluated, 3) if evaluated else None),
+        "success_rate_by_origin": success_rate_by_origin,
+        "note": (
+            "Harness2 Fig-10 provenance: direct_copy (>=0.50 trigram containment), "
+            "adapted ([0.15, 0.50)), novel (<0.15)"
+        ),
+    }
+
+
 def load_session_runs() -> list[dict[str, Any]]:
     """Best-effort load of paired-session ``run.json`` files."""
     from evolver.gep.evolution_session import session_root
@@ -262,6 +361,7 @@ def build_meta_report(
     episodes: list[dict[str, Any]] | None = None,
     sessions: list[dict[str, Any]] | None = None,
     inspect_calls: list[dict[str, Any]] | None = None,
+    library_entries: list[dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
     """Aggregate the improvement-mechanism panel. Read-only.
 
@@ -286,13 +386,6 @@ def build_meta_report(
         chunk = outcomes[start : start + window]
         gains_traj.append(sum(1 for o in chunk if o == "success"))
 
-    # transfer (round-18 fix): a gene reused across events whose DISTINCTIVE
-    # signal heads differ. Two guards against boilerplate: (a) heads present
-    # in >= half of all events are "common" and excluded — dogfood rounds
-    # share one long signal list whose minor per-round variation (a missing
-    # swarm_feedback etc.) is noise, not cross-family reuse; (b) the gene
-    # must appear in >= 2 events. The previous within-event union metric
-    # reported 12/12 genes "transferred" with identical head sets.
     head_counts: dict[str, int] = {}
     event_head_sets: list[frozenset[str]] = []
     for e in events:
@@ -314,14 +407,6 @@ def build_meta_report(
     }
 
     rounds_per_gain = round(len(events) / len(accepted), 2) if accepted else None
-    # Round-19: ms-per-gain over the TIMED population only. The round-16
-    # version divided timed spend by ALL accepted events — the untimed
-    # pre-round-16 majority diluted the live figure 6.3x (28,226 reported
-    # vs 178,765 true) and it drifted mechanically as the window aged.
-    # Failure events carry timing too (round-19): rejected cascades price
-    # into the numerator while only timed gains count as the denominator —
-    # both sides of the ratio now cover the same population. #29's sibling:
-    # a metric is only as honest as its numerator/denominator alignment.
     timed_events = [e for e in events if (e.get("validation_timing") or {}).get("total_ms")]
     timed_accepted = [
         e for e in timed_events if (e.get("outcome") or {}).get("status") == "success"
@@ -343,8 +428,6 @@ def build_meta_report(
     unknown = sum(1 for r in dq if r["unknown"])
     mechanism_rows = _mechanism_rows(events)
 
-    # RSI P1-5 retrieval quality: the same lineage evidence the lifecycle
-    # evaluator uses, surfaced read-only.
     landing = landing_stats(events)
     evaluable = sum(int(row["observations"]) for row in landing.values())
     resolved_landings = sum(int(row["resolved"]) for row in landing.values())
@@ -360,13 +443,6 @@ def build_meta_report(
         if int(row["observations"]) >= LIFECYCLE_MIN_OBSERVATIONS and int(row["resolved"]) == 0
     )
 
-    # RSI P1-3 prerequisite (round-38): library faithful use. A landed gene is
-    # RETRIEVED when a later cycle selects it again (gene_id match); that
-    # reuse is FAITHFUL when the reuse event's edit digest is novel — not a
-    # repeat of an earlier attempt's digest (the evidence-pack "do NOT
-    # repeat" contract; repeated digests are the RQGM self-preference shape).
-    # Reuse events without editable text carry no digest and count as not
-    # verifiable (never as faithful).
     from evolver.gep.evidence_pack import _attempt_digest
 
     first_landing_index: dict[str, int] = {}
@@ -395,10 +471,6 @@ def build_meta_report(
         "faithful_use_rate": round(novel_edits / reuse_events, 3) if reuse_events else None,
     }
 
-    # RSI P1-3 prerequisite (round-38): cost accounting over the same timed
-    # population as efficiency — rejections price in (they burn the same
-    # cascade), and the K=2 projection is the marginal cost of ONE more
-    # candidate per cycle (one more full validation pass at median cost).
     timed_ms = sorted(int(e["validation_timing"]["total_ms"]) for e in timed_events)
     timed_failed_ms = sum(
         int(e["validation_timing"]["total_ms"])
@@ -435,9 +507,6 @@ def build_meta_report(
                 "landed_genes_tracked": len(dq),
                 "signal_recurrence_free": resolved,
                 "insufficient_descendants": unknown,
-                # Round-64: same underlying count as library.resolution_rate's
-                # numerator — two panels, one number. Named explicitly so
-                # operators don't have to reverse-engineer the alias.
                 "note": (
                     "signal_recurrence_free == library panel's resolved count "
                     "(same landing-window statistic, different framing)"
@@ -476,6 +545,7 @@ def build_meta_report(
                 "lifecycle": status_counts,
                 "faithful_use": faithful_use,
             },
+            "library_provenance": library_provenance_panel(events, library_entries),
             "improver_tools": _improver_tool_panel(episodes or [], inspect_calls or []),
             "cost": cost_panel,
             "rere": rere_panel(sessions),
@@ -507,6 +577,7 @@ def load_feedback_events(evolution_dir: Path | None = None) -> list[dict[str, An
 __all__ = [
     "META_MECHANISM_SURFACES",
     "build_meta_report",
+    "library_provenance_panel",
     "load_feedback_events",
     "load_session_runs",
     "rere_panel",

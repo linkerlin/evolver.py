@@ -16,6 +16,7 @@ import json
 import shutil
 import subprocess
 import time
+from collections.abc import Sequence
 from pathlib import Path
 from typing import Any
 
@@ -108,8 +109,10 @@ __all__ = [
     "grade_pack_task",
     "load_pack",
     "pack_prompt",
+    "prepare_paired_library_solves",
     "run_health",
     "run_pack",
+    "verify_solve_receipt",
 ]
 
 
@@ -176,13 +179,7 @@ def pack_prompt(
     # Solve provenance (round-94): the receipt records WHAT this solve saw —
     # pack bytes, injected snapshot, replicate slot, time. Written beside the
     # sandbox (never inside it: the solving agent must not be able to forge
-    # it). Capture only for now; a consumer binds it at measurement time once
-    # the pack-naming ruling defines snapshot freshness.
-    #
-    # 经验即证据 §5.7: cost/model are captured when observable (relay-side
-    # extract_usage for tokens; relay-observed or AGENT_MODEL for config).
-    # null = unmeasured — a solve whose cost was not observed says so
-    # explicitly rather than being guessed (round-106: 采集先行).
+    # it).
     receipts = _pack_sandbox_root(pack_path, replicate=replicate) / "_receipts"
     receipts.mkdir(parents=True, exist_ok=True)
     receipts.joinpath(f"{task_id}.json").write_text(
@@ -204,6 +201,117 @@ def pack_prompt(
         encoding="utf-8",
     )
     return inference_prompt(tasks[task_id], sandbox, library_block=library_block)
+
+
+def verify_solve_receipt(
+    pack_path: Path,
+    task_id: str,
+    *,
+    expected_library: str | None = None,
+    replicate: int | None = None,
+) -> dict[str, Any]:
+    """Verify the engine-written ``solve_receipt.v0`` for *task_id* (H2-6).
+
+    Confirms that the sandbox solve was initialized from the current pack digest
+    and the expected library snapshot ID without touching ``active.json``.
+    """
+    receipt_path = (
+        _pack_sandbox_root(pack_path, replicate=replicate) / "_receipts" / f"{task_id}.json"
+    )
+    if not receipt_path.is_file():
+        return {"ok": False, "error": "missing_receipt", "task": task_id}
+    try:
+        receipt = json.loads(receipt_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        return {"ok": False, "error": f"corrupt_receipt:{exc}", "task": task_id}
+    if receipt.get("format") != "evolver.solve_receipt.v0":
+        return {"ok": False, "error": "bad_receipt_format", "task": task_id}
+    current_digest = pack_digest(pack_path)
+    if receipt.get("pack_digest") != current_digest:
+        return {"ok": False, "error": "stale_pack_digest", "task": task_id}
+    if expected_library is not None and receipt.get("library") != expected_library:
+        return {
+            "ok": False,
+            "error": "library_snapshot_mismatch",
+            "expected": expected_library,
+            "actual": receipt.get("library"),
+            "task": task_id,
+        }
+    return {"ok": True, "receipt": receipt}
+
+
+def prepare_paired_library_solves(
+    pack_path: Path,
+    task_ids: Sequence[str] | None = None,
+    *,
+    parent_snapshot: str | None = None,
+    candidate_payload: dict[str, Any] | None = None,
+    candidate_snapshot: str | None = None,
+    replicate: int | None = None,
+) -> dict[str, Any]:
+    """Harness2 (§3.1) Two-Level Recursion ``H^(t) = H_0 U R_t`` paired solve builder.
+
+    For each task in *task_ids* (or the full pack):
+    1. Resets the task sandbox to clean ``H_0`` (``force=True``) and builds the
+       Parent solve prompt with ``parent_snapshot`` (defaulting to
+       :func:`evolver.gep.library.parent_snapshot_id`).
+    2. Stores *candidate_payload* via :func:`evolver.gep.library.save_version`
+       (never :func:`publish`, so ``active.json`` never moves), resets the task
+       sandbox to clean ``H_0`` again, and builds the Candidate solve prompt
+       with ``R_t`` (``candidate_snapshot``).
+    """
+    from evolver.gep import library as library_mod
+
+    active_before = library_mod.active_snapshot_id()
+    resolved_parent = parent_snapshot or library_mod.parent_snapshot_id()
+    if not resolved_parent:
+        raise ValueError("parent library snapshot is not established")
+
+    resolved_candidate = candidate_snapshot
+    if resolved_candidate is None and candidate_payload is not None:
+        stored = library_mod.save_version(candidate_payload)
+        resolved_candidate = str(stored.get("snapshot") or stored.get("id") or "")
+    if not resolved_candidate:
+        raise ValueError("candidate_snapshot or candidate_payload is required")
+
+    all_tasks = load_pack(pack_path)
+    selected_ids = (
+        [str(t) for t in task_ids] if task_ids is not None else [str(t["id"]) for t in all_tasks]
+    )
+
+    paired_rows: list[dict[str, Any]] = []
+    for tid in selected_ids:
+        parent_prompt_text = pack_prompt(
+            pack_path, tid, replicate=replicate, library_snapshot=resolved_parent
+        )
+        parent_check = verify_solve_receipt(
+            pack_path, tid, expected_library=resolved_parent, replicate=replicate
+        )
+        candidate_prompt_text = pack_prompt(
+            pack_path, tid, replicate=replicate, library_snapshot=resolved_candidate
+        )
+        candidate_check = verify_solve_receipt(
+            pack_path, tid, expected_library=resolved_candidate, replicate=replicate
+        )
+        paired_rows.append(
+            {
+                "task_id": tid,
+                "parent_prompt": parent_prompt_text,
+                "parent_receipt": parent_check.get("receipt"),
+                "candidate_prompt": candidate_prompt_text,
+                "candidate_receipt": candidate_check.get("receipt"),
+            }
+        )
+
+    active_after = library_mod.active_snapshot_id()
+    return {
+        "ok": True,
+        "pack": str(pack_path),
+        "parent_snapshot": resolved_parent,
+        "candidate_snapshot": resolved_candidate,
+        "active_unchanged": active_before == active_after,
+        "tasks": paired_rows,
+    }
 
 
 def grade_pack_task(pack_path: Path, task_id: str, *, replicate: int | None = None) -> float:

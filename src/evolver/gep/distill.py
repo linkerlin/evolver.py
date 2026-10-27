@@ -87,12 +87,76 @@ def distill_text(text: str) -> dict[str, Any]:
     }
 
 
-def install_distilled(result: dict[str, Any], *, dry_run: bool = False) -> dict[str, Any]:
+def filter_confounded_distillation(
+    result: dict[str, Any],
+    attribution: dict[str, Any] | None = None,
+    *,
+    strict_transferable: bool = False,
+) -> dict[str, Any]:
+    """Filter out durable gene candidates from confounded rounds or with workspace leaks.
+
+    Harness2 (§3.2) ``NO_ENTRY`` rule: when a round's attribution is ``confounded``
+    (or ``eligible_for_experience`` is ``False``), durable experience entries must
+    not be written into the library. When ``strict_transferable=True``, each gene
+    is also checked against :func:`validate_transferable_experience`.
+    """
+    from evolver.gep.skill2gep_audit import validate_transferable_experience
+
+    genes = list(result.get("genes", []))
+    kept_genes: list[dict[str, Any]] = []
+    skipped: list[dict[str, Any]] = []
+
+    is_confounded = isinstance(attribution, dict) and (
+        bool(attribution.get("confounded")) or attribution.get("eligible_for_experience") is False
+    )
+
+    for gene in genes:
+        if is_confounded:
+            skipped.append(
+                {
+                    "id": gene.get("id"),
+                    "reason": "confounded_or_ineligible_attribution",
+                    "status": attribution.get("status") if isinstance(attribution, dict) else None,
+                }
+            )
+            continue
+        if strict_transferable:
+            verdict = validate_transferable_experience(gene, attribution=attribution)
+            if not verdict["ok"] or verdict.get("no_entry"):
+                skipped.append(
+                    {
+                        "id": gene.get("id"),
+                        "reason": verdict["reason"],
+                        "steer_message": verdict.get("steer_message", ""),
+                    }
+                )
+                continue
+        kept_genes.append(gene)
+
+    filtered = dict(result)
+    filtered["genes"] = kept_genes
+    filtered["skipped_genes"] = skipped
+    return filtered
+
+
+def install_distilled(
+    result: dict[str, Any],
+    *,
+    dry_run: bool = False,
+    attribution: dict[str, Any] | None = None,
+    strict_transferable: bool = False,
+) -> dict[str, Any]:
     """Install distilled genes and capsules into the local asset store."""
+    filtered = filter_confounded_distillation(
+        result,
+        attribution=attribution,
+        strict_transferable=strict_transferable,
+    )
     installed: list[dict[str, Any]] = []
     errors: list[str] = []
+    skipped_genes: list[dict[str, Any]] = list(filtered.get("skipped_genes", []))
 
-    for gene in result.get("genes", []):
+    for gene in filtered.get("genes", []):
         if dry_run:
             installed.append({"id": gene.get("id"), "type": "Gene", "action": "would_install"})
             continue
@@ -103,7 +167,7 @@ def install_distilled(result: dict[str, Any], *, dry_run: bool = False) -> dict[
         except Exception as exc:
             errors.append(f"gene {gene.get('id')}: {exc}")
 
-    for cap in result.get("capsules", []):
+    for cap in filtered.get("capsules", []):
         if dry_run:
             installed.append({"id": cap.get("id"), "type": "Capsule", "action": "would_install"})
             continue
@@ -114,11 +178,14 @@ def install_distilled(result: dict[str, Any], *, dry_run: bool = False) -> dict[
         except Exception as exc:
             errors.append(f"capsule {cap.get('id')}: {exc}")
 
-    return {
+    out: dict[str, Any] = {
         "ok": len(errors) == 0,
         "installed": installed,
         "errors": errors,
     }
+    if skipped_genes:
+        out["skipped_genes"] = skipped_genes
+    return out
 
 
 def distill_file(path: Path) -> dict[str, Any]:

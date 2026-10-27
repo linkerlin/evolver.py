@@ -290,7 +290,187 @@ def redact_private_literals(
     return output
 
 
+_WORKSPACE_FACT_PATTERNS: tuple[tuple[str, re.Pattern[str]], ...] = (
+    ("explicit_workspace_fact", re.compile(r"\bin this workspace\b", re.IGNORECASE)),
+    (
+        "temp_sandbox_path",
+        re.compile(
+            r"(?:/tmp/|/var/folders/|C:\\\\?Temp\\\\?|pytest-of-|AppData\\\\Local\\\\Temp)",
+            re.IGNORECASE,
+        ),
+    ),
+    (
+        "benchmark_instance_id",
+        re.compile(r"\b(?:train|val|demo-repair|bench-task)-\d+\b", re.IGNORECASE),
+    ),
+    (
+        "bare_line_anchor",
+        re.compile(r"(?:\bline\s+\d+\b|:L\d+(?:-L?\d+)?\b)", re.IGNORECASE),
+    ),
+)
+
+_COMPONENT_LESSON_RE = re.compile(
+    r"(?:\b(?:skill|script|hook|plugin|subagent|guardrail|prompt|validator|gate|"
+    r"selector|proposer|composer|distill|solidify|episode|memory|workflow|tool)\b"
+    r"|skills/|scripts/|plugin/)",
+    re.IGNORECASE,
+)
+
+
+def audit_workspace_fact_leakage(payload: dict[str, Any]) -> dict[str, Any]:
+    """Audit a durable Gene / experience candidate for workspace-local fact leakage.
+
+    Harness2 (§3.2 / Appendix E.1) separates tactical session state (``in this
+    workspace: ...``, temp sandbox paths, active benchmark instance IDs, bare
+    line anchors) from transferable cross-round knowledge. Workspace facts must
+    stay in ``WORKING_SESSION.md`` so they are unlinked on session completion.
+    """
+    violations: list[dict[str, str]] = []
+    for location, text in iter_payload_strings(payload):
+        for rule_name, pattern in _WORKSPACE_FACT_PATTERNS:
+            match = pattern.search(text)
+            if match:
+                violations.append(
+                    {
+                        "rule": rule_name,
+                        "location": location,
+                        "matched": match.group(0),
+                    }
+                )
+    clean = len(violations) == 0
+    steer = (
+        ""
+        if clean
+        else (
+            "Workspace-local facts detected in durable experience payload. "
+            "Record 'in this workspace: ...' facts in WORKING_SESSION.md instead "
+            "of durable genes."
+        )
+    )
+    return {
+        "clean": clean,
+        "violations": violations,
+        "steer_message": steer,
+    }
+
+
+def validate_transferable_experience(
+    payload: dict[str, Any],
+    *,
+    attribution: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    """Validate Harness2's ``cue + lesson + evidence`` transferable experience contract.
+
+    Also supports explicit ``NO_ENTRY`` when a round was confounded or produced
+    no reusable component lesson.
+    """
+    if not isinstance(payload, dict):
+        return {
+            "ok": False,
+            "no_entry": False,
+            "eligible": False,
+            "reason": "invalid_payload",
+            "steer_message": "Experience payload must be a JSON object.",
+        }
+
+    if str(payload.get("action") or "").upper() == "NO_ENTRY" or payload.get("no_entry") is True:
+        return {
+            "ok": True,
+            "no_entry": True,
+            "eligible": False,
+            "reason": "explicit_no_entry",
+            "steer_message": "",
+        }
+
+    if isinstance(attribution, dict) and (
+        bool(attribution.get("confounded")) or attribution.get("eligible_for_experience") is False
+    ):
+        return {
+            "ok": False,
+            "no_entry": True,
+            "eligible": False,
+            "reason": "confounded_or_ineligible_attribution",
+            "steer_message": (
+                "Round attribution is confounded or did not isolatedly help; "
+                "emit NO_ENTRY instead of installing a durable gene."
+            ),
+        }
+
+    leak_audit = audit_workspace_fact_leakage(payload)
+    if not leak_audit["clean"]:
+        return {
+            "ok": False,
+            "no_entry": False,
+            "eligible": False,
+            "reason": "workspace_fact_leakage",
+            "violations": leak_audit["violations"],
+            "steer_message": leak_audit["steer_message"],
+        }
+
+    raw_cue = payload.get("cue") or payload.get("signals_match")
+    has_cue = bool(
+        (isinstance(raw_cue, str) and raw_cue.strip())
+        or (isinstance(raw_cue, list) and any(str(x).strip() for x in raw_cue))
+    )
+
+    raw_lesson = payload.get("lesson") or payload.get("strategy")
+    lesson_text = ""
+    if isinstance(raw_lesson, str):
+        lesson_text = raw_lesson.strip()
+    elif isinstance(raw_lesson, list):
+        lesson_text = " ".join(str(x).strip() for x in raw_lesson if str(x).strip())
+    has_component_anchor = bool(
+        payload.get("target_hook")
+        or payload.get("mechanism_family")
+        or _COMPONENT_LESSON_RE.search(lesson_text)
+        or _COMPONENT_LESSON_RE.search(str(payload.get("summary") or ""))
+    )
+    has_lesson = bool(lesson_text) and has_component_anchor
+
+    raw_evidence = (
+        payload.get("evidence")
+        or payload.get("episode_id")
+        or payload.get("validation")
+        or (attribution.get("status") == "helped" if isinstance(attribution, dict) else False)
+    )
+    has_evidence = bool(
+        (isinstance(raw_evidence, str) and raw_evidence.strip())
+        or (isinstance(raw_evidence, list) and any(str(x).strip() for x in raw_evidence))
+        or (isinstance(raw_evidence, dict) and bool(raw_evidence))
+        or raw_evidence is True
+    )
+
+    missing: list[str] = []
+    if not has_cue:
+        missing.append("cue")
+    if not has_lesson:
+        missing.append("lesson")
+    if not has_evidence:
+        missing.append("evidence")
+
+    if missing:
+        return {
+            "ok": False,
+            "no_entry": False,
+            "eligible": False,
+            "reason": "incomplete_experience_triad",
+            "missing": missing,
+            "steer_message": (
+                f"Transferable experience requires (cue, lesson, evidence); missing: {missing}."
+            ),
+        }
+
+    return {
+        "ok": True,
+        "no_entry": False,
+        "eligible": True,
+        "reason": "valid_transferable_experience",
+        "steer_message": "",
+    }
+
+
 __all__ = [
+    "audit_workspace_fact_leakage",
     "build_private_vocab",
     "content_tokens",
     "find_leakage",
@@ -299,4 +479,5 @@ __all__ = [
     "iter_payload_strings",
     "public_hard_tokens",
     "redact_private_literals",
+    "validate_transferable_experience",
 ]

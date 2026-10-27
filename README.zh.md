@@ -22,8 +22,8 @@
 1. **引擎不自建调度，宿主 Agent 即执行器**  
    `evolver.py` 本身不内置繁杂的私有 LLM 调度器，而是通过标准的 **MCP (Model Context Protocol) stdio** 协议将宿主智能体（如 Cursor、Claude Code、Codex、ZCode 等）直接接管为“进化执行器”。宿主原有的工具调用能力与工作区上下文成为了演化的手术刀，引擎则专注于信号捕获、策略决策与安全仲裁。
 
-2. **经验即证据（Experience as Evidence）**  
-   对照前沿学术协议（*arXiv:2609.37968v2, SelfSearch*），系统将智能体在真实场景中的“一次自改进过程记录（Episode Record）”升格为一等经验源。拒绝黑盒的盲目变异，每一次策略的入库与晋升都必须经受严格的对照消融裁决与样本量充足性检验。
+2. **经验即证据与递归套具工程（Experience as Evidence & Recursive Harness Engineering）**  
+   对照前沿学术协议（*arXiv:2609.37968v2, SelfSearch*；*arXiv:2610.14224v1, Harness2*），系统将智能体在真实场景中的“一次自改进过程记录（Episode Record）”升格为一等经验源，并辅以机械式四向组件归因、跨轮行为对比增量与多提案选择性合成。拒绝黑盒的盲目变异与无校准的 LLM 自打分，每一次策略的入库与晋升都必须经受预演完整性门、受控对照消融裁决与样本量充足性检验（已在 30 条真实 MCP 结算与 32 题配对冻结包上通过双独立种子 `--stage-exit` 出口裁决：`p = 1.86e-09` / `2.98e-08`）。
 
 3. **现代净室 Python 架构**  
    本项目是基于公开协议规范与测试契约、对 `@evomap/evolver` 机制进行的完全独立、行为等价的 Python 净室实现。代码基于现代技术栈（Python 3.12+、`asyncio`、`uv`、`Pydantic v2`、`httpx`、`FastAPI`）构建，结构清晰透明，采用宽松友好的 **Apache-2.0** 许可证分发。
@@ -92,11 +92,11 @@
 
 每一次演化周期（Cycle）均由七个解耦的异步阶段构成：
 - **Collect**：扫描本地日志、回溯失败诊断，读取 `LESSONS_LEARNED.md` 活记忆。
-- **Signals**：从原始数据中提取分类信号（如 `log_error`、`perf_bottleneck`、环境依赖漂移等）。
+- **Signals**：从原始数据中提取分类信号（如 `log_error`、`perf_bottleneck`、环境依赖漂移等），结合问题价值与 WFQ 防饥饿队列排序，并按闲时调度器强度（`signal_only` / `standard` / `deep`）调节探索配额。
 - **Hub**：向中心化或对等网络检索匹配的先验基因与协作任务。
 - **Enrich**：双向同步记忆图谱，聚合失败侧证据与反思建议。
 - **Autopoiesis（自生自愈）**：系统体内平衡维护，自动将多次发生的工程摩擦转化为规约规则。
-- **Select**：基于变异偏置（Repair Bias）与探索度（Novelty），挑选适任策略。
+- **Select**：基于变异偏置（Repair Bias）与探索度（Novelty）挑选适任策略；若前序 episode 归因为 `hurt`，自动冷却肇事基因并转向修复策略。
 - **Dispatch**：生成结构化变异提示词并写入分发输出，唤醒宿主执行。
 
 ### 2. GEP 核心资产模型
@@ -130,6 +130,13 @@
 - **中性占位对照（Placebo Context）**：注入等长中性上下文，隔离系统角色偏置。
 - **阶段出口契约（Stage Exit）**：强校验真实 episode、占位对照、已知 commit 与落盘报告，对标样本量阈值（`MIN_N=30`），样本不足时强制标记为 `indicative only`。
 - **全仓调用图钉**：静态白名单扫描隔离写入边界，杜绝演进代码自我篡改评分结果。
+
+### 🧩 递归套具工程与选择性合成（Recursive Harness Engineering — Harness2）
+融汇 *Harness2*（*arXiv:2610.14224v1*）之机械式归因与对比合成思想，在不引入在线 LLM 裁判的前提下强化演化信噪比：
+- **四向组件归因（`H2-1`）与跨轮行为对比增量（`H2-5`）**：引擎在周期结算时自动计算 `helped | hurt | no_observed_effect | confounded` 四向归因及 `newly_passed` / `regressed` / `persistent_failures` 跨轮检查跳变，向派发提示词注入 `[attribution]` 与 `[contrast]` 摘要，并机械阻断 `confounded`（多组件混杂变更）轮次污染持久基因库。
+- **可迁移经验三元组与工作区事实隔离（`H2-2`）**：持久基因强制校验 `cue + lesson + evidence` 三元组（`--strict-transferable`），而将含路径、行号或 `in this workspace:` 前缀的本仓战术事实隔离于会话期 `WORKING_SESSION.md`（会话终结自动归档并清除）。
+- **`INV × DOM` 正交作用域与选择性合成器（`H2-3`）**：正交划分不变量/验证面（`INV`）与领域实现（`DOM`）提案，在 `swarm_propose`、`solidify` 与 `evolver apply-proposal` 中机械合并互不冲突的 `helped` 变更或安全回退 `KEEP_BASE`，并在 `evolver variants` 中标识单组件可打捞语义变体（`~`）。
+- **组件成本层级预演门（`H2-4`）与双层递归溯源（`H2-6`）**：执行 `Skill > Script > Subagent > Hook > Always-On Text` 静态契约门（`validate_harness_component_integrity`）与六维交付物合规核验，支持 $\mathcal{H}_0 + \mathcal{R}_t$ 成对库快照求解及 `evolver meta-report` 中的 `library_provenance`（`direct_copy / adapted / novel`）溯源面板。
 
 ---
 
@@ -213,12 +220,13 @@ uv run evolver check
 
 接入后，宿主智能体即可通过以下标准工具链协作运转：
 1. `swarm_boot`：初始化演化会话，报告当前状态。
-2. `swarm_tick`：获取最新的 GEP 变异提示词及上下文。
-3. *（宿主执行文件修改与逻辑重构）*
-4. `swarm_distill`：从修改成果中提取出结构化 Gene 与 Capsule。
-5. `swarm_hypothesis`：在验证前向系统提交本轮演化的唯一假说声明，可选 `expected_outcome` 写明预计通过的检查。
-6. `swarm_solidify`：触发沙箱门禁检验，验证通过后执行 Git 固化提交；结算时对照 `expected_outcome` 与实际检查，写入 `prediction_delta`。
-7. `swarm_feedback`：回传多维评测指标，驱动下一轮自适应变异。
+2. `swarm_tick`：获取最新的 GEP 变异提示词及上下文（含上一轮结算生成的 `[attribution]` 四向归因与 `[contrast]` 跨轮行为对比尾注）。
+3. `swarm_propose`*（可选）*：在动手修改前校验结构化基因提案的 `H2-4` 组件成本层级完整性（`check_component_integrity`），或对多份 `INV × DOM` 候选提案执行机械式选择性合成（`candidates`）。
+4. *（宿主执行文件修改与逻辑重构）*
+5. `swarm_distill`：从修改成果中提取出结构化 Gene 与 Capsule（支持 `strict_transferable` 三元组校验与 `confounded` 混杂轮自动过滤）。
+6. `swarm_hypothesis`：在验证前向系统提交本轮演化的唯一假说声明，可选 `expected_outcome` 写明预计通过的检查。
+7. `swarm_solidify`：触发沙箱门禁检验，验证通过后执行 Git 固化提交；结算时对照 `expected_outcome` 与实际检查，写入 `prediction_delta`。
+8. `swarm_feedback`：回传多维评测指标，驱动下一轮自适应变异。
 
 当上一轮的检查输出或 diff 因预算被截断、或上下文即将压缩时，还有两条配套动作：
 - **按问题读回截断原文（`episode_inspect`）**：提示词只保留有界摘要（如 `stdout truncated at 400/2208 chars; call episode_inspect to zoom in`）。宿主不凭猜测重写，而是传入具体问题与行号窗口（如 `{"kind":"check","name":"pytest","offset_lines":0,"limit_lines":80}`）只读拉取原始现场。调用不修改 `episode.json`。
@@ -251,19 +259,25 @@ DEEPSEEK_API_KEY=sk-... uv run python examples/swarm-quickstart/demo_swarm_loop.
 | | `evolver --loop` | 启动自主演进守护进程 |
 | | `evolver --review` | 交互式审查模式，变异后等待操作者确认 |
 | | `evolver solidify` | 验证并固化已就绪的代码变异到 Git 仓库 |
+| | `evolver apply-proposal` | 应用单份结构化基因提案，或对多份 `INV × DOM` 提案执行机械式选择性合成 |
 | | `evolver session` | 开启或管理受控配对演进会话（支持假说记录） |
 | **蜂群与监督**| `evolver mcp` | 启动基于 stdio 的 MCP 服务端（宿主接管入口） |
 | | `evolver hitl` | 人在环中审批管理（`list` / `approve` / `reject`） |
 | | `evolver supervise` | 人在环上动态监督（`status` / `pause` / `resume` / `veto`） |
 | | `evolver setup-hooks` | 为当前工作区配置 Cursor / Claude Code 等 IDE 自动钩子 |
+| | `evolver charter-check` | 核验运行态环境与现行章程符合性回执 |
 | **资产与知识**| `evolver skills` | 扫描、预览并同步外部 `SKILL.md` 到 GEP 资产库 |
+| | `evolver distill` | 从 LLM 响应蒸馏 Gene / Capsule（支持 `--strict-transferable` 三元组门禁） |
 | | `evolver gene-lifecycle`| 查看与维护基因状态（`active` / `under_review` / `retired`） |
+| | `evolver variants` | 查看拒绝但保留的变体档案（`*` 可重派发、`~` 单组件语义可打捞） |
+| | `evolver library` | 管理内容寻址库快照（`establish-parent` 首写 / `publish` 晋升） |
 | | `evolver episode` | 检索历次自改进记录（Episode Record），或用 `episode inspect` 按问题读回截断原文 |
 | | `evolver self-report` | 触发 Autopoiesis 系统自检，更新活记忆与自生免疫规条 |
-| **实验与评测**| `evolver experiment` | 运行严谨的受控消融实验（`--ablation`、`--placebo`） |
-| | `evolver bench` | 执行冻结基准测试任务包、基线对比与配对二项检验 |
+| **实验与评测**| `evolver experiment` | 运行严谨的受控消融实验（`--ablation`、`--placebo`、`--stage-exit`） |
+| | `evolver bench` | 执行冻结基准测试任务包、基线对比与配对库快照求解 |
+| | `evolver anchor` | 初始化与运行仓外冻结锚定契约评测 |
 | | `evolver gate-report` | 输出验收门（Shadow Gate）的浸泡观察与转正评估报告 |
-| | `evolver meta-report` | 输出系统底层演进机制遥测与后代变异质量报告 |
+| | `evolver meta-report` | 输出 Table-8 六维面板、后代变异质量与 `library_provenance` 库溯源报告 |
 | **运维与服务**| `evolver check` / `watch` | 系统健康诊断与持续状态巡检 |
 | | `evolver start` / `stop` | 跨平台系统级守护进程生命周期控制 |
 | | `evolver webui` | 启动本地只读数据可视化看板（需 `server` 扩展） |
@@ -296,6 +310,13 @@ src/evolver/
 │   └── pipeline/           # 解耦的七阶段演进流水线（Collect 至 Dispatch）
 ├── gep/                    # GEP（基因组进化协议）核心资产与策略库
 │   ├── schemas/            # Pydantic 数据规范（Gene / Capsule / Task 等）
+│   ├── episode_record.py   # 内容寻址 Episode Record、四向组件归因与跨轮对比增量
+│   ├── working_memory.py   # 会话期 WORKING_SESSION.md 草稿与工作区事实隔离
+│   ├── record_route.py     # 双向记录路线与 INV × DOM 正交作用域校验
+│   ├── proposal.py         # 结构化基因提案与机械式选择性合成器
+│   ├── policy_check.py     # 安全策略门、组件成本层级预演门与交付物六维合规核验
+│   ├── variant_archive.py  # DGM 式拒绝变体档案与单组件语义打捞
+│   ├── library.py          # 内容寻址库快照与成对求解提示词渲染
 │   ├── asset_store.py      # 叠加式 JSON/JSONL 本地高性能存储
 │   ├── hitl.py             # 人在环中（HITL）审批决策门
 │   ├── supervision.py      # 人在环上（HOTL）实时监督与自动熔断
@@ -315,6 +336,7 @@ src/evolver/
 
 - **[循序渐进实战教程（tutorials/）](tutorials/README.md)**：不背术语、从零拆解 `evolver.py` 运作机制的五讲中文动手指南。
 - **[演进方案.md](演进方案.md)**：现行最高章程，阐述自演进系统从“库即尺子”迈向“经验即证据”的完整论证。
+- **[TODO_VISTA.md](TODO_VISTA.md) 与 [TODO_HARNESS2.md](TODO_HARNESS2.md)**：零参数机械套具落地清单，涵盖 VISTA 现场重注视/压缩门以及 Harness2（`H2-1`..`H2-6`）四向归因、工作区事实隔离与选择性合成。
 - **[AGENTS.md](AGENTS.md)**：面向 AI 智能体开发者的行为准则、避坑指南与架构细节。
 - **[DEBUG.md](DEBUG.md)**：深度调试手册，记录互锁排查、复杂边缘条件与稳定性实践。
 - **[CHANGELOG.md](CHANGELOG.md)**：详细的版本演进记录与发布说明。

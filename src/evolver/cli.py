@@ -306,6 +306,11 @@ def _build_parser() -> argparse.ArgumentParser:
         "--response-file", default="-", help="Path to response file (use - for stdin)"
     )
     distill_p.add_argument("--dry-run", action="store_true", help="Show what would be installed")
+    distill_p.add_argument(
+        "--strict-transferable",
+        action="store_true",
+        help="Enforce Harness2 transferable experience triad and workspace-fact isolation",
+    )
     fetch_p = sub.add_parser("fetch", help="Fetch a skill from the Hub")
     fetch_p.add_argument("query", nargs="?", default="", help="Search query or asset id")
     fetch_p.add_argument("--limit", type=int, default=5, help="Max results to fetch")
@@ -1153,6 +1158,7 @@ def _cmd_solidify_population(proposal_paths: list[str]) -> int:
         print("population: no admissible candidate — nothing to land", file=sys.stderr)
         return 1
     result = solidify(proposal=winner)
+    episode = _record_episode_round(result) if result.get("event_id") else None
     sibling_run = result.get("run_id") or result.get("event_id") or ""
     for cand in judgment["candidates"]:
         if cand["proposal_path"] == winner:
@@ -1178,11 +1184,11 @@ def _cmd_solidify_population(proposal_paths: list[str]) -> int:
     if result.get("ok"):
         print(
             f"population winner landed: event_id={result.get('event_id')} "
-            f"blast_radius={result.get('blast_radius')}"
+            f"blast_radius={result.get('blast_radius')} episode={episode}"
         )
         return 0
     print(
-        f"population winner rejected by frozen path: {result.get('error')}",
+        f"population winner rejected by frozen path: {result.get('error')} episode={episode}",
         file=sys.stderr,
     )
     return 1
@@ -1430,7 +1436,7 @@ def _load_episode_index() -> list[dict[str, Any]]:
 
 def _cmd_meta_report(args: argparse.Namespace) -> int:
     """Improvement-mechanism telemetry (RSI P0-2): the effective-L5 panel."""
-    from evolver.gep.asset_store import read_all_events
+    from evolver.gep.asset_store import load_genes, read_all_events
     from evolver.gep.episode_record import load_inspect_calls
     from evolver.gep.gene_lifecycle import load_lifecycle, status_map
     from evolver.ops.meta_report import build_meta_report, load_feedback_events, load_session_runs
@@ -1444,6 +1450,7 @@ def _cmd_meta_report(args: argparse.Namespace) -> int:
         episodes,
         load_session_runs(),
         load_inspect_calls(),
+        load_genes(),
     )
     if args.json:
         print(json.dumps(report, ensure_ascii=False, indent=2))
@@ -1506,6 +1513,18 @@ def _cmd_meta_report(args: argparse.Namespace) -> int:
                 f"{fu.get('reuse_events', 0)} reuse events novel edits "
                 f"= {fu_s}"
             )
+    prov = panel.get("library_provenance") or {}
+    if prov and prov.get("evaluated_events", 0) > 0:
+        origins = prov.get("origins") or {}
+        lb_rate = prov.get("library_backed_rate")
+        lb_s = f"{lb_rate:.0%}" if isinstance(lb_rate, float) else "n/a"
+        print(
+            f"  library provenance: {prov.get('library_backed_events', 0)}/"
+            f"{prov.get('evaluated_events', 0)} library-backed ({lb_s}) | "
+            f"direct_copy={origins.get('direct_copy', 0)} "
+            f"adapted={origins.get('adapted', 0)} "
+            f"novel={origins.get('novel', 0)}"
+        )
     cost = panel.get("cost") or {}
     if cost:
         med = cost.get("median_ms_per_event")
@@ -1703,6 +1722,7 @@ def _cmd_variants(args: argparse.Namespace) -> int:
         apply_variant,
         load_variants,
         re_dispatchable_variants,
+        salvageable_semantic_variants,
     )
 
     entries = load_variants()
@@ -1752,6 +1772,7 @@ def _cmd_variants(args: argparse.Namespace) -> int:
                 signals = list(ev["signals"])
                 break
     eligible = {e["variant_id"] for e in re_dispatchable_variants(entries, signals, events)}
+    salvageable = {e["variant_id"] for e in salvageable_semantic_variants(entries, signals, events)}
     if args.json:
         print(
             _json.dumps(
@@ -1759,6 +1780,7 @@ def _cmd_variants(args: argparse.Namespace) -> int:
                     "family": signals[:8],
                     "total": len(entries),
                     "re_dispatchable": len(eligible),
+                    "salvageable_semantic": len(salvageable),
                     "variants": entries,
                 },
                 ensure_ascii=False,
@@ -1768,10 +1790,12 @@ def _cmd_variants(args: argparse.Namespace) -> int:
         return 0
     print(
         f"variant archive: {len(entries)} entr{'y' if len(entries) == 1 else 'ies'} "
-        f"| {len(eligible)} re-dispatchable under family {signals[:5]}"
+        f"| {len(eligible)} re-dispatchable | {len(salvageable)} salvageable-semantic "
+        f"under family {signals[:5]}"
     )
     for e in entries[-20:]:
-        mark = "*" if e.get("variant_id") in eligible else " "
+        vid = e.get("variant_id")
+        mark = "*" if vid in eligible else ("~" if vid in salvageable else " ")
         replay = "replay" in e
         cls = f"{e.get('rejection_class')!s:>13}"
         gene = f"{e.get('gene_id')!s:<34.34}"
@@ -2464,21 +2488,30 @@ def _cmd_apply_proposal(args: argparse.Namespace) -> int:
     import json as _json
 
     from evolver.gep.paths import get_workspace_root
-    from evolver.gep.proposal import apply_proposal, parse_proposal
+    from evolver.gep.proposal import apply_proposal, compose_proposals, parse_proposal
 
     path = Path(args.proposal_file)
     if not path.exists():
         print(f"proposal file not found: {path}")
         return 1
     try:
-        proposal = parse_proposal(_json.loads(path.read_text(encoding="utf-8")))
-    except Exception as exc:
-        print(f"invalid proposal: {exc}")
-        return 1
-    try:
-        report = apply_proposal(proposal, get_workspace_root())
+        raw_payload = _json.loads(path.read_text(encoding="utf-8"))
+        if isinstance(raw_payload, dict) and isinstance(raw_payload.get("candidates"), list):
+            composed = compose_proposals(
+                raw_payload["candidates"],
+                root=get_workspace_root(),
+                apply=True,
+                gene_id=str(raw_payload.get("gene_id") or "") or None,
+            )
+            report = composed.get("apply_report") or {"applied": False}
+        else:
+            proposal = parse_proposal(raw_payload)
+            report = apply_proposal(proposal, get_workspace_root())
     except ValueError as exc:
         print(f"proposal rejected: {exc}")
+        return 1
+    except Exception as exc:
+        print(f"invalid proposal: {exc}")
         return 1
     if not report["applied"]:
         print("no_action — a first-class outcome; nothing written, nothing owed.")
@@ -2819,10 +2852,17 @@ def _cmd_distill(args: argparse.Namespace) -> int:
 
         print(f"HINT: {DISTILL_FORMAT_HINT}", file=sys.stderr)
 
-    install = install_distilled(result, dry_run=args.dry_run)
+    install = install_distilled(
+        result,
+        dry_run=args.dry_run,
+        strict_transferable=bool(getattr(args, "strict_transferable", False)),
+    )
     for item in install.get("installed", []):
         action = item.get("action", "installed")
         print(f"  {action.upper()} {item.get('type')} {item.get('id')}")
+    for skipped in install.get("skipped_genes", []):
+        if isinstance(skipped, dict):
+            print(f"  SKIPPED Gene {skipped.get('id')}: {skipped.get('reason')}")
     for err in install.get("errors", []):
         print(f"  ERROR: {err}")
     return 0

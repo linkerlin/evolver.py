@@ -274,3 +274,39 @@ class TestMainStdin:
             se.main()
         except Exception:
             pytest.fail("main() raised unexpectedly on malformed stdin")
+
+    def test_main_emits_stdout_json_and_updates_trajectory(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: Path,
+        isolated_home: Path,
+    ) -> None:
+        _ = isolated_home
+        repo = tmp_path / "repo"
+        repo.mkdir()
+        _init_repo_with_diff(repo)
+        (repo / "a.txt").write_text("hello\nerror: request timeout\n", encoding="utf-8")
+        evo_dir = tmp_path / "evolution"
+        evo_dir.mkdir()
+        monkeypatch.setenv("OPENCLAW_WORKSPACE", str(repo))
+        monkeypatch.setenv("EVOLUTION_DIR", str(evo_dir))
+        monkeypatch.setenv("MEMORY_GRAPH_PATH", str(evo_dir / "memory_graph.jsonl"))
+        monkeypatch.delenv("CURSOR_PROJECT_DIR", raising=False)
+        monkeypatch.setenv("TERM_PROGRAM", "xterm")
+
+        payload = json.dumps({"cwd": str(repo)})
+        monkeypatch.setattr(sys, "stdin", io.StringIO(payload))
+        stdout_buf = io.StringIO()
+        monkeypatch.setattr(sys, "stdout", stdout_buf)
+
+        se.main()
+        out = json.loads(stdout_buf.getvalue())
+        assert "[Evolution]" in out.get("systemMessage", "")
+
+        from evolver.gep import cursor
+        from evolver.gep.asset_store import consume_pending_signals
+
+        assert cursor.load_cursor().get("trajectories_seen_since") == 1
+        pending = consume_pending_signals()
+        assert "log_error" in pending
+        assert "perf_bottleneck" in pending

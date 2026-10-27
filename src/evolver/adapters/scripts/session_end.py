@@ -75,16 +75,17 @@ def _run_git(args: list[str], cwd: Path) -> tuple[bool, str]:
     return False, ""
 
 
-def get_git_diff_stats() -> dict[str, object]:
+def get_git_diff_stats(cwd: Path | None = None) -> dict[str, object]:
     """Collect git diff statistics using the host-provided workspace root."""
-    try:
-        from evolver.adapters.scripts.runtime_paths import (
-            resolve_project_dir,
-        )
+    if cwd is None:
+        try:
+            from evolver.adapters.scripts.runtime_paths import (
+                resolve_project_dir,
+            )
 
-        cwd = resolve_project_dir()
-    except ImportError:
-        cwd = Path.cwd()
+            cwd = resolve_project_dir()
+        except ImportError:
+            cwd = Path.cwd()
 
     stat_ok, stat_head1 = _run_git(["diff", "--stat", "HEAD~1"], cwd)
     stat = stat_head1 if stat_ok else _run_git(["diff", "--stat"], cwd)[1]
@@ -152,7 +153,12 @@ def _append_evolution_log(line: str) -> None:
         pass
 
 
-def record_to_local(graph_path: Path, outcome: dict[str, object]) -> bool:
+def record_to_local(
+    graph_path: Path,
+    outcome: dict[str, object],
+    *,
+    cwd: Path | None = None,
+) -> bool:
     """Append an outcome entry to the local memory graph (workspace-tagged)."""
     try:
         from evolver.adapters.scripts.runtime_paths import (
@@ -160,9 +166,9 @@ def record_to_local(graph_path: Path, outcome: dict[str, object]) -> bool:
             resolve_workspace_id,
         )
 
-        project_dir = resolve_project_dir()
+        project_dir = cwd if cwd is not None else resolve_project_dir()
     except ImportError:
-        project_dir = Path.cwd()
+        project_dir = cwd if cwd is not None else Path.cwd()
         ws_id: str | None = None
     else:
         ws_id = resolve_workspace_id(None, project_dir)
@@ -208,9 +214,9 @@ def _resolve_graph_path() -> Path | None:
         return None
 
 
-def build_session_end_output() -> dict[str, str]:
+def build_session_end_output(*, cwd: Path | None = None) -> dict[str, str]:
     """Process stdin (if any), collect diffs, record outcome, return output."""
-    diff_info = get_git_diff_stats()
+    diff_info = get_git_diff_stats(cwd=cwd)
 
     if not diff_info["hasChanges"]:
         reason = (
@@ -219,9 +225,8 @@ def build_session_end_output() -> dict[str, str]:
         _append_evolution_log(f"[Evolution] Session end: nothing recorded ({reason}).")
         return {}
 
-    signals = detect_signals(str(diff_info["diffSnippet"]))
-    if not signals:
-        signals = ["stable_success_plateau"]
+    raw_signals = detect_signals(str(diff_info["diffSnippet"]))
+    signals = raw_signals if raw_signals else ["stable_success_plateau"]
 
     has_errors = "log_error" in signals or "test_failure" in signals
     status = "failed" if has_errors else "success"
@@ -236,7 +241,24 @@ def build_session_end_output() -> dict[str, str]:
     }
 
     graph_path = _resolve_graph_path()
-    local_ok = record_to_local(graph_path, outcome) if graph_path else False
+    local_ok = record_to_local(graph_path, outcome, cwd=cwd) if graph_path else False
+
+    # When an explicit evolution workspace/dir is configured, advance the
+    # trajectory counter for cursor.reminder() and queue actionable signals.
+    if (
+        os.environ.get("EVOLUTION_DIR")
+        or os.environ.get("OPENCLAW_WORKSPACE")
+        or os.environ.get("EVOLVER_REPO_ROOT")
+    ):
+        with suppress(Exception):
+            from evolver.gep.cursor import record_trajectory
+
+            record_trajectory(1)
+        if raw_signals:
+            with suppress(Exception):
+                from evolver.gep.asset_store import append_pending_signals
+
+                append_pending_signals(raw_signals)
 
     target = "local memory" if local_ok else "nowhere (no Hub or local path)"
     msg = f"[Evolution] Session outcome recorded to {target}: {outcome['summary']}"
@@ -276,9 +298,10 @@ def main() -> None:
             pass
 
     try:
-        output = build_session_end_output()
+        output = build_session_end_output(cwd=cwd)
     except Exception:
         output = {}
+    sys.stdout.write(json.dumps(output, ensure_ascii=False))
 
 
 if __name__ == "__main__":

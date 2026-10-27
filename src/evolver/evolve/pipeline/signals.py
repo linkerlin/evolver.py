@@ -98,7 +98,22 @@ async def signals_phase(ctx: dict[str, Any]) -> dict[str, Any]:
         if s not in signals:
             signals.append(s)
 
-    signals = augment_signals(signals)
+    max_explore_tasks = 5
+    if is_enabled("enable_idle_scheduler"):
+        try:
+            from evolver.gep.idle_scheduler import EvolutionIntensity, get_intensity
+
+            intensity = get_intensity()
+            ctx["evolution_intensity"] = intensity.value
+            if intensity == EvolutionIntensity.deep:
+                max_explore_tasks = 10
+            elif intensity == EvolutionIntensity.signal_only:
+                max_explore_tasks = 0
+        except Exception as exc:
+            logger.debug("[signals] idle scheduler check skipped: %s", exc)
+
+    if max_explore_tasks > 0:
+        signals = augment_signals(signals, max_explore_tasks=max_explore_tasks)
     if is_learning_signals_enabled():
         signals, learning_added = merge_signal_keys(signals, gather_pipeline_learning_signals())
         if learning_added:
@@ -124,6 +139,19 @@ async def signals_phase(ctx: dict[str, Any]) -> dict[str, Any]:
     ctx["genes"] = load_genes()
     ctx["capsules"] = load_capsules()
     ctx["recent_events"] = recent_events
+    try:
+        from evolver.gep.trigger_engine import rank_signals_by_trigger_value
+
+        ranking = rank_signals_by_trigger_value(
+            signals,
+            recent_events=recent_events,
+            genes=ctx["genes"],
+        )
+        ctx["trigger_priorities"] = ranking
+        if ranking.get("top_signal"):
+            ctx["top_trigger_signal"] = ranking["top_signal"]
+    except Exception as exc:
+        logger.debug("[signals] trigger priority ranking skipped: %s", exc)
     skip_hub = should_skip_hub_calls(signals)
     if ctx.get("preflight_abort_recovery"):
         skip_hub = True

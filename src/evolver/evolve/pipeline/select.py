@@ -55,11 +55,61 @@ async def select_phase(ctx: dict[str, Any]) -> dict[str, Any]:
         adaptive_mode = str(adaptive.get("mode") or "")
     if FEEDBACK_SIGNAL_DEGRADED in {str(s) for s in signals} or adaptive_mode == "repair_bias":
         ctx["autopoiesis_repair_bias"] = True
-    if ctx.get("autopoiesis_repair_bias"):
-        policy = {**policy, "repair": True, "optimize": False, "innovate": False}
     genes = ctx.get("genes", [])
     capsules = ctx.get("capsules", [])
-    memory_advice = ctx.get("memory_advice") or {}
+    memory_advice = dict(ctx.get("memory_advice") or {})
+
+    # Harness2 closed-loop guard: if the immediately preceding episode hurt
+    # validation checks, pivot to repair mode and cool down the offending gene
+    # when alternative genes are available.
+    with contextlib.suppress(Exception):
+        from evolver.gep import episode_record
+
+        ep_entries = episode_record.list_episodes()
+        if ep_entries and isinstance(ep_entries[-1], dict):
+            latest_ep_id = str(ep_entries[-1].get("id") or "")
+            latest_ep = episode_record.load_episode(latest_ep_id) if latest_ep_id else None
+            if isinstance(latest_ep, dict):
+                raw_gates = latest_ep.get("gates")
+                gates: dict[str, Any] = raw_gates if isinstance(raw_gates, dict) else {}
+                raw_gene = latest_ep.get("gene")
+                gene_obj: dict[str, Any] = raw_gene if isinstance(raw_gene, dict) else {}
+                raw_checks = latest_ep.get("checks")
+                checks_list: list[dict[str, Any]] = (
+                    [c for c in raw_checks if isinstance(c, dict)]
+                    if isinstance(raw_checks, list)
+                    else []
+                )
+                raw_outcome = latest_ep.get("outcome")
+                outcome_dict: dict[str, Any] | None = (
+                    raw_outcome if isinstance(raw_outcome, dict) else None
+                )
+                raw_pred = gates.get("prediction_delta")
+                pred_dict: dict[str, Any] | None = raw_pred if isinstance(raw_pred, dict) else None
+                attr = gates.get("attribution") or latest_ep.get("attribution")
+                if not isinstance(attr, dict):
+                    attr = episode_record.compute_component_attribution(
+                        str(latest_ep.get("diff") or ""),
+                        checks_list,
+                        outcome=outcome_dict,
+                        prediction_delta=pred_dict,
+                        target_hook=str(gene_obj.get("target_hook") or "") or None,
+                    )
+                attr_status = (
+                    (attr.get("status") or attr.get("outcome")) if isinstance(attr, dict) else None
+                )
+                if attr_status == "hurt":
+                    ctx["autopoiesis_repair_bias"] = True
+                    hurt_gene = str(gene_obj.get("id") or latest_ep.get("gene_id") or "").strip()
+                    if hurt_gene:
+                        ctx["previous_episode_hurt_gene_id"] = hurt_gene
+                        if isinstance(genes, list) and len(genes) > 1:
+                            banned = set(memory_advice.get("bannedGeneIds") or set())
+                            banned.add(hurt_gene)
+                            memory_advice["bannedGeneIds"] = banned
+
+    if ctx.get("autopoiesis_repair_bias"):
+        policy = {**policy, "repair": True, "optimize": False, "innovate": False}
     drift_enabled = bool(ctx.get("IS_RANDOM_DRIFT", False))
 
     recent_events = ctx.get("recent_events", [])

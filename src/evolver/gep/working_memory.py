@@ -23,6 +23,11 @@ WORKING_FILENAME: Final = "WORKING_SESSION.md"
 ARCHIVE_DIRNAME: Final = "working_archive"
 MAX_WORKING_CHARS: Final = 16_000
 WORKING_CLUE_MAX_CHARS: Final = 3_000
+WORKSPACE_FACT_PREFIX: Final = "in this workspace:"
+_WORKSPACE_FACT_RE: Final = re.compile(
+    r"^\s*(?:[-*]\s*)?in this workspace\s*:\s*(.+?)\s*$",
+    re.IGNORECASE,
+)
 
 
 def working_path() -> Path:
@@ -113,13 +118,59 @@ def archive_and_clear(reason: str) -> dict[str, Any]:
     return {"archived": archived, "cleared": True}
 
 
+def format_workspace_facts_section(
+    facts: list[str],
+    *,
+    ruled_out: list[str] | None = None,
+) -> str:
+    """Format tactical workspace-local facts for ``WORKING_SESSION.md`` (Harness2 §3.2).
+
+    Workspace facts (file paths, line numbers, active task IDs, ruled-out dead
+    ends) belong in the session scratch pad with an explicit ``in this workspace:``
+    marker so they are automatically archived and unlinked at session end, never
+    leaking into durable ``genes.json`` or library snapshots.
+    """
+    lines: list[str] = ["## Workspace Facts (session-local)"]
+    for raw in facts:
+        item = str(raw or "").strip()
+        if not item:
+            continue
+        if not item.lower().startswith("in this workspace:"):
+            item = f"{WORKSPACE_FACT_PREFIX} {item}"
+        lines.append(f"- {item}")
+    if ruled_out:
+        lines.append("")
+        lines.append("## Ruled Out (session-local)")
+        for raw in ruled_out:
+            item = str(raw or "").strip()
+            if item:
+                lines.append(f"- {item}")
+    return "\n".join(lines) + "\n"
+
+
+def extract_workspace_facts(text: str | None = None) -> list[str]:
+    """Return all ``in this workspace: ...`` facts from *text* (or live scratch)."""
+    source = read_working() if text is None else str(text)
+    found: list[str] = []
+    for line in source.splitlines():
+        match = _WORKSPACE_FACT_RE.match(line)
+        if match:
+            fact = match.group(1).strip()
+            if fact and fact not in found:
+                found.append(fact)
+    return found
+
+
 __all__ = [
     "ARCHIVE_DIRNAME",
     "MAX_WORKING_CHARS",
     "WORKING_CLUE_MAX_CHARS",
     "WORKING_FILENAME",
+    "WORKSPACE_FACT_PREFIX",
     "archive_and_clear",
     "archive_dir",
+    "extract_workspace_facts",
+    "format_workspace_facts_section",
     "read_working",
     "render_working_clue",
     "working_path",

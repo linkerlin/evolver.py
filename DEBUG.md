@@ -1129,3 +1129,10 @@
 - **经验**：**断言聚合状态就继承了每一个未 mock 的检查项**——钉聚合
   verdict 的测试必须把「会大声的邻居」全部钉住，否则它测的是宿主机而非
   被测逻辑。间歇失败 + 零改动 = 先找环境读数泄漏，别急着重跑碰运气。
+
+### 60. 跨轮进化引擎自维护文件与 `str.lstrip("./")` 污染四值归因 + `session_end` 丢 stdout 回执（E2E 闭环实证，已修）
+
+- **症状**：(a) 两轮真实 Git + pytest 进化闭环（`test_two_round_closed_loop_rollback_then_beneficial_repair`）中，Round 1 有害变异失败并执行原子回滚后，Round 2 仅用 `swarm_propose` 干净修改单文件 `discount_pkg/calc.py` 且通过全部 pytest，但 `compute_component_attribution` 却判 `status="confounded"`（`touched_count=2`，含 `.gitignore` 与 `discount_pkg/calc.py`），致有益修复被剥夺入库资格（`eligible_for_experience=False`）。(b) `adapters/scripts/session_end.py::main()` 从 stdin 解析出 transcript `cwd` 后既未传给 `build_session_end_output(cwd=cwd)`，也未将返回字典写入 `sys.stdout`，导致 Claude Code Stop-Hook 永远收不到 `systemMessage` JSON。
+- **根因**：(a) Round 1 失败回滚后，`solidify.py` 调 `_wiki_rejection()` 首写知识层时自动向工作区 `.gitignore` 追加 `# evolver: wiki knowledge layer`；该改动发生在 `rollback_tracked` 之后，故留在工作树中。而 `_is_engine_runtime_artifact` 初版用 `path_str.lstrip("./")` 剥前导相对路径——Python `str.lstrip` 按字符集 `{"." , "/"}` 剥离，把 `.gitignore`、`.evolver/` 的前导点号一并剥成 `gitignore`、`evolver/`，使针对隐藏文件/目录的过滤完全失效。(b) `session_end.py::main()` 移植时漏掉了尾部的 `sys.stdout.write(json.dumps(output))` 与 `cwd` 实参转发。
+- **修复**：(1) `_is_engine_runtime_artifact` 改用 `while norm.startswith("./"): norm = norm[2:]`（对齐 `git_ops.normalize_rel_path`），并将 `.gitignore`、`LESSONS_LEARNED.md`、`autopoiesis_rules.json` 及 `evolver/.config/` 等引擎自维护路径纳入过滤，与 `is_constraint_counted_path` 的爆炸半径豁免口径一致；(2) `session_end.py::main()` 补齐 `cwd` 透传与 `sys.stdout.write`，并在显式进化目录下联动 `cursor.record_trajectory(1)` 与 `append_pending_signals`；(3) `tests/test_auto_trigger_and_evolution_e2e.py` 与 `tests/test_adapters_session_end.py` 钉住两轮跨周期闭环与 CLI stdout 契约。
+- **经验**：**单轮单测看不见「上一轮失败善后钩子留下的工作树副作用」**——只有跨轮 E2E（Round 1 失败回滚触发 `_wiki_rejection` → Round 2 成功固化）才能把跨周期状态耦合晒出来；**Python 剥前缀永远用 `removeprefix` 或 `startswith` 循环，禁用 `lstrip` 处理路径前缀**（必伤 `.gitignore`/`.evolver` 等 dotfile）。

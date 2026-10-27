@@ -22,8 +22,8 @@ In standard Large Language Model (LLM) software engineering, developer agents ty
 1. **Engine Decoupled from LLM Scheduling: The Host Agent is the Executor**  
    `evolver.py` does not run its own proprietary LLM inference scheduler. Instead, it leverages standard **MCP (Model Context Protocol) stdio** to take over connected host agents (e.g., Cursor, Claude Code, Codex, ZCode) as evolutionary executors. The host's native tools and workspace context act as the scalpel, while `evolver.py` serves as the cognitive brain, orchestrating signal extraction, policy selection, and safety gating.
 
-2. **Experience as Evidence**  
-   Drawing from modern autonomous research protocols (*arXiv:2609.37968v2, SelfSearch*), the engine treats an agent's runtime execution record (**Episode Record**) as a first-class source of evidence. Rather than mutating blindly or relying on uncalibrated LLM self-scoring, every strategy promotion is backed by controlled ablation tests and statistical sample-size sufficiency audits.
+2. **Experience as Evidence & Recursive Harness Engineering**  
+   Drawing from modern autonomous research protocols (*arXiv:2609.37968v2, SelfSearch*; *arXiv:2610.14224v1, Harness2*), the engine treats an agent's runtime execution record (**Episode Record**) as a first-class source of evidence, augmented by mechanical component attribution, cross-round behavioral contrast, and selective multi-proposal composition. Rather than mutating blindly or relying on uncalibrated LLM self-scoring, every strategy promotion is backed by controlled ablation tests, pre-rollout integrity gates, and statistical sample-size sufficiency audits (verified at stage exit across 30 real MCP settlements and 32 frozen paired tasks: `p = 1.86e-09` / `2.98e-08`).
 
 3. **Modern Clean-Room Python Implementation**  
    Developed as an independent, clean-room, behaviorally equivalent implementation of `@evomap/evolver`, `evolver.py` is built from public protocol specifications and test contracts. It leverages a modern Python stack (Python 3.12+, `asyncio`, `uv`, `Pydantic v2`, `httpx`, and optional `FastAPI`) and is released under the permissive **Apache-2.0** license.
@@ -92,11 +92,11 @@ The inner workings of `evolver.py` revolve around a 7-stage asynchronous pipelin
 
 Every evolution cycle proceeds through seven decoupled asynchronous phases:
 - **Collect**: Scans local run logs, inspects failures, and reads the `LESSONS_LEARNED.md` living memory organ.
-- **Signals**: Extracts structured signals (e.g., `log_error`, `perf_bottleneck`, environment dependency drift).
+- **Signals**: Extracts structured signals (e.g., `log_error`, `perf_bottleneck`, environment dependency drift), ranks them by problem value with WFQ anti-starvation scheduling, and scales exploration depth by idle-scheduler intensity (`signal_only`, `standard`, `deep`).
 - **Hub**: Interacts with local or remote Hub networks to discover relevant prior strategies and tasks.
 - **Enrich**: Bi-directionally synchronizes with the memory graph, assembling past interventions and lessons.
 - **Autopoiesis**: Maintains system homeostasis by automatically turning recurring engineering friction into protective guard rules.
-- **Select**: Evaluates epigenetic affinities, balancing repair bias against novelty exploration.
+- **Select**: Evaluates epigenetic affinities, automatically cooling down prior `hurt`-attributed genes and pivoting to repair bias when regressions occur.
 - **Dispatch**: Assembles and writes the structured GEP mutation prompt, awaiting host execution.
 
 ### 2. The GEP Asset Model
@@ -130,6 +130,13 @@ Guarantees verified progress over artificial gains:
 - **Placebo Control Arm (`--placebo`)**: Injects neutral context of equivalent length to eliminate system prompt bias.
 - **Stage Exit Contract (`--stage-exit`)**: Requires real episodes, placebo comparison, fixed commits, and written reports before declaring progress. Enforces sample size audits (`MIN_N=30`), marking low-sample conclusions as `indicative only`.
 - **Repository Pinning**: Static whitelist auditing prevents mutation logic from modifying its own benchmark scoring harness.
+
+### 🧩 Recursive Harness Engineering & Selective Composition (Harness2)
+Incorporates mechanical verification and contrastive synthesis inspired by *Harness2* (*arXiv:2610.14224v1*) without adding online LLM judge overhead:
+- **Four-Way Component Attribution (`H2-1`) & Cross-Round Behavioral Contrast (`H2-5`)**: Automatically classifies each round's edits as `helped | hurt | no_observed_effect | confounded` and computes check-level transitions (`newly_passed`, `regressed`, `persistent_failures`), injecting `[attribution]` and `[contrast]` notes into dispatch prompts while blocking `confounded` multi-component rounds from polluting durable gene libraries.
+- **Transferable Experience Triad & Workspace-Fact Isolation (`H2-2`)**: Enforces `cue + lesson + evidence` completeness (`--strict-transferable`) for durable genes, while isolating workspace-local tactical facts (`in this workspace:`) to `WORKING_SESSION.md` (automatically archived and unlinked at session termination).
+- **`INV × DOM` Orthogonal Scopes & Selective Composer (`H2-3`)**: Separates invariant/verifier (`INV`) from domain (`DOM`) proposals, mechanically merging non-conflicting `helped` edits (`compose_proposals`) or falling back to `KEEP_BASE`, and surfaces salvageable single-component semantic variants (`evolver variants`).
+- **Component Cost Hierarchy Gate (`H2-4`) & Library Provenance (`H2-6`)**: Enforces `Skill > Script > Subagent > Hook > Always-On Text` pre-rollout static checks (`validate_harness_component_integrity`), 6-axis deliverable conformance, paired $\mathcal{H}_0 + \mathcal{R}_t$ library solves, and `direct_copy / adapted / novel` provenance telemetry in `evolver meta-report`.
 
 ---
 
@@ -212,12 +219,13 @@ For **ZCode** or direct virtualenv execution:
 
 Once connected, host agents communicate via standardized tool calls:
 1. `swarm_boot`: Initializes the evolution session and reports status.
-2. `swarm_tick`: Retrieves the latest GEP mutation prompt and context.
-3. *(Host edits code and applies refactorings)*
-4. `swarm_distill`: Extracts structured Gene and Capsule data from the diff.
-5. `swarm_hypothesis`: Declares the single testable hypothesis for the round, with an optional `expected_outcome` listing the checks expected to pass.
-6. `swarm_solidify`: Executes validation gates, commits accepted changes via Git, and records `prediction_delta` by comparing `expected_outcome` against the checks that actually ran.
-7. `swarm_feedback`: Reports multi-dimensional metrics to steer future cycles.
+2. `swarm_tick`: Retrieves the latest GEP mutation prompt and context (including `[attribution]` and `[contrast]` notes from the prior episode).
+3. `swarm_propose` *(optional)*: Validates structured gene proposals against the `H2-4` component cost hierarchy (`check_component_integrity`) or mechanically composes multiple `INV × DOM` candidates (`candidates`) before editing.
+4. *(Host edits code and applies refactorings)*
+5. `swarm_distill`: Extracts structured Gene and Capsule data from the diff (with optional `strict_transferable` triad auditing and automatic `confounded` round filtering).
+6. `swarm_hypothesis`: Declares the single testable hypothesis for the round, with an optional `expected_outcome` listing the checks expected to pass.
+7. `swarm_solidify`: Executes validation gates, commits accepted changes via Git, and records `prediction_delta` by comparing `expected_outcome` against the checks that actually ran.
+8. `swarm_feedback`: Reports multi-dimensional metrics to steer future cycles.
 
 When the previous round's check output or diff is clipped, or when the host is about to compact its context, two companion tools keep the loop grounded:
 - **Zoom into truncated evidence (`episode_inspect`)**: The prompt carries a bounded summary (for example, `stdout truncated at 400/2208 chars; call episode_inspect to zoom in`). Instead of guessing, the host passes a concrete question and a line window (such as `{"kind":"check","name":"pytest","offset_lines":0,"limit_lines":80}`) to read the raw scene without modifying `episode.json`.
@@ -250,19 +258,25 @@ Commands are organized logically by lifecycle and domain:
 | | `evolver --loop` | Run continuous autonomous evolution daemon |
 | | `evolver --review` | Interactive review mode before mutations apply |
 | | `evolver solidify` | Apply, validate, and commit pending mutations to Git |
+| | `evolver apply-proposal` | Apply a single proposal or selectively compose multiple `INV × DOM` proposals |
 | | `evolver session` | Manage paired evolution sessions and hypothesis gates |
 | **Swarm & Safety** | `evolver mcp` | Start stdio MCP server for host takeover |
 | | `evolver hitl` | Human-In-The-Loop approval management (`list`/`approve`/`reject`) |
 | | `evolver supervise` | Human-On-The-Loop supervision (`status`/`pause`/`resume`/`veto`) |
 | | `evolver setup-hooks` | Install automated IDE telemetry hooks (Cursor, Claude Code, etc.) |
+| | `evolver charter-check` | Verify runtime environment and charter compliance |
 | **Assets & Memory**| `evolver skills` | Scan, preview, and synchronize `SKILL.md` files into GEP assets |
+| | `evolver distill` | Distill LLM responses into Genes/Capsules (`--strict-transferable`) |
 | | `evolver gene-lifecycle`| Audit and govern gene states (`active`/`under_review`/`retired`) |
+| | `evolver variants` | Inspect archived rejected variants (`*` re-dispatchable, `~` salvageable) |
+| | `evolver library` | Manage content-addressed library snapshots (`establish-parent`/`publish`) |
 | | `evolver episode` | List or show Episode Records, or zoom into truncated output with `episode inspect` |
 | | `evolver self-report` | Run Autopoiesis self-diagnosis and update living memory |
-| **Bench & Eval** | `evolver experiment` | Run controlled ablation experiments (`--ablation`, `--placebo`) |
-| | `evolver bench` | Run frozen benchmark packs, baseline gates, and paired tests |
+| **Bench & Eval** | `evolver experiment` | Run controlled ablation experiments (`--ablation`, `--placebo`, `--stage-exit`) |
+| | `evolver bench` | Run frozen benchmark packs, baseline gates, and paired library solves |
+| | `evolver anchor` | Manage and run out-of-repo frozen anchor verification suites |
 | | `evolver gate-report` | Generate acceptance gate soak and graduation reports |
-| | `evolver meta-report` | Inspect evolutionary telemetry and descendant mutation quality |
+| | `evolver meta-report` | Inspect Table-8 telemetry, descendant quality, and `library_provenance` |
 | **Ops & Services** | `evolver check` / `watch`| Health diagnostic inspection and background monitoring |
 | | `evolver start` / `stop` | Manage cross-platform system daemon processes |
 | | `evolver webui` | Launch local visual dashboard (requires `server` extra) |
@@ -295,6 +309,13 @@ src/evolver/
 │   └── pipeline/           # Asynchronous 7-stage evolution pipeline (Collect to Dispatch)
 ├── gep/                    # Genome Evolution Protocol (GEP) engine
 │   ├── schemas/            # Pydantic schemas (Gene, Capsule, Task, Protocol)
+│   ├── episode_record.py   # Content-addressed Episode Records, attribution & contrast notes
+│   ├── working_memory.py   # Session-scoped WORKING_SESSION.md & workspace-fact isolation
+│   ├── record_route.py     # Dual-route record orchestration & INV × DOM orthogonal scopes
+│   ├── proposal.py         # Structured gene proposals & mechanical selective composer
+│   ├── policy_check.py     # Safety policy, cost hierarchy gate & deliverable conformance
+│   ├── variant_archive.py  # DGM-style rejected variant archive & semantic salvage
+│   ├── library.py          # Content-addressed library snapshots & paired prompt blocks
 │   ├── asset_store.py      # Layered JSON/JSONL asset persistence
 │   ├── hitl.py             # Human-In-The-Loop approval gate
 │   ├── supervision.py      # Human-On-The-Loop supervision & tripwires
@@ -314,6 +335,7 @@ src/evolver/
 
 - **[Step-by-Step Hands-On Tutorials (tutorials/)](tutorials/README.md)** *(Chinese)*: A 5-part, jargon-free guide that builds `evolver.py` from concrete experiments and first principles.
 - **[演进方案.md](演进方案.md)** *(Evolution Charter)*: Foundational design treatise explaining the shift toward "Experience as Evidence".
+- **[TODO_VISTA.md](TODO_VISTA.md) & [TODO_HARNESS2.md](TODO_HARNESS2.md)**: Mechanical harness checklists covering VISTA scene inspection/compaction gates and Harness2 (`H2-1`..`H2-6`) attribution, workspace-fact isolation, and selective composition.
 - **[AGENTS.md](AGENTS.md)**: Guidelines, conventions, and architectural rules for AI coding agents.
 - **[DEBUG.md](DEBUG.md)**: Field debugging guide for distributed locking, race conditions, and dogfooding edge cases.
 - **[CHANGELOG.md](CHANGELOG.md)**: Chronological ledger of updates and release milestones.

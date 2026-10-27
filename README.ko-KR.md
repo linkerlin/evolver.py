@@ -22,8 +22,8 @@
 1. **엔진은 자체 LLM 스케줄링을 하지 않는다: 호스트 에이전트가 곧 실행기**  
    `evolver.py`는 자체적인 독점 LLM 추론 스케줄러를 내장하지 않습니다. 대신 표준 **MCP (Model Context Protocol) stdio** 인터페이스를 통해 연결된 호스트 에이전트(Cursor, Claude Code, Codex, ZCode 등)를 직접 진화의 "실행기"로 인수합니다. 호스트가 보유한 도구 호출 능력과 작업 공간 컨텍스트가 정밀한 수술 도구가 되며, 엔진은 신호 감지, 전략 수립, 안전 거버넌스에 집중합니다.
 
-2. **경험이 곧 증거다 (Experience as Evidence)**  
-   최신 자율 연구 프로토콜(*arXiv:2609.37968v2, SelfSearch*)에 발맞추어, 에이전트의 실제 자기 개선 실행 기록(**Episode Record**)을 일등 증거 소스로 격상합니다. 맹목적인 무작위 변이나 신뢰하기 어려운 자체 채점을 배제하고, 통제된 대조 실험과 표본 크기 충족성 감사를 통과한 전략만을 승격합니다.
+2. **경험이 곧 증거다 & 재귀적 하네스 엔지니어링 (Experience as Evidence & Recursive Harness Engineering)**  
+   최신 자율 연구 프로토콜(*arXiv:2609.37968v2, SelfSearch*; *arXiv:2610.14224v1, Harness2*)에 발맞추어, 에이전트의 실제 자기 개선 실행 기록(**Episode Record**)을 일등 증거 소스로 격상하고, 기계적 4방향 컴포넌트 귀속, 라운드 간 행동 대조 증분, 다중 제안 선택적 합성을 결합합니다. 맹목적인 무작위 변이나 신뢰하기 어려운 자체 채점을 배제하고, 사전 무결성 게이트·통제된 대조 실험·표본 크기 충족성 감사를 통과한 전략만을 승격합니다(실제 MCP 정산 30건 및 동결 쌍체 과제 32문항의 `--stage-exit` 출구 검증에서 두 독립 시드 모두 유의미한 `signal` 달성: `p = 1.86e-09` / `2.98e-08`).
 
 3. **현대적인 클린룸 Python 아키텍처**  
    공개 규격 및 테스트 규약에 기초하여 `@evomap/evolver`의 동작을 동등하게 구현한 독립적인 클린룸 Python 프로젝트입니다. 최신 스택(Python 3.12+, `asyncio`, `uv`, `Pydantic v2`, `httpx`, `FastAPI`)을 바탕으로 구축되었으며, 유연하고 친화적인 **Apache-2.0** 라이선스로 배포됩니다.
@@ -92,11 +92,11 @@
 
 각 진화 사이클은 완전히 분리된 7개의 비동기 단계로 실행됩니다:
 - **Collect**: 로컬 런타임 로그 분석, 실패 진단 기록 조사, `LESSONS_LEARNED.md`(살아있는 기억) 로딩.
-- **Signals**: 원시 데이터에서 구조화된 신호(예: `log_error`, `perf_bottleneck`, 종속성 드리프트) 추출.
+- **Signals**: 원시 데이터에서 구조화된 신호(예: `log_error`, `perf_bottleneck`, 종속성 드리프트)를 추출하고, 문제 가치 모델 및 WFQ 기아 방지 큐로 우선순위를 매기며 유휴 스케줄러 강도(`signal_only` / `standard` / `deep`)에 따라 탐색 할당량을 조절.
 - **Hub**: 로컬 또는 원격 Hub 네트워크와 통신하여 적합한 기존 자산 및 협동 태스크 탐색.
 - **Enrich**: 기억 그래프와 양방향 동기화, 과거의 개입 결과와 교훈 주입.
 - **Autopoiesis(자기 재생산 및 항상성)**: 빈발하는 개발 마찰을 가드 규칙으로 자동 인코딩하여 시스템 안전성 유지.
-- **Select**: 후성유전학적 친화도를 평가하여 복구 편향(Repair Bias)과 신규 탐색의 균형 조율.
+- **Select**: 후성유전학적 친화도를 평가하여 복구 편향(Repair Bias)과 신규 탐색의 균형을 조율하며, 직전 에피소드가 `hurt`로 귀속된 경우 해당 유전자를 자동 쿨다운하고 복구 전략으로 전환.
 - **Dispatch**: 풍부한 증거가 포함된 GEP 변이 프롬프트를 조립하여 호스트 에이전트에 전달.
 
 ### 2. GEP 핵심 자산 모델
@@ -130,6 +130,13 @@
 - **위약 대조군 (`--placebo`)**: 동일한 길이의 중립적 문맥을 주입하여 프롬프트 길이나 역할 편향을 격리.
 - **단계 출구 규약 (`--stage-exit`)**: 실제 에피소드, 대조군, 고정 커밋, 디스크 보고서가 모두 충족되어야만 검증으로 인정. 표본 크기 감사(`MIN_N=30`)를 강제하여 소표본 왜곡을 방지.
 - **평가 하네스 무단 변경 방지**: 변이 로직이 자체 평가 기준을 변경하지 못하도록 정적 화이트리스트로 보호.
+
+### 🧩 재귀적 하네스 엔지니어링 및 선택적 합성 (Harness2)
+온라인 LLM 심사 오버헤드를 추가하지 않고 *Harness2*(*arXiv:2610.14224v1*)의 기계적 귀속 및 대조 합성을 결합합니다:
+- **4방향 컴포넌트 귀속(`H2-1`) 및 라운드 간 행동 대조(`H2-5`)**: 각 라운드의 수정을 `helped | hurt | no_observed_effect | confounded`로 자동 분류하고 검사 전이(`newly_passed`, `regressed`, `persistent_failures`)를 계산하여 디스패치 프롬프트에 `[attribution]`과 `[contrast]` 요약을 주입하며, 다중 컴포넌트가 혼재된 `confounded` 라운드가 영구 유전자 라이브러리를 오염시키는 것을 기계적으로 차단합니다.
+- **전이 가능 경험 삼중항 및 워크스페이스 사실 격리(`H2-2`)**: 영구 유전자에 대해 `cue + lesson + evidence` 삼중항(`--strict-transferable`)을 강제하고, `in this workspace:` 등 작업 공간 국소 전술 사실은 세션 전용 `WORKING_SESSION.md`에 격리합니다(세션 종료 시 자동 아카이브 및 삭제).
+- **`INV × DOM` 직교 스코프 및 선택적 컴포저(`H2-3`)**: 불변성/검증측(`INV`)과 도메인 구현(`DOM`) 제안을 직교 분리하여 충돌하지 않는 `helped` 변경을 기계적으로 병합(`compose_proposals`)하거나 안전하게 `KEEP_BASE`로 폴백하며, 단일 컴포넌트 구제 가능 변이(`~`)를 `evolver variants`에 표시합니다.
+- **컴포넌트 비용 계층 게이트(`H2-4`) 및 라이브러리 계보 추적(`H2-6`)**: `Skill > Script > Subagent > Hook > Always-On Text` 사전 정적 계약 검사(`validate_harness_component_integrity`)와 6축 산출물 적합성 검증을 수행하며, $\mathcal{H}_0 + \mathcal{R}_t$ 쌍체 라이브러리 풀이와 `evolver meta-report`의 `library_provenance`(`direct_copy / adapted / novel`) 패널을 제공합니다.
 
 ---
 
@@ -212,12 +219,13 @@ uv run evolver check
 
 연결된 호스트 에이전트는 표준 도구 체계를 통해 협력합니다:
 1. `swarm_boot`: 세션 초기화 및 상태 보고.
-2. `swarm_tick`: 최신 GEP 변이 프롬프트 및 문맥 획득.
-3. *(호스트가 에디터에서 파일 수정 및 리팩터링 수행)*
-4. `swarm_distill`: 변경 사항으로부터 구조화된 Gene 및 Capsule 추출.
-5. `swarm_hypothesis`: 검증 전 해당 사이클의 유일한 가설을 선언하며, 선택적으로 통과를 예상하는 검사를 `expected_outcome`에 기록.
-6. `swarm_solidify`: 샌드박스 게이트를 거쳐 검증된 변경 사항을 Git 커밋으로 고착하고, `expected_outcome`과 실제 검사 결과를 대조해 `prediction_delta`를 기록.
-7. `swarm_feedback`: 다차원 평가 지표를 반환하여 후속 사이클의 가중치 자가적응 유도.
+2. `swarm_tick`: 최신 GEP 변이 프롬프트 및 문맥(이전 에피소드의 `[attribution]` 및 `[contrast]` 노트 포함) 획득.
+3. `swarm_propose`*(선택)*: 수정 전 구조화된 유전자 제안의 `H2-4` 컴포넌트 비용 계층 무결성(`check_component_integrity`)을 검증하거나 복수의 `INV × DOM` 후보 제안을 기계적으로 선택 합성(`candidates`).
+4. *(호스트가 에디터에서 파일 수정 및 리팩터링 수행)*
+5. `swarm_distill`: 변경 사항으로부터 구조화된 Gene 및 Capsule 추출(`strict_transferable` 삼중항 검증 및 `confounded` 라운드 자동 필터링 지원).
+6. `swarm_hypothesis`: 검증 전 해당 사이클의 유일한 가설을 선언하며, 선택적으로 통과를 예상하는 검사를 `expected_outcome`에 기록.
+7. `swarm_solidify`: 샌드박스 게이트를 거쳐 검증된 변경 사항을 Git 커밋으로 고착하고, `expected_outcome`과 실제 검사 결과를 대조해 `prediction_delta`를 기록.
+8. `swarm_feedback`: 다차원 평가 지표를 반환하여 후속 사이클의 가중치 자가적응 유도.
 
 이전 사이클의 검사 출력이나 diff가 잘렸거나 컨텍스트 압축이 임박했을 때는 다음 두 도구를 함께 사용합니다:
 - **잘린 원문 재조회 (`episode_inspect`)**: 프롬프트에는 요약본만 포함됩니다(예: `stdout truncated at 400/2208 chars; call episode_inspect to zoom in`). 추측으로 재작성하지 않고 구체적인 질문과 줄 범위(예: `{"kind":"check","name":"pytest","offset_lines":0,"limit_lines":80}`)를 전달해 원문을 읽기 전용으로 확인합니다. `episode.json`은 수정되지 않습니다.
@@ -248,19 +256,25 @@ DEEPSEEK_API_KEY=sk-... uv run python examples/swarm-quickstart/demo_swarm_loop.
 | | `evolver --loop` | 지속적 자율 진화 백그라운드 데몬 구동 |
 | | `evolver --review` | 변이 적용 전 확인을 거치는 대화형 리뷰 모드 |
 | | `evolver solidify` | 대기 중인 변이를 검증하고 Git 저장소에 확정 커밋 |
+| | `evolver apply-proposal` | 단일 제안 적용 또는 복수 `INV × DOM` 제안의 기계적 선택 합성 |
 | | `evolver session` | 쌍체 진화 세션 및 가설 게이트 관리 |
 | **군집 및 안전** | `evolver mcp` | stdio 기반 MCP 서버 실행 (호스트 연결 접점) |
 | | `evolver hitl` | 인간 참여(HITL) 승인 관리 (`list`/`approve`/`reject`) |
 | | `evolver supervise` | 인간 감시(HOTL) 실시간 감독 (`status`/`pause`/`resume`/`veto`) |
 | | `evolver setup-hooks` | Cursor, Claude Code 등 IDE 자동 텔레메트리 훅 설치 |
+| | `evolver charter-check` | 런타임 환경 및 현행 헌장 준수 여부 검증 |
 | **자산 및 지식** | `evolver skills` | 외부 `SKILL.md` 스캔, 미리보기 및 GEP 유전자 동기화 |
+| | `evolver distill` | LLM 응답에서 Gene / Capsule 증류 (`--strict-transferable` 지원) |
 | | `evolver gene-lifecycle`| 유전자 수명 주기 관리 (`active`/`under_review`/`retired`) |
+| | `evolver variants` | 기각·보존된 변이 아카이브 조회 (`*` 재디스패치 가능, `~` 의미적 구제 가능) |
+| | `evolver library` | 콘텐츠 주소 지정 라이브러리 스냅샷 관리 (`establish-parent`/`publish`) |
 | | `evolver episode` | 자기 개선 실행 기록(Episode Record) 조회 및 `episode inspect`로 잘린 원문 확인 |
 | | `evolver self-report` | 자생(Autopoiesis) 시스템 진단 및 방어 규칙 갱신 |
-| **벤치 및 평가** | `evolver experiment` | 엄격한 대조 절제 실험 수행 (`--ablation`, `--placebo`) |
-| | `evolver bench` | 동결 벤치마크 태스크 팩 실행, 베이스라인 검증 및 통계 검정 |
+| **벤치 및 평가** | `evolver experiment` | 엄격한 대조 절제 실험 수행 (`--ablation`, `--placebo`, `--stage-exit`) |
+| | `evolver bench` | 동결 벤치마크 태스크 팩 실행, 베이스라인 검증 및 쌍체 라이브러리 풀이 |
+| | `evolver anchor` | 저장소 외부 동결 앵커 검증 스위트 초기화 및 실행 |
 | | `evolver gate-report` | 수용 게이트(Shadow Gate) 숙성 관찰 및 정식 채택 보고서 |
-| | `evolver meta-report` | 진화 메커니즘 텔레메트리 및 후대 변이 품질 보고서 |
+| | `evolver meta-report` | Table-8 6축 텔레메트리, 후대 변이 품질 및 `library_provenance` 계보 보고서 |
 | **운영 및 서비스** | `evolver check` / `watch`| 시스템 상태 진단 및 지속적 모니터링 |
 | | `evolver start` / `stop` | 크로스 플랫폼 데몬 수명 주기 제어 |
 | | `evolver webui` | 로컬 시각화 대시보드 구동 (`server` 필요) |
@@ -293,6 +307,13 @@ src/evolver/
 │   └── pipeline/           # 7단계 비동기 진화 파이프라인 (Collect ~ Dispatch)
 ├── gep/                    # GEP(게놈 진화 프로토콜) 핵심 엔진
 │   ├── schemas/            # Pydantic 데이터 스키마 (Gene, Capsule, Task 등)
+│   ├── episode_record.py   # 콘텐츠 주소 지정 Episode Record, 4방향 귀속 및 대조 증분
+│   ├── working_memory.py   # 세션 전용 WORKING_SESSION.md 및 워크스페이스 사실 격리
+│   ├── record_route.py     # 양방향 기록 루트 및 INV × DOM 직교 스코프 검증
+│   ├── proposal.py         # 구조화된 유전자 제안 및 기계적 선택 컴포저
+│   ├── policy_check.py     # 안전 정책, 비용 계층 게이트 및 6축 산출물 적합성 검사
+│   ├── variant_archive.py  # DGM식 기각 변이 아카이브 및 단일 컴포넌트 구제
+│   ├── library.py          # 콘텐츠 주소 지정 라이브러리 스냅샷
 │   ├── asset_store.py      # 계층형 JSON/JSONL 자산 영속화 저장소
 │   ├── hitl.py             # 인간 참여(HITL) 의사결정 게이트
 │   ├── supervision.py      # 실시간 감독 및 자동 차단선(HOTL)
@@ -312,6 +333,7 @@ src/evolver/
 
 - **[단계별 실습 튜토리얼 (tutorials/)](tutorials/README.md)**: 전문 용어 암기 없이 구체적인 실험과 원리부터 `evolver.py`를 파헤치는 5부작 실습 가이드 (중국어).
 - **[演进方案.md](演进方案.md)**: 현행 최상위 헌장 문서. "경험이 곧 증거"로 나아가는 완전한 논리 체계 (중국어).
+- **[TODO_VISTA.md](TODO_VISTA.md) & [TODO_HARNESS2.md](TODO_HARNESS2.md)**: VISTA(현장 재조명·압축 게이트) 및 Harness2(`H2-1`..`H2-6` 4방향 귀속·사실 격리·선택적 합성) 기계적 하네스 체크리스트.
 - **[AGENTS.md](AGENTS.md)**: AI 코딩 에이전트 개발자를 위한 행동 강령, 주의사항 및 아키텍처 상세.
 - **[DEBUG.md](DEBUG.md)**: 프로세스 락, 경합 조건, 복합 엣지 케이스 해결을 위한 현장 디버깅 가이드.
 - **[CHANGELOG.md](CHANGELOG.md)**: 상세 릴리스 및 마일스톤 이력.

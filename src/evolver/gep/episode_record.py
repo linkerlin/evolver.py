@@ -82,6 +82,16 @@ HOST_SIDE_KEYS: Final = (
 
 _SAFE_ID_RE: Final = re.compile(r"^[A-Za-z0-9._-]+$")
 
+#: Harness2 (arXiv:2610.14224v1 §3.2) four-way component attribution verdicts.
+#: Multi-component edits without isolated execution evidence default to
+#: ``confounded`` and are excluded from durable experience distillation.
+ATTRIBUTION_VERDICTS: Final[tuple[str, ...]] = (
+    "helped",
+    "hurt",
+    "no_observed_effect",
+    "confounded",
+)
+
 
 class EpisodeConflictError(RuntimeError):
     """Raised when a round is already recorded with different content.
@@ -190,6 +200,8 @@ def render_episode_block(body: dict[str, Any], *, ep_id: str = "", max_chars: in
         f"- checks: {ok_count}/{len(checks)} ok",
         f"- gates: acceptance={acceptance.get('accepted') if acceptance else 'none'}",
         *_prediction_delta_line(gates),
+        *_attribution_line(gates),
+        *_behavioral_contrast_line(gates),
         *_inspect_anchors(body),
         "```diff",
         diff or "(no diff)",
@@ -220,6 +232,90 @@ def ceiling_tie_note(body: dict[str, Any]) -> str:
     if float(baseline) != 1.0:
         return ""
     return "- 基线已满分，分数持平，这一轮测不出假说对错。"
+
+
+def attribution_note(body: dict[str, Any]) -> str:
+    """One line summarizing Harness2 4-way component attribution for dispatch.
+
+    Kept separate from :func:`render_episode_block` for episodes that did not
+    explicitly store ``gates.attribution`` so the ablation record arm's prompt
+    rendering stays byte-identical on historical episodes. Returns ``""`` when
+    no files or target hooks were touched.
+    """
+    if not isinstance(body, dict):
+        return ""
+    raw_gates = body.get("gates")
+    gates: dict[str, Any] = raw_gates if isinstance(raw_gates, dict) else {}
+    existing = gates.get("attribution")
+    if isinstance(existing, dict):
+        lines = _attribution_line(gates)
+        return lines[0] if lines else ""
+    raw_gene = body.get("gene")
+    gene: dict[str, Any] = raw_gene if isinstance(raw_gene, dict) else {}
+    raw_checks = body.get("checks")
+    checks: list[dict[str, Any]] = (
+        [c for c in raw_checks if isinstance(c, dict)] if isinstance(raw_checks, list) else []
+    )
+    raw_outcome = body.get("outcome")
+    outcome: dict[str, Any] | None = raw_outcome if isinstance(raw_outcome, dict) else None
+    pred_delta = (
+        gates.get("prediction_delta") if isinstance(gates.get("prediction_delta"), dict) else None
+    )
+    computed = compute_component_attribution(
+        _text(body.get("diff")),
+        checks,
+        outcome=outcome,
+        prediction_delta=pred_delta,
+        target_hook=_text(gene.get("target_hook")) or None,
+    )
+    if int(computed.get("touched_count") or 0) <= 0:
+        return ""
+    lines = _attribution_line({"attribution": computed})
+    return lines[0] if lines else ""
+
+
+def behavioral_contrast_note(
+    body: dict[str, Any],
+    previous_body: dict[str, Any] | None = None,
+) -> str:
+    """One line summarizing Harness2 check transitions across consecutive episodes.
+
+    Kept separate from :func:`render_episode_block` for historical episodes that
+    did not store ``gates.behavioral_contrast`` so the ablation record arm stays
+    byte-identical. Emits a line when ``gates.behavioral_contrast`` is already
+    present, or when comparing against ``previous_body`` reveals newly passed or
+    regressed checks (or a non-delivering empty round).
+    """
+    if not isinstance(body, dict):
+        return ""
+    raw_gates = body.get("gates")
+    gates: dict[str, Any] = raw_gates if isinstance(raw_gates, dict) else {}
+    existing = gates.get("behavioral_contrast")
+    if isinstance(existing, dict):
+        lines = _behavioral_contrast_line(gates)
+        return lines[0] if lines else ""
+    raw_checks = body.get("checks")
+    cur_checks: list[dict[str, Any]] = (
+        [c for c in raw_checks if isinstance(c, dict)] if isinstance(raw_checks, list) else []
+    )
+    prev_checks: list[dict[str, Any]] | None = None
+    if isinstance(previous_body, dict):
+        raw_prev = previous_body.get("checks")
+        if isinstance(raw_prev, list):
+            prev_checks = [c for c in raw_prev if isinstance(c, dict)]
+    computed = compute_behavioral_contrast(
+        cur_checks,
+        prev_checks,
+        diff_text=_text(body.get("diff")),
+    )
+    trans = computed.get("check_transitions") or {}
+    newly_passed = trans.get("newly_passed") or []
+    regressed = trans.get("regressed") or []
+    non_delivering = bool(computed.get("non_delivering"))
+    if not newly_passed and not regressed and not non_delivering:
+        return ""
+    lines = _behavioral_contrast_line({"behavioral_contrast": computed})
+    return lines[0] if lines else ""
 
 
 # ---------------------------------------------------------------------------
@@ -671,6 +767,329 @@ def _prediction_delta_line(gates: dict[str, Any]) -> list[str]:
     ]
 
 
+def _attribution_line(gates: dict[str, Any]) -> list[str]:
+    """Empty without a recorded attribution, preserving byte-identical legacy rendering."""
+    attr = gates.get("attribution")
+    if not isinstance(attr, dict):
+        return []
+    status = attr.get("status") or "unknown"
+    confounded = bool(attr.get("confounded"))
+    eligible = bool(attr.get("eligible_for_experience"))
+    return [
+        f"- attribution: status={status} confounded={confounded} eligible_for_experience={eligible}"
+    ]
+
+
+def _behavioral_contrast_line(gates: dict[str, Any]) -> list[str]:
+    """Empty without a recorded behavioral contrast, preserving legacy rendering."""
+    contrast = gates.get("behavioral_contrast")
+    if not isinstance(contrast, dict):
+        return []
+    transitions = contrast.get("check_transitions")
+    trans_dict = transitions if isinstance(transitions, dict) else {}
+    newly_passed = json.dumps(trans_dict.get("newly_passed") or [], ensure_ascii=False)
+    regressed = json.dumps(trans_dict.get("regressed") or [], ensure_ascii=False)
+    non_delivering = bool(contrast.get("non_delivering"))
+    return [
+        f"- behavioral_contrast: newly_passed={newly_passed} "
+        f"regressed={regressed} non_delivering={non_delivering}"
+    ]
+
+
+_ENGINE_RUNTIME_PREFIXES: tuple[str, ...] = (
+    "evolver/.config/",
+    ".evolver/",
+    ".evolver_settings/",
+    ".evomap/",
+    "memory/",
+    "logs/",
+)
+_ENGINE_RUNTIME_FILES: frozenset[str] = frozenset(
+    {
+        ".gitignore",
+        "LESSONS_LEARNED.md",
+        "autopoiesis_rules.json",
+    }
+)
+
+
+def _is_engine_runtime_artifact(path_str: str) -> bool:
+    norm = path_str.replace("\\", "/").strip()
+    while norm.startswith("./"):
+        norm = norm[2:]
+    if norm in _ENGINE_RUNTIME_FILES:
+        return True
+    return norm.startswith(_ENGINE_RUNTIME_PREFIXES)
+
+
+def _extract_touched_files(diff_text: str) -> list[str]:
+    """Extract ordered unique relative file paths modified in a unified diff."""
+    text = _text(diff_text)
+    if not text.strip():
+        return []
+    seen: list[str] = []
+
+    def _add(raw_path: str) -> None:
+        cleaned = raw_path.strip()
+        if not cleaned or cleaned == "/dev/null":
+            return
+        if cleaned.startswith(("a/", "b/")) and len(cleaned) > 2:
+            cleaned = cleaned[2:]
+        if _is_engine_runtime_artifact(cleaned):
+            return
+        if cleaned and cleaned not in seen:
+            seen.append(cleaned)
+
+    for match in re.finditer(r"(?m)^diff --git a/(.+?) b/(.+)$", text):
+        _add(match.group(2))
+    if seen:
+        return seen
+    for match in re.finditer(r"(?m)^\+\+\+ (?:b/)?([^\t\r\n]+)$", text):
+        _add(match.group(1))
+    if seen:
+        return seen
+    for match in re.finditer(r"(?m)^--- (?:a/)?([^\t\r\n]+)$", text):
+        _add(match.group(1))
+    return seen
+
+
+def _classify_component_group(path_str: str) -> str:
+    """Map a touched relative path to a Harness2 component class."""
+    norm = path_str.replace("\\", "/").strip("/")
+    lower = norm.lower()
+    base = norm.rsplit("/", 1)[-1]
+    if "/skills/" in f"/{lower}" or base == "SKILL.md":
+        return "skill"
+    if "/scripts/" in f"/{lower}" or "/bin/" in f"/{lower}":
+        return "script"
+    if "/plugin/" in f"/{lower}" or "/hooks/" in f"/{lower}" or "compact_gate" in lower:
+        return "hook_or_plugin"
+    if base in {"AGENTS.md", "CLAUDE.md", "systemprompt.md", "guardrails.md", "prompt.py"}:
+        return "always_on_prompt"
+    if lower.startswith("tests/") or base.startswith("test_"):
+        return "test"
+    parts = norm.split("/")
+    return f"code:{parts[0]}" if parts else "code"
+
+
+def compute_component_attribution(
+    diff_text: str,
+    checks: list[dict[str, Any]],
+    *,
+    outcome: dict[str, Any] | None = None,
+    prediction_delta: dict[str, Any] | None = None,
+    target_hook: str | None = None,
+) -> dict[str, Any]:
+    """Harness2 (§3.2) four-way component attribution from engine-observed facts.
+
+    Verdicts are strictly one of :data:`ATTRIBUTION_VERDICTS`:
+    ``("helped", "hurt", "no_observed_effect", "confounded")``.
+    Whenever a candidate modifies multiple components at once and no isolated
+    execution separates them, the attribution is marked ``confounded`` and
+    ``eligible_for_experience=False`` so multi-edit rounds never pollute the
+    durable library.
+    """
+    touched_files = _extract_touched_files(diff_text)
+    valid_checks = [c for c in checks if isinstance(c, dict)]
+    any_check_failed = any(not bool(c.get("ok")) for c in valid_checks)
+    all_checks_ok = bool(valid_checks) and all(bool(c.get("ok")) for c in valid_checks)
+    out = outcome if isinstance(outcome, dict) else {}
+    outcome_status = str(out.get("status") or "")
+    pack_reason = str(out.get("pack_reason") or "")
+    delta_unmatched = (
+        isinstance(prediction_delta, dict) and prediction_delta.get("matched") is False
+    )
+
+    if not touched_files:
+        hook_name = str(target_hook or "").strip()
+        if not hook_name and not diff_text.strip():
+            return {
+                "status": "no_observed_effect",
+                "confounded": False,
+                "eligible_for_experience": False,
+                "touched_count": 0,
+                "components": [],
+                "source": "engine",
+            }
+        touched_files = [hook_name or "<inline_diff>"]
+
+    if len(touched_files) > 1:
+        components = [
+            {
+                "component": path,
+                "group": _classify_component_group(path),
+                "verdict": "confounded",
+                "reason": "multi_component_unisolated_edit",
+            }
+            for path in touched_files
+        ]
+        return {
+            "status": "confounded",
+            "confounded": True,
+            "eligible_for_experience": False,
+            "touched_count": len(touched_files),
+            "components": components,
+            "source": "engine",
+        }
+
+    single_path = touched_files[0]
+    group = _classify_component_group(single_path)
+    if (
+        any_check_failed
+        or pack_reason == "drop"
+        or (outcome_status == "failed" and pack_reason != "flat" and bool(valid_checks))
+    ):
+        verdict = "hurt"
+        reason = "check_or_outcome_regression"
+    elif (
+        pack_reason == "flat"
+        or delta_unmatched
+        or (not valid_checks and outcome_status != "success")
+    ):
+        verdict = "no_observed_effect"
+        reason = "flat_or_unobserved_effect"
+    elif all_checks_ok or outcome_status == "success":
+        verdict = "helped"
+        reason = "isolated_positive_check_signal"
+    else:
+        verdict = "no_observed_effect"
+        reason = "flat_or_unobserved_effect"
+
+    return {
+        "status": verdict,
+        "confounded": False,
+        "eligible_for_experience": verdict == "helped",
+        "touched_count": 1,
+        "components": [
+            {
+                "component": single_path,
+                "group": group,
+                "verdict": verdict,
+                "reason": reason,
+            }
+        ],
+        "source": "engine",
+    }
+
+
+def attach_component_attribution(body: dict[str, Any]) -> dict[str, Any]:
+    """Compute and attach ``gates.attribution`` onto an episode body copy."""
+    raw_gates = body.get("gates")
+    gates: dict[str, Any] = dict(raw_gates) if isinstance(raw_gates, dict) else {}
+    raw_gene = body.get("gene")
+    gene: dict[str, Any] = raw_gene if isinstance(raw_gene, dict) else {}
+    raw_checks = body.get("checks")
+    checks: list[dict[str, Any]] = (
+        [c for c in raw_checks if isinstance(c, dict)] if isinstance(raw_checks, list) else []
+    )
+    raw_outcome = body.get("outcome")
+    outcome: dict[str, Any] | None = raw_outcome if isinstance(raw_outcome, dict) else None
+    pred_delta = (
+        gates.get("prediction_delta") if isinstance(gates.get("prediction_delta"), dict) else None
+    )
+    gates["attribution"] = compute_component_attribution(
+        _text(body.get("diff")),
+        checks,
+        outcome=outcome,
+        prediction_delta=pred_delta,
+        target_hook=_text(gene.get("target_hook")) or None,
+    )
+    updated = dict(body)
+    updated["gates"] = gates
+    return updated
+
+
+def compute_behavioral_contrast(
+    current_checks: list[dict[str, Any]],
+    baseline_checks: list[dict[str, Any]] | None = None,
+    *,
+    diff_text: str = "",
+    tool_calls: int | None = None,
+    tool_errors: int | None = None,
+    baseline_tool_error_rate: float | None = None,
+) -> dict[str, Any]:
+    """Harness2 (§3.2 / Selector) behavioral contrast telemetry over check transitions."""
+    cur_list = [c for c in current_checks if isinstance(c, dict)]
+    base_map: dict[str, bool] = {}
+    if isinstance(baseline_checks, list):
+        for entry in baseline_checks:
+            if isinstance(entry, dict) and entry.get("command"):
+                base_map[str(entry["command"])] = bool(entry.get("ok"))
+
+    newly_passed: list[str] = []
+    regressed: list[str] = []
+    persistent_failed: list[str] = []
+    unchanged_passed: list[str] = []
+
+    for entry in cur_list:
+        cmd = str(entry.get("command") or "")
+        if not cmd:
+            continue
+        cur_ok = bool(entry.get("ok"))
+        prev_ok = base_map.get(cmd)
+        if prev_ok is False and cur_ok is True:
+            newly_passed.append(cmd)
+        elif prev_ok is True and cur_ok is False:
+            regressed.append(cmd)
+        elif not cur_ok:
+            persistent_failed.append(cmd)
+        else:
+            unchanged_passed.append(cmd)
+
+    error_rate: float | None = None
+    error_delta: float | None = None
+    if _plain_int(tool_calls) and tool_calls > 0 and _plain_int(tool_errors) and tool_errors >= 0:
+        error_rate = round(min(1.0, tool_errors / tool_calls), 4)
+        if isinstance(baseline_tool_error_rate, (int, float)) and not isinstance(
+            baseline_tool_error_rate, bool
+        ):
+            error_delta = round(error_rate - float(baseline_tool_error_rate), 4)
+
+    ok_count = sum(1 for c in cur_list if bool(c.get("ok")))
+    non_delivering = not bool(_text(diff_text).strip()) and ok_count == 0
+
+    return {
+        "check_transitions": {
+            "newly_passed": newly_passed,
+            "regressed": regressed,
+            "persistent_failed": persistent_failed,
+            "unchanged_passed": unchanged_passed,
+        },
+        "tool_error_rate": error_rate,
+        "tool_error_delta": error_delta,
+        "non_delivering": non_delivering,
+        "source": "engine",
+    }
+
+
+def attach_behavioral_contrast(
+    body: dict[str, Any],
+    *,
+    baseline_checks: list[dict[str, Any]] | None = None,
+    tool_calls: int | None = None,
+    tool_errors: int | None = None,
+    baseline_tool_error_rate: float | None = None,
+) -> dict[str, Any]:
+    """Compute and attach ``gates.behavioral_contrast`` onto an episode body copy."""
+    raw_gates = body.get("gates")
+    gates: dict[str, Any] = dict(raw_gates) if isinstance(raw_gates, dict) else {}
+    raw_checks = body.get("checks")
+    checks: list[dict[str, Any]] = (
+        [c for c in raw_checks if isinstance(c, dict)] if isinstance(raw_checks, list) else []
+    )
+    gates["behavioral_contrast"] = compute_behavioral_contrast(
+        checks,
+        baseline_checks,
+        diff_text=_text(body.get("diff")),
+        tool_calls=tool_calls,
+        tool_errors=tool_errors,
+        baseline_tool_error_rate=baseline_tool_error_rate,
+    )
+    updated = dict(body)
+    updated["gates"] = gates
+    return updated
+
+
 def _inspect_anchors(body: dict[str, Any]) -> list[str]:
     """One line per field the bounded view actually clipped."""
     index = body.get("scene_index")
@@ -848,6 +1267,7 @@ def _clip(value: Any, limit: int) -> str:
 
 
 __all__ = [
+    "ATTRIBUTION_VERDICTS",
     "ENGINE_SIDE_FIELDS",
     "EPISODES_DIRNAME",
     "EPISODE_FILENAME",
@@ -865,8 +1285,14 @@ __all__ = [
     "MAX_INSPECT_VIEW_CHARS",
     "MAX_RECORD_CHARS",
     "EpisodeConflictError",
+    "attach_behavioral_contrast",
+    "attach_component_attribution",
+    "attribution_note",
+    "behavioral_contrast_note",
     "build_episode",
     "ceiling_tie_note",
+    "compute_behavioral_contrast",
+    "compute_component_attribution",
     "episode_id",
     "episode_path",
     "episodes_dir",

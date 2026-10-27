@@ -856,7 +856,13 @@ def _record_tick(result: dict[str, Any]) -> None:
         _save_swarm_state(state)
 
 
-def swarm_distill(response_text: str, dry_run: bool = False) -> dict[str, Any]:
+def swarm_distill(
+    response_text: str,
+    dry_run: bool = False,
+    *,
+    strict_transferable: bool = False,
+    attribution: dict[str, Any] | None = None,
+) -> dict[str, Any]:
     """Distill the host agent's work output into Gene/Capsule candidates.
 
     Dogfood round-4: a response that yields zero assets used to return silently
@@ -876,7 +882,12 @@ def swarm_distill(response_text: str, dry_run: bool = False) -> dict[str, Any]:
         return {"ok": False, "error": "empty_response", "next_action": "execute_prompt"}
     distilled = distill_text(response_text)
     try:
-        install = install_distilled(distilled, dry_run=dry_run)
+        install = install_distilled(
+            distilled,
+            dry_run=dry_run,
+            attribution=attribution,
+            strict_transferable=strict_transferable,
+        )
     except ImportError as exc:
         # Deep lazy imports (solidify.record_landed_gene_ids) hit the same
         # stale-host module mix (round-16 live crash).
@@ -896,6 +907,15 @@ def swarm_distill(response_text: str, dry_run: bool = False) -> dict[str, Any]:
         "dry_run": dry_run,
         "next_action": "swarm_solidify",
     }
+    skipped_genes = install.get("skipped_genes")
+    if isinstance(skipped_genes, list) and skipped_genes:
+        result["skipped_genes"] = skipped_genes
+        if any(
+            isinstance(item, dict)
+            and str(item.get("reason") or "") == "confounded_or_ineligible_attribution"
+            for item in skipped_genes
+        ):
+            result["skipped_confounded"] = True
     if extracted == 0:
         result["hint"] = DISTILL_FORMAT_HINT
         result["next_action"] = "resubmit_with_asset_blocks"
@@ -1116,7 +1136,7 @@ def _swarm_propose_locked(
     workspace_root: Path,
 ) -> dict[str, Any]:
     """Body of :func:`swarm_propose` once the instance lock is held."""
-    from evolver.gep.proposal import apply_proposal, parse_proposal
+    from evolver.gep.proposal import apply_proposal, compose_proposals, parse_proposal
 
     if hypothesis is not None:
         recorded = _record_host_hypothesis(
@@ -1125,9 +1145,35 @@ def _swarm_propose_locked(
         if not recorded.get("ok"):
             return recorded
 
+    composition_ledger: list[dict[str, Any]] | None = None
+    decision: str | None = None
     try:
-        parsed = parse_proposal(proposal)
-        report = apply_proposal(parsed, workspace_root)
+        if isinstance(proposal, dict) and isinstance(proposal.get("candidates"), list):
+            composed = compose_proposals(
+                proposal["candidates"],
+                root=workspace_root,
+                apply=True,
+                gene_id=str(proposal.get("gene_id") or "") or None,
+            )
+            decision = str(composed.get("decision") or "keep_base")
+            composition_ledger = list(composed.get("composition_ledger") or [])
+            comp_prop = composed.get("proposal")
+            if isinstance(comp_prop, dict):
+                action_name = str(comp_prop.get("action") or "no_action")
+                gene_id_val = comp_prop.get("gene_id")
+            else:
+                action_name = str(getattr(comp_prop, "action", None) or "no_action")
+                gene_id_val = getattr(comp_prop, "gene_id", None)
+            apply_rep = composed.get("apply_report")
+            files_changed = (
+                list(apply_rep.get("files_changed") or []) if isinstance(apply_rep, dict) else []
+            )
+        else:
+            parsed = parse_proposal(proposal)
+            report = apply_proposal(parsed, workspace_root)
+            action_name = parsed.action
+            gene_id_val = parsed.gene_id
+            files_changed = list(report.get("files_changed", []))
     except Exception as exc:
         return {
             "ok": False,
@@ -1136,24 +1182,44 @@ def _swarm_propose_locked(
             "next_action": "swarm_tick",
         }
 
+    integrity_report: dict[str, Any] | None = None
+    if isinstance(proposal, dict) and proposal.get("check_component_integrity") and files_changed:
+        from evolver.gep.policy_check import validate_harness_component_integrity
+
+        raw_integrity = validate_harness_component_integrity(workspace_root, files_changed)
+        integrity_report = {
+            "ok": bool(raw_integrity.get("ok")),
+            "violations": [
+                v.to_dict() if hasattr(v, "to_dict") else v
+                for v in (raw_integrity.get("violations") or [])
+            ],
+        }
+
     # Track pending proposal in swarm state
     state = _load_swarm_state()
     state["last_proposal"] = {
-        "action": parsed.action,
-        "gene_id": parsed.gene_id,
-        "files_changed": report.get("files_changed", []),
+        "action": action_name,
+        "gene_id": gene_id_val,
+        "files_changed": files_changed,
         "agent_name": agent_name,
         "timestamp": datetime.datetime.now(datetime.UTC).isoformat().replace("+00:00", "Z"),
     }
     _save_swarm_state(state)
 
-    return {
+    out: dict[str, Any] = {
         "ok": True,
-        "action": parsed.action,
-        "gene_id": parsed.gene_id,
-        "files_changed": report.get("files_changed", []),
-        "next_action": "swarm_solidify",
+        "action": action_name,
+        "gene_id": gene_id_val,
+        "files_changed": files_changed,
+        "next_action": "swarm_tick" if decision == "keep_base" else "swarm_solidify",
     }
+    if decision is not None:
+        out["decision"] = decision
+    if composition_ledger is not None:
+        out["composition_ledger"] = composition_ledger
+    if integrity_report is not None:
+        out["component_integrity"] = integrity_report
+    return out
 
 
 def swarm_solidify(
@@ -1490,6 +1556,13 @@ def swarm_hook_event(
     signals = detect_signals(content)
     if signals:
         append_pending_signals(signals)
+    trajectory_recorded = False
+    if event == "session_end":
+        with contextlib.suppress(Exception):
+            from evolver.gep.cursor import record_trajectory
+
+            record_trajectory(1)
+            trajectory_recorded = True
     entry = {
         "event": event,
         "source": source,
@@ -1502,7 +1575,7 @@ def swarm_hook_event(
         # MCP server are two live processes writing JSONL, and a bare
         # open().write() without close can lose the tail on crash.
         append_jsonl(get_evolution_dir() / "hook_events.jsonl", entry)
-    return {
+    out: dict[str, Any] = {
         "ok": True,
         "event": event,
         "source": source,
@@ -1511,6 +1584,9 @@ def swarm_hook_event(
         "file_path": file_path or None,
         "note": "" if signals else "no signals detected — nothing injected",
     }
+    if trajectory_recorded:
+        out["trajectory_recorded"] = True
+    return out
 
 
 def swarm_hooks(

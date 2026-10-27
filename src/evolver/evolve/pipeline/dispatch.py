@@ -208,6 +208,17 @@ async def dispatch_phase(ctx: dict[str, Any]) -> dict[str, Any]:
     _anchor_proposer_surface(ctx)
     _anchor_constrained_hook(ctx)
 
+    if is_enabled("enable_idle_scheduler"):
+        import os
+
+        override = os.environ.get("IDLE_OVERRIDE", "").strip().lower()
+        enforce = os.environ.get("EVOLVER_ENFORCE_IDLE_SCHEDULER", "").strip() == "1"
+        intensity = str(ctx.get("evolution_intensity") or "")
+        if override == "signal_only" or (enforce and intensity == "signal_only"):
+            ctx["skip_mutation_signal_only"] = True
+            print("Signal-only intensity active; skipping mutation dispatch.")
+            return ctx
+
     if ctx.get("skip_hub_calls"):
         # Saturation steady-state (no hub_skip_reason) is an intentional pause.
         # Degraded modes (hub offline flag / preflight-abort recovery) skip Hub
@@ -282,6 +293,10 @@ async def dispatch_phase(ctx: dict[str, Any]) -> dict[str, Any]:
         if entries and isinstance(entries[-1], dict):
             latest_id = str(entries[-1].get("id") or "")
             body = episode_record.load_episode(latest_id) if latest_id else None
+            prev_body: dict[str, Any] | None = None
+            if len(entries) >= 2 and isinstance(entries[-2], dict):
+                prev_id = str(entries[-2].get("id") or "")
+                prev_body = episode_record.load_episode(prev_id) if prev_id else None
             if body is not None:
                 episode_block = episode_record.render_episode_block(body, ep_id=latest_id)
                 # After the shared summary, not inside it: a perfect-baseline
@@ -290,6 +305,12 @@ async def dispatch_phase(ctx: dict[str, Any]) -> dict[str, Any]:
                 note = episode_record.ceiling_tie_note(body)
                 if note:
                     episode_block = f"{episode_block}\n{note}"
+                attr_note = episode_record.attribution_note(body)
+                if attr_note and "- attribution:" not in episode_block:
+                    episode_block = f"{episode_block}\n{attr_note}"
+                contrast_note = episode_record.behavioral_contrast_note(body, prev_body)
+                if contrast_note and "- behavioral_contrast:" not in episode_block:
+                    episode_block = f"{episode_block}\n{contrast_note}"
                 ctx["episode_block"] = body
     except Exception as exc:  # prompt assembly must never abort dispatch
         ctx["episode_block_error"] = str(exc)

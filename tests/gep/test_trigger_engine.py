@@ -11,6 +11,7 @@ from evolver.gep.trigger_engine import (
     DailyBudget,
     WeightedFairQueue,
     problem_value,
+    rank_signals_by_trigger_value,
 )
 
 
@@ -114,3 +115,41 @@ class TestDailyBudget:
         b._state["date"] = "2000-01-01"
         assert b.can_fire()
         assert b.snapshot()["cycles"] == 0
+
+    def test_reads_env_caps_when_not_passed_explicitly(
+        self,
+        temp_workspace: Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        monkeypatch.setenv("EVOLVER_TRIGGER_MAX_CYCLES_PER_DAY", "1")
+        monkeypatch.setenv("EVOLVER_TRIGGER_MAX_TOKENS_PER_DAY", "500")
+        monkeypatch.setenv("EVOLVER_TRIGGER_PER_PATTERN_CAP", "1")
+        b = DailyBudget(path=temp_workspace / "env_budget.json")
+        assert b.max_cycles == 1
+        assert b.max_tokens == 500
+        assert b.per_pattern_cap == 1
+        assert b.can_fire(tokens=200, pattern="sig_a")
+        b.consume(tokens=200, pattern="sig_a")
+        assert not b.can_fire(tokens=10, pattern="sig_b")
+
+
+class TestRankSignalsByTriggerValue:
+    def test_ranks_by_severity_and_gene_fit_and_age_boost(self) -> None:
+        genes = [{"id": "g_err", "signals_match": ["log_error"]}]
+        ranked = rank_signals_by_trigger_value(
+            ["file_modified", "log_error"],
+            genes=genes,
+            now=120.0,
+        )
+        assert ranked["ordered_signals"][0] == "log_error"
+        assert ranked["values"]["log_error"] > ranked["values"]["file_modified"]
+
+        # Waiting 30 minutes boosts the lower-weight signal above the fresh one
+        ranked_aged = rank_signals_by_trigger_value(
+            ["file_modified", "log_error"],
+            genes=genes,
+            wait_seconds_by_signal={"file_modified": 1800.0, "log_error": 0.0},
+            now=1800.0,
+        )
+        assert ranked_aged["ordered_signals"][0] == "file_modified"
+        assert ranked_aged["priorities"]["file_modified"] > ranked_aged["priorities"]["log_error"]

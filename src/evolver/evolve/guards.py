@@ -238,7 +238,15 @@ async def run_preflight_checks(is_loop: bool = False, is_dry_run: bool = False) 
     # Node v2 trigger/budget.js semantics (fire ⟺ budget available).
     from evolver.gep.feature_flags import is_enabled
 
-    if is_enabled("enable_trigger_budget"):
+    has_env_budget = any(
+        bool(os.environ.get(k, "").strip())
+        for k in (
+            "EVOLVER_TRIGGER_MAX_CYCLES_PER_DAY",
+            "EVOLVER_TRIGGER_MAX_TOKENS_PER_DAY",
+            "EVOLVER_TRIGGER_PER_PATTERN_CAP",
+        )
+    )
+    if is_enabled("enable_trigger_budget") or has_env_budget:
         from evolver.gep.trigger_engine import DailyBudget
 
         budget = DailyBudget()

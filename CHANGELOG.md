@@ -8,6 +8,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added — 合入 Harness2（arXiv:2610.14224v1）六项机械套具 `H2-1`..`H2-6`
+
+版本保持 **1.113.0**（不改 `frozen_gate`、不替阶段出口；清单见 [`TODO_HARNESS2.md`](TODO_HARNESS2.md)）：
+
+- **H2-1 组件级四值归因与混杂过滤门**（`gep/episode_record.py`、`evolve/pipeline/dispatch.py`、`gep/distill.py`、`swarm.py`）：引擎根据 `diff` 与 `checks` 计算 `helped | hurt | no_observed_effect | confounded` 四值归因；多文件未隔离修改强制标 `confounded`（`eligible_for_experience=False`），`install_distilled` 与 `swarm_distill` 自动拦截混杂轮的持久基因落库；`render_episode_block` 仅在 `gates.attribution` 存在时增渲一行（保障消融对照旧记录逐字节不变），`dispatch.py` 经 `attribution_note` 在实时进化周期按需追加归因行。
+- **H2-2 可迁移经验三元组与工作区局部事实隔离**（`gep/working_memory.py`、`gep/skill2gep_audit.py`、`cli.py`）：新增 `format_workspace_facts_section` / `extract_workspace_facts` 将 `in this workspace:` 局部事实收束于会话草稿（结束即物理 `unlink`）；新增 `audit_workspace_fact_leakage` 与 `validate_transferable_experience`（`cue + lesson + evidence` / `NO_ENTRY`），并在 `evolver distill --strict-transferable` 与 `swarm_distill` 中拦截混入临时路径、评测题号或行号锚点的持久基因。
+- **H2-3 `INV × DOM` 正交作用域提案与机械选择性合成器**（`gep/record_route.py`、`gep/proposal.py`、`gep/variant_archive.py`、`gep/solidify.py`、`swarm.py`、`cli.py`）：定义 `INV`（`capability` / `dimension=tool`）与 `DOM`（`adaptive` / `dimension=content`）正交路径护栏；新增 `compose_proposals`（已接入 `swarm_propose`、`solidify(proposal=...)` 与 `evolver apply-proposal`）过滤 `hurt`/`confounded`/`non_delivering` 及越界编辑，无冲突合并或退回 `KEEP_BASE`（`action=no_action`）并产出 `composition_ledger`；新增 `salvageable_semantic_variants` 并在 `evolver variants` 中支持跨轮捞回干净单组件编辑。
+- **H2-4 组件成本层级与提案前三条静态契约门**（`gep/policy_check.py`、`swarm.py`）：显式化 `Skill > Script > Subagent > Hook > Always-On Text` 成本序，新增 `validate_harness_component_integrity` 静态校验 Skill frontmatter 名称匹配与触发器可达、被引用 `scripts/*.py` 存在且 `ast.parse` 可编译、常驻指令无裸模板花括号及净增字符预算。
+- **H2-5 行为对比遥测与六维交付物形状合规**（`gep/episode_record.py`、`evolve/pipeline/dispatch.py`、`gep/policy_check.py`）：新增 `compute_behavioral_contrast` 与 `behavioral_contrast_note` 追踪跨轮 `newly_passed`/`regressed`/`persistent_failed` 跃迁与 `tool_error_delta`（`dispatch.py` 按需追加提示行，不动 `render_episode_block`）；新增 `check_deliverable_conformance` 覆盖六维交付形状校验（拦截未求值公式 `=SUM(`/`#REF!` 与 `TODO`/`TBD` 占位符）。
+- **H2-6 双层递归配对求解装配与库来源率面板**（`bench/runner.py`、`ops/meta_report.py`、`cli.py`）：新增 `prepare_paired_library_solves` 与 `verify_solve_receipt` 闭合 `H_0 + R_t` 双层递归快照配对求解（全程不动 `active.json`）；`meta_report.py` 新增 `library_provenance_panel` 并在 `evolver meta-report` 中自动加载基因库统计 `direct_copy` / `adapted` / `novel` 库来源率与分类成功率。触及 `solidify.py` 与 `meta_report.py` 验证面后已跑 `uv run evolver anchor run`（epoch 13, 17/17 PASS）。
+- **自动触发与自动进化 E2E 闭环加固**（`adapters/scripts/session_end.py`、`adapters/scripts/signal_detect.py`、`gep/trigger_engine.py`、`evolve/guards.py`、`evolve/pipeline/signals.py`、`evolve/pipeline/select.py`、`evolve/pipeline/dispatch.py`、`gep/episode_record.py`、`tests/test_auto_trigger_and_evolution_e2e.py`）：补齐 `session_end.main()` 的 `cwd` 透传、`sys.stdout` JSON 输出、`cursor.record_trajectory(1)` 与 `append_pending_signals` 联动；`DailyBudget` 接入 `EVOLVER_TRIGGER_*` 环境变量并在 `run_preflight_checks` 强制执行；`signals_phase` 接入 `rank_signals_by_trigger_value`（问题价值 × WFQ 防饥饿排序）与 `idle_scheduler.get_intensity()`（`signal_only` 跳过变异派发、`deep` 扩充探索任务）；`select_phase` 在前序 episode 归因为 `hurt` 时自动开启修复偏置并冷却肇事基因；`_extract_touched_files` 过滤 `.gitignore`/`evolver/.config/` 等引擎运行期自维护文件（DEBUG #60）；新增 `tests/test_auto_trigger_and_evolution_e2e.py`（5 项真实 Git + pytest 两轮跨周期进化闭环 E2E 测试）。
+
 ### 阶段出口 — 经验即证据出口已裁：n=32 两独立种子双 signal（round-119）
 
 版本保持 **1.113.0**（章程：signal → 人切版本收阶段；切 minor 由人执，本轮不代办）。真实运行＋落账，源码零改动。

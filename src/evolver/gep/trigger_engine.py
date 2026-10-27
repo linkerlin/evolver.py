@@ -138,9 +138,21 @@ class DailyBudget:
         per_pattern_cap: int | None = None,
     ) -> None:
         self.path = path or (_budget_dir() / BUDGET_FILENAME)
-        self.max_cycles = max_cycles_per_day if max_cycles_per_day is not None else 0
-        self.max_tokens = max_tokens_per_day if max_tokens_per_day is not None else 0
-        self.per_pattern_cap = per_pattern_cap if per_pattern_cap is not None else 0
+        self.max_cycles = (
+            max_cycles_per_day
+            if max_cycles_per_day is not None
+            else _env_int("EVOLVER_TRIGGER_MAX_CYCLES_PER_DAY", 0)
+        )
+        self.max_tokens = (
+            max_tokens_per_day
+            if max_tokens_per_day is not None
+            else _env_int("EVOLVER_TRIGGER_MAX_TOKENS_PER_DAY", 0)
+        )
+        self.per_pattern_cap = (
+            per_pattern_cap
+            if per_pattern_cap is not None
+            else _env_int("EVOLVER_TRIGGER_PER_PATTERN_CAP", 0)
+        )
         self._state: dict[str, Any] = {"date": "", "cycles": 0, "tokens": 0, "patterns": {}}
         self._load()
 
@@ -219,6 +231,100 @@ def _env_int(name: str, default: int) -> int:
         return default
 
 
+_SEVERITY_WEIGHTS: dict[str, float] = {
+    "log_error": 1.0,
+    "test_failure": 0.95,
+    "recurring_error": 0.95,
+    "deployment_issue": 0.85,
+    "perf_bottleneck": 0.75,
+    "capability_gap": 0.65,
+    "external_task": 0.8,
+    "bounty_task": 0.85,
+    "user_feature_request": 0.6,
+    "user_improvement_suggestion": 0.5,
+}
+
+
+def _estimate_signal_severity(sig: str) -> float:
+    if sig in _SEVERITY_WEIGHTS:
+        return _SEVERITY_WEIGHTS[sig]
+    if sig.startswith(("errsig:", "recurring_errsig")):
+        return 0.9
+    if sig.startswith(("autopoiesis:", "repair_loop")):
+        return 0.85
+    if sig.startswith(("explore:", "curriculum_target:")):
+        return 0.45
+    return 0.5
+
+
+def _gene_matches_signal(gene: dict[str, Any], sig: str) -> bool:
+    patterns = gene.get("signals_match")
+    if not isinstance(patterns, list):
+        return False
+    sig_lower = sig.lower()
+    for pat in patterns:
+        p = str(pat or "").strip().lower()
+        if p and (p == sig_lower or p in sig_lower or sig_lower in p):
+            return True
+    return False
+
+
+def rank_signals_by_trigger_value(
+    signals: list[str],
+    *,
+    recent_events: list[dict[str, Any]] | None = None,
+    genes: list[dict[str, Any]] | None = None,
+    wait_seconds_by_signal: dict[str, float] | None = None,
+    now: float | None = None,
+) -> dict[str, Any]:
+    """Score and order *signals* via :func:`problem_value` + :class:`WeightedFairQueue`."""
+    current = now if now is not None else _now_s()
+    events = recent_events or []
+    gene_list = genes or []
+    waits = wait_seconds_by_signal or {}
+
+    wfq = WeightedFairQueue()
+    values: dict[str, float] = {}
+    for sig in signals:
+        if not sig or sig in values:
+            continue
+        severity = _estimate_signal_severity(sig)
+        history_hits = sum(
+            1 for ev in events if isinstance(ev, dict) and sig in (ev.get("signals") or [])
+        )
+        reach_count = history_hits + 1
+        has_fit = any(isinstance(g, dict) and _gene_matches_signal(g, sig) for g in gene_list)
+        strategic_fit = 0.85 if has_fit else UNCLASSIFIED_STRATEGIC_FIT
+        novelty = 0.5 if history_hits == 0 else max(0.0, 0.5 - 0.1 * history_hits)
+        val = round(
+            problem_value(
+                severity=severity,
+                reach_count=reach_count,
+                strategic_fit=strategic_fit,
+                novelty=novelty,
+                cost_est=1.0,
+            ),
+            6,
+        )
+        values[sig] = val
+        wait_s = max(0.0, float(waits.get(sig, 0.0)))
+        wfq.enqueue(sig, weight=val, now=current - wait_s)
+
+    priorities = {k: round(v, 6) for k, v in wfq.peek_priorities(now=current).items()}
+    ordered: list[str] = []
+    while len(wfq) > 0:
+        picked = wfq.pick(now=current)
+        if picked is not None:
+            ordered.append(picked)
+
+    return {
+        "ordered_signals": ordered,
+        "priorities": priorities,
+        "values": values,
+        "top_signal": ordered[0] if ordered else None,
+    }
+
+
 __all__ = [
     "BUDGET_FILENAME",
     "MAX_AGE_BOOST",
@@ -227,4 +333,5 @@ __all__ = [
     "DailyBudget",
     "WeightedFairQueue",
     "problem_value",
+    "rank_signals_by_trigger_value",
 ]
