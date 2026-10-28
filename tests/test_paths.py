@@ -30,7 +30,28 @@ def test_get_evolution_dir_honors_env(monkeypatch: pytest.MonkeyPatch, tmp_path:
 
 def test_get_gep_assets_dir_default(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("OPENCLAW_WORKSPACE", str(tmp_path))
-    assert paths.get_gep_assets_dir() == tmp_path / ".evolver" / "gep"
+    monkeypatch.delenv("GEP_ASSETS_DIR", raising=False)
+    assert paths.get_gep_assets_dir() == paths.get_workspace_state_dir() / "gep"
+
+
+def test_compute_workspace_id_deterministic_and_zero_file(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.delenv("EVOLVER_WORKSPACE_ID", raising=False)
+    monkeypatch.delenv("WORKSPACE_ID", raising=False)
+    ws_id_1 = paths.compute_workspace_id(tmp_path)
+    ws_id_2 = paths.compute_workspace_id(tmp_path)
+    assert ws_id_1 == ws_id_2
+    assert len(ws_id_1) == 16
+    assert not (tmp_path / ".evolver-workspace-id").exists()
+    assert not (tmp_path / ".evolver" / "workspace-id").exists()
+
+
+def test_discover_git_candidates_finds_subdir_repo(tmp_path: Path) -> None:
+    sub = tmp_path / "evolver_repo"
+    (sub / ".git").mkdir(parents=True)
+    candidates = paths.discover_git_candidates(tmp_path)
+    assert candidates == [str(sub.resolve())]
 
 
 def test_get_repo_root_discovers_git(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:

@@ -258,7 +258,9 @@ DEEPSEEK_API_KEY=sk-... uv run python examples/swarm-quickstart/demo_swarm_loop.
 | **演化控制** | `evolver run` | 触发单个自演化周期（默认动作） |
 | | `evolver --loop` | 启动自主演进守护进程 |
 | | `evolver --review` | 交互式审查模式，变异后等待操作者确认 |
-| | `evolver solidify` | 验证并固化已就绪的代码变异到 Git 仓库 |
+| | `evolver solidify` | 验证（`--validation-scope=related\|cascade`）并固化代码变异，或一键恢复被拒补丁（`--restore-stash`） |
+| | `evolver round --host` | 宿主单入口协议命令，一步串起 `boot → status → tick → checklist` |
+| | `evolver migrate-state` | 将仓库内遗留 `memory/` 与 `.evolver/gep/` 一键迁入外置状态根 `~/.evolver/workspaces/<id>/` |
 | | `evolver apply-proposal` | 应用单份结构化基因提案，或对多份 `INV × DOM` 提案执行机械式选择性合成 |
 | | `evolver session` | 开启或管理受控配对演进会话（支持假说记录） |
 | **蜂群与监督**| `evolver mcp` | 启动基于 stdio 的 MCP 服务端（宿主接管入口） |

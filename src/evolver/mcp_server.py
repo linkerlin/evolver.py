@@ -24,10 +24,9 @@ from evolver.proxy.mailbox.store import MailboxStore
 
 
 def _mailbox_dir() -> Path:
-    from evolver.gep.paths import get_repo_root
+    from evolver.gep.paths import get_mailbox_dir
 
-    root = get_repo_root() or Path.cwd()
-    return root / ".evolver" / "proxy-mailbox"
+    return get_mailbox_dir()
 
 
 def _mailbox_store() -> MailboxStore:
@@ -267,11 +266,14 @@ def build_server() -> Any:
 
     # Swarm takeover surface (evolver.swarm; clean names, not tool_* — these
     # are the names host agents see and must match the instrument prompt).
-    def tool_swarm_boot(agent_name: str = "host-agent") -> dict[str, Any]:
+    def tool_swarm_boot(
+        agent_name: str = "host-agent",
+        project: str | None = None,
+    ) -> dict[str, Any]:
         """Take over this host as an evolver swarm worker (returns the protocol)."""
         from evolver.swarm import swarm_boot
 
-        return swarm_boot(agent_name)
+        return swarm_boot(agent_name, project=project)
 
     async def tool_swarm_tick(
         agent_name: str | None = None, include_prompt: bool = True
@@ -321,6 +323,9 @@ def build_server() -> Any:
         agent_name: str = "host-agent",
         proposal: dict[str, Any] | None = None,
         hypothesis: dict[str, Any] | None = None,
+        validation_scope: str | None = None,
+        related_commands: list[list[str]] | None = None,
+        restore_stash: bool = False,
     ) -> dict[str, Any]:
         """Run the solidify gate: validations, acceptance gate, commit/rollback.
 
@@ -328,6 +333,7 @@ def build_server() -> Any:
         (blocked → await_human_approval; timeout fails safe to reject).
         Optionally accepts a proposal to mechanically apply before validation (S29).
         hypothesis (§5.3) is recorded before gating; no claim, no measurement.
+        validation_scope: 'related' | 'cascade' | 'skip'; restore_stash=True restores stash.
         """
         from evolver.swarm import swarm_solidify
 
@@ -336,6 +342,9 @@ def build_server() -> Any:
             agent_name=agent_name,
             proposal=proposal,
             hypothesis=hypothesis,
+            validation_scope=validation_scope,
+            related_commands=related_commands,
+            restore_stash=restore_stash,
         )
 
     def tool_swarm_approvals() -> dict[str, Any]:
@@ -632,10 +641,24 @@ def build_server() -> Any:
     return server
 
 
-def main() -> int:
+def main(project: str | None = None) -> int:
     """Entry point for ``evolver mcp`` — stdio transport."""
+    import contextlib
+    import os
+
+    from evolver.gep.paths import ensure_workspace_meta, get_repo_root
     from evolver.ops.soak_env import maybe_route_to_soak
 
+    if project and str(project).strip():
+        resolved = Path(str(project).strip()).expanduser().resolve()
+        os.environ["EVOLVER_REPO_ROOT"] = str(resolved)
+        os.environ["OPENCLAW_WORKSPACE"] = str(resolved)
+    else:
+        found = get_repo_root(_quiet=True)
+        if found is not None and not os.environ.get("EVOLVER_REPO_ROOT"):
+            os.environ["EVOLVER_REPO_ROOT"] = str(found)
+    with contextlib.suppress(Exception):
+        ensure_workspace_meta()
     maybe_route_to_soak()
     build_server().run(transport="stdio")
     return 0

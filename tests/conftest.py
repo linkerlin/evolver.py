@@ -48,6 +48,19 @@ def _restore_feature_flags() -> Iterator[None]:
 
 
 @pytest.fixture(autouse=True)
+def _isolate_evolver_state_root(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """U-6: Force per-test isolated EVOLVER_STATE_ROOT so tests never pollute
+    the user's real ~/.evolver/workspaces/<id>/ state or pending last_run,
+    and ensure in-process os.environ mutations (e.g. swarm_boot setting
+    EVOLVER_REPO_ROOT) never leak across test boundaries."""
+    monkeypatch.setenv("EVOLVER_STATE_ROOT", str(tmp_path / ".evolver_state"))
+    monkeypatch.setenv("EVOLVER_QUIET_LEGACY_WARNING", "1")
+    monkeypatch.delenv("EVOLVER_REPO_ROOT", raising=False)
+    monkeypatch.delenv("EVOLVER_PROJECT_DIR", raising=False)
+    monkeypatch.delenv("EVOLVER_WORKSPACE_ID", raising=False)
+
+
+@pytest.fixture(autouse=True)
 def _isolate_hub_endpoint_state(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """Round-48 (DEBUG #37 family, preventive): hub_health sticky state is
     PRODUCTION runtime state. An unisolated test hitting a 404 failure path

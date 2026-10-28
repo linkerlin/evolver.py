@@ -39,6 +39,7 @@ import contextlib
 import datetime
 import io
 import json
+import os
 import re
 import time
 from collections.abc import Iterator
@@ -59,11 +60,10 @@ _hello_sent: set[str] = set()
 
 
 def _mailbox_store() -> Any:
-    from evolver.gep.paths import get_repo_root
+    from evolver.gep.paths import get_mailbox_dir
     from evolver.proxy.mailbox.store import MailboxStore
 
-    root = get_repo_root() or Path.cwd()
-    return MailboxStore(root / ".evolver" / "proxy-mailbox")
+    return MailboxStore(get_mailbox_dir())
 
 
 def _state_path() -> Path:
@@ -410,6 +410,69 @@ def _bench_gate_snapshot() -> dict[str, Any]:
         return {"armed": False}
 
 
+def _build_state_health(
+    *,
+    workspace_id: str,
+    state_root: Path,
+    bench_gate: dict[str, Any],
+    legacy_info: dict[str, Any],
+) -> dict[str, Any]:
+    """U-10: Single-pane health view of evolution, hypothesis, gep, and bench baseline."""
+    from evolver.gep.hypothesis import hypothesis_path
+    from evolver.gep.paths import get_evolution_dir, get_gep_assets_dir
+
+    evo_dir = get_evolution_dir().resolve()
+    hyp_file = Path(hypothesis_path()).resolve()
+    gep_dir = get_gep_assets_dir().resolve()
+    state_root_res = state_root.resolve()
+
+    def _under_state_root(p: Path) -> bool:
+        try:
+            p.relative_to(state_root_res)
+            return True
+        except ValueError:
+            return False
+
+    evo_aligned = _under_state_root(evo_dir) or bool(os.environ.get("EVOLUTION_DIR"))
+    hyp_aligned = (hyp_file.parent == evo_dir) and (
+        _under_state_root(hyp_file) or bool(os.environ.get("EVOLUTION_DIR"))
+    )
+    gep_aligned = _under_state_root(gep_dir) or bool(os.environ.get("GEP_ASSETS_DIR"))
+    baseline_armed = bool(bench_gate.get("armed")) and (bench_gate.get("baseline") is not None)
+
+    return {
+        "workspace_id": workspace_id,
+        "state_root": str(state_root_res),
+        "all_aligned": bool(evo_aligned and hyp_aligned and gep_aligned),
+        "evolution": {
+            "path": str(evo_dir),
+            "exists": evo_dir.is_dir(),
+            "workspace_id": workspace_id,
+            "aligned": evo_aligned,
+        },
+        "hypothesis": {
+            "path": str(hyp_file),
+            "exists": hyp_file.is_file(),
+            "workspace_id": workspace_id,
+            "aligned": hyp_aligned,
+        },
+        "gep": {
+            "path": str(gep_dir),
+            "exists": gep_dir.is_dir(),
+            "workspace_id": workspace_id,
+            "aligned": gep_aligned,
+        },
+        "bench_baseline": {
+            "armed": bool(bench_gate.get("armed")),
+            "baseline_present": bench_gate.get("baseline") is not None,
+            "digest_bound": bool(bench_gate.get("digest")),
+            "score": bench_gate.get("baseline"),
+            "ready": baseline_armed,
+        },
+        "legacy_in_repo": legacy_info,
+    }
+
+
 def swarm_status() -> dict[str, Any]:
     """Summarize engine state for swarm agents (cheap, no cycle side effects)."""
     from evolver import __version__
@@ -418,8 +481,34 @@ def swarm_status() -> dict[str, Any]:
     from evolver.gep.bridge import determine_bridge_enabled
     from evolver.gep.feedback import load_recent_feedback
     from evolver.gep.hitl import hitl_mode_enabled, list_pending
-    from evolver.gep.paths import get_repo_root, get_solidify_state_path, get_workspace_root
+    from evolver.gep.paths import (
+        compute_workspace_id,
+        detect_legacy_in_repo_state,
+        discover_git_candidates,
+        get_repo_root,
+        get_solidify_state_path,
+        get_workspace_root,
+        get_workspace_state_dir,
+    )
     from evolver.gep.supervision import supervision_summary
+
+    ws_root = get_workspace_root()
+    repo_root = get_repo_root(_quiet=True)
+    target_root = repo_root or ws_root
+    ws_id = compute_workspace_id(target_root)
+    state_root = get_workspace_state_dir(target_root)
+    legacy_info = detect_legacy_in_repo_state(target_root, warn=True)
+    bench_gate = _bench_gate_snapshot()
+
+    mismatch: str | None = None
+    git_candidates: list[str] = []
+    if repo_root is None:
+        git_candidates = discover_git_candidates(ws_root)
+        mismatch = f"no_git_repo_at_workspace:{ws_root}" + (
+            f" (candidates: {git_candidates})" if git_candidates else ""
+        )
+    elif repo_root.resolve() != ws_root.resolve():
+        mismatch = f"workspace_root ({ws_root}) != repo_root ({repo_root})"
 
     prompt_artifact = get_solidify_state_path().parent / "last_prompt.md"
     swarm_state = _load_swarm_state()
@@ -443,8 +532,18 @@ def swarm_status() -> dict[str, Any]:
         "ok": True,
         "version": __version__,
         "protocol_version": SWARM_PROTOCOL_VERSION,
-        "workspace_root": str(get_workspace_root()),
-        "repo_root": str(get_repo_root() or ""),
+        "workspace_root": str(ws_root),
+        "repo_root": str(repo_root or ""),
+        "workspace_id": ws_id,
+        "state_root": str(state_root),
+        "mismatch": mismatch,
+        "git_candidates": git_candidates,
+        "state_health": _build_state_health(
+            workspace_id=ws_id,
+            state_root=state_root,
+            bench_gate=bench_gate,
+            legacy_info=legacy_info,
+        ),
         "bridge_enabled": determine_bridge_enabled(),
         "genes": len(load_genes()),
         "capsules": len(load_capsules()),
@@ -464,7 +563,7 @@ def swarm_status() -> dict[str, Any]:
             "pending": len(list_pending()),
         },
         "supervision": supervision_summary(),
-        "bench_pack_gate": _bench_gate_snapshot(),
+        "bench_pack_gate": bench_gate,
         "mailbox_pending": mailbox,
         "working_session": _working_snapshot(),
     }
@@ -605,7 +704,10 @@ def _boot_once(pending_solidify: bool) -> list[dict[str, Any]]:
     return [{"tool": "swarm_hook_event", "arguments": {"event": "session_start"}}]
 
 
-def swarm_boot(agent_name: str = "host-agent") -> dict[str, Any]:
+def swarm_boot(
+    agent_name: str = "host-agent",
+    project: str | Path | None = None,
+) -> dict[str, Any]:
     """Boot a host agent into the swarm: status + instrument prompt + hello.
 
     The MCP prompt ``evolver_swarm`` and the ``swarm_boot`` tool both land
@@ -615,12 +717,24 @@ def swarm_boot(agent_name: str = "host-agent") -> dict[str, Any]:
     hosts reading the structured field got the wrong first action; the
     round-4 fix only covered the prose).
     """
+    from evolver.gep.paths import ensure_workspace_meta
+
+    if project is not None and str(project).strip():
+        resolved_proj = Path(str(project).strip()).expanduser().resolve()
+        os.environ["EVOLVER_REPO_ROOT"] = str(resolved_proj)
+        os.environ["OPENCLAW_WORKSPACE"] = str(resolved_proj)
+    with contextlib.suppress(Exception):
+        ensure_workspace_meta()
+
     state = swarm_status()
     prompt = build_instrument_prompt({**state, "agent_name": agent_name})
     payload: dict[str, Any] = {
         "ok": True,
         "protocol_version": SWARM_PROTOCOL_VERSION,
         "agent_name": agent_name,
+        "repo_root": state.get("repo_root"),
+        "workspace_id": state.get("workspace_id"),
+        "state_root": state.get("state_root"),
         "instrument_prompt": prompt,
         "state": state,
         "mailbox_hello": _announce(agent_name),
@@ -738,6 +852,123 @@ async def swarm_tick(agent_name: str | None = None, include_prompt: bool = True)
         )
 
 
+def _build_tick_checklist(
+    *,
+    run_id: str | None,
+    selected_gene: dict[str, Any] | None,
+    proposal_required: bool,
+) -> dict[str, Any]:
+    """U-13: Structured checklist guiding edit -> distill -> hypothesis -> solidify -> feedback."""
+    from evolver.gep.paths import get_repo_root, get_workspace_root, get_workspace_state_dir
+
+    repo = get_repo_root(_quiet=True) or get_workspace_root()
+    state_root = get_workspace_state_dir(repo)
+    gene_id = (selected_gene or {}).get("id") or "gene_selected"
+    return {
+        "run_id": run_id,
+        "repo_root": str(repo),
+        "state_root": str(state_root),
+        "steps": [
+            {
+                "step": 1,
+                "phase": "edit",
+                "title": "修改代码（仅限 git 工作区）",
+                "where_to_edit": str(repo),
+                "do_not_touch": ["memory/", ".evolver/", str(state_root)],
+                "tool": "swarm_propose" if proposal_required else "file_edit_or_swarm_propose",
+            },
+            {
+                "step": 2,
+                "phase": "distill",
+                "title": "蒸馏本轮改动与经验线索",
+                "tool": "swarm_distill",
+                "note": "传入包含 Gene/Capsule 代码块与分析说明的完整响应文本。",
+            },
+            {
+                "step": 3,
+                "phase": "hypothesis",
+                "title": "声明本轮唯一主假说（未通过 solidify 不会丢失）",
+                "tool": "swarm_hypothesis",
+                "template": {
+                    "hypothesis": f"Applying {gene_id} resolves the target failure mechanism",
+                    "dimension": "content",
+                    "mechanism_family": "repair",
+                    "target_hook": "src/",
+                    "mechanism_check": [
+                        {
+                            "id": "train-task-id",
+                            "before": "observed failure or baseline behavior before edit",
+                            "after": "observed fix or replay verification after edit",
+                        }
+                    ],
+                },
+            },
+            {
+                "step": 4,
+                "phase": "solidify",
+                "title": "运行固化门禁（支持分层验证与失败 stash 恢复）",
+                "tool": "swarm_solidify",
+                "preconditions": [
+                    "git status 含有效代码改动",
+                    "hypothesis.json 已在 state_root 下就绪",
+                    (
+                        "可选 validation_scope='related' 传入 argv list"
+                        "（如 [['pytest', 'tests/test_x.py']]）"
+                    ),
+                    (
+                        "若失败补丁自动 stash，可通过 restore_stash=True 或 "
+                        "`evolver solidify --restore-stash` 恢复"
+                    ),
+                ],
+            },
+            {
+                "step": 5,
+                "phase": "feedback",
+                "title": "提交评估反馈闭环",
+                "tool": "swarm_feedback",
+                "template": {
+                    "primary_score": 1.0,
+                    "textual_gradient": "What improved and what remains for the next cycle",
+                },
+            },
+        ],
+    }
+
+
+def _format_tick_checklist_footer(checklist: dict[str, Any]) -> str:
+    """U-13: Render a concise markdown footer appended to ``dispatch_prompt``."""
+    repo = checklist.get("repo_root", "")
+    state_root = checklist.get("state_root", "")
+    tmpl = json.dumps(checklist["steps"][2]["template"], ensure_ascii=False)
+    lines = [
+        "",
+        "---",
+        "## Host Execution Checklist (U-13)",
+        (
+            f"1. **改哪里 (Edit)**: 仅在仓库根目录 `{repo}` 修改源码/测试"
+            f"（严禁写 `memory/` 或 `{state_root}`）。"
+        ),
+        (
+            "2. **蒸馏 (Distill)**: 调用 `swarm_distill(response_text=...)` "
+            "提取 Gene/Capsule 并记录宿主线索。"
+        ),
+        (
+            f"3. **假说 (Hypothesis)**: 调用 `swarm_hypothesis(hypothesis={tmpl})`"
+            "（若固化失败，假说将自动保留无需重登）。"
+        ),
+        (
+            "4. **固化 (Solidify)**: 调用 `swarm_solidify(validation_scope='related'|'cascade')`；"
+            "若被拒，补丁自动保存至 stash，可用 `restore_stash=True` 或 "
+            "`evolver solidify --restore-stash` 一键恢复。"
+        ),
+        (
+            "5. **反馈 (Feedback)**: 调用 "
+            "`swarm_feedback(primary_score=..., textual_gradient=...)` 完成闭环。"
+        ),
+    ]
+    return "\n".join(lines)
+
+
 async def _swarm_tick_locked(
     *,
     agent_name: str | None,
@@ -802,6 +1033,16 @@ async def _swarm_tick_locked(
     else:
         reason = "no_prompt"
 
+    selected_gene_info = (
+        {"id": gene.get("id"), "name": gene.get("name")} if isinstance(gene, dict) else None
+    )
+    checklist = _build_tick_checklist(
+        run_id=ctx.get("run_id"),
+        selected_gene=selected_gene_info,
+        proposal_required=proposal_required,
+    )
+    full_prompt = f"{prompt.rstrip()}\n{_format_tick_checklist_footer(checklist)}" if prompt else ""
+
     result: dict[str, Any] = {
         "ok": True,
         "run_id": ctx.get("run_id"),
@@ -810,12 +1051,11 @@ async def _swarm_tick_locked(
         "preflight_aborted": aborted,
         "abort_reason": (m.group(1) if (m := _ABORT_REASON_RE.search(log)) else None),
         "dispatch_reason": reason,
-        "selected_gene": (
-            {"id": gene.get("id"), "name": gene.get("name")} if isinstance(gene, dict) else None
-        ),
+        "selected_gene": selected_gene_info,
         "supervision_veto": veto,
         "proposal_required": proposal_required,
-        "dispatch_prompt": (prompt or None) if include_prompt else None,
+        "dispatch_prompt": (full_prompt or None) if include_prompt else None,
+        "checklist": checklist,
         "engine_log": _tail(log, log_budget),
         "next_action": (
             "stop_and_report" if aborted else ("swarm_tick" if not prompt else "execute_prompt")
@@ -1227,6 +1467,10 @@ def swarm_solidify(
     agent_name: str = "host-agent",
     proposal: dict[str, Any] | None = None,
     hypothesis: dict[str, Any] | None = None,
+    *,
+    validation_scope: str | None = None,
+    related_commands: list[list[str]] | None = None,
+    restore_stash: bool = False,
 ) -> dict[str, Any]:
     """Run the solidify gate (validations + acceptance gate + commit/rollback).
 
@@ -1255,6 +1499,9 @@ def swarm_solidify(
             skip_validation=skip_validation,
             proposal=proposal,
             hypothesis=hypothesis,
+            validation_scope=validation_scope,
+            related_commands=related_commands,
+            restore_stash=restore_stash,
         )
 
 
@@ -1263,11 +1510,17 @@ def _swarm_solidify_locked(
     skip_validation: bool,
     proposal: dict[str, Any] | None,
     hypothesis: dict[str, Any] | None,
+    validation_scope: str | None = None,
+    related_commands: list[list[str]] | None = None,
+    restore_stash: bool = False,
 ) -> dict[str, Any]:
     """Body of :func:`swarm_solidify` once the instance lock is held."""
     from evolver.config import SWARM_TICK_LOG_MAX_CHARS
     from evolver.gep import supervision
     from evolver.gep.solidify import solidify
+
+    if restore_stash:
+        return solidify(restore_stash=True)
 
     meta = _pending_solidify_meta()
     run_id = meta["run_id"]
@@ -1305,7 +1558,12 @@ def _swarm_solidify_locked(
 
     with _capture_stdout() as capture:
         try:
-            result = solidify(skip_validation=skip_validation, proposal=proposal)
+            result = solidify(
+                skip_validation=skip_validation,
+                proposal=proposal,
+                validation_scope=validation_scope,
+                related_commands=related_commands,
+            )
         except Exception as exc:
             return {
                 "ok": False,
@@ -1757,6 +2015,50 @@ def swarm_workflow_status(
     return out
 
 
+async def swarm_host_round(
+    agent_name: str = "host-agent",
+    project: str | Path | None = None,
+    *,
+    include_prompt: bool = True,
+) -> dict[str, Any]:
+    """U-12: Single-entry host protocol runner (boot -> state_health -> tick -> checklist)."""
+    boot = swarm_boot(agent_name=agent_name, project=project)
+    state = boot.get("state") or {}
+    next_act = str(boot.get("next_action") or "swarm_tick")
+    tick_res: dict[str, Any] | None = None
+    checklist: dict[str, Any]
+    if next_act == "swarm_tick":
+        tick_res = await swarm_tick(agent_name=agent_name, include_prompt=include_prompt)
+        checklist = tick_res.get("checklist") or _build_tick_checklist(
+            run_id=tick_res.get("run_id"),
+            selected_gene=tick_res.get("selected_gene"),
+            proposal_required=bool(tick_res.get("proposal_required")),
+        )
+        next_act = str(tick_res.get("next_action") or next_act)
+    else:
+        meta = _pending_solidify_meta()
+        checklist = _build_tick_checklist(
+            run_id=meta.get("run_id") or None,
+            selected_gene={"id": meta.get("gene_id")} if meta.get("gene_id") else None,
+            proposal_required=False,
+        )
+
+    return {
+        "ok": True,
+        "mode": "host_round",
+        "agent_name": agent_name,
+        "repo_root": state.get("repo_root"),
+        "workspace_id": state.get("workspace_id"),
+        "state_root": state.get("state_root"),
+        "mismatch": state.get("mismatch"),
+        "state_health": state.get("state_health"),
+        "boot_next_action": boot.get("next_action"),
+        "next_action": next_act,
+        "tick": tick_res,
+        "checklist": checklist,
+    }
+
+
 __all__ = [
     "SWARM_PROTOCOL_VERSION",
     "build_instrument_prompt",
@@ -1766,6 +2068,7 @@ __all__ = [
     "swarm_feedback",
     "swarm_hook_event",
     "swarm_hooks",
+    "swarm_host_round",
     "swarm_propose",
     "swarm_report",
     "swarm_skills",

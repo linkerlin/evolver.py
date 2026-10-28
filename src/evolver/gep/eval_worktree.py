@@ -5,7 +5,7 @@ JSONL, failed leftovers) cannot affect the gate. This is the git-native
 equivalent: ``git worktree add --detach`` from HEAD, overlay only non-runtime
 working-tree files, run the cascade/acceptance cwd there, then remove.
 
-Flag ``enable_eval_worktree`` (default off). Any setup failure falls back to
+Flag ``enable_eval_worktree`` (default on). Any setup failure falls back to
 the live cwd so soak is never blocked by isolation itself.
 """
 
@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import logging
 import os
+import re
 import shutil
 import sys
 import tempfile
@@ -36,6 +37,14 @@ _RUNTIME_HEADS: frozenset[str] = frozenset(
     {".evolver", ".evolver_settings", ".evomap", ".pytest_cache", "logs", "memory"}
 )
 
+DEFAULT_WHITELIST_DOC_GLOBS: tuple[str, ...] = (
+    "*方案*.md",
+    "TODO*.md",
+    "CHANGELOG.md",
+    "DEBUG.md",
+    "AGENTS.md",
+)
+
 
 def is_runtime_rel(rel: str) -> bool:
     """True for engine runtime paths that must not enter the eval tree."""
@@ -53,7 +62,17 @@ def check_dirty_runtime(src: Path) -> list[str]:
         return []
 
 
-def _overlay_mutation(src: Path, dest: Path) -> None:
+def _whitelist_doc_globs() -> list[str]:
+    globs = list(DEFAULT_WHITELIST_DOC_GLOBS)
+    extra = os.environ.get("EVOLVER_EVAL_WORKTREE_WHITELIST", "")
+    if extra.strip():
+        for part in extra.split(","):
+            if part.strip() and part.strip() not in globs:
+                globs.append(part.strip())
+    return globs
+
+
+def _overlay_mutation(src: Path, dest: Path) -> list[str]:
     files = set(git_list_changed_files(src) + git_list_untracked_files(src))
     for rel in files:
         if is_runtime_rel(rel):
@@ -64,6 +83,49 @@ def _overlay_mutation(src: Path, dest: Path) -> None:
         dest_p = dest / rel
         dest_p.parent.mkdir(parents=True, exist_ok=True)
         shutil.copy2(src_p, dest_p)
+
+    # U-9: Overlay whitelisted gitignored stage documents (e.g. *方案*.md)
+    overlaid_docs: list[str] = []
+    for pattern in _whitelist_doc_globs():
+        for match in sorted(src.glob(pattern)):
+            if not match.is_file():
+                continue
+            rel_str = match.relative_to(src).as_posix()
+            if is_runtime_rel(rel_str):
+                continue
+            dest_p = dest / rel_str
+            if not dest_p.exists():
+                dest_p.parent.mkdir(parents=True, exist_ok=True)
+                shutil.copy2(match, dest_p)
+                overlaid_docs.append(rel_str)
+    return overlaid_docs
+
+
+def inspect_test_referenced_untracked_docs(src: Path, dest: Path) -> list[str]:
+    """U-9: Report root-level docs referenced by tests in ``src`` missing in ``dest``."""
+    tests_dir = src / "tests"
+    if not tests_dir.is_dir():
+        return []
+    referenced: set[str] = set()
+    doc_re = re.compile(r"""['"]([^'"/\\]+\.md)['"]""")
+    for test_file in tests_dir.rglob("test_*.py"):
+        try:
+            text = test_file.read_text(encoding="utf-8", errors="replace")
+        except OSError:
+            continue
+        for match in doc_re.findall(text):
+            referenced.add(match)
+
+    missing: list[str] = []
+    for name in sorted(referenced):
+        if (src / name).is_file() and not (dest / name).is_file():
+            missing.append(name)
+            logger.warning(
+                "[eval_worktree] Test-referenced doc %r exists in live tree "
+                "but is missing in eval worktree",
+                name,
+            )
+    return missing
 
 
 @contextmanager
@@ -83,9 +145,16 @@ def isolated_eval_cwd(src: Path) -> Iterator[tuple[Path, dict[str, Any]]]:
     try:
         run_cmd(["worktree", "add", "--detach", str(dest), "HEAD"], cwd=src)
         added = True
-        _overlay_mutation(src, dest)
+        overlaid_docs = _overlay_mutation(src, dest)
+        missing_docs = inspect_test_referenced_untracked_docs(src, dest)
         eval_path = dest
-        meta = {"isolated": True, "reason": "worktree", "path": str(dest)}
+        meta = {
+            "isolated": True,
+            "reason": "worktree",
+            "path": str(dest),
+            "overlaid_whitelist_docs": overlaid_docs,
+            "missing_untracked_docs": missing_docs,
+        }
     except Exception as exc:
         if os.getenv("EVOLVER_EVAL_WORKTREE_STRICT") in {"1", "true", "yes"}:
             raise RuntimeError(f"eval_worktree strict isolation failed: {exc}") from exc
@@ -114,4 +183,10 @@ def isolated_eval_cwd(src: Path) -> Iterator[tuple[Path, dict[str, Any]]]:
             shutil.rmtree(dest, ignore_errors=True)
 
 
-__all__ = ["check_dirty_runtime", "is_runtime_rel", "isolated_eval_cwd"]
+__all__ = [
+    "DEFAULT_WHITELIST_DOC_GLOBS",
+    "check_dirty_runtime",
+    "inspect_test_referenced_untracked_docs",
+    "is_runtime_rel",
+    "isolated_eval_cwd",
+]

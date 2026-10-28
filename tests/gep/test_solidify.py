@@ -273,7 +273,7 @@ def test_prediction_delta_survives_the_gate_consuming_the_hypothesis(
     from evolver.gep.episode_record import load_episode, record_round
     from evolver.gep.hypothesis import load_hypothesis
 
-    assert load_hypothesis() is None
+    assert load_hypothesis() is not None  # U-5: preserved on failure
     stored = record_round(event_id=str(result["event_id"]))
     body = load_episode(stored["id"])
     assert body is not None

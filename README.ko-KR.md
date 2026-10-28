@@ -255,7 +255,9 @@ DEEPSEEK_API_KEY=sk-... uv run python examples/swarm-quickstart/demo_swarm_loop.
 | **진화 제어** | `evolver run` | 단일 자율 진화 사이클 실행 (기본 동작) |
 | | `evolver --loop` | 지속적 자율 진화 백그라운드 데몬 구동 |
 | | `evolver --review` | 변이 적용 전 확인을 거치는 대화형 리뷰 모드 |
-| | `evolver solidify` | 대기 중인 변이를 검증하고 Git 저장소에 확정 커밋 |
+| | `evolver solidify` | 대기 중인 변이 검증(`--validation-scope=related\|cascade`) 및 커밋, 또는 기각된 패치 복원(`--restore-stash`) |
+| | `evolver round --host` | 호스트 단일 진입점(`boot → status → tick → checklist` 일괄 실행) |
+| | `evolver migrate-state` | 저장소 내부 레거시 `memory/` 및 `.evolver/gep/`를 외부 `~/.evolver/workspaces/<id>/`로 마이그레이션 |
 | | `evolver apply-proposal` | 단일 제안 적용 또는 복수 `INV × DOM` 제안의 기계적 선택 합성 |
 | | `evolver session` | 쌍체 진화 세션 및 가설 게이트 관리 |
 | **군집 및 안전** | `evolver mcp` | stdio 기반 MCP 서버 실행 (호스트 연결 접점) |

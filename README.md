@@ -257,7 +257,9 @@ Commands are organized logically by lifecycle and domain:
 | **Evolution** | `evolver run` | Run a single self-evolution cycle (default) |
 | | `evolver --loop` | Run continuous autonomous evolution daemon |
 | | `evolver --review` | Interactive review mode before mutations apply |
-| | `evolver solidify` | Apply, validate, and commit pending mutations to Git |
+| | `evolver solidify` | Apply, validate (`--validation-scope=related\|cascade`), and commit pending mutations, or restore rejected patches (`--restore-stash`) |
+| | `evolver round --host` | Single-entry host workflow chaining `boot → status → tick → checklist` |
+| | `evolver migrate-state` | Migrate legacy in-repo `memory/` and `.evolver/gep/` into externalized `~/.evolver/workspaces/<id>/` |
 | | `evolver apply-proposal` | Apply a single proposal or selectively compose multiple `INV × DOM` proposals |
 | | `evolver session` | Manage paired evolution sessions and hypothesis gates |
 | **Swarm & Safety** | `evolver mcp` | Start stdio MCP server for host takeover |

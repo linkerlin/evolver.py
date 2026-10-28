@@ -131,6 +131,23 @@ def _build_parser() -> argparse.ArgumentParser:
         "guard, land the winner through the frozen path, archive losers with "
         "sibling lineage",
     )
+    solidify_p.add_argument(
+        "--restore-stash",
+        action="store_true",
+        help="U-4: Restore the most recent rejected mutation from git stash or snapshot backup",
+    )
+    solidify_p.add_argument(
+        "--validation-scope",
+        choices=["related", "cascade", "skip"],
+        default=None,
+        help="U-7: Validation scope (related | cascade | skip)",
+    )
+    solidify_p.add_argument(
+        "--related-cmd",
+        action="append",
+        default=None,
+        help="U-7: JSON argv list for validation_scope=related (repeatable)",
+    )
     apply_prop_p = sub.add_parser(
         "apply-proposal",
         help="S29: mechanically apply a gene proposal JSON (anchors validated, workspace-safe)",
@@ -371,7 +388,33 @@ def _build_parser() -> argparse.ArgumentParser:
         "rebuild-views", help="Rebuild derived event projections (Sprint 24.1)"
     )
     views_p.add_argument("--json", action="store_true", help="Print full projection JSON")
-    sub.add_parser("mcp", help="Run the MCP server over stdio (Sprint 24.7)")
+    mcp_p = sub.add_parser("mcp", help="Run the MCP server over stdio (Sprint 24.7)")
+    mcp_p.add_argument(
+        "--project",
+        default=None,
+        help="U-1: Explicit git repository root for the MCP server",
+    )
+    mig_p = sub.add_parser(
+        "migrate-state",
+        help="U-11: Migrate legacy in-repo memory/ and .evolver/gep/ to external state root",
+    )
+    mig_p.add_argument("--project", default=None, help="Target repository root")
+    mig_p.add_argument(
+        "--dry-run", action="store_true", help="Preview migration without copying files"
+    )
+    mig_p.add_argument("--json", action="store_true", help="Output raw JSON report")
+    round_p = sub.add_parser(
+        "round",
+        help="U-12: Single-entry host protocol runner (boot + state_health + tick + checklist)",
+    )
+    round_p.add_argument(
+        "--host",
+        action="store_true",
+        help="Run in host protocol mode (chains boot -> tick -> checklist)",
+    )
+    round_p.add_argument("--project", default=None, help="Target repository root")
+    round_p.add_argument("--agent-name", default="host-agent", help="Host agent identifier")
+    round_p.add_argument("--json", action="store_true", help="Output raw JSON")
 
     hitl_p = sub.add_parser("hitl", help="HITL approval gate (list/approve/reject)")
     hitl_sub = hitl_p.add_subparsers(dest="hitl_action")
@@ -942,7 +985,13 @@ def main(argv: Sequence[str] | None = None) -> int:
     if command == "mcp":
         from evolver.mcp_server import main as mcp_main
 
-        return mcp_main()
+        return mcp_main(project=getattr(args, "project", None))
+
+    if command == "migrate-state":
+        return _cmd_migrate_state(args)
+
+    if command == "round":
+        return asyncio.run(_cmd_round(args))
 
     if command == "hitl":
         return _cmd_hitl(args)
@@ -1112,12 +1161,35 @@ def _cmd_solidify(args: argparse.Namespace) -> int:
     """Apply the pending solidify state (optionally with a GeneProposal)."""
     from evolver.gep.solidify import solidify
 
+    if getattr(args, "restore_stash", False):
+        res = solidify(restore_stash=True)
+        if res.get("ok"):
+            print(json.dumps(res, ensure_ascii=False))
+            return 0
+        print(f"Solidify restore-stash failed: {res.get('error')}", file=sys.stderr)
+        return 1
+
     population_paths = getattr(args, "population", None)
     if population_paths:
         return _cmd_solidify_population(population_paths)
     proposal_arg = getattr(args, "proposal", None)
+    val_scope = getattr(args, "validation_scope", None)
+    raw_rel_cmds = getattr(args, "related_cmd", None)
+    parsed_rel_cmds: list[list[str]] | None = None
+    if raw_rel_cmds:
+        parsed_rel_cmds = []
+        for item in raw_rel_cmds:
+            try:
+                loaded = json.loads(item)
+            except json.JSONDecodeError:
+                loaded = item
+            parsed_rel_cmds.append(loaded)
     try:
-        result = solidify(proposal=proposal_arg)
+        result = solidify(
+            proposal=proposal_arg,
+            validation_scope=val_scope,
+            related_commands=parsed_rel_cmds,
+        )
     except Exception as exc:
         print(f"Solidify failed: {exc}", file=sys.stderr)
         return 1
@@ -1133,6 +1205,56 @@ def _cmd_solidify(args: argparse.Namespace) -> int:
         file=sys.stderr,
     )
     return 1
+
+
+def _cmd_migrate_state(args: argparse.Namespace) -> int:
+    """U-11: Migrate legacy in-repo and soak runtime state into ~/.evolver/workspaces/<id>/."""
+    from evolver.ops.migrate_state import migrate_workspace_state
+
+    report = migrate_workspace_state(
+        repo_root=getattr(args, "project", None),
+        dry_run=bool(getattr(args, "dry_run", False)),
+    )
+    if getattr(args, "json", False):
+        print(json.dumps(report, ensure_ascii=False, indent=2))
+    else:
+        mode_lbl = "DRY-RUN" if report.get("dry_run") else "MIGRATED"
+        print(
+            f"[{mode_lbl}] workspace_id={report.get('workspace_id')} "
+            f"state_root={report.get('state_root')} "
+            f"migrated={report.get('migrated_count')} skipped={report.get('skipped_count')}"
+        )
+        if report.get("report_path"):
+            print(f"Report written to: {report['report_path']}")
+    return 0
+
+
+async def _cmd_round(args: argparse.Namespace) -> int:
+    """U-12: Single-entry host evolution round (boot -> state_health -> tick -> checklist)."""
+    from evolver.swarm import swarm_host_round
+
+    res = await swarm_host_round(
+        agent_name=getattr(args, "agent_name", "host-agent") or "host-agent",
+        project=getattr(args, "project", None),
+    )
+    if getattr(args, "json", False):
+        print(json.dumps(res, ensure_ascii=False, indent=2))
+        return 0 if res.get("ok") else 1
+
+    print(f"=== Evolver Host Round (workspace_id={res.get('workspace_id')}) ===")
+    print(f"repo_root  : {res.get('repo_root')}")
+    print(f"state_root : {res.get('state_root')}")
+    if res.get("mismatch"):
+        print(f"mismatch   : {res.get('mismatch')}")
+    health = res.get("state_health") or {}
+    print(f"aligned    : {health.get('all_aligned')}")
+    print(f"next_action: {res.get('next_action')}")
+    checklist = res.get("checklist") or {}
+    for step in checklist.get("steps") or []:
+        print(
+            f"  [{step.get('step')}] {step.get('phase')}: {step.get('title')} ({step.get('tool')})"
+        )
+    return 0 if res.get("ok") else 1
 
 
 def _cmd_solidify_population(proposal_paths: list[str]) -> int:

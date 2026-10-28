@@ -22,7 +22,6 @@ check reports ``pack_armed: False`` and defers instead of pretending to pass.
 from __future__ import annotations
 
 import json
-import os
 from typing import Any
 
 from evolver.ops.soak_env import soak_root
@@ -86,12 +85,15 @@ class HypothesisError(RuntimeError):
 
 
 def hypothesis_root() -> Any:
-    """Directory holding the hypothesis record (outside the product repo)."""
-    from pathlib import Path
+    """Directory holding the hypothesis record (outside the product repo).
 
-    env = os.environ.get("EVOLUTION_DIR")
-    base = Path(env).expanduser() if env else soak_root() / "evolution"
-    return base
+    Aligned with ``get_evolution_dir()`` (``~/.evolver/workspaces/<id>/evolution``
+    by default, or ``EVOLUTION_DIR`` override) so hypothesis and solidify state
+    never split across different roots (U-3).
+    """
+    from evolver.gep.paths import get_evolution_dir
+
+    return get_evolution_dir()
 
 
 def hypothesis_path() -> Any:
@@ -119,10 +121,22 @@ def record_hypothesis(payload: dict[str, Any]) -> Any:
 
 
 def load_hypothesis() -> dict[str, Any] | None:
-    """The recorded hypothesis, or ``None`` when absent/unreadable."""
+    """The recorded hypothesis, or ``None`` when absent/unreadable.
+
+    Phase 1 compatibility: checks ``hypothesis_path()`` first, then falls back
+    to legacy ``soak_root()/evolution/hypothesis.json`` or in-repo
+    ``<workspace>/memory/evolution/hypothesis.json`` with a warning.
+    """
     from pathlib import Path
 
-    path = Path(hypothesis_path())
+    from evolver.gep.paths import get_workspace_root, resolve_legacy_read_path
+
+    primary = Path(hypothesis_path())
+    legacy_candidates = [
+        soak_root() / "evolution" / HYPOTHESIS_FILENAME,
+        get_workspace_root() / "memory" / "evolution" / HYPOTHESIS_FILENAME,
+    ]
+    path = resolve_legacy_read_path(primary, legacy_candidates)
     if not path.is_file():
         return None
     try:
@@ -141,11 +155,12 @@ def clear_hypothesis() -> None:
         path.unlink()
 
 
-def consume_hypothesis(run_id: str) -> None:
-    """Take the record off the gate, keeping a copy for this run's boundary record.
+def stage_hypothesis(run_id: str) -> None:
+    """Write ``hypothesis.consumed.json`` without unlinking ``hypothesis.json``.
 
-    The gate reads only ``hypothesis.json``; the copy is stamped with the run
-    that consumed it and is never read by the gate.
+    Used when entering ``solidify`` after ``require_for_gate`` passes so that
+    failed rounds still have ``hypothesis.consumed.json`` for ``prediction_delta``
+    computation while ``hypothesis.json`` survives on disk until ``solidify.ok == True`` (U-5).
     """
     from pathlib import Path
 
@@ -154,7 +169,32 @@ def consume_hypothesis(run_id: str) -> None:
         consumed = dict(recorded)
         consumed["consumed_for_run"] = run_id
         target = Path(hypothesis_root()) / CONSUMED_FILENAME
+        target.parent.mkdir(parents=True, exist_ok=True)
         target.write_text(json.dumps(consumed, ensure_ascii=False, indent=2), encoding="utf-8")
+
+
+def preserve_hypothesis_on_failure(run_id: str) -> None:
+    """Mark ``hypothesis.json`` as preserved after a failed solidify (U-5)."""
+    from pathlib import Path
+
+    path = Path(hypothesis_path())
+    recorded = load_hypothesis()
+    if recorded is None:
+        return
+    updated = dict(recorded)
+    if run_id:
+        updated["preserved_from_failed_run"] = run_id
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(updated, ensure_ascii=False, indent=2), encoding="utf-8")
+
+
+def consume_hypothesis(run_id: str) -> None:
+    """Take the record off the gate, keeping a copy for this run's boundary record.
+
+    The gate reads only ``hypothesis.json``; the copy is stamped with the run
+    that consumed it and is never read by the gate.
+    """
+    stage_hypothesis(run_id)
     clear_hypothesis()
 
 
@@ -374,8 +414,13 @@ def require_for_gate(
         raise HypothesisError(REASON_MESSAGES[REASON_MISSING_RECORD])
     if run_id:
         recorded = str(payload.get("run_id") or "").strip()
+        preserved = str(payload.get("preserved_from_failed_run") or "").strip()
         accepted = {str(item).strip() for item in also_accept if str(item).strip()}
         accepted.add(str(run_id).strip())
+        if preserved:
+            accepted.add(preserved)
+            if recorded:
+                accepted.add(recorded)
         if recorded and recorded not in accepted:
             raise HypothesisError(
                 f"{REASON_MESSAGES[REASON_RUN_MISMATCH]} "
@@ -413,8 +458,10 @@ __all__ = [
     "hypothesis_root",
     "load_consumed_hypothesis",
     "load_hypothesis",
+    "preserve_hypothesis_on_failure",
     "record_hypothesis",
     "require_for_gate",
+    "stage_hypothesis",
     "validate_for_gate",
     "validate_record",
 ]

@@ -12,7 +12,7 @@
 
 [`RSI演进对照.md`](RSI演进对照.md)、[`演进方案_wikiskill对照版.md`](演进方案_wikiskill对照版.md)、[`演进方案_库即尺子.md`](演进方案_库即尺子.md) 与 [`TODO_库即尺子.md`](TODO_库即尺子.md) 是史料。史料里的「下一步」不得当作当前排期。
 
-并行补充方案（不改章程、不另开出口）：[`VISTA演进方案.md`](VISTA演进方案.md)——零参数机械套具，Tier 1–3 八项与评审六条已于 2026-10-18 合入主干，落地清单 [`TODO_VISTA.md`](TODO_VISTA.md)；[`Harness2演进方案.md`](Harness2演进方案.md)——对照 arXiv:2610.14224v1 之双层递归与对比合成机械套具，Tier 1–3 六项 `H2-1`..`H2-6` 已于 2026-10-26 合入主干，落地清单 [`TODO_HARNESS2.md`](TODO_HARNESS2.md)；[`Schema演进方案.md`](Schema演进方案.md)——只取思想，除一句提示词外未排期。（VISTA / Harness2 方案与 [`设计方案.md`](设计方案.md) 是本地私有文档，`.gitignore` `*方案*.md` 规则不入库；设计方案正文停在 2026-07-31，现行模块清单以本文件源码布局为准。）
+并行补充方案（不改章程、不另开出口）：[`VISTA演进方案.md`](VISTA演进方案.md)——零参数机械套具，Tier 1–3 八项与评审六条已于 2026-10-18 合入主干，落地清单 [`TODO_VISTA.md`](TODO_VISTA.md)；[`Harness2演进方案.md`](Harness2演进方案.md)——对照 arXiv:2610.14224v1 之双层递归与对比合成机械套具，Tier 1–3 六项 `H2-1`..`H2-6` 已于 2026-10-26 合入主干，落地清单 [`TODO_HARNESS2.md`](TODO_HARNESS2.md)；[`易用性演进方案.md`](易用性演进方案.md)——运行时数据外置（`~/.evolver/workspaces/<id>/`）与非标准宿主恢复机制，P0–P2 十四项 `U-1`..`U-14` 已于 2026-10-27 合入主干，落地清单 [`TODO_USABILITY.md`](TODO_USABILITY.md)；[`Schema演进方案.md`](Schema演进方案.md)——只取思想，除一句提示词外未排期。（VISTA / Harness2 / 易用性方案与 [`设计方案.md`](设计方案.md) 是本地私有文档，`.gitignore` `*方案*.md` 规则不入库；设计方案正文停在 2026-07-31，现行模块清单以本文件源码布局为准。）
 
 ## 命令篇
 
@@ -22,7 +22,9 @@
 | 运行一进化周期 | `uv run evolver`（或 `uv run evolver run`） |
 | 守护进程循环 | `uv run evolver --loop` |
 | 审查模式 | `uv run evolver --review` |
-| 应用待定变异 | `uv run evolver solidify` |
+| 应用待定变异 | `uv run evolver solidify [--restore-stash] [--validation-scope=related\|cascade\|skip] [--related-cmd='["pytest","tests/..."]']` |
+| 宿主单入口闭环（U-12） | `uv run evolver round --host [--project <dir>] [--json]`（串起 boot → status → tick → checklist） |
+| 迁移遗留运行态（U-11） | `uv run evolver migrate-state [--project <dir>] [--dry-run] [--json]`（将项目内 `memory/`、`.evolver/gep/` 及旧 soak 迁入 `~/.evolver/workspaces/<id>/`） |
 | Autopoiesis 自检 | `uv run evolver self-report [--no-write] [--json]` |
 | 蒸馏 LLM 响应 | `uv run evolver distill --response-file=<path>` |
 | 从 Hub 获取技能 | `uv run evolver fetch <query>` |
@@ -336,6 +338,7 @@ ops/                健康检查、清理、叙事日志、遥测
   trigger.py        外部触发器（已实现）
   charter_check.py  章程符合性机器回执（`evolver charter-check`）
   meta_report.py    改进机制遥测面板（Table-8 六维 + improver_tools + panel.rere）
+  migrate_state.py  遗留运行态迁移器（`evolver migrate-state`，迁入 `~/.evolver/workspaces/<id>/`）
   soak_env.py       soak 运行态环境辅助
   auth_middleware.py / capability_trace.py  WebUI 鉴权中间件 / 能力追踪
 adapters/           IDE 钩子生成器
@@ -444,9 +447,14 @@ inspect` 同源）按行放大读回——空 question 拒绝、切片过 val-se
 `swarm_tick` 遇 preflight abort 同样返回 `stop_and_report`。这些返回是
 稳态信号，不得视为故障重试。
 
-### GEP 资源存储
+### GEP 资源存储与外置运行态（`~/.evolver/workspaces/<workspace-id>/`）
 
-位于 `<GEP_ASSETS_DIR>`（默认 `<workspace>/.evolver/gep/`）：
+自 `U-1`..`U-14` 起，用户与运行时数据默认一律外置至 `~/.evolver/workspaces/<workspace-id>/`（`<workspace-id>` 默认取 `sha256(realpath(repo_root))[:16]`，源码树零文件；一期兼容模式支持只读回退旧路径并提示 `evolver migrate-state`）：
+
+- `meta.json`——工作区元数据（`workspace_id`、`repo_root`、`display_name`、`created_at`、`updated_at`）
+- `migration_report.json`——`evolver migrate-state` 生成之迁移回填报告
+
+位于 `<GEP_ASSETS_DIR>`（默认 `~/.evolver/workspaces/<id>/gep/`）：
 
 - `genes.json` + `genes.jsonl`——基础 + 叠加层（JSONL 条目按 ID 覆盖）
 - `capsules.json` + `capsules.jsonl`——同例
@@ -458,7 +466,7 @@ inspect` 同源）按行放大读回——空 question 拒绝、切片过 val-se
 - `gene_lifecycle.json` + `gene_lifecycle.jsonl`——基因生命周期状态（RSI P1-5）
   与转移审计日志（评估幂等；损坏时评估拒绝写入，选择器 fail-open 不禁选）
 
-活记忆与自检（`<EVOLUTION_DIR>/`，默认 `memory/evolution/`）：
+活记忆与自检（`<EVOLUTION_DIR>/`，默认 `~/.evolver/workspaces/<id>/evolution/`）：
 
 - `LESSONS_LEARNED.md`——活记忆器官（YAML frontmatter + 摩擦点）
 - `self_report.json`——最近自检报告
@@ -551,11 +559,13 @@ inspect` 同源）按行放大读回——空 question 拒绝、切片过 val-se
 | 变量 | 默认 | 用途 |
 |---|---|---|
 | `OPENCLAW_WORKSPACE` | （无） | 工作区根覆盖 |
-| `EVOLVER_REPO_ROOT` | 通过 `.git` 自动检测 | 仓库根覆盖 |
-| `EVOLVER_HOME` | `~/.evomap` | 每用户状态目录 |
-| `GEP_ASSETS_DIR` | `<ws>/.evolver/gep/` | GEP 资源存储 |
-| `EVOLUTION_DIR` | `<ws>/memory/evolution/` | 进化状态 |
-| `MEMORY_DIR` | `<ws>/memory/` | 记忆日志 |
+| `EVOLVER_REPO_ROOT` | 通过 `.git` 自动检测 | 仓库根覆盖（亦支持 `--project` 或 `~/.evolver/config.json`） |
+| `EVOLVER_STATE_ROOT` | `~/.evolver` | 外置工作区状态根目录（`<state_root>/workspaces/<id>/`） |
+| `EVOLVER_WORKSPACE_ID` | `sha256(realpath(repo))[:16]` | 显式覆盖工作区 ID |
+| `EVOLVER_HOME` | `~/.evomap` | 每用户锚点与全局状态目录 |
+| `GEP_ASSETS_DIR` | `~/.evolver/workspaces/<id>/gep/` | GEP 资源存储覆盖（仅供测试） |
+| `EVOLUTION_DIR` | `~/.evolver/workspaces/<id>/evolution/` | 进化状态目录覆盖（仅供测试） |
+| `MEMORY_DIR` | `~/.evolver/workspaces/<id>/` | 记忆根目录覆盖（仅供测试） |
 | `EVOLVER_NO_PARENT_GIT` | （无） | 设为 `1` 以禁用 `.git` 遍历 |
 | `A2A_HUB_URL` | `https://evomap.ai` | Hub 端点 |
 | `EVOLVE_STRATEGY` | `balanced` | 进化策略 |

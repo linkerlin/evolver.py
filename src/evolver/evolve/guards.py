@@ -215,10 +215,11 @@ async def run_preflight_checks(is_loop: bool = False, is_dry_run: bool = False) 
         return PreflightResult(abort=True, reason=reason)
 
     # User lock
-    user_lock = Path(os.environ.get("EVOLVER_USER_LOCK", "")) or (
-        Path.home() / ".evolver" / "user.lock"
-    )
-    if user_lock.exists():
+    from evolver.gep.paths import get_evolver_state_root
+
+    raw_user_lock = os.environ.get("EVOLVER_USER_LOCK", "").strip()
+    user_lock = Path(raw_user_lock) if raw_user_lock else (get_evolver_state_root() / "user.lock")
+    if user_lock.is_file():
         lock_eval = evaluate_user_lock(user_lock)
         if lock_eval.yield_required:
             return PreflightResult(

@@ -40,12 +40,17 @@ from evolver.gep.git_ops import (
     git_list_changed_files,
     git_list_untracked_files,
     is_git_repo,
+    restore_rejected_stash,
     rollback_new_untracked_files,
     rollback_tracked,
+    snapshot_rejected_worktree,
 )
 from evolver.gep.paths import (
+    discover_git_candidates,
+    get_repo_root,
     get_solidify_state_path,
     get_workspace_root,
+    resolve_legacy_read_path,
 )
 from evolver.gep.validation_report import build_validation_report
 from evolver.ops.narrative import record_narrative_and_reflection
@@ -166,12 +171,25 @@ def _remember_failure_scene(
 
 
 def write_state_for_solidify(last_run: dict[str, Any]) -> None:
-    """Write the pending evolution run to the solidify state file."""
+    """Write the pending evolution run to the solidify state file (U-6 atomic + stamped)."""
+    import os
+
     path = get_solidify_state_path()
     path.parent.mkdir(parents=True, exist_ok=True)
     state = read_json_if_exists(path) or {}
-    state["last_run"] = last_run
-    tmp = path.with_suffix(".tmp")
+    now_iso = _now_iso_ms()
+    enriched_run = dict(last_run or {})
+    run_id = str(
+        enriched_run.get("run_id")
+        or (enriched_run.get("mutation") or {}).get("id")
+        or f"run_{int(time.time() * 1000)}_{secrets.token_hex(3)}"
+    )
+    enriched_run["run_id"] = run_id
+    enriched_run["updated_at"] = now_iso
+    state["last_run"] = enriched_run
+    state["run_id"] = run_id
+    state["updated_at"] = now_iso
+    tmp = path.with_name(f"{path.name}.{os.getpid()}.tmp")
     tmp.write_text(json.dumps(state, indent=2) + "\n", encoding="utf-8")
     tmp.replace(path)
 
@@ -199,7 +217,9 @@ def _annotate_mutation_lineage(
 
 
 def _read_solidify_state() -> dict[str, Any] | None:
-    path = get_solidify_state_path()
+    primary = get_solidify_state_path()
+    legacy = get_workspace_root() / "memory" / "evolution" / "evolution_solidify_state.json"
+    path = resolve_legacy_read_path(primary, [legacy])
     return read_json_if_exists(path)
 
 
@@ -531,6 +551,12 @@ def _reject_no_improvement(
     the acceptance-gate rejection path)."""
     diff_snapshot = _failure_diff(cwd)
     failed_blast = _compute_blast_radius()
+    snapshot_rejected_worktree(
+        cwd,
+        run_id=str(last_run.get("run_id") or ""),
+        disposable_untracked=_disposable_untracked(cwd),
+        reason="fitness_gate_no_improvement",
+    )
     rollback_tracked(cwd=cwd, include_untracked=False)
     rollback_new_untracked_files(_disposable_untracked(cwd), cwd=cwd)
     record_solidify_failure(last_run, error="fitness_gate_no_improvement")
@@ -579,6 +605,12 @@ def _apply_acceptance_gate(
         return None
     diff_snapshot = _failure_diff(cwd)
     failed_blast = _compute_blast_radius()
+    snapshot_rejected_worktree(
+        cwd,
+        run_id=str(last_run.get("run_id") or ""),
+        disposable_untracked=_disposable_untracked(cwd),
+        reason="fitness_gate_no_improvement",
+    )
     rollback_tracked(cwd=cwd, include_untracked=False)
     rollback_new_untracked_files(_disposable_untracked(cwd), cwd=cwd)
     record_solidify_failure(last_run, error="acceptance_gate_rejected")
@@ -617,6 +649,12 @@ def _hypothesis_rejection(
     """
     diff_snapshot = _failure_diff(cwd)
     failed_blast = _compute_blast_radius()
+    snapshot_rejected_worktree(
+        cwd,
+        run_id=str(last_run.get("run_id") or ""),
+        disposable_untracked=_disposable_untracked(cwd),
+        reason="fitness_gate_no_improvement",
+    )
     rollback_tracked(cwd=cwd, include_untracked=False)
     rollback_new_untracked_files(_disposable_untracked(cwd), cwd=cwd)
     record_solidify_failure(last_run, error="hypothesis_missing", score=None)
@@ -650,6 +688,12 @@ def _seal_rejection(
     """配对会话 §5.2: a Candidate whose context carried val material."""
     diff_snapshot = _failure_diff(cwd)
     failed_blast = _compute_blast_radius()
+    snapshot_rejected_worktree(
+        cwd,
+        run_id=str(last_run.get("run_id") or ""),
+        disposable_untracked=_disposable_untracked(cwd),
+        reason="fitness_gate_no_improvement",
+    )
     rollback_tracked(cwd=cwd, include_untracked=False)
     rollback_new_untracked_files(_disposable_untracked(cwd), cwd=cwd)
     record_solidify_failure(last_run, error="val_seal_breach", score=None)
@@ -691,6 +735,12 @@ def _bench_pack_rejection(
     """
     diff_snapshot = _failure_diff(cwd)
     failed_blast = _compute_blast_radius()
+    snapshot_rejected_worktree(
+        cwd,
+        run_id=str(last_run.get("run_id") or ""),
+        disposable_untracked=_disposable_untracked(cwd),
+        reason="fitness_gate_no_improvement",
+    )
     rollback_tracked(cwd=cwd, include_untracked=False)
     rollback_new_untracked_files(_disposable_untracked(cwd), cwd=cwd)
     reason = str(verdict.get("reason") or "unknown")
@@ -1098,6 +1148,123 @@ def _novelty_duplicate_diff(cwd: Path) -> bool:
     return False
 
 
+def _validate_related_commands(raw_commands: Any) -> tuple[bool, list[list[str]], str]:
+    """U-7: Validate that ``related`` scope commands are non-empty argv lists (no bare strings)."""
+    if not isinstance(raw_commands, list) or not raw_commands:
+        return (
+            False,
+            [],
+            "validation_scope='related' requires a non-empty list of argv lists "
+            "(e.g. [['pytest', 'tests/test_x.py']]); empty or non-list input is forbidden.",
+        )
+    normalized: list[list[str]] = []
+    for idx, item in enumerate(raw_commands):
+        cmd_val = item.get("command") if isinstance(item, dict) else item
+        if not isinstance(cmd_val, list) or not cmd_val:
+            return (
+                False,
+                [],
+                f"related command at index {idx} must be a non-empty argv list, "
+                f"got {type(cmd_val).__name__}. Bare command strings are forbidden.",
+            )
+        argv = [str(part) for part in cmd_val]
+        head = argv[0].strip()
+        if not head or (" " in head and not Path(head).exists()):
+            return (
+                False,
+                [],
+                f"related command at index {idx} has spaces in binary name {head!r}; "
+                "pass an argv list like ['pytest', 'tests/foo.py'] instead of a shell string.",
+            )
+        normalized.append(argv)
+    return True, normalized, ""
+
+
+def _classify_env_blockers(
+    validation_result: dict[str, Any] | None,
+    changed_files: list[str],
+) -> list[dict[str, Any]]:
+    """U-8: Identify failed validation stages caused by unrelated tests or environment blockers."""
+    if not isinstance(validation_result, dict):
+        return []
+    results = validation_result.get("results") or []
+    changed_norm = [f.replace("\\", "/").strip() for f in changed_files if f]
+    changed_stems = {Path(f).stem.removeprefix("test_") for f in changed_norm if Path(f).stem}
+    blockers: list[dict[str, Any]] = []
+    for stage in results:
+        if not isinstance(stage, dict) or stage.get("ok"):
+            continue
+        cmd_str = str(stage.get("command") or "")
+        out = f"{stage.get('stdout') or ''}\n{stage.get('stderr') or ''}"
+
+        # 1. File lock / permission blocker
+        if any(
+            tok in out
+            for tok in ("os error 5", "拒绝访问", "Access is denied", "PermissionError", ".lock")
+        ):
+            blockers.append(
+                {
+                    "stage": cmd_str[:120],
+                    "kind": "env_lock",
+                    "unrelated_to_diff": True,
+                    "reason": "Environment file lock or permission error detected in stage output.",
+                }
+            )
+            continue
+
+        # 2. Untracked / gitignored doc FileNotFoundError
+        fnf_matches = re.findall(r"FileNotFoundError:.*?['\"]([^'\"]+)['\"]", out)
+        if fnf_matches and all(
+            not any(cf in m.replace("\\", "/") for cf in changed_norm) for m in fnf_matches
+        ):
+            blockers.append(
+                {
+                    "stage": cmd_str[:120],
+                    "kind": "missing_untracked_file",
+                    "unrelated_to_diff": True,
+                    "files": fnf_matches[:10],
+                    "reason": (
+                        "Stage failed due to missing untracked/ignored file not touched by diff."
+                    ),
+                }
+            )
+            continue
+
+        # 3. Pytest failures in files unrelated to changed_files
+        failed_nodes = re.findall(r"^(?:FAILED|ERROR)\s+([^\s:]+(?:\.py))", out, flags=re.MULTILINE)
+        if failed_nodes:
+            unrelated_nodes: list[str] = []
+            related_nodes: list[str] = []
+            for node_file in dict.fromkeys(failed_nodes):
+                nf_norm = node_file.replace("\\", "/").strip()
+                nf_stem = Path(nf_norm).stem.removeprefix("test_")
+                is_rel = any(
+                    nf_norm == cf
+                    or nf_norm.endswith("/" + cf)
+                    or cf.endswith("/" + nf_norm)
+                    or (nf_stem and nf_stem in changed_stems)
+                    for cf in changed_norm
+                )
+                if is_rel:
+                    related_nodes.append(nf_norm)
+                else:
+                    unrelated_nodes.append(nf_norm)
+            if unrelated_nodes and not related_nodes:
+                blockers.append(
+                    {
+                        "stage": cmd_str[:120],
+                        "kind": "unrelated_test_failure",
+                        "unrelated_to_diff": True,
+                        "files": unrelated_nodes[:20],
+                        "reason": (
+                            f"All failing test files ({', '.join(unrelated_nodes[:5])}) "
+                            "are outside the current mutation's changed files."
+                        ),
+                    }
+                )
+    return blockers
+
+
 def _handle_cascade_validation_failure(
     *,
     last_run: dict[str, Any],
@@ -1115,6 +1282,18 @@ def _handle_cascade_validation_failure(
     diff_snapshot = _failure_diff(cwd)
     failed_blast = _compute_blast_radius()
     failed_fp, failed_added = _novelty_fingerprint(cwd)
+    changed_now = [
+        f
+        for f in git_list_changed_files(cwd) + _disposable_untracked(cwd)
+        if f and not _is_runtime_state(f)
+    ]
+    env_blockers = _classify_env_blockers(validation_result, changed_now)
+    stash_info = snapshot_rejected_worktree(
+        cwd,
+        run_id=str(last_run.get("run_id") or ""),
+        disposable_untracked=_disposable_untracked(cwd),
+        reason="validation_failed",
+    )
     # cwd must be explicit: without it the rollback targets the process cwd
     # (the engine's own repo), not the workspace (Sprint 23 test finding).
     # include_untracked=False + selective disposal: engine state dirs that
@@ -1141,9 +1320,21 @@ def _handle_cascade_validation_failure(
     event_id = _remember_failure_scene(event, validation_result=validation_result)
     details = dict(validation_result)
     details["score"] = score
+    details["stash"] = stash_info
+    details["env_blockers"] = env_blockers
+    details["env_blocker_only"] = bool(env_blockers)
     if validation_report is not None:
         details["validation_report"] = validation_report
-    return {"ok": False, "error": "validation_failed", "event_id": event_id, "details": details}
+    return {
+        "ok": False,
+        "error": "validation_failed",
+        "event_id": event_id,
+        "stash": stash_info,
+        "rejected_stash": stash_info,
+        "env_blockers": env_blockers,
+        "env_blocker_only": bool(env_blockers),
+        "details": details,
+    }
 
 
 #: Cycle outcomes that are process states, not Candidate verdicts. They must
@@ -1347,6 +1538,9 @@ def solidify(
     mutation_override: dict[str, Any] | None = None,
     skip_validation: bool = False,
     proposal: dict[str, Any] | Path | str | None = None,
+    validation_scope: str | None = None,
+    related_commands: list[list[str]] | None = None,
+    restore_stash: bool = False,
 ) -> dict[str, Any]:
     """Run a solidify cycle, then fold the outcome into the paired session.
 
@@ -1355,16 +1549,42 @@ def solidify(
     quietly skip the bookkeeping (round-84 lesson: the gate was built, the
     writer was not wired).
     """
+    if restore_stash:
+        target_cwd = get_repo_root(_quiet=True) or get_workspace_root()
+        return restore_rejected_stash(cwd=target_cwd)
+
     # The cycle context is read BEFORE _solidify_cycle consumes it: the
     # ledger needs the cycle id and the candidate id, and the hypothesis
-    # file is burned inside the cycle (§5.3 用后即焚), so its text is read
+    # file is burned on acceptance (§5.3 + U-5), so its text is read
     # here while it still exists.
     pending_run, hypothesis_text = _pending_cycle_context()
     result = _solidify_cycle(
         mutation_override=mutation_override,
         skip_validation=skip_validation,
         proposal=proposal,
+        validation_scope=validation_scope,
+        related_commands=related_commands,
     )
+    # U-5: Hypothesis shares fate with commit — only consume on solidify.ok == True;
+    # preserve on failure so the host does not need to re-declare on retry.
+    run_id_str = str(pending_run.get("run_id") or "")
+    try:
+        from evolver.gep.hypothesis import consume_hypothesis, preserve_hypothesis_on_failure
+
+        if isinstance(result, dict):
+            if result.get("ok") is True and result.get("action") != "no_action":
+                consume_hypothesis(run_id_str)
+            elif result.get("ok") is False:
+                err_code = str(result.get("error") or "")
+                if (
+                    err_code
+                    and err_code not in _PROCESS_STATES
+                    and err_code != "hypothesis_missing"
+                ):
+                    preserve_hypothesis_on_failure(run_id_str)
+    except Exception:
+        logger.warning("[hypothesis] post-cycle fate sync failed", exc_info=True)
+
     try:
         session_state = _settle_session(result, pending_run=pending_run, hypothesis=hypothesis_text)
     except Exception:
@@ -1380,6 +1600,8 @@ def _solidify_cycle(
     mutation_override: dict[str, Any] | None = None,
     skip_validation: bool = False,
     proposal: dict[str, Any] | Path | str | None = None,
+    validation_scope: str | None = None,
+    related_commands: list[list[str]] | None = None,
 ) -> dict[str, Any]:
     """Run a solidify cycle (the gates; session bookkeeping lives above)."""
     state = _read_solidify_state()
@@ -1490,6 +1712,15 @@ def _solidify_cycle(
     if veto is not None:
         return {"ok": False, "error": "supervision_veto", "veto": veto}
 
+    raw_scope = (
+        validation_scope
+        or last_run.get("validation_scope")
+        or (last_run.get("mutation") or {}).get("validation_scope")
+    )
+    scope_mode = str(raw_scope).strip().lower() if raw_scope else ""
+    if scope_mode == "skip":
+        skip_validation = True
+
     if skip_validation:
         run_id = last_run.get("run_id") or (last_run.get("mutation") or {}).get("id")
         if not run_id or str(run_id) == "unknown":
@@ -1509,19 +1740,74 @@ def _solidify_cycle(
             }
 
     if not is_git_repo(cwd):
-        return {"ok": False, "error": "not_a_git_repo"}
+        fallback_repo = get_repo_root(cwd, _quiet=True)
+        if fallback_repo is not None and is_git_repo(fallback_repo):
+            cwd = fallback_repo
+        else:
+            candidates = discover_git_candidates(cwd)
+            return {
+                "ok": False,
+                "error": "not_a_git_repo",
+                "cwd": str(cwd),
+                "suggested_actions": {
+                    "init_git_at": f"git init {cwd}",
+                    "set_repo_root_to": candidates,
+                    "message": (
+                        f"Directory '{cwd}' is not a git repository. "
+                        + (
+                            f"Found git repositories in subdirectories: {candidates}. "
+                            "Set EVOLVER_REPO_ROOT or pass --project to target one of them."
+                            if candidates
+                            else (
+                                f"Run 'git init {cwd}' or set EVOLVER_REPO_ROOT "
+                                "to your repository root."
+                            )
+                        )
+                    ),
+                },
+            }
 
     mutation = _annotate_mutation_lineage(
         last_run, mutation_override or last_run.get("mutation", {})
     )
-    # Sprint 22.2 (enable_fitness_cascade): the validation set is engine-owned
-    # (config FITNESS_CASCADE_COMMANDS). mutation.validation comes from
-    # external LLM output (distill) and is never executed in this mode.
-    cascade_mode = is_enabled("enable_fitness_cascade") and not skip_validation
-    if cascade_mode:
+    # U-7 validation_scope ("related" | "cascade" | "skip")
+    if scope_mode == "related" and not skip_validation:
+        raw_rel = (
+            related_commands
+            if related_commands is not None
+            else (
+                last_run.get("related_commands")
+                or mutation.get("related_commands")
+                or mutation.get("validation")
+            )
+        )
+        valid_rel, normalized_rel, rel_err = _validate_related_commands(raw_rel)
+        if not valid_rel:
+            return {
+                "ok": False,
+                "error": "invalid_related_command_format",
+                "message": rel_err,
+                "failure_mode": {
+                    "mode": "soft",
+                    "reasonClass": "validation_scope",
+                    "retryable": True,
+                },
+                "next_action": "swarm_solidify",
+            }
+        cascade_mode = is_enabled("enable_fitness_cascade")
+        validation_commands: list[Any] = normalized_rel
+    elif scope_mode == "cascade" and not skip_validation:
+        cascade_mode = True
         validation_commands = get_fitness_cascade_commands()
     else:
-        validation_commands = mutation.get("validation") or []
+        # Sprint 22.2 (enable_fitness_cascade): the validation set is engine-owned
+        # (config FITNESS_CASCADE_COMMANDS). mutation.validation comes from
+        # external LLM output (distill) and is never executed in this mode.
+        cascade_mode = is_enabled("enable_fitness_cascade") and not skip_validation
+        if cascade_mode:
+            validation_commands = get_fitness_cascade_commands()
+        else:
+            validation_commands = mutation.get("validation") or []
 
     # Sprint 23.1 (enable_novelty_gate, ShinkaEvolve rejection sampling):
     # reject near-duplicate mutations BEFORE paying for the expensive cascade.
@@ -1532,6 +1818,12 @@ def _solidify_cycle(
         diff_snapshot = _failure_diff(cwd)
         failed_blast = _compute_blast_radius()
         rejected_fp, rejected_added = _novelty_fingerprint(cwd)
+        snapshot_rejected_worktree(
+            cwd,
+            run_id=str(last_run.get("run_id") or ""),
+            disposable_untracked=_disposable_untracked(cwd),
+            reason="novelty_duplicate",
+        )
         rollback_tracked(cwd=cwd, include_untracked=False)
         rollback_new_untracked_files(_disposable_untracked(cwd), cwd=cwd)
         _wiki_rejection(
@@ -1561,19 +1853,19 @@ def _solidify_cycle(
     # 配对会话 §5.3 — one Candidate validates one primary hypothesis. Checked
     # BEFORE the val gate (and before paying for the cascade): no record, no
     # measurement, no publish. The record must belong to THIS round when it
-    # carries a run_id, and it is consumed here: a leftover claim from a
-    # previous round must not clear this one's bar either.
+    # carries a run_id; U-5 stages it here for boundary episode recording and
+    # only consumes (deletes) it when solidify succeeds (ok == True).
     declared_hypothesis: dict[str, Any] | None = None
     try:
         from evolver.gep.hypothesis import (
             HypothesisError,
-            consume_hypothesis,
             load_hypothesis,
             require_for_gate,
+            stage_hypothesis,
         )
 
-        # The record is consumed below (one Candidate, one hypothesis), but the
-        # floors it declared must outlive it: the pack gate asserts them.
+        # The record is staged below (and consumed on solidify.ok == True),
+        # while the floors it declared outlive it so the pack gate asserts them.
         declared_hypothesis = load_hypothesis()
         require_for_gate(
             declared_hypothesis,
@@ -1586,7 +1878,7 @@ def _solidify_cycle(
         logger.warning("[hypothesis-gate] record unusable — rejecting", exc_info=True)
         return _hypothesis_rejection(last_run, cwd, "hypothesis record unreadable")
     else:
-        consume_hypothesis(str(last_run.get("run_id") or ""))
+        stage_hypothesis(str(last_run.get("run_id") or ""))
 
     validation_result: dict[str, Any] | None = None
     validation_report: dict[str, Any] | None = None
@@ -1629,6 +1921,18 @@ def _solidify_cycle(
                 # (Sprint 23 lesson — after rollback the tree is clean).
                 failed_blast = _compute_blast_radius()
                 diff_snapshot = _failure_diff(cwd)
+                changed_now = [
+                    f
+                    for f in git_list_changed_files(cwd) + _disposable_untracked(cwd)
+                    if f and not _is_runtime_state(f)
+                ]
+                env_blockers = _classify_env_blockers(validation_result, changed_now)
+                stash_info = snapshot_rejected_worktree(
+                    cwd,
+                    run_id=str(last_run.get("run_id") or ""),
+                    disposable_untracked=git_list_untracked_files(cwd),
+                    reason="validation_failed",
+                )
                 rollback_tracked()
                 # cwd must be explicit here too (Sprint 23 lesson, applied to
                 # the legacy path in round-13): without it the deletion runs
@@ -1647,11 +1951,17 @@ def _solidify_cycle(
                     diff_snapshot=diff_snapshot,
                 )
                 details: dict[str, Any] = dict(validation_result)
+                details["stash"] = stash_info
+                details["env_blockers"] = env_blockers
+                details["env_blocker_only"] = bool(env_blockers)
                 if validation_report is not None:
                     details["validation_report"] = validation_report
                 legacy_result: dict[str, Any] = {
                     "ok": False,
                     "error": "validation_failed",
+                    "stash": stash_info,
+                    "env_blockers": env_blockers,
+                    "env_blocker_only": bool(env_blockers),
                     "details": details,
                 }
                 if failed_event is not None:

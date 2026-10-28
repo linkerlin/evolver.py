@@ -255,7 +255,9 @@ DEEPSEEK_API_KEY=sk-... uv run python examples/swarm-quickstart/demo_swarm_loop.
 | **進化制御** | `evolver run` | 1 サイクル自己進化を実行（デフォルト） |
 | | `evolver --loop` | 継続的自律進化デーモンを起動 |
 | | `evolver --review` | 変異適用前に確認を挟む対話型レビューモード |
-| | `evolver solidify` | 保留中の変異を検証し Git リポジトリへコミット |
+| | `evolver solidify` | 保留中の変異を検証（`--validation-scope=related\|cascade`）・コミット、または棄却パッチを復元（`--restore-stash`） |
+| | `evolver round --host` | ホスト向け単一エントリ（`boot → status → tick → checklist` を一括実行） |
+| | `evolver migrate-state` | リポジトリ内の旧 `memory/`・`.evolver/gep/` を外部状態ルート `~/.evolver/workspaces/<id>/` へ移行 |
 | | `evolver apply-proposal` | 単一提案の適用、または複数 `INV × DOM` 提案の機械的選択合成 |
 | | `evolver session` | ペア進化セッションおよび仮説管理 |
 | **群・安全統制** | `evolver mcp` | stdio MCP サーバーを起動（ホスト連携口） |

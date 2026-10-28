@@ -8,6 +8,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added — 运行时数据外置與非标准宿主易用性加固 `U-1`..`U-14`
+
+版本保持 **1.113.0**（采用一期兼容模式，不改 `frozen_gate` 基线语义、不默认 `skip_validation`；清单见 [`TODO_USABILITY.md`](TODO_USABILITY.md)）：
+
+- **路径对齐、零源码树污染与外置状态根（`U-1`、`U-2`、`U-3`、`U-10`、`U-11`）**：新增 `compute_workspace_id`（`sha256(realpath(repo_root))[:16]`，源码树零文件）、`get_evolver_state_root`（`~/.evolver`）與 `get_workspace_state_dir`（`~/.evolver/workspaces/<id>`）；`get_evolution_dir`、`get_gep_assets_dir`、`get_logs_dir`、`hypothesis_path` 与 `get_mailbox_dir` 默认一律落在外置工作区目录下，一期兼容模式经 `resolve_legacy_read_path` 支持旧路径只读回退并输出一次性迁移告警；`evolver mcp --project` 与 `swarm_boot(project=...)` 支持非 git 宿主目录启动绑定；`not_a_git_repo` 返回可执行 `suggested_actions`（`init_git_at` 与 `set_repo_root_to` 候选仓库列表）；`swarm_status` 新增 `workspace_id`、`state_root`、`mismatch` 与 `state_health` 四路对齐健康视图；新增 `evolver migrate-state`（`ops/migrate_state.py`）一键迁入遗留 `memory/`、`.evolver/gep/` 与旧 soak 状态并生成 `migration_report.json`。
+- **固化失败可恢复与状态防污染（`U-4`、`U-5`、`U-6`）**：新增 `snapshot_rejected_worktree` 与 `restore_rejected_stash`（`gep/git_ops.py`），在门禁/验证失败回滚前将已跟踪 diff 与未跟踪新文件快照至 `rejected_stashes/`（git stash 标记 `evolver: rejected <run_id>`），支持 `evolver solidify --restore-stash` 或 `swarm_solidify(restore_stash=True)` 一键恢复；假说与 commit 同命运（`gep/hypothesis.py`），`stage_hypothesis` 保留本轮 `prediction_delta` 计算副本，`preserve_hypothesis_on_failure` 在固化失败时保留 `hypothesis.json` 免除宿主重登，仅当 `solidify.ok == True` 时调用 `consume_hypothesis` 删除；`write_state_for_solidify` 强制携带 `run_id` + `updated_at` 原子替换，且 `tests/conftest.py` 全局注入隔离 `EVOLVER_STATE_ROOT` 防止测试污染用户 pending 状态。同时修复 `evolve/guards.py` 中 `EVOLVER_USER_LOCK` 未设置时 `Path("")` 误检当前目录 `mtime` 之潜伏缺陷。
+- **门禁分层、评估树文档白名单与宿主体验糖（`U-7`、`U-8`、`U-9`、`U-12`、`U-13`、`U-14`）**：`solidify` 与 `swarm_solidify` 新增 `validation_scope`（`related | cascade | skip`）与 `related_commands`（强制校验 `list[list[str]]` argv 列表，拒绝裸字符串或首项含空格之命令）；新增 `_classify_env_blockers` 将与当前 diff 无关之测试失败、文件锁冲突及缺失未跟踪文档归入 `env_blockers` 与 `env_blocker_only`；`eval_worktree.py` 新增阶段文档白名单（`*方案*.md`、`TODO*.md` 等）自动覆盖与 `missing_untracked_docs` 扫描；`swarm_tick` 注入结构化 `checklist` 与 Markdown 尾注；新增 `evolver round --host`（`swarm_host_round`）单入口串起 `boot → status → tick → checklist`；新增 `tests/test_usability_external_state_e2e.py` 全覆盖单测与非 git 宿主目录全链路 E2E 测试。
+
 ### Added — 合入 Harness2（arXiv:2610.14224v1）六项机械套具 `H2-1`..`H2-6`
 
 版本保持 **1.113.0**（不改 `frozen_gate`、不替阶段出口；清单见 [`TODO_HARNESS2.md`](TODO_HARNESS2.md)）：
