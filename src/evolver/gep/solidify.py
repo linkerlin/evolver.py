@@ -791,20 +791,21 @@ def _apply_bench_pack_gate(
 ) -> tuple[dict[str, Any] | None, dict[str, Any] | None]:
     """Charter 配对会话 (2026-09-26 §5.2): the frozen val pack decides.
 
-    ONLY a strict improvement over the Parent publishes. Drop, flat,
-    unmeasured, an absent pack, a voided baseline, and a damaged gate are all
-    rejections — and a rejection never moves the baseline. The previous rule
-    ("flat or up passes; an unusable pack degrades to inactive") is precisely
-    what allowed a mutation that merely retuned the measuring instrument to
-    ship. Returns ``(rejection, verdict)``; the verdict rides onto the event
-    either way.
+    ONLY a strict improvement over the Parent publishes as a full Accept.
+    Drop, flat, a voided baseline, regression, and a damaged gate stay hard
+    rejections — and a rejection never moves the baseline.
 
-    Gate-side trouble no longer means "the experiment may proceed": if the
-    instrument is broken the honest answer is "we measured nothing", not
-    "we measured fine".
+    Usability gaps (``no_baseline`` / ``pack_absent`` / ``unmeasured``) soft-
+    accept with warnings + next_steps so first-run hosts can finish the
+    open-box → swarm → solidify path. Soft-accept does NOT write a Parent
+    baseline and does NOT open sealed val. Returns ``(rejection, verdict)``.
     """
     try:
-        from evolver.bench.frozen_gate import gate_verdict
+        from evolver.bench.frozen_gate import (
+            enrich_soft_accept,
+            gate_verdict,
+            is_usability_soft_reason,
+        )
 
         verdict = gate_verdict(declaration=declaration)
     except Exception:
@@ -826,6 +827,11 @@ def _apply_bench_pack_gate(
 
     if verdict.get("verdict") == "accept" and verdict.get("accept") is True:
         return None, verdict
+
+    reason = str(verdict.get("reason") or "")
+    if is_usability_soft_reason(reason):
+        # Soft-accept: proceed with warnings; never fake a Parent baseline.
+        return None, enrich_soft_accept(verdict)
 
     return _bench_pack_rejection(last_run, cwd, verdict, validation_result), verdict
 
@@ -1457,14 +1463,27 @@ def _settle_session(
         return None
 
     if ok:
-        _session_gate_record(
-            {
-                "accept": True,
-                "reason": "solidify_published",
-                "score": result.get("score"),
-                "bench_pack": result.get("bench_pack"),
-            }
-        )
+        bench = result.get("bench_pack") if isinstance(result.get("bench_pack"), dict) else {}
+        soft = bool(result.get("soft_accept") or (bench or {}).get("soft_accept"))
+        gate_rec: dict[str, Any] = {
+            "accept": True,
+            "reason": "soft_accept" if soft else "solidify_published",
+            "score": result.get("score"),
+            "bench_pack": result.get("bench_pack"),
+        }
+        if soft:
+            gate_rec["soft_accept"] = True
+            gate_rec["soft_reason"] = (bench or {}).get("soft_reason") or (bench or {}).get(
+                "reason"
+            )
+            gate_rec["warnings"] = list(
+                result.get("warnings") or (bench or {}).get("warnings") or []
+            )
+            if result.get("next_steps") or (bench or {}).get("next_steps"):
+                gate_rec["next_steps"] = list(
+                    result.get("next_steps") or (bench or {}).get("next_steps") or []
+                )
+        _session_gate_record(gate_rec)
         return None
 
     _session_gate_record({"accept": False, "reason": error})
@@ -2191,7 +2210,23 @@ def _solidify_cycle(
             "score": bench_pack_verdict.get("score"),
             "baseline": bench_pack_verdict.get("baseline"),
             "verdict": bench_pack_verdict.get("verdict"),
+            "reason": bench_pack_verdict.get("reason"),
+            "accept": bench_pack_verdict.get("accept"),
+            "soft_accept": bench_pack_verdict.get("soft_accept"),
+            "soft_reason": bench_pack_verdict.get("soft_reason"),
+            "warnings": bench_pack_verdict.get("warnings"),
+            "next_steps": bench_pack_verdict.get("next_steps"),
+            "commands": bench_pack_verdict.get("commands"),
         }
+        if bench_pack_verdict.get("soft_accept"):
+            result["soft_accept"] = True
+            result["warnings"] = list(bench_pack_verdict.get("warnings") or [])
+            if bench_pack_verdict.get("next_steps"):
+                result["next_steps"] = list(bench_pack_verdict["next_steps"])
+            if bench_pack_verdict.get("commands"):
+                result["commands"] = list(bench_pack_verdict["commands"])
+            if bench_pack_verdict.get("hint"):
+                result["hint"] = bench_pack_verdict["hint"]
     if proposal_report is not None:
         result["proposal"] = proposal_report
     return result

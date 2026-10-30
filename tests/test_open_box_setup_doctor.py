@@ -147,10 +147,11 @@ def test_swarm_tick_gate_gap_includes_next_steps(
     monkeypatch.delenv("EVOLVER_SWARM_GATE_HANDOFF", raising=False)
 
     result = asyncio.run(swarm_tick(agent_name="test-host"))
-    assert result.get("next_action") == "await_human"
-    assert result.get("reason") in ("pack_absent", "no_baseline")
+    assert result.get("gate_soft_continue") is True
+    assert result.get("gate_gap") in ("pack_absent", "no_baseline")
     assert result.get("next_steps")
     assert result.get("commands")
+    assert result.get("warnings")
     blob = json.dumps(result, ensure_ascii=False).lower()
     assert "decrypt" not in blob
     assert "please unlock val" not in blob

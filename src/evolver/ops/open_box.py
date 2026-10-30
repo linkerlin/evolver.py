@@ -15,6 +15,7 @@ ACTIONABLE_ERRORS = (
     "hypothesis_missing",
     "no_baseline",
     "pack_absent",
+    "unmeasured",
     "user_lock",
     "preflight_abort",
 )
@@ -78,16 +79,18 @@ def next_steps_for(error: str, *, context: dict[str, Any] | None = None) -> dict
         },
         "no_baseline": {
             "message": (
-                "Parent baseline missing. Freeze pack first, solve val sandboxes in a "
-                "SEPARATE context (never in the candidate-writing chat), then measure."
+                "Parent baseline missing (recommended). Soft-accept/publish may proceed "
+                "with warnings; freeze pack, solve val sandboxes in a SEPARATE context "
+                "(never in the candidate-writing chat), then measure for a trusted bar."
             ),
             "next_steps": [
-                "Ensure freeze pack exists: `evolver bench freeze` (or `evolver doctor --fix`).",
+                "Optional but recommended: ensure freeze pack exists "
+                "(`evolver bench freeze` or `evolver doctor --fix`).",
                 "In another context (not the candidate dialogue), write val sandboxes "
                 "via `evolver bench prompt <task-id> --pack <pack>` — do NOT open sealed "
                 "val secrets in the candidate conversation.",
-                "Measure Parent: `evolver bench baseline`.",
-                "Re-run `evolver doctor` then swarm_boot.",
+                "Measure Parent: `evolver bench baseline` (soft-accept will NOT invent this).",
+                "Continue swarm_tick / swarm_solidify / session accept; warnings stay until baseline exists.",
             ],
             "commands": [
                 "evolver doctor --fix",
@@ -97,15 +100,33 @@ def next_steps_for(error: str, *, context: dict[str, Any] | None = None) -> dict
             ],
         },
         "pack_absent": {
-            "message": "Frozen charter pack is not installed; the gate cannot publish.",
+            "message": (
+                "Frozen charter pack is not installed (recommended). Soft-accept/publish "
+                "may proceed with warnings; install the pack for a real fitness bar."
+            ),
             "next_steps": [
-                "Run `evolver doctor --fix` or `evolver bench freeze` to install the pack.",
+                "Recommended: `evolver doctor --fix` or `evolver bench freeze` to install the pack.",
                 "Then prepare val sandboxes in another context and run `evolver bench baseline`.",
-                "Re-run swarm_boot when doctor reports loop_ready.",
+                "You may continue swarm / soft-accept now; doctor loop_ready stays false until ready.",
             ],
             "commands": [
                 "evolver doctor --fix",
                 "evolver bench freeze",
+            ],
+        },
+        "unmeasured": {
+            "message": (
+                "Val sandboxes are unmeasured (recommended to fill). Soft-accept/publish "
+                "may proceed with warnings; do not open sealed val in the candidate chat."
+            ),
+            "next_steps": [
+                "In another context, solve pending val tasks into sandboxes/r1 and sandboxes/r2.",
+                "Do NOT open sealed val material in the candidate-writing dialogue.",
+                "Re-run swarm_solidify after sandboxes are filled; soft-accept allowed before that.",
+            ],
+            "commands": [
+                "evolver doctor",
+                "evolver bench baseline",
             ],
         },
         "user_lock": {

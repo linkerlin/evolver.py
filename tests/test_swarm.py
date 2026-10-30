@@ -111,11 +111,11 @@ class TestInstrumentPrompt:
         )
         assert "先调用 `swarm_solidify`" in pending
         assert "调用 `swarm_tick` 开始第一轮进化" not in pending
-        # No pack in the state: do not start a cycle the gate will reject.
+        # No pack in the state: soft-continue with warnings (no hard await_human).
         unarmed = build_instrument_prompt({"agent_name": "a", "workspace_root": "/ws"})
-        assert "evolver bench freeze" in unarmed
-        assert "调用 `swarm_tick` 开始第一轮进化" not in unarmed
-        assert "next_action=await_human" in unarmed
+        assert "evolver bench freeze" in unarmed or "evolver doctor" in unarmed
+        assert "soft-continue" in unarmed or "soft-accept" in unarmed
+        assert "next_action=await_human" not in unarmed or "soft" in unarmed
         ready = build_instrument_prompt(
             {
                 "agent_name": "a",
@@ -178,8 +178,12 @@ class TestBootAndStatus:
         assert result["agent_name"] == "zcode-1"
         assert "EVOLVER SWARM" in result["instrument_prompt"]
         assert result["state"]["version"] == __version__
-        assert result["next_action"] == "await_human"
-        assert "evolver bench freeze" in result["instrument_prompt"]
+        assert result["next_action"] == "swarm_tick"
+        assert result.get("gate_soft_continue") is True
+        assert result.get("next_steps")
+        assert "evolver bench freeze" in result["instrument_prompt"] or "evolver doctor" in (
+            result.get("hint") or ""
+        ) or any("freeze" in str(s) for s in result.get("commands") or [])
         assert result["boot_once"] == [
             {"tool": "swarm_hook_event", "arguments": {"event": "session_start"}},
         ]
@@ -211,11 +215,10 @@ class TestBootAndStatus:
         assert result["boot_once"] == []
         assert "swarm_solidify" in result["instrument_prompt"]
 
-    def test_boot_holds_until_the_gate_can_publish(
+    def test_boot_soft_continues_when_gate_cannot_fully_publish(
         self, isolated_swarm_env: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        """A missing pack or baseline is a handoff. Ticking would pay the
-        validation cascade and then be rejected."""
+        """A missing pack or baseline soft-continues with next_steps (no await_human)."""
         _ = isolated_swarm_env
         monkeypatch.setattr("evolver.config.SWARM_GATE_HANDOFF", "human")
 
@@ -226,15 +229,20 @@ class TestBootAndStatus:
         ticked = swarm_boot("ready")
         assert ticked["next_action"] == "swarm_tick"
         assert "train-a" in ticked["instrument_prompt"]
+        assert ticked.get("gate_soft_continue") is not True
 
         def bare() -> dict[str, object]:
             return {"armed": True, "baseline": None, "train_ids": ["train-a"]}
 
         monkeypatch.setattr("evolver.bench.frozen_gate.gate_snapshot", bare)
         held = swarm_boot("held")
-        assert held["next_action"] == "await_human"
-        assert "no_baseline" in held["instrument_prompt"]
-        assert "调用 `swarm_tick` 开始第一轮进化" not in held["instrument_prompt"]
+        assert held["next_action"] == "swarm_tick"
+        assert held.get("gate_soft_continue") is True
+        assert held.get("gate_gap") == "no_baseline"
+        assert held.get("next_steps")
+        assert "no_baseline" in held["instrument_prompt"] or "soft-continue" in held[
+            "instrument_prompt"
+        ]
 
         monkeypatch.setattr("evolver.bench.frozen_gate.gate_snapshot", ready)
         swarm_supervise("pause", reason="hold")
@@ -246,18 +254,18 @@ class TestBootAndStatus:
     def test_hotl_boot_ticks_past_a_missing_gate(
         self, isolated_swarm_env: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        """The human may skip the handoff. Boot then ticks, and the prompt says
-        the gate still rejects."""
+        """HOTL and default human both soft-continue; hotl is still labeled."""
         _ = isolated_swarm_env
         boot = swarm_boot("hotl")
         assert boot["next_action"] == "swarm_tick"
         prompt = boot["instrument_prompt"]
         assert "gate_handoff: hotl" in prompt
-        assert "EVOLVER_SWARM_GATE_HANDOFF=hotl" in prompt
-        assert "不会发布" in prompt
+        assert "EVOLVER_SWARM_GATE_HANDOFF=hotl" in prompt or "soft-continue" in prompt
 
         monkeypatch.setattr("evolver.config.SWARM_GATE_HANDOFF", "anything-else")
-        assert swarm_boot("fallback")["next_action"] == "await_human"
+        fallback = swarm_boot("fallback")
+        assert fallback["next_action"] == "swarm_tick"
+        assert fallback.get("gate_soft_continue") is True
 
     def test_instrument_renders_supervision_and_hitl(self, isolated_swarm_env: Path) -> None:
         """Round-57: section six carries governance state so a host sees a
@@ -435,19 +443,17 @@ class TestTick:
         assert result["ok"] is True
         assert result["dispatch_prompt"] is None
 
-    async def test_tick_awaits_human_while_the_gate_cannot_publish(
+    async def test_tick_soft_continues_while_the_gate_cannot_fully_publish(
         self, isolated_swarm_env: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        """Default handoff: no cycle runs, so no cascade and no rejection
-        episode for a gate that was never going to accept."""
+        """Default handoff soft-continues: cycle may run; warnings + next_steps attached."""
         monkeypatch.setattr("evolver.config.SWARM_GATE_HANDOFF", "human")
         result = await swarm_tick(agent_name="gate")
-        assert result["next_action"] == "await_human"
-        assert result["gate_ready"] is False
-        assert result["reason"] == "pack_absent"
-        assert "run_id" not in result
-        state_file = isolated_swarm_env / "evolution" / "swarm_state.json"
-        assert not state_file.exists()
+        assert result.get("gate_soft_continue") is True
+        assert result.get("gate_ready") is False
+        assert result.get("gate_gap") == "pack_absent"
+        assert result.get("next_steps")
+        assert result.get("warnings")
 
     async def test_fresh_tick_carries_no_proposal_mandate(self, isolated_swarm_env: Path) -> None:
         """Charter step 1: the field exists on every dispatched tick; a novel

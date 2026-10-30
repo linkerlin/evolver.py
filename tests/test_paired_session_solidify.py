@@ -4,7 +4,7 @@ Completion criteria pinned here:
 
 - **a missing hypothesis fails before the pack gate even runs** — otherwise a
   recordless round could be laundered into a publish by scoring well;
-- **flat and unmeasured are rejections** (round-79 let both through);
+- **flat stays a hard rejection**; unmeasured soft-accepts with warnings (baseline still unset);
 - **a proposal carrying val material is refused**, not sanitised.
 
 The pack gate is reached only when a usable hypothesis is on record.
@@ -246,14 +246,46 @@ class TestPackVerdictsAtSolidify:
         assert result["details"]["bench_pack"]["reason"] == "flat"
         assert gate_mod.load_baseline()["score"] == 0.5
 
-    def test_unmeasured_rejects(self, git_ws: Path) -> None:
-        """An unsolved val split is not evidence of anything."""
+    def test_no_baseline_soft_accepts_without_writing_bar(self, git_ws: Path) -> None:
+        """Armed pack + solved val but no Parent bar → soft-accept; bar stays unset."""
+        _freeze_pack(git_ws)
+        correct = {"pair-1": "aurora", "pair-2": "aurora"}
+        _solve(1, correct)
+        _solve(2, correct)
+        self._with_hypothesis()
+        write_state_for_solidify(_last_run())
+        assert gate_mod.load_baseline() is None
+        result = solidify(skip_validation=True)
+        assert result["ok"] is True
+        assert result.get("soft_accept") is True
+        assert result["bench_pack"]["reason"] == "no_baseline"
+        assert result.get("next_steps")
+        assert gate_mod.load_baseline() is None
+
+    def test_pack_absent_soft_accepts_with_warnings(self, git_ws: Path) -> None:
+        """No frozen pack → measurement pack_absent; solidify soft-accepts with next_steps."""
+        self._with_hypothesis()
+        write_state_for_solidify(_last_run())
+        result = solidify(skip_validation=True)
+        assert result["ok"] is True
+        assert result.get("soft_accept") is True
+        assert result["bench_pack"]["reason"] == "pack_absent"
+        assert result.get("next_steps")
+        assert gate_mod.load_baseline() is None
+
+    def test_unmeasured_soft_accepts_with_warnings(self, git_ws: Path) -> None:
+        """Unsolved val is still a measurement reject, but solidify soft-accepts
+        with warnings so first-run hosts are not stuck. Baseline stays unset."""
         _freeze_pack(git_ws)
         self._with_hypothesis()
         write_state_for_solidify(_last_run())
         result = solidify(skip_validation=True)
-        assert result["error"] == "bench_pack_rejected"
-        assert result["details"]["bench_pack"]["reason"] == "unmeasured"
+        assert result["ok"] is True
+        assert result.get("soft_accept") is True
+        assert result["bench_pack"]["reason"] == "unmeasured"
+        assert result["bench_pack"]["soft_accept"] is True
+        assert result.get("next_steps")
+        assert result.get("warnings")
         assert gate_mod.load_baseline() is None
 
     def test_gate_exception_rejects_instead_of_degrading(
@@ -339,6 +371,11 @@ class TestSessionLedgerFold:
 
         self._open_session()
         _freeze_pack(git_ws)
+        half = {"pair-1": "aurora", "pair-2": "wrong"}
+        _solve(1, half)
+        _solve(2, half)
+        assert gate_mod.establish_parent_baseline()["ok"] is True
+        # Same scores as Parent → flat (hard reject; burns a round).
         hypothesis_mod.record_hypothesis(_good_hypothesis())
         write_state_for_solidify(_last_run())
 
@@ -368,6 +405,11 @@ class TestSessionLedgerFold:
 
         self._open_session()
         _freeze_pack(git_ws)
+        half = {"pair-1": "aurora", "pair-2": "wrong"}
+        _solve(1, half)
+        _solve(2, half)
+        assert gate_mod.establish_parent_baseline()["ok"] is True
+        # Same scores as Parent → flat (hard reject; burns a round).
         hypothesis_mod.record_hypothesis(_good_hypothesis())
         write_state_for_solidify(_last_run())
 
@@ -386,6 +428,11 @@ class TestSessionLedgerFold:
 
         self._open_session()
         _freeze_pack(git_ws)
+        half = {"pair-1": "aurora", "pair-2": "wrong"}
+        _solve(1, half)
+        _solve(2, half)
+        assert gate_mod.establish_parent_baseline()["ok"] is True
+        # Same scores as Parent → flat (hard reject; burns a round).
         hypothesis_mod.record_hypothesis(_good_hypothesis())
         write_state_for_solidify(_last_run())
         assert solidify(skip_validation=True)["ok"] is False
@@ -439,9 +486,10 @@ class TestSessionLedgerFold:
 
         write_state_for_solidify(_last_run())
         result = solidify(skip_validation=True)
-        # It reaches the pack gate (unmeasured → reject), NOT the hypothesis gate.
-        assert result["error"] == "bench_pack_rejected"
-        assert result["details"]["bench_pack"]["reason"] == "unmeasured"
+        # It reaches the pack gate (unmeasured → soft-accept), NOT the hypothesis gate.
+        assert result["ok"] is True
+        assert result.get("soft_accept") is True
+        assert result["bench_pack"]["reason"] == "unmeasured"
 
     def test_a_leftover_record_from_another_round_is_still_refused(self, git_ws: Path) -> None:
         """The widening accepts the session scope — it does not open the door."""

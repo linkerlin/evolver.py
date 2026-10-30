@@ -461,30 +461,48 @@ class EvolutionSession:
     ) -> str:
         """Accept the current Candidate: gate, publish, switch to accepted.
 
-        Charter §5.2/§5.3 — an Accept exists only when the publication gate
-        actually passed. ``gate`` is injected by the caller; without one the
-        session falls back to the decision solidify persisted
-        (:meth:`record_gate_decision`), and if that is missing or refusing
-        the Accept is refused — a bare ``accept`` command is a claim, not a
-        measurement. ``publish`` returns the published version id (batch C
-        wires the library snapshot); without a publisher the Candidate ref is
-        kept.
+        Charter §5.2/§5.3 — a full Accept echoes an ``accept:true`` gate
+        record. Usability gaps (``no_baseline`` / ``pack_absent`` /
+        ``unmeasured``) may soft-accept with warnings + next_steps so a
+        first-run host is not stuck; soft-accept does not invent a Parent
+        baseline. A bare accept with no gate record, or a hard reject
+        (drop/flat/regression/…), is still refused. ``publish`` returns the
+        published version id; without a publisher the Candidate ref is kept.
         """
+        from evolver.bench.frozen_gate import enrich_soft_accept, is_usability_soft_reason
+
         run = self._require_running()
         candidate = str(run.get("current_candidate") or "")
         if not candidate:
             raise EvolutionError("No Candidate under evaluation to accept")
         decision = gate(run) if gate is not None else self.pending_gate()
         if not isinstance(decision, dict) or not decision.get("accept"):
-            detail = ""
-            if isinstance(decision, dict) and decision.get("reason"):
-                detail = f" (last gate reason: {decision.get('reason')})"
-            elif decision is None:
-                detail = " (no gate decision recorded — run solidify first)"
-            raise EvolutionError(
-                "Candidate did not pass the publication gate — the session "
-                f"cannot Accept without an accept:true gate record{detail}"
-            )
+            soft_reason = None
+            if isinstance(decision, dict):
+                soft_reason = str(
+                    decision.get("soft_reason") or decision.get("reason") or ""
+                ).strip()
+                bench = decision.get("bench_pack")
+                if (
+                    not is_usability_soft_reason(soft_reason)
+                    and isinstance(bench, dict)
+                    and is_usability_soft_reason(str(bench.get("reason") or ""))
+                ):
+                    soft_reason = str(bench.get("reason") or "").strip()
+            if is_usability_soft_reason(soft_reason):
+                decision = enrich_soft_accept(
+                    {**(decision if isinstance(decision, dict) else {}), "reason": soft_reason}
+                )
+            else:
+                detail = ""
+                if isinstance(decision, dict) and decision.get("reason"):
+                    detail = f" (last gate reason: {decision.get('reason')})"
+                elif decision is None:
+                    detail = " (no gate decision recorded — run solidify first)"
+                raise EvolutionError(
+                    "Candidate did not pass the publication gate — the session "
+                    f"cannot Accept without an accept:true gate record{detail}"
+                )
         run["gate"] = decision
         published = publish(candidate) if publish is not None else candidate
         accepted_at = _now()

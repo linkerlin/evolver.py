@@ -2219,6 +2219,15 @@ def _cmd_session(args: argparse.Namespace) -> int:
             ref = ev.accept()
             print(f"accepted      : {ref}")
             print(f"session       : {ev.status}")
+            gate = (ev.run or {}).get("gate") if isinstance(ev.run, dict) else None
+            if isinstance(gate, dict) and gate.get("soft_accept"):
+                print(
+                    f"soft-accept   : true (reason={gate.get('soft_reason') or gate.get('reason')})"
+                )
+                for warn in gate.get("warnings") or []:
+                    print(f"warning       : {warn}")
+                for step in gate.get("next_steps") or []:
+                    print(f"next_step     : {step}")
             return 0
 
         if action == "incomplete":
