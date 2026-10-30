@@ -239,6 +239,35 @@ def test_accept_publishes_and_closes(session: EvolutionSession) -> None:
     assert session.run["accepted_ref"] == "ontology_cand-1"
 
 
+def test_soft_accept_allows_no_baseline_with_warnings(session: EvolutionSession) -> None:
+    """Usability gap: accept:false + no_baseline soft-accepts with warnings."""
+    session.begin_round("h", "cand-soft")
+    session.record_gate_decision({"accept": False, "reason": "no_baseline"})
+    published = session.accept(publish=lambda candidate: f"soft_{candidate}")
+    assert published == "soft_cand-soft"
+    assert session.status == ACCEPTED
+    gate = session.run["gate"]
+    assert gate["soft_accept"] is True
+    assert gate["reason"] == "no_baseline"
+    assert gate.get("warnings")
+    assert gate.get("next_steps")
+
+
+def test_soft_accept_allows_pack_absent_and_unmeasured(session: EvolutionSession) -> None:
+    session.begin_round("h", "cand-pack")
+    session.record_gate_decision({"accept": False, "reason": "pack_absent"})
+    assert session.accept() == "cand-pack"
+    assert session.run["gate"]["soft_accept"] is True
+
+    # New session round after accept is not possible — status accepted.
+    # Cover unmeasured via enrich path on a fresh session-like decision:
+    from evolver.bench.frozen_gate import enrich_soft_accept
+
+    soft = enrich_soft_accept({"accept": False, "reason": "unmeasured"})
+    assert soft["accept"] is True and soft["soft_accept"] is True
+    assert soft["next_steps"]
+
+
 def test_bare_accept_is_refused_without_a_gate_record(session: EvolutionSession) -> None:
     """§5.2 — the session's Accept is an echo of a real gate verdict.
 

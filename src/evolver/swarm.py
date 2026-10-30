@@ -150,12 +150,16 @@ def build_instrument_prompt(state: dict[str, Any]) -> str:
     hotl = gate_handoff_skipped()
     gate_handoff = "hotl" if hotl else "human"
     hotl_note = (
-        "\n当前 `gate_handoff: hotl`：人已选择不在 tick 前等待。`pack_absent` 与 "
-        "`no_baseline` 的拒绝照常回滚、不发布，按 `retryable=true` 回到步骤 1，"
-        "不必请人，也不计入「连续 3 次相同」。人在环上用「停」与 veto 监督；"
-        "保险丝是自动暂停绊线（`EVOLVER_SUPERVISION_AUTO_PAUSE_STREAK`）。"
+        "\n当前 `gate_handoff: hotl`：人已选择不在 tick 前等待。"
         if hotl
         else ""
+    )
+    soft_gate_note = (
+        "\n门未就绪（pack_absent / no_baseline）时默认 **soft-continue**：仍可 "
+        "`swarm_tick` / `swarm_solidify`；Accept/publish 走 soft-accept（带 "
+        "warnings + next_steps），**不**伪造 Parent baseline，**不**在候选对话中"
+        "打开 val 密封材料。建议仍按 `evolver doctor` / `evolver bench baseline` "
+        "补齐，但非强制。drop/flat/regression 与 val_seal 等危险门禁仍硬拒绝。"
     )
     hitl = state.get("hitl") or {}
     hitl_mode = hitl.get("mode", "?")
@@ -275,21 +279,24 @@ def build_instrument_prompt(state: dict[str, Any]) -> str:
 - 多节点：`tool_mailbox_poll` / `tool_mailbox_send`。
 - 不要在开机时调用 `swarm_skills`。用户明确要求把技能纳入进化时才 `action=sync`。
 
-## 交给人
+## 交给人 / soft-continue
 
-这几件事循环做不完，不要重试：
+冻结 val 包门仍是外部适应度标尺；首次准备缺口不再硬卡住循环，带 warnings + next_steps 继续：
 
-- `bench_pack.reason=pack_absent`：请人按 `examples/swarm-quickstart/README.md`
-  的「首次准备」执行 `evolver bench freeze`，然后重新 `swarm_boot`。
-  这是安装**冻结 val 包门**，不是变异。装好之后还没有基线，不要 tick。
-- `reason=no_baseline`：停。请人按同一节「首次准备」，在另一上下文写好 val 沙箱后
-  执行 `evolver bench baseline`。基线不由候选书写，solidify 触不到它。
-  不要为了凑基线去解 val。准备好后重新 `swarm_boot`。
-- `reason=unmeasured`：停，把 `pending_tasks` 报告给人。val 由另一上下文求解进
-  `sandboxes/r1` 与 `sandboxes/r2`；解完由人回到这里重新 `swarm_solidify`。
-- `ok=true` 且 `bench_pack.accept=true`：停并报告。发布要人执行 `evolver session accept`。
-  没有配对会话时，这次返回就是最终结果。
-{hotl_note}
+- `bench_pack.reason=pack_absent`：**可继续**。建议人按
+  `examples/swarm-quickstart/README.md`「开箱 / 首次准备」执行
+  `evolver setup` / `evolver doctor --fix` / `evolver bench freeze`。
+  soft-accept 可发布但会警告；装包仍强烈推荐。
+- `reason=no_baseline`：**可继续**。建议在另一上下文写好 val 沙箱后执行
+  `evolver bench baseline`（或 doctor --fix 在沙箱齐时测量）。基线不由候选
+  书写；本对话不得解 val、不得打开 val 密封材料。soft-accept **不**写入 Parent bar。
+- `reason=unmeasured`：**可 soft-accept**。把 `pending_tasks` 报告给人；val 由
+  另一上下文写入 `sandboxes/r1` 与 `sandboxes/r2`。非强制完成后再 solidify。
+- `ok=true` 且 `bench_pack.accept=true`（含 soft_accept）：停并报告。发布要人执行
+  `evolver session accept`（soft 时 CLI 会打印 warnings）。没有配对会话时，
+  这次返回就是最终结果。
+- drop / flat / regression / val_seal_breach / secrets：仍硬拒绝，不要重试同一失败。
+{hotl_note}{soft_gate_note}
 {working_block}
 ## 当前状态
 
@@ -652,9 +659,10 @@ def _opening_action(state: dict[str, Any]) -> tuple[str, str]:
     """What the host does after boot, as ``(next_action, prose)``.
 
     A pending run is settled first. A paused loop is next, matching the
-    ``await_supervisor_resume`` tick returns when already paused. Otherwise a
-    gate that cannot publish (no pack, or no Parent baseline) is a handoff:
-    ticking would pay the validation cascade and then be rejected.
+    ``await_supervisor_resume`` tick returns when already paused. Usability
+    gaps (no pack / no Parent baseline) soft-continue into ``swarm_tick`` with
+    warnings — they no longer hard-stop on ``await_human``. Drop/flat/seal
+    stay hard at solidify time.
     """
     if state.get("pending_solidify"):
         return (
@@ -669,26 +677,14 @@ def _opening_action(state: dict[str, Any]) -> tuple[str, str]:
             "用户说了才调用 `swarm_supervise` action=resume，不要自己 resume。",
         )
     gap = _gate_gap(state.get("bench_pack_gate"))
-    if gap is not None and gate_handoff_skipped():
+    if gap is not None:
+        hotl = "（gate_handoff=hotl）" if gate_handoff_skipped() else ""
         return (
             "swarm_tick",
-            f"门未就绪（{gap}），但人已设 `EVOLVER_SWARM_GATE_HANDOFF=hotl`："
-            "调用 `swarm_tick` 开始。门照常拒绝并回滚，不会发布。",
-        )
-    if gap == "pack_absent":
-        return (
-            "await_human",
-            "冻结包未安装——不要开始进化循环。请用户按 "
-            "examples/swarm-quickstart/README.md 的「首次准备」执行 "
-            "`evolver bench freeze`，然后重新 `swarm_boot`。",
-        )
-    if gap == "no_baseline":
-        return (
-            "await_human",
-            "没有基线（no_baseline）——不要开始进化循环。请用户按 "
-            "examples/swarm-quickstart/README.md 的「首次准备」，在另一上下文写好 "
-            "val 沙箱后执行 `evolver bench baseline`。本对话不得解 val。"
-            "准备好后重新 `swarm_boot`。",
+            f"门未就绪（{gap}）{hotl}——soft-continue：调用 `swarm_tick` 开始。"
+            "Accept/publish 将带 soft-accept 警告与 next_steps；建议 "
+            "`evolver doctor` / `evolver bench baseline`，非强制。"
+            "本对话不得解 val、不得打开 val 密封材料。",
         )
     return ("swarm_tick", "调用 `swarm_tick` 开始第一轮进化")
 
@@ -755,6 +751,24 @@ def swarm_boot(
         payload["next_action"] = blocked["next_action"]
         payload["checkpoint"] = blocked
         payload["steer_message"] = blocked["steer_message"]
+    gap = _gate_gap(state.get("bench_pack_gate"))
+    if gap is not None and str(payload.get("next_action") or "") != "await_supervisor_resume":
+        from evolver.ops.open_box import attach_next_steps
+
+        payload["gate_ready"] = False
+        payload["gate_gap"] = gap
+        payload["gate_soft_continue"] = True
+        payload = attach_next_steps(
+            {**payload, "error": gap, "reason": gap},
+            error=gap,
+        )
+    elif str(payload.get("next_action") or "") == "await_human":
+        from evolver.ops.open_box import attach_next_steps
+
+        payload = attach_next_steps(
+            {**payload, "error": gap or "no_baseline", "reason": gap},
+            error=gap or "no_baseline",
+        )
     return payload
 
 
@@ -791,8 +805,8 @@ async def swarm_tick(agent_name: str | None = None, include_prompt: bool = True)
     HOTL supervision (v1.101.0): the tripwire runs first (consecutive
     degraded feedback may auto-pause), a paused state refuses the cycle, and
     a supervisor veto on the selected gene withholds the dispatch prompt.
-    A gate that cannot publish returns ``await_human`` before the cycle unless
-    the human set ``EVOLVER_SWARM_GATE_HANDOFF=hotl``.
+    A gate usability gap (no pack / no baseline) soft-continues the cycle with
+    warnings + next_steps instead of hard-stopping on ``await_human``.
     """
     from evolver.config import SWARM_TICK_LOG_MAX_CHARS
 
@@ -821,18 +835,6 @@ async def swarm_tick(agent_name: str | None = None, include_prompt: bool = True)
         }
 
     gap = _gate_gap(_bench_gate_snapshot())
-    if gap is not None and not gate_handoff_skipped():
-        return {
-            "ok": True,
-            "gate_ready": False,
-            "reason": gap,
-            "agent_name": agent_name or "host-agent",
-            "hint": (
-                "first-time setup: examples/swarm-quickstart/README.md; or set "
-                "EVOLVER_SWARM_GATE_HANDOFF=hotl to run with the human on the loop"
-            ),
-            "next_action": "await_human",
-        }
 
     with instance_lock_ctx(blocking=False, timeout=0) as lock_ok:
         if not lock_ok:
@@ -842,7 +844,7 @@ async def swarm_tick(agent_name: str | None = None, include_prompt: bool = True)
                 "agent_name": agent_name or "host-agent",
                 "next_action": "stop_and_report",
             }
-        return await _swarm_tick_locked(
+        result = await _swarm_tick_locked(
             agent_name=agent_name,
             include_prompt=include_prompt,
             tripwire=tripwire,
@@ -850,6 +852,29 @@ async def swarm_tick(agent_name: str | None = None, include_prompt: bool = True)
             log_budget=SWARM_TICK_LOG_MAX_CHARS,
             supervision=supervision,
         )
+        if gap is not None and isinstance(result, dict):
+            from evolver.ops.open_box import attach_next_steps
+
+            result = attach_next_steps(
+                {
+                    **result,
+                    "gate_ready": False,
+                    "gate_gap": gap,
+                    "gate_soft_continue": True,
+                    "error": result.get("error") or gap,
+                },
+                error=gap,
+            )
+            warnings = list(result.get("warnings") or [])
+            note = (
+                f"soft-continue ({gap}): tick ran despite missing pack/baseline; "
+                "Accept/publish may soft-accept with warnings. Recommended: "
+                "`evolver doctor` / `evolver bench baseline` (do not open sealed val)."
+            )
+            if note not in warnings:
+                warnings.append(note)
+            result["warnings"] = warnings
+        return result
 
 
 def _build_tick_checklist(
@@ -1063,6 +1088,13 @@ async def _swarm_tick_locked(
         "tripwire": tripwire,
         "working_session": _working_snapshot(),
     }
+    if aborted or reason == "preflight_abort":
+        from evolver.ops.open_box import attach_next_steps
+
+        abort_reason = str(result.get("abort_reason") or "preflight_abort")
+        err = "user_lock" if "user lock" in abort_reason.lower() else "preflight_abort"
+        result = attach_next_steps({**result, "error": err}, error=err)
+
     _record_tick(result)
     return result
 

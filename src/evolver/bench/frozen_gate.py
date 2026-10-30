@@ -15,7 +15,10 @@ the built-in pack to the canonical path and is idempotent without
 The gate grades the pack's ``val`` split sandboxes as they stand. WHO solves
 val is a separate-context question: the candidate-writing host must not be
 the one answering the sealed questions, so until that context exists the
-honest verdict for an unsolved split is *unmeasured → reject*.
+honest verdict for an unsolved split is *unmeasured → reject* at the
+measurement layer. Solidify/swarm may *soft-accept* that reject with warnings
+so first-run hosts are not stuck — soft-accept never writes the Parent
+baseline and never opens sealed val.
 
 Baseline semantics: the persisted score of the last ACCEPTED state. Nothing
 has been accepted yet → there is no bar, and a measurement must never write
@@ -66,6 +69,55 @@ CHARTER_PACK_FILENAME: Final = "charter-pack.tasks.json"
 BASELINE_FORMAT: Final = "evolver.bench_pack_baseline.v1"
 #: The gate only gates on the val split (S26.4: gate ONLY on val).
 GATE_SPLIT: Final = "val"
+
+#: Usability gaps: measurement still rejects (honest bar), but solidify /
+#: swarm / session Accept may soft-accept with warnings + next_steps so a
+#: first-run host can finish open-box → swarm → solidify without being stuck.
+#: Soft-accept MUST NOT call save_baseline / establish a fake Parent bar.
+#: Real danger reasons (drop, flat, regression, seal, secrets) stay hard.
+USABILITY_SOFT_REASONS: Final = frozenset({"no_baseline", "pack_absent", "unmeasured"})
+
+
+def is_usability_soft_reason(reason: str | None) -> bool:
+    """True when *reason* is a first-run usability gap eligible for soft-accept."""
+    return str(reason or "").strip() in USABILITY_SOFT_REASONS
+
+
+def enrich_soft_accept(verdict: dict[str, Any]) -> dict[str, Any]:
+    """Turn a usability reject into a soft-accept payload (no baseline write).
+
+    Keeps the original ``reason`` (no_baseline / pack_absent / unmeasured) so
+    next_steps stay actionable. Sets ``accept=True`` + ``soft_accept=True`` +
+    ``verdict=soft_accept`` and attaches warnings / next_steps / commands.
+    """
+    reason = str(verdict.get("soft_reason") or verdict.get("reason") or "").strip()
+    if not is_usability_soft_reason(reason):
+        reason = str(verdict.get("reason") or "no_baseline").strip()
+    from evolver.ops.open_box import next_steps_for
+
+    steps = next_steps_for(reason, context=verdict)
+    out = dict(verdict)
+    out["accept"] = True
+    out["verdict"] = "soft_accept"
+    out["soft_accept"] = True
+    out["soft_reason"] = reason
+    out["reason"] = reason
+    warn = (
+        f"soft-accept ({reason}): proceeding with warnings. Parent baseline / val "
+        "readiness is recommended but not required before Accept/publish. "
+        "This does NOT write a Parent baseline from the candidate, and must NOT "
+        "open sealed val material in the candidate dialogue."
+    )
+    warnings = list(out.get("warnings") or [])
+    if warn not in warnings:
+        warnings.append(warn)
+    out["warnings"] = warnings
+    out["next_steps"] = list(steps.get("next_steps") or [])
+    out["commands"] = list(steps.get("commands") or [])
+    if steps.get("message") and not out.get("hint"):
+        out["hint"] = steps["message"]
+    return out
+
 
 
 def frozen_pack_path() -> Path:
@@ -675,13 +727,16 @@ __all__ = [
     "COMPARE_ALPHA",
     "COMPARE_MIN_DISCORDANT",
     "GATE_SPLIT",
+    "USABILITY_SOFT_REASONS",
     "baseline_path",
+    "enrich_soft_accept",
     "establish_parent_baseline",
     "freeze_charter_pack",
     "frozen_pack_path",
     "gate_snapshot",
     "gate_verdict",
     "grade_split",
+    "is_usability_soft_reason",
     "load_baseline",
     "load_frozen_pack",
     "pack_digest",
