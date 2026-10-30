@@ -1250,7 +1250,10 @@ def _print_doctor_report(report: dict) -> None:
         if cmds:
             print(f"   commands: {', '.join(cmds)}")
     for action in report.get("actions") or []:
-        print(f"-- action: {action.get('action')} -> {action.get('result') or action.get('reason')}")
+        print(
+            f"-- action: {action.get('action')} -> "
+            f"{action.get('result') or action.get('reason')}"
+        )
     auto = report.get("auto_evolution") or {}
     if report.get("loop_ready"):
         print("Loop ready. MCP path:", auto.get("when_ready"))

@@ -29,13 +29,20 @@ def next_steps_for(error: str, *, context: dict[str, Any] | None = None) -> dict
     code = str(error or "").strip()
     # Normalize preflight reasons that embed user-lock text.
     lowered = code.lower()
-    if "user lock" in lowered or code == "user_lock":
-        code = "user_lock"
-    elif code.startswith("preflight") or "preflight_abort" in lowered:
-        if "user lock" in lowered:
-            code = "user_lock"
-        else:
-            code = "preflight_abort"
+    code = (
+        "user_lock"
+        if "user lock" in lowered or code == "user_lock"
+        else (
+            "user_lock"
+            if (code.startswith("preflight") or "preflight_abort" in lowered)
+            and "user lock" in lowered
+            else (
+                "preflight_abort"
+                if code.startswith("preflight") or "preflight_abort" in lowered
+                else code
+            )
+        )
+    )
 
     catalog: dict[str, dict[str, Any]] = {
         "not_a_git_repo": {
@@ -252,7 +259,6 @@ def _check_baseline() -> dict[str, Any]:
 
 def _check_user_lock() -> dict[str, Any]:
     import os
-    import time
 
     from evolver.evolve.guards import evaluate_user_lock
     from evolver.gep.paths import get_evolver_state_root
@@ -293,7 +299,9 @@ def diagnose(*, project: str | Path | None = None) -> dict[str, Any]:
         _check_user_lock(),
     ]
     blockers = [c for c in checks if not c.get("ok")]
-    loop_ready = all(c.get("ok") for c in checks if c["id"] in ("git", "freeze_pack", "parent_baseline"))
+    loop_ready = all(
+        c.get("ok") for c in checks if c["id"] in ("git", "freeze_pack", "parent_baseline")
+    )
     lock_ok = next(c for c in checks if c["id"] == "user_lock").get("ok")
     repo_root = next(c for c in checks if c["id"] == "git").get("repo_root")
     state = {
@@ -301,7 +309,9 @@ def diagnose(*, project: str | Path | None = None) -> dict[str, Any]:
         "loop_ready": bool(loop_ready and lock_ok),
         "repo_root": repo_root,
         "workspace_id": compute_workspace_id(repo_root) if repo_root else None,
-        "state_root": str(get_workspace_state_dir(repo_root) if repo_root else get_evolver_state_root()),
+        "state_root": str(
+            get_workspace_state_dir(repo_root) if repo_root else get_evolver_state_root()
+        ),
         "checks": checks,
         "blockers": [
             {
