@@ -43,6 +43,25 @@ def detect_platform_signals() -> list[dict[str, Any]]:
                 "message": "macOS detected: default filesystem is case-insensitive (APFS)",
             }
         )
+    elif system == "Linux":
+        signals.append(
+            {
+                "type": "platform_warning",
+                "severity": "info",
+                "message": "Linux detected: ensure bash scripts have executable permissions",
+            }
+        )
+
+    # Always emit python_version signal for all platforms
+    py_version = platform.python_version()
+    signals.append(
+        {
+            "type": "python_version",
+            "severity": "info",
+            "message": f"Python {py_version}",
+            "version": py_version,
+        }
+    )
 
     return signals
 

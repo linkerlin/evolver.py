@@ -27,6 +27,14 @@ __all__ = [
 
 def print_solo_banner() -> None:
     """Emit the solo startup banner (goes to stdout; matched by solo contract)."""
+    import contextlib
+    import sys
+
+    # Windows: reconfigure stdout for UTF-8 to avoid UnicodeEncodeError on Chinese text
+    if hasattr(sys.stdout, "reconfigure"):
+        with contextlib.suppress(AttributeError, ValueError):
+            sys.stdout.reconfigure(encoding="utf-8")
+
     print("[Solo] Mad Dog · 受约束的野性模式已启动")
     print("[Solo] 断网模式 · 禁ATP · 仅本机git可追踪")
     print("[Solo] 断网 · 禁ATP")
