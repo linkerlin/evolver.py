@@ -667,16 +667,20 @@ def _hypothesis_rejection(
         diff_snapshot=diff_snapshot,
     )
     append_event_jsonl(failure)
-    return {
-        "ok": False,
-        "error": "hypothesis_missing",
-        "event_id": _remember_failure_scene(failure),
-        # Same soft-failure contract as the pack gate: the round is over but
-        # the loop keeps running with repair bias.
-        "failure_mode": {"mode": "soft", "reasonClass": "hypothesis", "retryable": True},
-        "next_action": "swarm_tick",
-        "details": {"hypothesis": reason},
-    }
+    from evolver.ops.open_box import attach_next_steps
+
+    return attach_next_steps(
+        {
+            "ok": False,
+            "error": "hypothesis_missing",
+            "event_id": _remember_failure_scene(failure),
+            # Same soft-failure contract as the pack gate: the round is over but
+            # the loop keeps running with repair bias.
+            "failure_mode": {"mode": "soft", "reasonClass": "hypothesis", "retryable": True},
+            "next_action": "swarm_tick",
+            "details": {"hypothesis": reason},
+        }
+    )
 
 
 def _seal_rejection(
@@ -1745,7 +1749,9 @@ def _solidify_cycle(
             cwd = fallback_repo
         else:
             candidates = discover_git_candidates(cwd)
-            return {
+            from evolver.ops.open_box import attach_next_steps
+
+            return attach_next_steps({
                 "ok": False,
                 "error": "not_a_git_repo",
                 "cwd": str(cwd),
@@ -1765,7 +1771,7 @@ def _solidify_cycle(
                         )
                     ),
                 },
-            }
+            })
 
     mutation = _annotate_mutation_lineage(
         last_run, mutation_override or last_run.get("mutation", {})

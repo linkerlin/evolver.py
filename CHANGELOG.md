@@ -6,6 +6,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 
+## Unreleased
+
+### Added
+- **开箱 setup/doctor（open-box）**：`evolver setup` / `evolver doctor [--fix]` 检测 git / freeze pack / Parent baseline / user lock；`--fix` 仅安全补齐冻结包，并在 val 沙箱已齐时尝试 `bench baseline`（永不在候选对话中打开 val 密封材料）。MCP/CLI 对 `not_a_git_repo`、`hypothesis_missing`、`no_baseline`/`pack_absent`、`user_lock`、`preflight_abort` 附带 `next_steps`+`commands`。`examples/swarm-quickstart/README.md` 增加开箱节与自动进化路径说明；Accept/publish 门禁不放宽。
+
 ## [Unreleased]
 
 ### Added — 运行时数据外置與非标准宿主易用性加固 `U-1`..`U-14`

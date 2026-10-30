@@ -678,17 +678,17 @@ def _opening_action(state: dict[str, Any]) -> tuple[str, str]:
     if gap == "pack_absent":
         return (
             "await_human",
-            "冻结包未安装——不要开始进化循环。请用户按 "
-            "examples/swarm-quickstart/README.md 的「首次准备」执行 "
-            "`evolver bench freeze`，然后重新 `swarm_boot`。",
+            "冻结包未安装——不要开始进化循环。请用户执行 `evolver setup` "
+            "或 `evolver doctor --fix`（见 examples/swarm-quickstart/README.md "
+            "「开箱 / 首次准备」），然后重新 `swarm_boot`。",
         )
     if gap == "no_baseline":
         return (
             "await_human",
-            "没有基线（no_baseline）——不要开始进化循环。请用户按 "
-            "examples/swarm-quickstart/README.md 的「首次准备」，在另一上下文写好 "
-            "val 沙箱后执行 `evolver bench baseline`。本对话不得解 val。"
-            "准备好后重新 `swarm_boot`。",
+            "没有基线（no_baseline）——不要开始进化循环。请用户执行 "
+            "`evolver doctor` 查看缺口；在另一上下文写好 val 沙箱后执行 "
+            "`evolver bench baseline`（或 `evolver doctor --fix` 在沙箱齐时测量）。"
+            "本对话不得解 val、不得打开 val 密封材料。准备好后重新 `swarm_boot`。",
         )
     return ("swarm_tick", "调用 `swarm_tick` 开始第一轮进化")
 
@@ -755,6 +755,14 @@ def swarm_boot(
         payload["next_action"] = blocked["next_action"]
         payload["checkpoint"] = blocked
         payload["steer_message"] = blocked["steer_message"]
+    if str(payload.get("next_action") or "") == "await_human":
+        from evolver.ops.open_box import attach_next_steps
+
+        gap = _gate_gap(state.get("bench_pack_gate"))
+        payload = attach_next_steps(
+            {**payload, "error": gap or "no_baseline", "reason": gap},
+            error=gap or "no_baseline",
+        )
     return payload
 
 
@@ -822,17 +830,24 @@ async def swarm_tick(agent_name: str | None = None, include_prompt: bool = True)
 
     gap = _gate_gap(_bench_gate_snapshot())
     if gap is not None and not gate_handoff_skipped():
-        return {
-            "ok": True,
-            "gate_ready": False,
-            "reason": gap,
-            "agent_name": agent_name or "host-agent",
-            "hint": (
-                "first-time setup: examples/swarm-quickstart/README.md; or set "
-                "EVOLVER_SWARM_GATE_HANDOFF=hotl to run with the human on the loop"
-            ),
-            "next_action": "await_human",
-        }
+        from evolver.ops.open_box import attach_next_steps
+
+        return attach_next_steps(
+            {
+                "ok": True,
+                "gate_ready": False,
+                "reason": gap,
+                "error": gap,
+                "agent_name": agent_name or "host-agent",
+                "hint": (
+                    "first-time setup: run `evolver setup` / `evolver doctor --fix`; "
+                    "see examples/swarm-quickstart/README.md; or set "
+                    "EVOLVER_SWARM_GATE_HANDOFF=hotl to run with the human on the loop"
+                ),
+                "next_action": "await_human",
+            },
+            error=gap,
+        )
 
     with instance_lock_ctx(blocking=False, timeout=0) as lock_ok:
         if not lock_ok:
@@ -1063,6 +1078,13 @@ async def _swarm_tick_locked(
         "tripwire": tripwire,
         "working_session": _working_snapshot(),
     }
+    if aborted or reason == "preflight_abort":
+        from evolver.ops.open_box import attach_next_steps
+
+        abort_reason = str(result.get("abort_reason") or "preflight_abort")
+        err = "user_lock" if "user lock" in abort_reason.lower() else "preflight_abort"
+        result = attach_next_steps({**result, "error": err}, error=err)
+
     _record_tick(result)
     return result
 

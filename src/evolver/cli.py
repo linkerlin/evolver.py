@@ -394,6 +394,23 @@ def _build_parser() -> argparse.ArgumentParser:
         default=None,
         help="U-1: Explicit git repository root for the MCP server",
     )
+    setup_p = sub.add_parser(
+        "setup",
+        help="Open-box first-run: diagnose + safely auto-fill freeze pack (doctor --fix)",
+    )
+    setup_p.add_argument("--project", default=None, help="Target repository root")
+    setup_p.add_argument("--json", action="store_true", help="Output raw JSON")
+    doctor_p = sub.add_parser(
+        "doctor",
+        help="Open-box readiness diagnose; --fix safely freezes pack / tries baseline",
+    )
+    doctor_p.add_argument(
+        "--fix",
+        action="store_true",
+        help="Auto-fill safe gaps (freeze pack; baseline only if sandboxes ready)",
+    )
+    doctor_p.add_argument("--project", default=None, help="Target repository root")
+    doctor_p.add_argument("--json", action="store_true", help="Output raw JSON")
     mig_p = sub.add_parser(
         "migrate-state",
         help="U-11: Migrate legacy in-repo memory/ and .evolver/gep/ to external state root",
@@ -987,6 +1004,12 @@ def main(argv: Sequence[str] | None = None) -> int:
 
         return mcp_main(project=getattr(args, "project", None))
 
+    if command == "setup":
+        return _cmd_setup(args)
+
+    if command == "doctor":
+        return _cmd_doctor(args)
+
     if command == "migrate-state":
         return _cmd_migrate_state(args)
 
@@ -1205,6 +1228,63 @@ def _cmd_solidify(args: argparse.Namespace) -> int:
         file=sys.stderr,
     )
     return 1
+
+
+
+def _print_doctor_report(report: dict) -> None:
+    """Human-readable open-box doctor/setup report."""
+    ready = "READY" if report.get("loop_ready") else "NOT READY"
+    print(f"=== Evolver Doctor [{ready}] ===")
+    print(f"repo_root   : {report.get('repo_root')}")
+    print(f"workspace_id: {report.get('workspace_id')}")
+    print(f"state_root  : {report.get('state_root')}")
+    for check in report.get("checks") or []:
+        mark = "ok" if check.get("ok") else "FAIL"
+        err = check.get("error") or ""
+        print(f"  [{mark}] {check.get('id')}" + (f" ({err})" if err else ""))
+    for blocker in report.get("blockers") or []:
+        print(f"-- blocker {blocker.get('error')}: {blocker.get('message')}")
+        for step in blocker.get("next_steps") or []:
+            print(f"   * {step}")
+        cmds = blocker.get("commands") or []
+        if cmds:
+            print(f"   commands: {', '.join(cmds)}")
+    for action in report.get("actions") or []:
+        print(f"-- action: {action.get('action')} -> {action.get('result') or action.get('reason')}")
+    auto = report.get("auto_evolution") or {}
+    if report.get("loop_ready"):
+        print("Loop ready. MCP path:", auto.get("when_ready"))
+        print("CLI demo :", auto.get("cli_demo"))
+        print("Host round:", auto.get("host_round"))
+    else:
+        print("Next:", report.get("setup_path") or "evolver setup")
+
+
+def _cmd_setup(args: argparse.Namespace) -> int:
+    """Open-box first-run: diagnose + safely auto-fill."""
+    from evolver.ops.open_box import setup
+
+    report = setup(project=getattr(args, "project", None))
+    if getattr(args, "json", False):
+        print(json.dumps(report, ensure_ascii=False, indent=2))
+    else:
+        _print_doctor_report(report)
+    return 0 if report.get("loop_ready") else 2
+
+
+def _cmd_doctor(args: argparse.Namespace) -> int:
+    """Open-box readiness diagnose / optional --fix."""
+    from evolver.ops.open_box import doctor
+
+    report = doctor(
+        fix=bool(getattr(args, "fix", False)),
+        project=getattr(args, "project", None),
+    )
+    if getattr(args, "json", False):
+        print(json.dumps(report, ensure_ascii=False, indent=2))
+    else:
+        _print_doctor_report(report)
+    return 0 if report.get("loop_ready") else 2
 
 
 def _cmd_migrate_state(args: argparse.Namespace) -> int:

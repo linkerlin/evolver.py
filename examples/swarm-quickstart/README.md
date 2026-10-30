@@ -52,9 +52,32 @@ swarm_boot ─▶ swarm_status ─▶ swarm_hook_event(信号采集)
 
 连上之后，本条消息已有别的任务就做那件事。没有别的任务时宿主调用 `swarm_boot`，再用一句话说明实际状态。`boot_once` 只登记会话，不在开机时同步技能。冻结包未装或没有基线时 boot 与 `swarm_tick` 都返回 `await_human`，已暂停时返回 `await_supervisor_resume`，都不进入循环。用户说「停」，宿主调用 `swarm_supervise` action=pause；说「继续」，宿主转达 resume。也可以对它说「启动蜂群进化」。返回的 instrument 按步执行 `swarm_tick → 执行 → swarm_distill → swarm_hypothesis → swarm_solidify → swarm_feedback`，直到终止条件。`swarm_hypothesis` 可带 `expected_outcome` 写预计通过的检查，结算时引擎对照实测写 `prediction_delta`；上一轮输出被截断时按问题调用 `episode_inspect` 读回原文；收到压缩信号或连续 4 次固化失败时先调 `swarm_checkpoint_working` 写下 `WORKING_SESSION.md`。`dispatch_prompt` 标 **PROPOSAL REQUIRED** 时改走 `swarm_propose`，不得自由编辑。`next_action=await_human_approval` 停住：`swarm_approvals` 读给人，人决定后才 `swarm_approval_resolve`。
 
+
+## 开箱 / Open box（首次准备的一条命令）
+
+第一次接入时先看缺口，再只自动补**安全**项（冻结包）。Parent 基线仍要人在**另一上下文**写好 val 沙箱后测量——候选对话里不得解 val、不得打开 val 密封材料。
+
+```bash
+uv run evolver doctor          # 只诊断：git / freeze pack / Parent baseline / user lock
+uv run evolver doctor --fix     # 安全自动补齐：写入冻结包；若沙箱已齐则尝试 bench baseline
+uv run evolver setup           # 等同 doctor --fix（开箱入口）
+```
+
+`doctor` 退出码：`0` = `loop_ready`（可开始进化循环）；`2` = 仍有缺口（看 JSON/`next_steps`）。
+
+齐备后自动进化路径（宿主执行变异，引擎管门）：
+
+```
+swarm_boot → swarm_tick → 执行/mutate → swarm_distill → swarm_hypothesis → swarm_solidify → swarm_feedback
+```
+
+CLI 侧也可用 `evolver round --host` 串起 boot→tick→checklist；完整脚本演示见上文 `demo_swarm_loop.py`。
+
+MCP/CLI 在 `not_a_git_repo`、`hypothesis_missing`、`no_baseline` / `pack_absent`、`user_lock`、`preflight_abort` 时会附带 `next_steps` 与 `commands`（可直接照做）。Accept/publish 门禁不因开箱路径而放宽。
+
 ## 首次准备
 
-进化循环在冻结包和 Parent 基线都齐之前不会开始。下面三步在进化对话之外做。
+进化循环在冻结包和 Parent 基线都齐之前不会开始。优先跑上一节的 `evolver setup` / `doctor --fix`；下面三步仍是手动细节（尤其 val 沙箱必须在进化对话之外做）。
 
 1. 安装冻结包。
 
