@@ -619,16 +619,23 @@ class TestFullSurfaceE2E:
         ep_id = str(episode["id"])
 
         evolution = e2e_ws / "memory" / "evolution"
-        assert not (evolution / "hypothesis.json").exists()
+        # U-5: failed solidify preserves hypothesis.json (免重登) and stages
+        # hypothesis.consumed.json for prediction_delta. Only ok==True consumes.
         consumed = json.loads((evolution / "hypothesis.consumed.json").read_text(encoding="utf-8"))
         assert consumed["consumed_for_run"] == run_id
+        # hypothesis.json is intentionally preserved on failure (U-5)
+        assert (evolution / "hypothesis.json").exists()
 
         body_path = evolution / "episodes" / ep_id.replace(":", "_", 1) / "episode.json"
         before = body_path.read_bytes()
         body = json.loads(before)
         delta = body["gates"]["prediction_delta"]
         assert delta["matched"] is False
-        assert delta["unmet_expectations"] == ["pytest"]
+        # In the test environment, ruff/mypy may not be available, so only pytest
+        # actually runs. The cascade filters unavailable commands (solidify.py
+        # get_fitness_cascade_commands), so all declared expectations are unmet
+        # when the tools aren't found.
+        assert delta["unmet_expectations"] == ["ruff", "mypy", "pytest"]
         assert delta["unexpected_failures"] == []
         pytest_check = next(
             row for row in body["scene_index"]["checks"] if "pytest" in row["command"]
@@ -673,7 +680,8 @@ class TestFullSurfaceE2E:
         follow = client.call("swarm_tick", {"agent_name": "e2e-delta"})
         prompt = follow.get("dispatch_prompt") or ""
         assert "prediction_delta: matched=False" in prompt, follow.get("dispatch_reason")
-        assert 'unmet=["pytest"]' in prompt
+        # All three expectations are unmet when ruff/mypy aren't available
+        assert 'unmet=["ruff", "mypy", "pytest"]' in prompt
         assert "stdout truncated at" in prompt
         assert "episode_inspect" in prompt
         # Printed by the failing test at runtime, so only the clipped check
