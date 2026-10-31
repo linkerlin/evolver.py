@@ -146,3 +146,29 @@ class TestEnrichSoftAccept:
         assert "warnings" in enriched
         warning_text = " ".join(enriched["warnings"]).lower()
         assert "does not write a parent baseline" in warning_text
+
+    def test_soft_accept_includes_t0_skipped_warning(self) -> None:
+        """Soft-accept with skipped T0 emits t0_skipped_soft warning."""
+        verdict = {
+            "verdict": "reject",
+            "reason": "no_baseline",
+            "accept": False,
+            "t0": {"mode": "skip", "ok": True},
+        }
+        enriched = enrich_soft_accept(verdict)
+        assert enriched["soft_accept"] is True
+        warnings_str = " ".join(enriched.get("warnings", []))
+        assert "t0_skipped_soft" in warnings_str or "t0_probe=skip" in warnings_str
+
+    def test_soft_accept_includes_t0_minimal_warning(self) -> None:
+        """Soft-accept with minimal T0 emits t0_probe warning."""
+        verdict = {
+            "verdict": "reject",
+            "reason": "no_baseline",
+            "accept": False,
+            "t0": {"mode": "minimal", "ok": True},
+        }
+        enriched = enrich_soft_accept(verdict)
+        assert enriched["soft_accept"] is True
+        warnings_str = " ".join(enriched.get("warnings", []))
+        assert "t0_probe=minimal" in warnings_str or "t0_skipped_soft" in warnings_str

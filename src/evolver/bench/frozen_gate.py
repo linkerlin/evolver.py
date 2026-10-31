@@ -120,6 +120,14 @@ def enrich_soft_accept(verdict: dict[str, Any]) -> dict[str, Any]:
     warnings = list(out.get("warnings") or [])
     if warn not in warnings:
         warnings.append(warn)
+    
+    # Add T0 probe warning if T0 was skipped/minimized (Task 1.2)
+    t0_info = verdict.get("t0", {})
+    if t0_info.get("mode") in ("skip", "minimal"):
+        t0_warning = f"t0_skipped_soft: T0 probe ran in {t0_info['mode']} mode for usability"
+        if t0_warning not in warnings:
+            warnings.append(t0_warning)
+    
     out["warnings"] = warnings
     out["next_steps"] = list(steps.get("next_steps") or [])
     out["commands"] = list(steps.get("commands") or [])
