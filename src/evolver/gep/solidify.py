@@ -2080,61 +2080,69 @@ def _solidify_cycle(
                         # The success path will incorporate these warnings
                         validation_soft_warnings = failure_result.get("warnings", [])
                         validation_soft_failed = True
+                        # BUG FIX: do NOT fall through into legacy hard-fail rollback path
+                        # Skip the rest of this validation failure block
                     else:
                         # Hard block: return failure immediately
                         return failure_result
-                # Blast radius and diff must be captured BEFORE the rollback
-                # (Sprint 23 lesson — after rollback the tree is clean).
-                failed_blast = _compute_blast_radius()
-                diff_snapshot = _failure_diff(cwd)
-                changed_now = [
-                    f
-                    for f in git_list_changed_files(cwd) + _disposable_untracked(cwd)
-                    if f and not _is_runtime_state(f)
-                ]
-                env_blockers = _classify_env_blockers(validation_result, changed_now)
-                stash_info = snapshot_rejected_worktree(
-                    cwd,
-                    run_id=str(last_run.get("run_id") or ""),
-                    disposable_untracked=git_list_untracked_files(cwd),
-                    reason="validation_failed",
-                )
-                rollback_tracked()
-                # cwd must be explicit here too (Sprint 23 lesson, applied to
-                # the legacy path in round-13): without it the deletion runs
-                # from the process cwd — under a cascade that is the real
-                # repo, and the workspace-relative untracked list then names
-                # its own runtime state file there (DEBUG #20).
-                rollback_new_untracked_files(git_list_untracked_files(cwd), cwd=cwd)
-                record_solidify_failure(last_run, error="validation_failed")
-                failed_event = _append_failure_event(
-                    last_run,
-                    cwd,
-                    blast_radius=failed_blast,
-                    error="validation_failed",
-                    validation_result=validation_result,
-                    eval_meta=eval_meta,
-                    diff_snapshot=diff_snapshot,
-                )
-                details: dict[str, Any] = dict(validation_result)
-                details["stash"] = stash_info
-                details["env_blockers"] = env_blockers
-                details["env_blocker_only"] = bool(env_blockers)
-                if validation_report is not None:
-                    details["validation_report"] = validation_report
-                legacy_result: dict[str, Any] = {
-                    "ok": False,
-                    "error": "validation_failed",
-                    "stash": stash_info,
-                    "env_blockers": env_blockers,
-                    "env_blocker_only": bool(env_blockers),
-                    "details": details,
-                }
-                if failed_event is not None:
-                    legacy_result["event_id"] = _remember_failure_scene(
-                        failed_event, validation_result=validation_result
+                else:
+                    # Legacy non-cascade path: always hard-fail with rollback
+                    pass
+                
+                # Legacy hard-fail path: only execute if we did NOT soft-continue
+                if not validation_soft_failed:
+                    # Blast radius and diff must be captured BEFORE the rollback
+                    # (Sprint 23 lesson — after rollback the tree is clean).
+                    failed_blast = _compute_blast_radius()
+                    diff_snapshot = _failure_diff(cwd)
+                    changed_now = [
+                        f
+                        for f in git_list_changed_files(cwd) + _disposable_untracked(cwd)
+                        if f and not _is_runtime_state(f)
+                    ]
+                    env_blockers = _classify_env_blockers(validation_result, changed_now)
+                    stash_info = snapshot_rejected_worktree(
+                        cwd,
+                        run_id=str(last_run.get("run_id") or ""),
+                        disposable_untracked=git_list_untracked_files(cwd),
+                        reason="validation_failed",
                     )
-                return legacy_result
+                    rollback_tracked()
+                    # cwd must be explicit here too (Sprint 23 lesson, applied to
+                    # the legacy path in round-13): without it the deletion runs
+                    # from the process cwd — under a cascade that is the real
+                    # repo, and the workspace-relative untracked list then names
+                    # its own runtime state file there (DEBUG #20).
+                    rollback_new_untracked_files(git_list_untracked_files(cwd), cwd=cwd)
+                    record_solidify_failure(last_run, error="validation_failed")
+                    failed_event = _append_failure_event(
+                        last_run,
+                        cwd,
+                        blast_radius=failed_blast,
+                        error="validation_failed",
+                        validation_result=validation_result,
+                        eval_meta=eval_meta,
+                        diff_snapshot=diff_snapshot,
+                    )
+                    details: dict[str, Any] = dict(validation_result)
+                    details["stash"] = stash_info
+                    details["env_blockers"] = env_blockers
+                    details["env_blocker_only"] = bool(env_blockers)
+                    if validation_report is not None:
+                        details["validation_report"] = validation_report
+                    legacy_result: dict[str, Any] = {
+                        "ok": False,
+                        "error": "validation_failed",
+                        "stash": stash_info,
+                        "env_blockers": env_blockers,
+                        "env_blocker_only": bool(env_blockers),
+                        "details": details,
+                    }
+                    if failed_event is not None:
+                        legacy_result["event_id"] = _remember_failure_scene(
+                            failed_event, validation_result=validation_result
+                        )
+                    return legacy_result
 
         # RSI P0-1: anchor contracts for verifier-surface mutations.
         anchor_touched = touches_verifier_surface(
