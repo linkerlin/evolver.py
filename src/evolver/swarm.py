@@ -361,6 +361,46 @@ def _code_staleness() -> dict[str, Any] | None:
         return None
 
 
+def _package_source_root() -> Path | None:
+    """Best-effort git root of the running evolver package source tree."""
+    pkg_dir = Path(__file__).resolve().parent
+    # Editable checkout: …/src/evolver → repo root is parents[1].
+    candidates = [pkg_dir.parents[1], pkg_dir.parents[2], pkg_dir.parent, pkg_dir]
+    for root in candidates:
+        if (root / ".git").exists():
+            return root
+    for parent in pkg_dir.parents:
+        if (parent / ".git").exists():
+            return parent
+    return None
+
+
+def _source_revision() -> str | None:
+    """Git SHA of the running package/source checkout, if available."""
+    import subprocess
+
+    root = _package_source_root()
+    if root is None:
+        return None
+    try:
+        result = subprocess.run(
+            ["git", "rev-parse", "HEAD"],
+            cwd=str(root),
+            capture_output=True,
+            text=True,
+            timeout=5,
+            check=False,
+            encoding="utf-8",
+            errors="replace",
+        )
+    except (FileNotFoundError, subprocess.TimeoutExpired, OSError):
+        return None
+    if result.returncode != 0:
+        return None
+    sha = (result.stdout or "").strip()
+    return sha or None
+
+
 def _stale_import_error(exc: ImportError) -> dict[str, Any]:
     """Self-diagnosing error for stale long-lived MCP hosts (round-17).
 
@@ -526,11 +566,17 @@ def swarm_status() -> dict[str, Any]:
         # "Pending" means status=pending: poll() returns every inbound message
         # (acked/synced included), and counting them all made the label lie —
         # the number only ever went up, even after acks (dogfood round-7).
+        inbound_pending = [
+            m for m in store.poll(limit=100) if getattr(m, "status", "") == "pending"
+        ]
         mailbox = {
-            "inbound": sum(
-                1 for m in store.poll(limit=100) if getattr(m, "status", "") == "pending"
-            ),
+            "inbound": len(inbound_pending),
             "outbound": len(store.poll_outbound(limit=100)),
+            "unacked_hello": sum(
+                1
+                for m in inbound_pending
+                if getattr(m, "type", "") == "swarm.hello"
+            ),
         }
     except Exception:
         mailbox = {"inbound": -1, "outbound": -1}
@@ -556,6 +602,7 @@ def swarm_status() -> dict[str, Any]:
         "capsules": len(load_capsules()),
         "pending_solidify": _pending_solidify_state(),
         "last_prompt_artifact": str(prompt_artifact) if prompt_artifact.exists() else None,
+        "source_revision": _source_revision(),
         "code_staleness": _code_staleness(),
         "tick_count": int(swarm_state.get("ticks") or 0),
         "last_tick": swarm_state.get("last_tick"),
@@ -753,22 +800,24 @@ def swarm_boot(
         payload["steer_message"] = blocked["steer_message"]
     gap = _gate_gap(state.get("bench_pack_gate"))
     if gap is not None and str(payload.get("next_action") or "") != "await_supervisor_resume":
-        from evolver.ops.open_box import attach_next_steps
+        from evolver.ops.open_box import apply_soft_gap
 
-        payload["gate_ready"] = False
-        payload["gate_gap"] = gap
-        payload["gate_soft_continue"] = True
-        payload = attach_next_steps(
-            {**payload, "error": gap, "reason": gap},
-            error=gap,
-        )
+        payload = apply_soft_gap(payload, gap)
     elif str(payload.get("next_action") or "") == "await_human":
         from evolver.ops.open_box import attach_next_steps
 
         payload = attach_next_steps(
-            {**payload, "error": gap or "no_baseline", "reason": gap},
+            {
+                **payload,
+                "error": gap or "no_baseline",
+                "reason": gap,
+                "severity": "hard",
+            },
             error=gap or "no_baseline",
         )
+        payload.setdefault("severity", "hard")
+    payload["source_revision"] = state.get("source_revision")
+    payload["mailbox_hello_ack"] = _ack_own_hello(agent_name)
     return payload
 
 
@@ -792,6 +841,27 @@ def _announce(agent_name: str) -> str | None:
         )
     except Exception:
         return None
+
+
+def _ack_own_hello(agent_name: str) -> dict[str, Any]:
+    """Auto-ack this agent's pending inbound ``swarm.hello`` mailbox messages.
+
+    Prefer auto-ack over documenting that hosts must call ``mailbox_ack`` for
+    their own hello. Matching is by ``payload.agent == agent_name``.
+    """
+    try:
+        store = _mailbox_store()
+        pending = [
+            m
+            for m in store.poll(limit=100, type="swarm.hello")
+            if getattr(m, "status", "") == "pending"
+            and str((getattr(m, "payload", None) or {}).get("agent") or "") == agent_name
+        ]
+        ids = [str(m.id) for m in pending]
+        acked = int(store.ack(ids)) if ids else 0
+        return {"acked": acked, "ids": ids, "agent_name": agent_name}
+    except Exception as exc:
+        return {"acked": 0, "ids": [], "agent_name": agent_name, "error": str(exc)[:200]}
 
 
 async def swarm_tick(agent_name: str | None = None, include_prompt: bool = True) -> dict[str, Any]:
@@ -853,27 +923,28 @@ async def swarm_tick(agent_name: str | None = None, include_prompt: bool = True)
             supervision=supervision,
         )
         if gap is not None and isinstance(result, dict):
-            from evolver.ops.open_box import attach_next_steps
+            from evolver.ops.open_box import SOFT_GAP_ERRORS, apply_soft_gap
 
-            result = attach_next_steps(
-                {
-                    **result,
-                    "gate_ready": False,
-                    "gate_gap": gap,
-                    "gate_soft_continue": True,
-                    "error": result.get("error") or gap,
-                },
-                error=gap,
-            )
-            warnings = list(result.get("warnings") or [])
-            note = (
-                f"soft-continue ({gap}): tick ran despite missing pack/baseline; "
-                "Accept/publish may soft-accept with warnings. Recommended: "
-                "`evolver doctor` / `evolver bench baseline` (do not open sealed val)."
-            )
-            if note not in warnings:
-                warnings.append(note)
-            result["warnings"] = warnings
+            # Preserve a real hard error from the cycle; only soft-label the gap.
+            hard_error = result.get("error")
+            if hard_error in SOFT_GAP_ERRORS:
+                hard_error = None
+                result = {**result}
+                result.pop("error", None)
+            result = apply_soft_gap(result, gap)
+            if hard_error:
+                result["error"] = hard_error
+                result["severity"] = "hard"
+            else:
+                note = (
+                    f"soft-continue ({gap}): tick ran despite missing pack/baseline; "
+                    "Accept/publish may soft-accept with warnings. Recommended: "
+                    "`evolver doctor` / `evolver bench baseline` (do not open sealed val)."
+                )
+                warnings = list(result.get("warnings") or [])
+                if note not in warnings:
+                    warnings.append(note)
+                result["warnings"] = warnings
         return result
 
 

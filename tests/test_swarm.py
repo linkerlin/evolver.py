@@ -180,19 +180,31 @@ class TestBootAndStatus:
         assert result["state"]["version"] == __version__
         assert result["next_action"] == "swarm_tick"
         assert result.get("gate_soft_continue") is True
+        assert result.get("severity") == "soft"
+        assert result.get("gap") in ("pack_absent", "no_baseline")
+        assert result.get("error") not in ("pack_absent", "no_baseline", "unmeasured")
         assert result.get("next_steps")
+        assert result.get("source_revision") == result["state"].get("source_revision")
         assert "evolver bench freeze" in result["instrument_prompt"] or "evolver doctor" in (
             result.get("hint") or ""
         ) or any("freeze" in str(s) for s in result.get("commands") or [])
         assert result["boot_once"] == [
             {"tool": "swarm_hook_event", "arguments": {"event": "session_start"}},
         ]
+        assert result.get("mailbox_hello")
+        assert int((result.get("mailbox_hello_ack") or {}).get("acked") or 0) >= 1
 
         from evolver.proxy.mailbox.store import MailboxStore
 
         store = MailboxStore(isolated_swarm_env / ".evolver" / "proxy-mailbox")
-        hello = [m for m in store.poll(limit=50) if m.type == "swarm.hello"]
-        assert hello and hello[0].payload["agent"] == "zcode-1"
+        pending_hello = [
+            m
+            for m in store.poll(limit=50)
+            if m.type == "swarm.hello"
+            and getattr(m, "status", "") == "pending"
+            and (m.payload or {}).get("agent") == "zcode-1"
+        ]
+        assert pending_hello == []
 
     def test_boot_next_action_pending_aware(self, isolated_swarm_env: Path) -> None:
         """Round-57: the structured field must mirror the prompt's first-action
@@ -238,7 +250,10 @@ class TestBootAndStatus:
         held = swarm_boot("held")
         assert held["next_action"] == "swarm_tick"
         assert held.get("gate_soft_continue") is True
+        assert held.get("severity") == "soft"
         assert held.get("gate_gap") == "no_baseline"
+        assert held.get("gap") == "no_baseline"
+        assert held.get("error") not in ("no_baseline", "pack_absent", "unmeasured")
         assert held.get("next_steps")
         assert "no_baseline" in held["instrument_prompt"] or "soft-continue" in held[
             "instrument_prompt"
@@ -341,7 +356,7 @@ class TestBootAndStatus:
         # Bundled seed genes load even in a fresh store.
         assert status["genes"] >= 1
         assert status["pending_solidify"] is False
-        assert set(status["mailbox_pending"]) == {"inbound", "outbound"}
+        assert set(status["mailbox_pending"]) == {"inbound", "outbound", "unacked_hello"}
         # Fresh env: no frozen pack → the charter gate reports unarmed.
         assert status["bench_pack_gate"]["armed"] is False
 
@@ -450,8 +465,11 @@ class TestTick:
         monkeypatch.setattr("evolver.config.SWARM_GATE_HANDOFF", "human")
         result = await swarm_tick(agent_name="gate")
         assert result.get("gate_soft_continue") is True
+        assert result.get("severity") == "soft"
         assert result.get("gate_ready") is False
         assert result.get("gate_gap") == "pack_absent"
+        assert result.get("gap") == "pack_absent"
+        assert result.get("error") not in ("pack_absent", "no_baseline", "unmeasured")
         assert result.get("next_steps")
         assert result.get("warnings")
 
@@ -1071,6 +1089,11 @@ class TestMutualExclusion:
 class TestCodeStaleness:
     def test_status_reports_staleness_surface(self, isolated_swarm_env: Path) -> None:
         result = swarm_status()
+        assert "source_revision" in result
+        # SHA string or None when no .git beside the package
+        assert result["source_revision"] is None or isinstance(
+            result["source_revision"], str
+        )
         cs = result["code_staleness"]
         assert cs is not None
         assert set(cs) == {"stale", "process_started_at", "newest_src_mtime"}
@@ -1198,3 +1221,97 @@ class TestStaleImportGuard:
         result = asyncio.run(swarm.swarm_tick(include_prompt=False))
         assert result["ok"] is False
         assert result["error"] == "code_stale_process"
+
+@pytest.mark.asyncio
+async def test_e2e_no_baseline_soft_path_boot_tick_solidify(
+    isolated_swarm_env: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """no_baseline: boot → tick → solidify soft path; no await_human / no hard error."""
+    import subprocess
+
+    from evolver.bench.frozen_gate import enrich_soft_accept
+    from evolver.gep import hypothesis as hypothesis_mod
+    from evolver.gep.solidify import solidify, write_state_for_solidify
+    from evolver.ops.open_box import SOFT_GAP_ERRORS
+    from tests.conftest import synth_hypothesis
+
+    repo = isolated_swarm_env
+    subprocess.run(["git", "init"], cwd=repo, check=True, capture_output=True)
+    subprocess.run(
+        ["git", "config", "user.email", "test@example.com"],
+        cwd=repo,
+        check=True,
+        capture_output=True,
+    )
+    subprocess.run(
+        ["git", "config", "user.name", "Test User"],
+        cwd=repo,
+        check=True,
+        capture_output=True,
+    )
+    (repo / "README.md").write_text("e2e soft\n", encoding="utf-8")
+    subprocess.run(["git", "add", "."], cwd=repo, check=True, capture_output=True)
+    subprocess.run(
+        ["git", "-c", "commit.gpgsign=false", "commit", "-m", "init"],
+        cwd=repo,
+        check=True,
+        capture_output=True,
+    )
+    monkeypatch.delenv("EVOLVER_NO_PARENT_GIT", raising=False)
+    monkeypatch.setattr("evolver.config.SWARM_GATE_HANDOFF", "human")
+
+    def bare() -> dict[str, object]:
+        return {"armed": True, "baseline": None, "train_ids": ["train-a"]}
+
+    monkeypatch.setattr("evolver.bench.frozen_gate.gate_snapshot", bare)
+
+    boot = swarm_boot("e2e-soft")
+    assert boot["next_action"] == "swarm_tick"
+    assert boot["next_action"] != "await_human"
+    assert boot.get("severity") == "soft"
+    assert boot.get("gate_soft_continue") is True
+    assert boot.get("gap") == "no_baseline"
+    assert boot.get("error") not in SOFT_GAP_ERRORS
+    assert boot.get("next_steps")
+    assert int((boot.get("mailbox_hello_ack") or {}).get("acked") or 0) >= 1
+
+    tick = await swarm_tick(agent_name="e2e-soft")
+    assert tick.get("next_action") != "await_human"
+    assert tick.get("severity") == "soft"
+    assert tick.get("gate_soft_continue") is True
+    assert tick.get("gap") == "no_baseline"
+    assert tick.get("error") not in SOFT_GAP_ERRORS
+    assert tick.get("warnings")
+
+    # Solidify soft path: usability reject becomes soft-accept (no fake baseline).
+    soft = enrich_soft_accept({"accept": False, "reason": "no_baseline"})
+    assert soft["accept"] is True and soft.get("soft_accept") is True
+    assert soft.get("next_steps")
+
+    write_state_for_solidify(
+        {
+            "run_id": "run_e2e_soft",
+            "signals": ["log_error"],
+            "selected_gene_id": "g_e2e",
+            "mutation": {"id": "m_e2e", "validation": []},
+        }
+    )
+    hypothesis_mod.record_hypothesis(synth_hypothesis())
+
+    def soft_verdict(**_kwargs: object) -> dict[str, object]:
+        return {
+            "armed": True,
+            "accept": False,
+            "verdict": "reject",
+            "reason": "no_baseline",
+        }
+
+    monkeypatch.setattr("evolver.bench.frozen_gate.gate_verdict", soft_verdict)
+    # Skip heavy validation; usability soft-accept must not hard-stop.
+    result = solidify(skip_validation=True)
+    assert result.get("ok") is True
+    assert result.get("soft_accept") is True
+    assert result.get("next_action") != "await_human"
+    assert result.get("error") not in SOFT_GAP_ERRORS
+    reason = str((result.get("bench_pack") or {}).get("reason") or result.get("reason") or "")
+    assert reason == "no_baseline" or result.get("soft_accept")

@@ -63,7 +63,7 @@ uv run evolver doctor --fix     # 安全自动补齐：写入冻结包；若沙�
 uv run evolver setup           # 等同 doctor --fix（开箱入口）
 ```
 
-`doctor` 退出码：`0` = `loop_ready`（可开始进化循环）；`2` = 仍有缺口（看 JSON/`next_steps`）。
+`doctor` 退出码：`0` = `loop_ready` 或仅可用性缺口 soft-continue；`2` = 硬 blockers（如非 git / user_lock）。`loop_ready` 仍诚实反映 pack/baseline 是否齐。
 
 齐备后自动进化路径（宿主执行变异，引擎管门）：
 
@@ -74,6 +74,12 @@ swarm_boot → swarm_tick → 执行/mutate → swarm_distill → swarm_hypothes
 CLI 侧也可用 `evolver round --host` 串起 boot→tick→checklist；完整脚本演示见上文 `demo_swarm_loop.py`。
 
 MCP/CLI 在 `not_a_git_repo`、`hypothesis_missing`、`no_baseline` / `pack_absent` / `unmeasured`、`user_lock`、`preflight_abort` 时会附带 `next_steps` 与 `commands`（可直接照做）。可用性缺口（无 baseline / 无 val / 无 pack）改为 soft-accept + 警告，不再硬卡住；drop/flat/regression 与 val_seal/secrets 等危险门禁仍硬拒绝。`evolver doctor` 的 `loop_ready` 仍诚实反映缺口。
+
+软缺口在 MCP 返回面上用 `severity=soft` + `gap`/`warning`/`gate_soft_continue` 表达，**不**写入硬失败字段 `error`（宿主只看 `error` 时不得停）。危险门禁仍用 `error` + `severity=hard`。
+
+### Grok Bot 路径约定
+
+在 Grok Bot 上：进化工作区根是 `/workspace`，evolver.py **源码检出**在 `/workspace/evolver-research/evolver.py`。更新源码后请杀掉并重启 `evolver mcp`（例如 `uv --project /workspace/evolver-research/evolver.py run evolver mcp`），否则长驻进程仍加载旧模块；`swarm_status.source_revision` / `code_staleness` 可核对。
 
 ## 首次准备
 

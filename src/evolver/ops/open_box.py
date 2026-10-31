@@ -342,11 +342,22 @@ def diagnose(*, project: str | Path | None = None) -> dict[str, Any]:
     repo_root = next(c for c in checks if c["id"] == "git").get("repo_root")
 
     def _enrich(c: dict[str, Any]) -> dict[str, Any]:
-        return {
+        err = str(c.get("error") or "")
+        payload = {
             "id": c["id"],
-            "error": c.get("error"),
-            **next_steps_for(str(c.get("error") or "unknown"), context=c),
+            **next_steps_for(err or "unknown", context=c),
         }
+        if err in SOFT_GAP_ERRORS:
+            payload["severity"] = "soft"
+            payload["gap"] = err
+            # Doctor recommendations keep the code under gap/severity; hosts that
+            # only treat top-level MCP ``error`` as hard stop are covered by
+            # apply_soft_gap. Keep ``error`` here for check-id stability.
+            payload["error"] = err
+        else:
+            payload["severity"] = "hard"
+            payload["error"] = c.get("error")
+        return payload
 
     state = {
         # ok tracks soft-continue (hosts may proceed); loop_ready stays honest.
@@ -462,10 +473,58 @@ def attach_next_steps(result: dict[str, Any], error: str | None = None) -> dict[
     return merged
 
 
+def apply_soft_gap(result: dict[str, Any], gap: str) -> dict[str, Any]:
+    """Attach a usability soft-gap without a hard ``error`` field.
+
+    Hosts that stop solely when ``error`` is set must continue. Soft gaps
+    expose ``gap`` / ``gate_gap`` / ``reason`` / ``severity=soft`` /
+    ``gate_soft_continue`` / ``warning`` / ``next_steps`` / ``commands``.
+    Dangerous gates keep using ``attach_next_steps`` with ``error``.
+    """
+    code = str(gap or "").strip()
+    if code not in SOFT_GAP_ERRORS:
+        hard = {
+            **result,
+            "error": code or result.get("error"),
+            "reason": code or result.get("reason"),
+            "severity": "hard",
+        }
+        out = attach_next_steps(hard, error=code or None)
+        out.setdefault("severity", "hard")
+        return out
+
+    steps = next_steps_for(code, context=result.get("suggested_actions") or result)
+    out = {**result}
+    # Soft gaps must not live in ``error`` — that field is the hard-stop signal.
+    if out.get("error") in SOFT_GAP_ERRORS:
+        out.pop("error", None)
+    out["gap"] = code
+    out["gate_gap"] = code
+    out["reason"] = code
+    out["severity"] = "soft"
+    out["gate_soft_continue"] = True
+    out["gate_ready"] = False
+    warning = str(steps.get("message") or f"soft-continue ({code})")
+    out["warning"] = warning
+    if not out.get("hint"):
+        out["hint"] = warning
+    out["next_steps"] = list(steps.get("next_steps") or [])
+    out["commands"] = list(steps.get("commands") or [])
+    for key in ("candidates", "pending_tasks"):
+        if key in steps:
+            out[key] = steps[key]
+    warnings = list(out.get("warnings") or [])
+    if warning not in warnings:
+        warnings.append(warning)
+    out["warnings"] = warnings
+    return out
+
+
 __all__ = [
     "ACTIONABLE_ERRORS",
     "HARD_BLOCKER_ERRORS",
     "SOFT_GAP_ERRORS",
+    "apply_soft_gap",
     "attach_next_steps",
     "diagnose",
     "doctor",

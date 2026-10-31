@@ -127,15 +127,16 @@ def _verdict(overrides: dict[str, Any] | None = None, **_extra: Any) -> dict[str
 
 
 class TestInactiveGate:
-    def test_absent_pack_rejects(self, git_ws: Path) -> None:
-        """Fresh env: no frozen pack means no score, and no score means no
-        publish — §5.2 retired the "gate inactive" pass-through."""
+    def test_absent_pack_soft_accepts(self, git_ws: Path) -> None:
+        """Fresh env: no frozen pack is a usability soft-accept (warnings), not
+        a hard stop. Dangerous rejects (drop/flat/gate_error) stay hard."""
         _ = git_ws
         write_state_for_solidify(_last_run())
         result = solidify(skip_validation=True)
-        assert result["ok"] is False
-        assert result["error"] == "bench_pack_rejected"
-        assert result["details"]["bench_pack"]["reason"] == "pack_absent"
+        assert result["ok"] is True
+        assert result.get("soft_accept") is True
+        assert result["bench_pack"]["reason"] == "pack_absent"
+        assert result.get("next_steps")
 
     def test_gate_error_rejects_rather_than_passing(
         self, git_ws: Path, monkeypatch: pytest.MonkeyPatch

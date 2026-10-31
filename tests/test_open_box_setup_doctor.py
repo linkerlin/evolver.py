@@ -153,7 +153,10 @@ def test_swarm_tick_gate_gap_includes_next_steps(
 
     result = asyncio.run(swarm_tick(agent_name="test-host"))
     assert result.get("gate_soft_continue") is True
+    assert result.get("severity") == "soft"
     assert result.get("gate_gap") in ("pack_absent", "no_baseline")
+    assert result.get("gap") in ("pack_absent", "no_baseline")
+    assert result.get("error") not in ("pack_absent", "no_baseline", "unmeasured")
     assert result.get("next_steps")
     assert result.get("commands")
     assert result.get("warnings")
@@ -187,6 +190,9 @@ def test_doctor_soft_continue_ok_when_only_usability_gaps(
     assert report["ok"] is True
     assert report["blockers"] == []
     assert report.get("recommendations")
+    soft_recs = report.get("recommendations") or []
+    assert all(r.get("severity") == "soft" for r in soft_recs)
+    assert all(r.get("gap") in ("pack_absent", "no_baseline", "unmeasured") for r in soft_recs)
 
 
 def test_cli_doctor_exit_zero_on_soft_continue(

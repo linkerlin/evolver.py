@@ -273,6 +273,9 @@ class TestInstructions:
         assert "swarm_boot" in text
         assert "THIS message" in text
         assert "never retry" in text
+        assert "severity=soft" in text
+        assert "Grok Bot" in text
+        assert "/workspace/evolver-research/evolver.py" in text
         for needle in (
             "swarm_tick",
             "swarm_distill",

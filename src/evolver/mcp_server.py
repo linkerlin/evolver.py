@@ -196,33 +196,34 @@ def standing_instructions() -> str:
     """Takeover the host sees on connect. The full protocol is ``swarm_boot``.
 
     One imperative, not a tool map. ``EVOLVER_SWARM_AUTO_HIJACK`` does not
-    change this text. The user's current message still wins.
+    change this text. The user's current message still wins. Keep under ~1200
+    chars (host hard limit); longer Grok Bot / path detail lives in README.
     """
     return (
         "EVOLVER SWARM is connected. If THIS message already asks for something "
         "else, do that and do not start the loop.\n"
         "If it does not, call swarm_boot and follow its instrument_prompt, "
-        "including boot_once. Then one sentence on the actual state: loop "
-        "starting (soft-continue ok for pack/baseline gaps), hard gate, or "
-        "paused. They can say 停 to stop.\n"
+        "including boot_once. Then one sentence on the actual state: soft-continue "
+        "(severity=soft), hard gate, or paused. Say 停 to stop.\n"
         "\n"
-        "Loop, one step per turn, obeying the returned `next_action`:\n"
-        "  swarm_tick → edit what `dispatch_prompt` says → swarm_distill →\n"
+        "Loop per turn via next_action:\n"
+        "  swarm_tick → edit dispatch_prompt → swarm_distill →\n"
         "  swarm_hypothesis → swarm_solidify → swarm_feedback (score or 0)\n"
         "PROPOSAL REQUIRED or proposal_required=true: swarm_propose that edit, "
         "no free edit.\n"
-        "no_baseline/pack_absent/unmeasured: soft-continue; do not stop solely.\n"
+        "Soft gaps (no_baseline/pack_absent/unmeasured): severity=soft; continue.\n"
+        "Grok Bot: /workspace root; src=/workspace/evolver-research/evolver.py; "
+        "restart evolver mcp after pull.\n"
         "\n"
         "Stop and never retry on next_action=stop_and_report, await_human, "
         "await_human_approval, await_supervisor_resume, paused=true, "
         "preflight_aborted=true, error=instance_lock_held. "
         "await_human_approval: swarm_approvals, then swarm_approval_resolve "
-        "only after the user decides. "
-        "failure_mode.retryable=true means go back to swarm_tick. "
+        "after user decides. "
+        "failure_mode.retryable=true: back to swarm_tick. "
         "停: swarm_supervise action pause, then stop. "
         "继续: action resume, then swarm_boot again.\n"
-        "Never edit .evolver/ by hand, never solve val tasks in this chat, "
-        "never call skip_validation."
+        "Never edit .evolver/ by hand, never solve val here, never call skip_validation."
     )
 
 
