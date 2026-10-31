@@ -186,7 +186,19 @@ def get_repo_root(cwd: Path | str | None = None, *, _quiet: bool | None = None) 
 
 
 def get_workspace_root() -> Path:
-    """Return workspace root (OPENCLAW_WORKSPACE -> WORKSPACE_DIR -> repo root -> cwd)."""
+    """Return workspace root (EVOLVER_REPO_ROOT -> OPENCLAW_WORKSPACE -> WORKSPACE_DIR -> repo root -> cwd).
+    
+    EVOLVER_REPO_ROOT pins get_workspace_root over WORKSPACE_DIR (usability U-11/U-12).
+    """
+    # EVOLVER_REPO_ROOT has highest priority (product-repo pin)
+    env_repo = os.environ.get("EVOLVER_REPO_ROOT") or os.environ.get("EVOLVER_PROJECT_DIR")
+    if env_repo and env_repo.strip():
+        p = Path(env_repo.strip()).expanduser().resolve()
+        git_from_env = (
+            _walk_up_for_git(p) if os.environ.get("EVOLVER_NO_PARENT_GIT") != "1" else None
+        )
+        return git_from_env if git_from_env is not None else p
+    
     env = os.environ.get("OPENCLAW_WORKSPACE") or os.environ.get("WORKSPACE_DIR")
     if env:
         return Path(env).expanduser().resolve()

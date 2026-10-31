@@ -155,11 +155,11 @@ def build_instrument_prompt(state: dict[str, Any]) -> str:
         else ""
     )
     soft_gate_note = (
-        "\n门未就绪（pack_absent / no_baseline）时默认 **soft-continue**：仍可 "
-        "`swarm_tick` / `swarm_solidify`；Accept/publish 走 soft-accept（带 "
-        "warnings + next_steps），**不**伪造 Parent baseline，**不**在候选对话中"
+        "\n门未就绪（pack_absent / no_baseline）、或分数未改进（drop/flat/regression）时默认 "
+        "**soft-continue**：仍可 `swarm_tick` / `swarm_solidify`；Accept/publish 走 "
+        "soft-accept（带 warnings + next_steps），**不**伪造 Parent baseline，**不**在候选对话中"
         "打开 val 密封材料。建议仍按 `evolver doctor` / `evolver bench baseline` "
-        "补齐，但非强制。drop/flat/regression 与 val_seal 等危险门禁仍硬拒绝。"
+        "补齐，但非强制。只有 secrets / val_seal 违规仍硬拒绝。"
     )
     hitl = state.get("hitl") or {}
     hitl_mode = hitl.get("mode", "?")
@@ -292,10 +292,12 @@ def build_instrument_prompt(state: dict[str, Any]) -> str:
   书写；本对话不得解 val、不得打开 val 密封材料。soft-accept **不**写入 Parent bar。
 - `reason=unmeasured`：**可 soft-accept**。把 `pending_tasks` 报告给人；val 由
   另一上下文写入 `sandboxes/r1` 与 `sandboxes/r2`。非强制完成后再 solidify。
+- `reason=drop / flat / regression`：**可 soft-accept**。分数未改进可继续迭代，
+  soft-accept 带 warnings；只是不写入 Parent baseline。
 - `ok=true` 且 `bench_pack.accept=true`（含 soft_accept）：停并报告。发布要人执行
   `evolver session accept`（soft 时 CLI 会打印 warnings）。没有配对会话时，
   这次返回就是最终结果。
-- drop / flat / regression / val_seal_breach / secrets：仍硬拒绝，不要重试同一失败。
+- **仍硬拒绝**：val_seal_breach（密封材料泄漏）、secrets（保护路径改写）。
 {hotl_note}{soft_gate_note}
 {working_block}
 ## 当前状态
