@@ -172,6 +172,32 @@ def build_instrument_prompt(state: dict[str, Any]) -> str:
         if preview
         else ""
     )
+    
+    # Task 3.1: Core Loop Tools guidance for beginners (first 5 ticks)
+    beginner_guidance = ""
+    if tick_count < 5:
+        beginner_guidance = """
+
+## 核心循环工具（新手必读 / Core Loop Tools）
+
+这是你的前几轮进化循环。核心流程六步：
+
+1. **swarm_tick** — 获取 dispatch_prompt（含变异指令）
+2. **编辑文件** — 只改 dispatch_prompt 指定的范围
+3. **swarm_distill** — 提取 Gene/Capsule（传入包含围栏块的完整响应文本）
+4. **swarm_hypothesis** — 声明本轮唯一假说（expected_outcome 可选）
+5. **swarm_solidify** — 应用、验证、持久化（首轮一般 soft-accept）
+6. **swarm_feedback** — 上报评分（0-1）或失败
+
+每个工具返回 `next_action` — 照做即可。遇到 `stop_and_report` / `await_human` / 
+`await_supervisor_resume` 就停下报告。
+
+**首次准备警告正常**：no_baseline / pack_absent 都会 soft-accept（带 warnings），
+experience 仍写入 ~/.evolver/workspaces/<id>/，不自动提交。补齐基线推荐但非强制。
+
+**不自动提交**：工作区改动（staged/unstaged）保持原样，由你或用户决定何时提交。
+"""
+    
     prompt = f"""# EVOLVER SWARM — 宿主接管协议 (instrument v{SWARM_PROTOCOL_VERSION})
 
 > 本提示词由 evolver 引擎经 MCP 注入。你（{agent}）是进化工作节点：
@@ -182,6 +208,7 @@ def build_instrument_prompt(state: dict[str, Any]) -> str:
 ## 宪章
 
 {EVOLVER_CHARTER}
+{beginner_guidance}
 
 ## 开机（本会话一次）
 
