@@ -789,16 +789,16 @@ def _apply_bench_pack_gate(
     validation_result: dict[str, Any] | None = None,
     declaration: dict[str, Any] | None = None,
 ) -> tuple[dict[str, Any] | None, dict[str, Any] | None]:
-    """Charter 配对会话 (2026-09-26 §5.2): the frozen val pack decides.
+    """Charter 配对会话 + Soft-default UX (2026-10-31): frozen val pack decides.
 
     ONLY a strict improvement over the Parent publishes as a full Accept.
-    Drop, flat, a voided baseline, regression, and a damaged gate stay hard
-    rejections — and a rejection never moves the baseline.
-
-    Usability gaps (``no_baseline`` / ``pack_absent`` / ``unmeasured``) soft-
-    accept with warnings + next_steps so first-run hosts can finish the
-    open-box → swarm → solidify path. Soft-accept does NOT write a Parent
-    baseline and does NOT open sealed val. Returns ``(rejection, verdict)``.
+    
+    Soft-default UX: drop/flat/regression/no_baseline/pack_absent/unmeasured all
+    soft-accept with warnings + next_steps. This lets hosts complete the loop and
+    write experience. Soft-accept does NOT write a Parent baseline and does NOT
+    open sealed val. Returns ``(rejection, verdict)``.
+    
+    Only hard blocks (secrets, protected state) trigger rejection + rollback.
     """
     try:
         from evolver.bench.frozen_gate import (

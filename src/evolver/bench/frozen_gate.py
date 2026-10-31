@@ -70,12 +70,19 @@ BASELINE_FORMAT: Final = "evolver.bench_pack_baseline.v1"
 #: The gate only gates on the val split (S26.4: gate ONLY on val).
 GATE_SPLIT: Final = "val"
 
-#: Usability gaps: measurement still rejects (honest bar), but solidify /
-#: swarm / session Accept may soft-accept with warnings + next_steps so a
-#: first-run host can finish open-box → swarm → solidify without being stuck.
+#: Usability gaps + soft-default UX (2026-10-31): measurement still records
+#: the outcome (honest bar), but solidify / swarm / session Accept soft-accept
+#: with warnings + next_steps so hosts can complete the loop and write experience.
 #: Soft-accept MUST NOT call save_baseline / establish a fake Parent bar.
-#: Real danger reasons (drop, flat, regression, seal, secrets) stay hard.
-USABILITY_SOFT_REASONS: Final = frozenset({"no_baseline", "pack_absent", "unmeasured"})
+#: Only hard blocks remain: secrets and protected state paths.
+USABILITY_SOFT_REASONS: Final = frozenset({
+    "no_baseline",
+    "pack_absent", 
+    "unmeasured",
+    "drop",
+    "flat",
+    "regression",
+})
 
 
 def is_usability_soft_reason(reason: str | None) -> bool:
