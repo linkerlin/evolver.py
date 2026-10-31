@@ -1287,6 +1287,61 @@ def _classify_env_blockers(
     return blockers
 
 
+def _is_hard_block_mutation(
+    mutation: dict[str, Any], cwd: Path
+) -> tuple[bool, str | None]:
+    """Check if mutation is a hard block (secrets or protected state paths).
+    
+    Returns (is_hard_block, reason).
+    Only hard blocks: secrets, mutations targeting state_root/~/.evolver.
+    Everything else is soft-continue.
+    
+    Soft-default UX (2026-10-31 spec).
+    """
+    from evolver.gep.paths import get_evolver_state_root
+    from evolver.gep.policy_check import run_policy_check
+    
+    # Check for secrets via policy check
+    try:
+        policy_report = run_policy_check(cwd=cwd, check_secrets=True)
+        if not policy_report.ok:
+            # Look for secret violations
+            for violation in policy_report.violations:
+                if violation.rule == "secret_leak" and violation.severity == "critical":
+                    return True, f"secret_leak: {violation.message}"
+    except Exception:
+        logger.warning("Policy check failed during hard-block detection", exc_info=True)
+    
+    # Check for protected state paths
+    try:
+        state_root = get_evolver_state_root()
+        state_root_str = str(state_root.resolve())
+        
+        changes = mutation.get("changes", [])
+        for change in changes:
+            file_path = change.get("file", "")
+            if not file_path:
+                continue
+            
+            # Resolve to absolute path
+            abs_path = (cwd / file_path).resolve()
+            abs_str = str(abs_path)
+            
+            # Check if touching state_root or ~/.evolver
+            if abs_str.startswith(state_root_str):
+                return True, f"protected_state: {file_path} targets state_root"
+            
+            # Check for explicit do_not_touch patterns
+            if ".evolver/" in file_path or "memory/" in file_path:
+                # These might be legacy paths that should be protected
+                if not file_path.startswith("src/") and not file_path.startswith("tests/"):
+                    return True, f"protected_state: {file_path} targets engine state"
+    except Exception:
+        logger.warning("Protected path check failed during hard-block detection", exc_info=True)
+    
+    return False, None
+
+
 def _handle_cascade_validation_failure(
     *,
     last_run: dict[str, Any],
@@ -1296,37 +1351,98 @@ def _handle_cascade_validation_failure(
     validation_report: dict[str, Any] | None,
     eval_meta: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
-    """Sprint 22.2 graded failure: blast radius captured *before* rollback, a
-    failed EvolutionEvent lands in events.jsonl (feeds the repair-loop breaker
-    and signal-history modulation), and the memory-graph failure outcome
-    carries a partial-credit score."""
+    """Soft-default UX (2026-10-31): validation failures soft-continue with warnings.
+    
+    Only hard-block for secrets or protected state paths. Everything else:
+    - Returns ok=True with severity="soft"
+    - Populates warnings with validation failures
+    - Does NOT rollback worktree
+    - Still writes experience (handled by caller continuing to success path)
+    
+    Sprint 22.2 graded failure behavior (score, event, memory-graph) preserved
+    for backwards compatibility and repair-loop signals.
+    """
     score = _cascade_score(validation_result["results"])
+    
+    # Check for hard blocks (secrets or protected state)
+    is_hard_block, block_reason = _is_hard_block_mutation(mutation, cwd)
+    
+    if is_hard_block:
+        # Hard block: rollback and reject as before
+        diff_snapshot = _failure_diff(cwd)
+        failed_blast = _compute_blast_radius()
+        failed_fp, failed_added = _novelty_fingerprint(cwd)
+        changed_now = [
+            f
+            for f in git_list_changed_files(cwd) + _disposable_untracked(cwd)
+            if f and not _is_runtime_state(f)
+        ]
+        env_blockers = _classify_env_blockers(validation_result, changed_now)
+        stash_info = snapshot_rejected_worktree(
+            cwd,
+            run_id=str(last_run.get("run_id") or ""),
+            disposable_untracked=_disposable_untracked(cwd),
+            reason="hard_block_validation",
+        )
+        rollback_tracked(cwd=cwd, include_untracked=False)
+        rollback_new_untracked_files(_disposable_untracked(cwd), cwd=cwd)
+        event = _failure_event(
+            last_run,
+            mutation,
+            failed_blast,
+            {"status": "failed", "score": score, "error": "hard_block_validation", "block_reason": block_reason},
+            validation_result=validation_result,
+            eval_meta=eval_meta,
+            novelty_fingerprint=failed_fp[:4000],
+            novelty_added=failed_added[:4000],
+            diff_snapshot=diff_snapshot,
+        )
+        append_event_jsonl(event)
+        record_solidify_failure(last_run, error="hard_block_validation", score=score)
+        _wiki_rejection("hard_block_validation", last_run, score=score)
+        event_id = _remember_failure_scene(event, validation_result=validation_result)
+        details = dict(validation_result)
+        details["score"] = score
+        details["stash"] = stash_info
+        details["env_blockers"] = env_blockers
+        details["env_blocker_only"] = bool(env_blockers)
+        if validation_report is not None:
+            details["validation_report"] = validation_report
+        return {
+            "ok": False,
+            "error": "hard_block_validation",
+            "block_reason": block_reason,
+            "event_id": event_id,
+            "stash": stash_info,
+            "rejected_stash": stash_info,
+            "env_blockers": env_blockers,
+            "env_blocker_only": bool(env_blockers),
+            "details": details,
+        }
+    
+    # Soft-continue path: capture failure details but don't rollback
+    # Build warnings from validation failures
+    warnings: list[str] = []
+    for i, result in enumerate(validation_result.get("results", [])):
+        if not result.get("ok"):
+            cmd = result.get("command", f"stage_{i}")
+            stderr = result.get("stderr", "")
+            warnings.append(f"Validation failed: {cmd} (soft-continue)")
+            if stderr:
+                # Truncate stderr for warning
+                stderr_brief = stderr[:200] + "..." if len(stderr) > 200 else stderr
+                warnings.append(f"  {stderr_brief}")
+    
+    # Still record event for repair-loop signals and history
     diff_snapshot = _failure_diff(cwd)
     failed_blast = _compute_blast_radius()
     failed_fp, failed_added = _novelty_fingerprint(cwd)
-    changed_now = [
-        f
-        for f in git_list_changed_files(cwd) + _disposable_untracked(cwd)
-        if f and not _is_runtime_state(f)
-    ]
-    env_blockers = _classify_env_blockers(validation_result, changed_now)
-    stash_info = snapshot_rejected_worktree(
-        cwd,
-        run_id=str(last_run.get("run_id") or ""),
-        disposable_untracked=_disposable_untracked(cwd),
-        reason="validation_failed",
-    )
-    # cwd must be explicit: without it the rollback targets the process cwd
-    # (the engine's own repo), not the workspace (Sprint 23 test finding).
-    # include_untracked=False + selective disposal: engine state dirs that
-    # the workspace does not gitignore must survive (E2E calibration bug).
-    rollback_tracked(cwd=cwd, include_untracked=False)
-    rollback_new_untracked_files(_disposable_untracked(cwd), cwd=cwd)
+    
     event = _failure_event(
         last_run,
         mutation,
         failed_blast,
-        {"status": "failed", "score": score, "error": "validation_failed"},
+        {"status": "soft_failed", "score": score, "error": "validation_failed_soft"},
         validation_result=validation_result,
         eval_meta=eval_meta,
         novelty_fingerprint=failed_fp[:4000],
@@ -1334,28 +1450,30 @@ def _handle_cascade_validation_failure(
         diff_snapshot=diff_snapshot,
     )
     append_event_jsonl(event)
-    record_solidify_failure(last_run, error="validation_failed", score=score)
-    _wiki_rejection("validation_failed", last_run, score=score)
-    # The scene matches the success shape and is keyed by the event id.
-    # validation_report stays on the return details; the record reads checks
-    # from validation_result.
-    event_id = _remember_failure_scene(event, validation_result=validation_result)
+    
+    # Note: NOT calling record_solidify_failure or _wiki_rejection for soft failures
+    # The caller will continue to success path and write experience
+    
+    # Return ok=True with soft severity and warnings
+    # The caller should continue to persist Gene/Episode/events
     details = dict(validation_result)
     details["score"] = score
-    details["stash"] = stash_info
-    details["env_blockers"] = env_blockers
-    details["env_blocker_only"] = bool(env_blockers)
     if validation_report is not None:
         details["validation_report"] = validation_report
+    
     return {
-        "ok": False,
-        "error": "validation_failed",
-        "event_id": event_id,
-        "stash": stash_info,
-        "rejected_stash": stash_info,
-        "env_blockers": env_blockers,
-        "env_blocker_only": bool(env_blockers),
+        "ok": True,  # Soft-continue!
+        "severity": "soft",
+        "warnings": warnings,
+        "validation_soft_failed": True,
+        "score": score,
         "details": details,
+        "event_id": event.get("id"),
+        "next_steps": [
+            "Review validation warnings above",
+            "Validation failures are soft-continue under permanent soft-default policy",
+            "Experience has been written to state_root for this cycle",
+        ],
     }
 
 
@@ -1774,35 +1892,31 @@ def _solidify_cycle(
                 "approval": approval,
             }
 
+    # Soft-default UX (2026-10-31): no-git-repo is soft-continue
+    no_git_repo = False
+    no_git_warnings: list[str] = []
     if not is_git_repo(cwd):
         fallback_repo = get_repo_root(cwd, _quiet=True)
         if fallback_repo is not None and is_git_repo(fallback_repo):
             cwd = fallback_repo
         else:
+            # Soft-continue: warn but still write experience
+            no_git_repo = True
             candidates = discover_git_candidates(cwd)
-            from evolver.ops.open_box import attach_next_steps
-
-            return attach_next_steps({
-                "ok": False,
-                "error": "not_a_git_repo",
-                "cwd": str(cwd),
-                "suggested_actions": {
-                    "init_git_at": f"git init {cwd}",
-                    "set_repo_root_to": candidates,
-                    "message": (
-                        f"Directory '{cwd}' is not a git repository. "
-                        + (
-                            f"Found git repositories in subdirectories: {candidates}. "
-                            "Set EVOLVER_REPO_ROOT or pass --project to target one of them."
-                            if candidates
-                            else (
-                                f"Run 'git init {cwd}' or set EVOLVER_REPO_ROOT "
-                                "to your repository root."
-                            )
-                        )
-                    ),
-                },
-            })
+            no_git_warnings.append(
+                f"No git repository found at {cwd}. "
+                "Experience will still be written to state_root."
+            )
+            if candidates:
+                no_git_warnings.append(
+                    f"Found git repositories in subdirectories: {candidates}. "
+                    "Consider setting EVOLVER_REPO_ROOT to target one."
+                )
+            else:
+                no_git_warnings.append(
+                    f"Run 'git init {cwd}' or set EVOLVER_REPO_ROOT to initialize git."
+                )
+            # Continue to write experience despite no git repo
 
     mutation = _annotate_mutation_lineage(
         last_run, mutation_override or last_run.get("mutation", {})
@@ -1919,6 +2033,8 @@ def _solidify_cycle(
 
     validation_result: dict[str, Any] | None = None
     validation_report: dict[str, Any] | None = None
+    validation_soft_warnings: list[str] = []
+    validation_soft_failed = False
     # RSI P0-1 (anchor evaluation): a mutation touching the verification
     # machinery must survive the out-of-tree frozen contracts. In-repo tests
     # are mutable by the very mutation they judge — without the anchor, a
@@ -1946,7 +2062,7 @@ def _solidify_cycle(
                 validation_report = None
             if not validation_result["ok"]:
                 if cascade_mode:
-                    return _handle_cascade_validation_failure(
+                    failure_result = _handle_cascade_validation_failure(
                         last_run=last_run,
                         mutation=mutation,
                         cwd=cwd,
@@ -1954,6 +2070,15 @@ def _solidify_cycle(
                         validation_report=validation_report,
                         eval_meta=eval_meta,
                     )
+                    # Soft-default UX: check if this is a soft-continue or hard block
+                    if failure_result.get("ok") is True and failure_result.get("severity") == "soft":
+                        # Soft-continue: capture warnings and proceed to success path
+                        # The success path will incorporate these warnings
+                        validation_soft_warnings = failure_result.get("warnings", [])
+                        validation_soft_failed = True
+                    else:
+                        # Hard block: return failure immediately
+                        return failure_result
                 # Blast radius and diff must be captured BEFORE the rollback
                 # (Sprint 23 lesson — after rollback the tree is clean).
                 failed_blast = _compute_blast_radius()
@@ -2187,16 +2312,18 @@ def _solidify_cycle(
     with contextlib.suppress(Exception):
         post_solidify_hooks(event, last_run)
 
-    # Sprint 23 soak fix: atomic evolution steps — commit accepted mutations
-    # in cascade mode so later failure rollbacks stop at the last acceptance.
-    if cascade_mode:
-        landed_ids = last_run.get("landed_gene_ids") or []
-        label = (
-            (landed_ids[0] if isinstance(landed_ids, list) and landed_ids else None)
-            or last_run.get("selected_gene_id")
-            or "mutation"
-        )
-        _commit_mutation(cwd, f"{label} {event['id']}")
+    # Sprint 23 soak fix + Soft-default UX (2026-10-31): NO auto git commit.
+    # The worktree changes remain as the host left them (staged/unstaged unchanged).
+    # Optional later human path: `evolver session accept` for publish.
+    # Commenting out automatic commit for soft-default permanent policy.
+    # if cascade_mode:
+    #     landed_ids = last_run.get("landed_gene_ids") or []
+    #     label = (
+    #         (landed_ids[0] if isinstance(landed_ids, list) and landed_ids else None)
+    #         or last_run.get("selected_gene_id")
+    #         or "mutation"
+    #     )
+    #     _commit_mutation(cwd, f"{label} {event['id']}")
 
     # Update solidify state
     state["last_solidify"] = {
@@ -2217,6 +2344,23 @@ def _solidify_cycle(
         # not only inside the persisted event (round-79).
         "score": outcome_score,
     }
+    
+    # Soft-default UX: add validation soft warnings if present
+    all_warnings = list(validation_soft_warnings) + list(no_git_warnings)
+    if validation_soft_failed or no_git_repo:
+        result["severity"] = "soft"
+        if all_warnings:
+            result["warnings"] = all_warnings
+        if validation_soft_failed:
+            result["validation_soft_failed"] = True
+        if no_git_repo:
+            result["no_git_repo"] = True
+        result["next_steps"] = [
+            "Review warnings above",
+            "Soft-continue under permanent soft-default policy",
+            "Experience has been written to state_root for this cycle",
+        ]
+    
     if bench_pack_verdict is not None:
         result["bench_pack"] = {
             "score": bench_pack_verdict.get("score"),
