@@ -150,14 +150,11 @@ class TestCascadeFailurePath:
     def test_failed_event_appended_with_score(
         self, monkeypatch: Any, tmp_path: Path, temp_workspace: Path
     ) -> None:
-        # Round-26: this test drives the REAL _handle_cascade_validation_failure,
-        # whose _wiki_rejection side effect resolves wiki_dir() from EVOLUTION_DIR
-        # — without temp_workspace it appended fixture "gene-1" rejections into
-        # the PRODUCTION wiki (128/161 entries were this noise; DEBUG #37).
+        # Soft-default UX (2026-10-31): normal validation failures are now soft-continue.
+        # This test validates soft-continue behavior (no rollback, ok=True, warnings).
         _ = temp_workspace
         order: list[str] = []
         appended: dict[str, Any] = {}
-        recorded: dict[str, Any] = {}
 
         def fake_blast() -> dict[str, Any]:
             order.append("blast")
@@ -170,13 +167,6 @@ class TestCascadeFailurePath:
         )
         monkeypatch.setattr(solidify, "git_list_untracked_files", lambda cwd: [])
         monkeypatch.setattr(solidify, "append_event_jsonl", appended.update)
-        monkeypatch.setattr(
-            solidify,
-            "record_solidify_failure",
-            lambda last_run, *, error, score=None: recorded.update(
-                {"error": error, "score": score}
-            ),
-        )
 
         last_run = {
             "run_id": "run-1",
@@ -196,16 +186,17 @@ class TestCascadeFailurePath:
             },
             validation_report=None,
         )
-        # blast captured before rollback
-        assert order == ["blast", "rollback", "rollback2"]
-        # graded score on the failed event
-        assert appended["outcome"]["status"] == "failed"
+        # Soft-continue: blast captured but NO rollback
+        assert order == ["blast"]
+        # Soft-continue returns ok=True with severity="soft"
+        assert result["ok"] is True
+        assert result["severity"] == "soft"
+        assert "warnings" in result
+        assert result["details"]["score"] == 0.98
+        # Event still appended (for repair-loop signals)
+        assert appended["outcome"]["status"] == "soft_failed"
         assert appended["outcome"]["score"] == 0.98
         assert appended["gene_id"] == "gene-1"
-        assert result["ok"] is False
-        assert result["details"]["score"] == 0.98
-        # memory-graph failure carries the partial score
-        assert recorded == {"error": "validation_failed", "score": 0.98}
 
 
 def _git(cwd: Path, *args: str) -> None:

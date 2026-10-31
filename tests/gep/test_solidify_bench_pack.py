@@ -129,13 +129,14 @@ def _verdict(overrides: dict[str, Any] | None = None, **_extra: Any) -> dict[str
 class TestInactiveGate:
     def test_absent_pack_soft_accepts(self, git_ws: Path) -> None:
         """Fresh env: no frozen pack is a usability soft-accept (warnings), not
-        a hard stop. Dangerous rejects (drop/flat/gate_error) stay hard."""
+        a hard stop under soft-default UX (2026-10-31)."""
         _ = git_ws
         write_state_for_solidify(_last_run())
         result = solidify(skip_validation=True)
         assert result["ok"] is True
         assert result.get("soft_accept") is True
         assert result["bench_pack"]["reason"] == "pack_absent"
+        assert result["bench_pack"]["soft_accept"] is True
         assert result.get("next_steps")
 
     def test_gate_error_rejects_rather_than_passing(
@@ -186,53 +187,72 @@ class TestGateReject:
     def test_drop_rejects_with_failure_event(
         self, git_ws: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
+        """Drop now soft-accepts under soft-default UX (2026-10-31)."""
         _ = git_ws
         monkeypatch.setattr(
             gate_mod,
             "gate_verdict",
-            lambda **_kw: _verdict({"score": 0.6, "baseline": 1.0, "verdict": "reject"}),
+            lambda **_kw: _verdict({
+                "score": 0.6,
+                "baseline": 1.0,
+                "verdict": "reject",
+                "reason": "drop",  # Must set reason for soft-accept
+            }),
         )
         write_state_for_solidify(_last_run())
         result = solidify(skip_validation=True)
-        assert result["ok"] is False
-        assert result["error"] == "bench_pack_rejected"
-        assert result["details"]["bench_pack"]["score"] == 0.6
-        # Loop-continuation semantics: a fitness floor is not a crash.
-        assert result["failure_mode"] == {
-            "mode": "soft",
-            "reasonClass": "bench_pack",
-            "retryable": True,
-        }
-        assert result["next_action"] == "swarm_tick"
+        # Soft-default UX: drop now soft-accepts
+        assert result["ok"] is True
+        assert result.get("soft_accept") is True
+        assert result["bench_pack"]["score"] == 0.6
+        assert result["bench_pack"]["soft_accept"] is True
+        assert result["bench_pack"]["reason"] == "drop"
 
     def test_drop_rolls_back_working_tree(
         self, git_ws: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
+        """Drop soft-accepts so worktree NOT rolled back (2026-10-31)."""
         monkeypatch.setattr(
             gate_mod,
             "gate_verdict",
-            lambda **_kw: _verdict({"score": 0.6, "baseline": 1.0, "verdict": "reject"}),
+            lambda **_kw: _verdict({
+                "score": 0.6,
+                "baseline": 1.0,
+                "verdict": "reject",
+                "reason": "drop",  # Must set reason for soft-accept
+            }),
         )
         patched = _uncommitted_change(git_ws)
         write_state_for_solidify(_last_run())
         result = solidify(skip_validation=True)
-        assert result["ok"] is False
-        assert patched.read_text(encoding="utf-8") == "patched\n"
+        # Soft-default UX: no rollback on soft-accept
+        assert result["ok"] is True
+        # Worktree should remain with changes (no rollback)
+        # _uncommitted_change leaves "patched v2\n" uncommitted
+        assert patched.read_text(encoding="utf-8") == "patched v2\n"
 
     def test_failure_event_carries_pack_evidence(
         self, git_ws: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
+        """Drop soft-accepts so event is success (2026-10-31)."""
         _ = git_ws
         monkeypatch.setattr(
             gate_mod,
             "gate_verdict",
-            lambda **_kw: _verdict({"score": 0.6, "baseline": 1.0, "verdict": "reject"}),
+            lambda **_kw: _verdict({
+                "score": 0.6,
+                "baseline": 1.0,
+                "verdict": "reject",
+                "reason": "drop",  # Must set reason for soft-accept
+            }),
         )
         write_state_for_solidify(_last_run())
         solidify(skip_validation=True)
         events = read_all_events()
-        assert len(events) == 1, "rejected mutation must not land a success event"
+        # Soft-default UX: drop soft-accepts so event is success
+        assert len(events) == 1
         ev = events[0]
-        assert ev["outcome"]["error"] == "bench_pack_rejected"
-        assert ev["outcome"]["score"] == 0.6
-        assert ev["bench_pack"]["verdict"] == "reject"
+        assert ev["outcome"]["status"] == "success"  # soft-accept
+        # Score may be None in skip_validation mode
+        assert ev["bench_pack"]["verdict"] == "soft_accept"
+        assert ev["bench_pack"]["score"] == 0.6
