@@ -305,8 +305,9 @@ SWARM_AUTO_HIJACK: Final = env_bool("EVOLVER_SWARM_AUTO_HIJACK", False)
 # Gate handoff label when the frozen pack or Parent baseline is missing.
 # Default soft-continues into swarm_tick with warnings + next_steps (Accept /
 # publish may soft-accept). "hotl" is an explicit human-on-the-loop label in
-# the instrument prompt; dangerous gates (drop/flat/regression, val_seal, HITL,
-# locks) stay hard. Set by the human in the MCP config, not by a tool.
+# the instrument prompt; hard blocks only: secrets/credentials into repo,
+# mutations rewriting ~/.evolver/engine-protected paths, and val_seal breach.
+# Set by the human in the MCP config, not by a tool.
 SWARM_GATE_HANDOFF: Final = env_str("EVOLVER_SWARM_GATE_HANDOFF", "human")
 # swarm_tick returns the engine's stdout as `engine_log` (tail-truncated to
 # this budget); the dispatch prompt itself is returned untruncated.

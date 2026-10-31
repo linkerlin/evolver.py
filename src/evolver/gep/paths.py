@@ -186,7 +186,14 @@ def get_repo_root(cwd: Path | str | None = None, *, _quiet: bool | None = None) 
 
 
 def get_workspace_root() -> Path:
-    """Return workspace root (OPENCLAW_WORKSPACE -> WORKSPACE_DIR -> repo root -> cwd)."""
+    """Return workspace root for mutation/state.
+
+    Precedence: EVOLVER_REPO_ROOT / EVOLVER_PROJECT_DIR (product pin) →
+    OPENCLAW_WORKSPACE / WORKSPACE_DIR → get_repo_root() → cwd.
+    """
+    pin = os.environ.get("EVOLVER_REPO_ROOT") or os.environ.get("EVOLVER_PROJECT_DIR")
+    if pin and pin.strip():
+        return Path(pin.strip()).expanduser().resolve()
     env = os.environ.get("OPENCLAW_WORKSPACE") or os.environ.get("WORKSPACE_DIR")
     if env:
         return Path(env).expanduser().resolve()

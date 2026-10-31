@@ -268,6 +268,24 @@ def test_soft_accept_allows_pack_absent_and_unmeasured(session: EvolutionSession
     assert soft["next_steps"]
 
 
+@pytest.mark.parametrize("reason", ["drop", "flat", "regression"])
+def test_soft_accept_allows_fitness_soft_reasons(
+    session: EvolutionSession, reason: str
+) -> None:
+    """Fitness soft reasons (drop/flat/regression) now soft-accept with warnings."""
+    session.begin_round("h", f"cand-{reason}")
+    session.record_gate_decision({"accept": False, "reason": reason})
+    published = session.accept()
+    assert published == f"cand-{reason}"
+    assert session.status == ACCEPTED
+    gate = session.run["gate"]
+    assert gate["soft_accept"] is True
+    assert gate["accept"] is True
+    assert gate["reason"] == reason
+    assert gate.get("warnings")
+    assert gate.get("next_steps")
+
+
 def test_bare_accept_is_refused_without_a_gate_record(session: EvolutionSession) -> None:
     """§5.2 — the session's Accept is an echo of a real gate verdict.
 
@@ -280,8 +298,8 @@ def test_bare_accept_is_refused_without_a_gate_record(session: EvolutionSession)
         session.accept()
     assert session.status == RUNNING
 
-    # A persisted refusal is just as binding as a missing record.
-    session.record_gate_decision({"accept": False, "reason": "flat"})
+    # A persisted hard refusal is binding (using a non-soft reason).
+    session.record_gate_decision({"accept": False, "reason": "secrets_detected"})
     with pytest.raises(EvolutionError, match="did not pass the publication gate"):
         session.accept()
     assert session.status == RUNNING
