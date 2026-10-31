@@ -73,7 +73,12 @@ def test_diagnose_detects_missing_pack_and_baseline(
     assert by_id["freeze_pack"]["error"] == "pack_absent"
     assert by_id["parent_baseline"]["ok"] is False
     assert report["loop_ready"] is False
+    assert report["soft_continue"] is True
+    assert report["ok"] is True  # soft-continue: not a hard roadblock
+    assert report["blockers"] == []
+    assert any(r.get("error") == "pack_absent" for r in report.get("recommendations") or [])
     assert report["setup_path"]
+    assert "soft-continue" in report["setup_path"] or "recommended" in report["setup_path"]
 
 
 def test_doctor_fix_freezes_pack_but_does_not_invent_baseline(
@@ -163,3 +168,42 @@ def test_readme_mentions_setup_doctor_and_val_seal() -> None:
     assert "evolver setup" in readme or "evolver doctor" in readme
     assert "doctor" in lowered or "setup" in lowered
     assert "open sealed" in lowered or "不得解 val" in readme or "密封" in readme
+
+def test_doctor_soft_continue_ok_when_only_usability_gaps(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Pack/baseline gaps stay recommendations; ok/soft_continue true; loop_ready false."""
+    from evolver.ops.open_box import doctor
+
+    repo = _init_git_repo(tmp_path / "repo")
+    monkeypatch.chdir(repo)
+    monkeypatch.setenv("EVOLVER_REPO_ROOT", str(repo))
+    monkeypatch.setenv("EVOLVER_HOME", str(tmp_path / "evomap_home"))
+    monkeypatch.setenv("EVOLVER_STATE_ROOT", str(tmp_path / "state"))
+
+    report = doctor(fix=False, project=repo)
+    assert report["loop_ready"] is False
+    assert report["soft_continue"] is True
+    assert report["ok"] is True
+    assert report["blockers"] == []
+    assert report.get("recommendations")
+
+
+def test_cli_doctor_exit_zero_on_soft_continue(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """doctor CLI must not exit 2 / print NOT READY solely for pack/baseline gaps."""
+    from evolver.cli import _cmd_doctor
+
+    repo = _init_git_repo(tmp_path / "repo")
+    monkeypatch.chdir(repo)
+    monkeypatch.setenv("EVOLVER_REPO_ROOT", str(repo))
+    monkeypatch.setenv("EVOLVER_HOME", str(tmp_path / "evomap_home"))
+    monkeypatch.setenv("EVOLVER_STATE_ROOT", str(tmp_path / "state"))
+
+    ns = type("NS", (), {"fix": False, "project": str(repo), "json": False})()
+    code = _cmd_doctor(ns)
+    out = capsys.readouterr().out
+    assert code == 0
+    assert "NOT READY" not in out
+    assert "SOFT-CONTINUE" in out or "soft-continue" in out.lower()

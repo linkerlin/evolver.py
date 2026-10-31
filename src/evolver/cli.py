@@ -1233,13 +1233,22 @@ def _cmd_solidify(args: argparse.Namespace) -> int:
 
 def _print_doctor_report(report: dict) -> None:
     """Human-readable open-box doctor/setup report."""
-    ready = "READY" if report.get("loop_ready") else "NOT READY"
+    if report.get("loop_ready"):
+        ready = "READY"
+    elif report.get("soft_continue") or report.get("ok"):
+        ready = "SOFT-CONTINUE"
+    else:
+        ready = "BLOCKED"
     print(f"=== Evolver Doctor [{ready}] ===")
     print(f"repo_root   : {report.get('repo_root')}")
     print(f"workspace_id: {report.get('workspace_id')}")
     print(f"state_root  : {report.get('state_root')}")
+    print(
+        f"loop_ready  : {bool(report.get('loop_ready'))} | "
+        f"soft_continue: {bool(report.get('soft_continue') or report.get('ok'))}"
+    )
     for check in report.get("checks") or []:
-        mark = "ok" if check.get("ok") else "FAIL"
+        mark = "ok" if check.get("ok") else "gap"
         err = check.get("error") or ""
         print(f"  [{mark}] {check.get('id')}" + (f" ({err})" if err else ""))
     for blocker in report.get("blockers") or []:
@@ -1247,6 +1256,13 @@ def _print_doctor_report(report: dict) -> None:
         for step in blocker.get("next_steps") or []:
             print(f"   * {step}")
         cmds = blocker.get("commands") or []
+        if cmds:
+            print(f"   commands: {', '.join(cmds)}")
+    for rec in report.get("recommendations") or []:
+        print(f"-- recommend {rec.get('error')}: {rec.get('message')}")
+        for step in rec.get("next_steps") or []:
+            print(f"   * {step}")
+        cmds = rec.get("commands") or []
         if cmds:
             print(f"   commands: {', '.join(cmds)}")
     for action in report.get("actions") or []:
@@ -1259,8 +1275,19 @@ def _print_doctor_report(report: dict) -> None:
         print("Loop ready. MCP path:", auto.get("when_ready"))
         print("CLI demo :", auto.get("cli_demo"))
         print("Host round:", auto.get("host_round"))
+    elif report.get("soft_continue") or report.get("ok"):
+        print(
+            "Soft-continue: swarm_boot / swarm_tick allowed with warnings. "
+            "Recommended (not required):",
+            report.get("setup_path") or "evolver setup / evolver doctor --fix",
+        )
+        print("MCP path:", auto.get("when_ready"))
+        print("Host round:", auto.get("host_round"))
     else:
-        print("Next:", report.get("setup_path") or "evolver setup")
+        print(
+            "Blocked. Clear hard blockers first:",
+            report.get("setup_path") or "evolver doctor",
+        )
 
 
 def _cmd_setup(args: argparse.Namespace) -> int:
@@ -1272,7 +1299,8 @@ def _cmd_setup(args: argparse.Namespace) -> int:
         print(json.dumps(report, ensure_ascii=False, indent=2))
     else:
         _print_doctor_report(report)
-    return 0 if report.get("loop_ready") else 2
+    # Soft-continue (pack/baseline gaps) is exit 0; hard blockers stay 2.
+    return 0 if report.get("ok") or report.get("soft_continue") or report.get("loop_ready") else 2
 
 
 def _cmd_doctor(args: argparse.Namespace) -> int:
@@ -1287,7 +1315,8 @@ def _cmd_doctor(args: argparse.Namespace) -> int:
         print(json.dumps(report, ensure_ascii=False, indent=2))
     else:
         _print_doctor_report(report)
-    return 0 if report.get("loop_ready") else 2
+    # Soft-continue (pack/baseline gaps) is exit 0; hard blockers stay 2.
+    return 0 if report.get("ok") or report.get("soft_continue") or report.get("loop_ready") else 2
 
 
 def _cmd_migrate_state(args: argparse.Namespace) -> int:

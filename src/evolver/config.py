@@ -302,11 +302,11 @@ NARRATIVE_SUMMARY_MAX_CHARS: Final = 3_000
 # forces the HITL gate on and blocks host-relayed approve/resume/unveto.
 # Default false.
 SWARM_AUTO_HIJACK: Final = env_bool("EVOLVER_SWARM_AUTO_HIJACK", False)
-# What swarm_tick does when the frozen pack or the Parent baseline is missing.
-# "human" (default; any other value too) returns await_human before the cycle.
-# "hotl" lets the loop run with the human on the loop: the gate still rejects
-# and rolls back every candidate, nothing publishes, and the supervision
-# tripwire still auto-pauses. Set by the human in the MCP config, not by a tool.
+# Gate handoff label when the frozen pack or Parent baseline is missing.
+# Default soft-continues into swarm_tick with warnings + next_steps (Accept /
+# publish may soft-accept). "hotl" is an explicit human-on-the-loop label in
+# the instrument prompt; dangerous gates (drop/flat/regression, val_seal, HITL,
+# locks) stay hard. Set by the human in the MCP config, not by a tool.
 SWARM_GATE_HANDOFF: Final = env_str("EVOLVER_SWARM_GATE_HANDOFF", "human")
 # swarm_tick returns the engine's stdout as `engine_log` (tail-truncated to
 # this budget); the dispatch prompt itself is returned untruncated.

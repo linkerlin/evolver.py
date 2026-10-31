@@ -20,6 +20,11 @@ ACTIONABLE_ERRORS = (
     "preflight_abort",
 )
 
+# Usability gaps: recommend filling, but soft-continue the swarm loop.
+SOFT_GAP_ERRORS = frozenset({"pack_absent", "no_baseline", "unmeasured"})
+# Hard roadblocks: doctor exit non-zero / ok=false until cleared.
+HARD_BLOCKER_ERRORS = frozenset({"not_a_git_repo", "user_lock", "preflight_abort"})
+
 
 def next_steps_for(error: str, *, context: dict[str, Any] | None = None) -> dict[str, Any]:
     """Return actionable ``next_steps`` / ``commands`` for a known error code.
@@ -319,14 +324,34 @@ def diagnose(*, project: str | Path | None = None) -> dict[str, Any]:
         _check_baseline(),
         _check_user_lock(),
     ]
-    blockers = [c for c in checks if not c.get("ok")]
+    failed = [c for c in checks if not c.get("ok")]
+    soft_gap_checks = [
+        c for c in failed if str(c.get("error") or "") in SOFT_GAP_ERRORS
+    ]
+    hard_checks = [
+        c for c in failed if str(c.get("error") or "") not in SOFT_GAP_ERRORS
+    ]
     loop_ready = all(
         c.get("ok") for c in checks if c["id"] in ("git", "freeze_pack", "parent_baseline")
     )
     lock_ok = next(c for c in checks if c["id"] == "user_lock").get("ok")
+    git_ok = next(c for c in checks if c["id"] == "git").get("ok")
+    # Soft-continue when git is usable and no hard lock/roadblock — pack/baseline
+    # gaps remain recommended fill-ins, not stop-the-world blockers.
+    soft_continue = bool(git_ok and lock_ok and not hard_checks)
     repo_root = next(c for c in checks if c["id"] == "git").get("repo_root")
+
+    def _enrich(c: dict[str, Any]) -> dict[str, Any]:
+        return {
+            "id": c["id"],
+            "error": c.get("error"),
+            **next_steps_for(str(c.get("error") or "unknown"), context=c),
+        }
+
     state = {
-        "ok": not blockers,
+        # ok tracks soft-continue (hosts may proceed); loop_ready stays honest.
+        "ok": soft_continue,
+        "soft_continue": soft_continue,
         "loop_ready": bool(loop_ready and lock_ok),
         "repo_root": repo_root,
         "workspace_id": compute_workspace_id(repo_root) if repo_root else None,
@@ -334,15 +359,8 @@ def diagnose(*, project: str | Path | None = None) -> dict[str, Any]:
             get_workspace_state_dir(repo_root) if repo_root else get_evolver_state_root()
         ),
         "checks": checks,
-        "blockers": [
-            {
-                "id": c["id"],
-                "error": c.get("error"),
-                **next_steps_for(str(c.get("error") or "unknown"), context=c),
-            }
-            for c in blockers
-            if c.get("error")
-        ],
+        "blockers": [_enrich(c) for c in hard_checks if c.get("error")],
+        "recommendations": [_enrich(c) for c in soft_gap_checks if c.get("error")],
         "auto_evolution": {
             "when_ready": (
                 "MCP: swarm_boot → swarm_tick → execute → swarm_distill → "
@@ -352,12 +370,15 @@ def diagnose(*, project: str | Path | None = None) -> dict[str, Any]:
             "host_round": "evolver round --host",
             "note": (
                 "Mutate/execute is host-side. Engine tools cover tick/distill/"
-                "hypothesis/solidify/feedback. Do not solve val in the candidate chat."
+                "hypothesis/solidify/feedback. Do not solve val in the candidate chat. "
+                "Missing pack/baseline: soft-continue with warnings (not a hard stop)."
             ),
         },
     }
     if not state["loop_ready"]:
-        state["setup_path"] = "evolver setup   # or: evolver doctor --fix"
+        state["setup_path"] = (
+            "recommended (soft-continue ok): evolver setup   # or: evolver doctor --fix"
+        )
     return state
 
 
@@ -403,7 +424,8 @@ def doctor(*, fix: bool = False, project: str | Path | None = None) -> dict[str,
 
     report["fix"] = fix
     report["actions"] = actions
-    report["ok"] = bool(report.get("loop_ready"))
+    # Keep diagnose soft-continue ok (do not force ok=false solely for pack/baseline gaps).
+    report["ok"] = bool(report.get("soft_continue", report.get("ok")))
     return report
 
 
@@ -442,6 +464,8 @@ def attach_next_steps(result: dict[str, Any], error: str | None = None) -> dict[
 
 __all__ = [
     "ACTIONABLE_ERRORS",
+    "HARD_BLOCKER_ERRORS",
+    "SOFT_GAP_ERRORS",
     "attach_next_steps",
     "diagnose",
     "doctor",

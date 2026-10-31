@@ -202,16 +202,16 @@ def standing_instructions() -> str:
         "EVOLVER SWARM is connected. If THIS message already asks for something "
         "else, do that and do not start the loop.\n"
         "If it does not, call swarm_boot and follow its instrument_prompt, "
-        "including boot_once. Then one sentence on the actual state: the loop "
-        "is starting, a human step is required, or the loop is paused. "
-        "They can say 停 to stop.\n"
+        "including boot_once. Then one sentence on the actual state: loop "
+        "starting (soft-continue ok for pack/baseline gaps), hard gate, or "
+        "paused. They can say 停 to stop.\n"
         "\n"
         "Loop, one step per turn, obeying the returned `next_action`:\n"
         "  swarm_tick → edit what `dispatch_prompt` says → swarm_distill →\n"
-        "  swarm_hypothesis (step 4 of instrument_prompt) → swarm_solidify →\n"
-        "  swarm_feedback (the returned `score`, else 0)\n"
+        "  swarm_hypothesis → swarm_solidify → swarm_feedback (score or 0)\n"
         "PROPOSAL REQUIRED or proposal_required=true: swarm_propose that edit, "
-        "do not edit it freely.\n"
+        "no free edit.\n"
+        "no_baseline/pack_absent/unmeasured: soft-continue; do not stop solely.\n"
         "\n"
         "Stop and never retry on next_action=stop_and_report, await_human, "
         "await_human_approval, await_supervisor_resume, paused=true, "
@@ -224,6 +224,7 @@ def standing_instructions() -> str:
         "Never edit .evolver/ by hand, never solve val tasks in this chat, "
         "never call skip_validation."
     )
+
 
 
 def build_server() -> Any:
