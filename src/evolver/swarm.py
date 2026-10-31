@@ -159,7 +159,8 @@ def build_instrument_prompt(state: dict[str, Any]) -> str:
         "`swarm_tick` / `swarm_solidify`；Accept/publish 走 soft-accept（带 "
         "warnings + next_steps），**不**伪造 Parent baseline，**不**在候选对话中"
         "打开 val 密封材料。建议仍按 `evolver doctor` / `evolver bench baseline` "
-        "补齐，但非强制。drop/flat/regression 与 val_seal 等危险门禁仍硬拒绝。"
+        "补齐，但非强制。drop/flat/regression 与 unmeasured 同样 soft-accept。"
+        "硬拒绝仅限：secrets/credentials 入仓、改写 ~/.evolver 等引擎保护路径、val_seal 泄露。"
     )
     hitl = state.get("hitl") or {}
     hitl_mode = hitl.get("mode", "?")
@@ -295,7 +296,7 @@ def build_instrument_prompt(state: dict[str, Any]) -> str:
 - `ok=true` 且 `bench_pack.accept=true`（含 soft_accept）：停并报告。发布要人执行
   `evolver session accept`（soft 时 CLI 会打印 warnings）。没有配对会话时，
   这次返回就是最终结果。
-- drop / flat / regression / val_seal_breach / secrets：仍硬拒绝，不要重试同一失败。
+- secrets/credentials 入仓、改写 ~/.evolver 等引擎保护路径、val_seal 泄露：硬拒绝，不要重试同一失败。
 {hotl_note}{soft_gate_note}
 {working_block}
 ## 当前状态
