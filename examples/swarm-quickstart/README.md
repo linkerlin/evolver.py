@@ -81,6 +81,30 @@ MCP/CLI 在 `not_a_git_repo`、`hypothesis_missing`、`no_baseline` / `pack_abse
 
 在 Grok Bot 上：进化工作区根是 `/workspace`，evolver.py **源码检出**在 `/workspace/evolver-research/evolver.py`。更新源码后请杀掉并重启 `evolver mcp`（例如 `uv --project /workspace/evolver-research/evolver.py run evolver mcp`），否则长驻进程仍加载旧模块；`swarm_status.source_revision` / `code_staleness` 可核对。
 
+**Operator: Grok Bot MCP 环境覆盖（产品演进）**
+
+MCP 进程 cwd 可为 `/workspace`（空闲沙箱），但 mutation 根 / workspace_id 必须指向 evolver.py 产品检出。在 MCP 配置里设：
+
+```json
+{
+  "mcpServers": {
+    "evolver-swarm": {
+      "command": "uv",
+      "args": [
+        "--project", "/workspace/evolver-research/evolver.py",
+        "run", "evolver", "mcp"
+      ],
+      "env": {
+        "EVOLVER_REPO_ROOT": "/workspace/evolver-research/evolver.py",
+        "EVOLVER_QUIET_PARENT_GIT": "1"
+      }
+    }
+  }
+}
+```
+
+OMEN16 环境替换为 `EVOLVER_REPO_ROOT=C:\GitHub\evolver.py`（原 PATH）。上述配置保证 `swarm_status.repo_root` 与 `workspace_root` 均指向产品树，运行态在 `~/.evolver/workspaces/<product-id>/`，不污染 `/workspace` 沙箱。
+
 ## 首次准备
 
 进化循环在冻结包和 Parent 基线都齐之前不会开始。优先跑上一节的 `evolver setup` / `doctor --fix`；下面三步仍是手动细节（尤其 val 沙箱必须在进化对话之外做）。
