@@ -958,10 +958,22 @@ def get_fitness_cascade_commands() -> list[dict[str, Any]]:
     Dogfood round-1 finding (v1.107.0): when evolver runs under a bare venv
     python (no activated environment), ruff/mypy/pytest live next to the
     interpreter — fall back to ``<sys.executable>'s dir`` before skipping.
+    
+    Soft-default UX (2026-10-31): adapts commands to project layout via
+    validation_probe before checking tool availability.
     """
+    from evolver.gep.validation_probe import adapt_cascade_commands
+    
+    # First adapt to project layout
+    cwd = get_workspace_root()
+    adapted, probe_warnings = adapt_cascade_commands(list(FITNESS_CASCADE_COMMANDS), cwd)
+    for warning in probe_warnings:
+        logger.info("validation probe: %s", warning)
+    
+    # Then check tool availability
     bin_dir = Path(sys.executable).parent
     runnable: list[dict[str, Any]] = []
-    for spec in FITNESS_CASCADE_COMMANDS:
+    for spec in adapted:
         argv = list(spec["command"])
         if argv and shutil.which(argv[0]) is None:
             # Probe the interpreter's own bin dir: first by exact name (the
