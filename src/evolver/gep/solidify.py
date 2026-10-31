@@ -2365,6 +2365,22 @@ def _solidify_cycle(
             "Experience has been written to state_root for this cycle",
         ]
     
+    # Soft-default UX (Task 5): add experience_written for MCP visibility
+    # Track what was written to state_root this cycle
+    experience_written: dict[str, list[str]] = {
+        "genes": [],
+        "episodes": [],
+        "events": [event["id"]],  # Always write an event
+    }
+    
+    # Gene was selected and event created, record it
+    if last_run.get("selected_gene_id"):
+        experience_written["genes"].append(str(last_run["selected_gene_id"]))
+    
+    # If episode was recorded (from episode_record in swarm layer)
+    # it will be added by the caller; we provide the structure
+    result["experience_written"] = experience_written
+    
     if bench_pack_verdict is not None:
         result["bench_pack"] = {
             "score": bench_pack_verdict.get("score"),
