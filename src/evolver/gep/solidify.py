@@ -1299,11 +1299,15 @@ def _is_hard_block_mutation(
     Soft-default UX (2026-10-31 spec).
     """
     from evolver.gep.paths import get_evolver_state_root
-    from evolver.gep.policy_check import run_policy_check
     
     # Check for secrets via policy check
     try:
-        policy_report = run_policy_check(cwd=cwd, check_secrets=True)
+        from evolver.gep.policy_check import check_policy
+        
+        # Get diff for secret checking
+        diff_text = capture_diff_snapshot(cwd)
+        policy_report = check_policy(diff_text=diff_text)
+        
         if not policy_report.ok:
             # Look for secret violations
             for violation in policy_report.violations:
