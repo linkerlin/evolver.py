@@ -1,7 +1,7 @@
 """Tests for T0 probe mode selection: soft-accept skips/minimizes checks."""
+
 from __future__ import annotations
 
-import pytest
 from pathlib import Path
 
 from evolver.gep.acceptance.t0_probe import determine_t0_mode, run_t0_with_mode

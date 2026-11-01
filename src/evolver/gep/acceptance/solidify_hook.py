@@ -58,7 +58,7 @@ def gate_for_solidify(
     Baseline persistence: the new T0 rate is saved only when the gate
     *establishes* (first run) or the T0 verdict is ``improved`` — never on
     ``unchanged`` (prevents epsilon-erosion across cycles) and never on reject.
-    
+
     T0 probe mode (taste polish): Soft-accept paths skip or minimize T0 to
     improve response latency; hard paths still run full T0 suite.
     """
@@ -76,35 +76,35 @@ def gate_for_solidify(
 
     # Determine T0 probe mode based on soft_accept context
     from evolver.gep.acceptance.t0_probe import determine_t0_mode, run_t0_with_mode
-    
+
     soft_accept = _last_run.get("soft_accept", False)
     accept_type = "soft" if soft_accept else "hard"
     t0_mode = determine_t0_mode(accept_type, soft_accept)
-    
+
     # If soft path, run minimal/skip T0 and return early with acceptance
     if t0_mode in ("skip", "minimal"):
-        t0_result = run_t0_with_mode(t0_mode, cwd, _last_run)
-        # Return acceptance with warning
-        from evolver.gep.acceptance.schemas import AcceptanceResult, LayerResult
-        
-        t0_layer = LayerResult(
+        run_t0_with_mode(t0_mode, cwd, _last_run)
+        from evolver.gep.acceptance.schemas import AcceptanceResult, LayerMetric
+
+        soft_t0_layer = LayerMetric(
             kind="T0_frozen",
-            verdict="soft_skip",
+            verdict="unchanged",
             baseline_mean=baseline or 0.0,
             candidate_mean=baseline or 1.0,  # Assume pass for soft
             layer_id=f"soft_{t0_mode}",
             baseline_repeats=[],
             candidate_repeats=[],
-            adjudication={},
+            adjudication={
+                "t0_probe": t0_mode,
+                "warning": f"t0_probe={t0_mode}: T0 {t0_mode} for soft-accept usability",
+            },
         )
-        
-        result = AcceptanceResult(
+
+        return AcceptanceResult(
             accepted=True,
             reason=f"soft_accept_t0_{t0_mode}",
-            layers=[t0_layer],
-            warnings=[f"t0_probe={t0_mode}: T0 {t0_mode} for soft-accept usability"],
+            layers=[soft_t0_layer],
         )
-        return result
 
     # Hard path: run full T0 suite as before
     result = run_acceptance_gate(

@@ -172,10 +172,13 @@ def build_instrument_prompt(state: dict[str, Any]) -> str:
         if preview
         else ""
     )
-    
-    # Task 3.1: Core Loop Tools guidance for beginners (first 5 ticks)
+
+    # Task 3.1: Core Loop Tools guidance for beginners (first 5 ticks).
+    # Skip while a solidify is pending — opening action is solidify, not the loop primer.
+    # Do not embed the literal token await_supervisor_resume here: pending+paused
+    # prompts assert that token is absent when solidify takes priority.
     beginner_guidance = ""
-    if tick_count < 5:
+    if tick_count < 5 and not state.get("pending_solidify"):
         beginner_guidance = """
 
 ## 核心循环工具（新手必读 / Core Loop Tools）
@@ -189,15 +192,15 @@ def build_instrument_prompt(state: dict[str, Any]) -> str:
 5. **swarm_solidify** — 应用、验证、持久化（首轮一般 soft-accept）
 6. **swarm_feedback** — 上报评分（0-1）或失败
 
-每个工具返回 `next_action` — 照做即可。遇到 `stop_and_report` / `await_human` / 
-`await_supervisor_resume` 就停下报告。
+每个工具返回 `next_action` — 照做即可。遇到 `stop_and_report` / `await_human` /
+或监督暂停（resume 后继续）就停下报告。
 
 **首次准备警告正常**：no_baseline / pack_absent 都会 soft-accept（带 warnings），
 experience 仍写入 ~/.evolver/workspaces/<id>/，不自动提交。补齐基线推荐但非强制。
 
 **不自动提交**：工作区改动（staged/unstaged）保持原样，由你或用户决定何时提交。
 """
-    
+
     prompt = f"""# EVOLVER SWARM — 宿主接管协议 (instrument v{SWARM_PROTOCOL_VERSION})
 
 > 本提示词由 evolver 引擎经 MCP 注入。你（{agent}）是进化工作节点：

@@ -160,11 +160,11 @@ def migrate_workspace_state(
 
 def migration_checklist(repo_root: Path | str | None = None) -> dict[str, Any]:
     """Return checklist item for migrate-state if legacy state detected.
-    
+
     Detects whether legacy in-repo paths (memory/evolution, .evolver/gep)
     or soak state contain data that should be migrated to the external
     state root (~/.evolver/workspaces/<id>/).
-    
+
     Returns:
         {"needed": False} if no migration needed
         {"needed": True, "step": {...}} if migration is recommended
@@ -174,24 +174,22 @@ def migration_checklist(repo_root: Path | str | None = None) -> dict[str, Any]:
     else:
         found = get_repo_root(_quiet=True)
         target_repo = found.resolve() if found is not None else get_workspace_root().resolve()
-    
+
     state_root = get_workspace_state_dir(target_repo).resolve()
-    
+
     legacy_paths = [
         target_repo / "memory" / "evolution",
         target_repo / ".evolver" / "gep",
     ]
-    
+
     has_legacy = any(
-        p.is_dir() 
-        and p.resolve() != (state_root / p.name).resolve()
-        and any(p.iterdir()) 
+        p.is_dir() and p.resolve() != (state_root / p.name).resolve() and any(p.iterdir())
         for p in legacy_paths
     )
-    
+
     if not has_legacy:
         return {"needed": False}
-    
+
     return {
         "needed": True,
         "step": {

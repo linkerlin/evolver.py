@@ -58,6 +58,8 @@ def test_get_repo_root_discovers_git(tmp_path: Path, monkeypatch: pytest.MonkeyP
     (tmp_path / ".git").mkdir()
     monkeypatch.chdir(tmp_path)
     monkeypatch.setenv("EVOLVER_QUIET_PARENT_GIT", "1")
+    monkeypatch.delenv("EVOLVER_NO_PARENT_GIT", raising=False)
+    monkeypatch.delenv("EVOLVER_REPO_ROOT", raising=False)
     assert paths.get_repo_root() == tmp_path
 
 
