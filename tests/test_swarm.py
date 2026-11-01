@@ -185,9 +185,11 @@ class TestBootAndStatus:
         assert result.get("error") not in ("pack_absent", "no_baseline", "unmeasured")
         assert result.get("next_steps")
         assert result.get("source_revision") == result["state"].get("source_revision")
-        assert "evolver bench freeze" in result["instrument_prompt"] or "evolver doctor" in (
-            result.get("hint") or ""
-        ) or any("freeze" in str(s) for s in result.get("commands") or [])
+        assert (
+            "evolver bench freeze" in result["instrument_prompt"]
+            or "evolver doctor" in (result.get("hint") or "")
+            or any("freeze" in str(s) for s in result.get("commands") or [])
+        )
         assert result["boot_once"] == [
             {"tool": "swarm_hook_event", "arguments": {"event": "session_start"}},
         ]
@@ -255,9 +257,10 @@ class TestBootAndStatus:
         assert held.get("gap") == "no_baseline"
         assert held.get("error") not in ("no_baseline", "pack_absent", "unmeasured")
         assert held.get("next_steps")
-        assert "no_baseline" in held["instrument_prompt"] or "soft-continue" in held[
-            "instrument_prompt"
-        ]
+        assert (
+            "no_baseline" in held["instrument_prompt"]
+            or "soft-continue" in held["instrument_prompt"]
+        )
 
         monkeypatch.setattr("evolver.bench.frozen_gate.gate_snapshot", ready)
         swarm_supervise("pause", reason="hold")
@@ -876,8 +879,9 @@ class TestHitlGate:
     def test_mode_off_auto_approves_with_audit(self, isolated_swarm_env: Path) -> None:
         _seed_pending_run()
         result = swarm_solidify(skip_validation=True, agent_name="tester")
-        # HITL passed (auto-approved); isolated workspace is not a git repo.
-        assert result.get("error") == "not_a_git_repo"
+        # HITL passed (auto-approved). Soft-default checks hypothesis before
+        # treating missing git as a soft warning, so the next gate is hyp.
+        assert result.get("error") == "hypothesis_missing"
         journal = isolated_swarm_env / "evolution" / "hitl_approvals.jsonl"
         assert journal.exists() and "auto_approved" in journal.read_text(encoding="utf-8")
 
@@ -897,7 +901,7 @@ class TestHitlGate:
         assert resolve_approval(request_id, approve=True, decided_by="human")["ok"]
 
         passed = swarm_solidify(skip_validation=True, agent_name="tester")
-        assert passed.get("error") == "not_a_git_repo"
+        assert passed.get("error") == "hypothesis_missing"
 
     def test_mode_on_rejected_blocks(
         self, isolated_swarm_env: Path, monkeypatch: pytest.MonkeyPatch
@@ -1091,9 +1095,7 @@ class TestCodeStaleness:
         result = swarm_status()
         assert "source_revision" in result
         # SHA string or None when no .git beside the package
-        assert result["source_revision"] is None or isinstance(
-            result["source_revision"], str
-        )
+        assert result["source_revision"] is None or isinstance(result["source_revision"], str)
         cs = result["code_staleness"]
         assert cs is not None
         assert set(cs) == {"stale", "process_started_at", "newest_src_mtime"}
@@ -1221,6 +1223,7 @@ class TestStaleImportGuard:
         result = asyncio.run(swarm.swarm_tick(include_prompt=False))
         assert result["ok"] is False
         assert result["error"] == "code_stale_process"
+
 
 @pytest.mark.asyncio
 async def test_e2e_no_baseline_soft_path_boot_tick_solidify(

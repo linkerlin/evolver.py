@@ -46,6 +46,8 @@ class _McpClient:
             stdout=subprocess.PIPE,
             stderr=subprocess.DEVNULL,
             text=True,
+            encoding="utf-8",
+            errors="replace",
             bufsize=1,
             cwd=str(tmp_path),
             env=_server_env(tmp_path),

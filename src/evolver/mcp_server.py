@@ -227,7 +227,6 @@ def standing_instructions() -> str:
     )
 
 
-
 def build_server() -> Any:
     """Construct the MCP server instance (stdio transport via ``run``)."""
     from mcp.server.mcpserver import MCPServer

@@ -192,12 +192,14 @@ class TestGateReject:
         monkeypatch.setattr(
             gate_mod,
             "gate_verdict",
-            lambda **_kw: _verdict({
-                "score": 0.6,
-                "baseline": 1.0,
-                "verdict": "reject",
-                "reason": "drop",  # Must set reason for soft-accept
-            }),
+            lambda **_kw: _verdict(
+                {
+                    "score": 0.6,
+                    "baseline": 1.0,
+                    "verdict": "reject",
+                    "reason": "drop",  # Must set reason for soft-accept
+                }
+            ),
         )
         write_state_for_solidify(_last_run())
         result = solidify(skip_validation=True)
@@ -215,12 +217,14 @@ class TestGateReject:
         monkeypatch.setattr(
             gate_mod,
             "gate_verdict",
-            lambda **_kw: _verdict({
-                "score": 0.6,
-                "baseline": 1.0,
-                "verdict": "reject",
-                "reason": "drop",  # Must set reason for soft-accept
-            }),
+            lambda **_kw: _verdict(
+                {
+                    "score": 0.6,
+                    "baseline": 1.0,
+                    "verdict": "reject",
+                    "reason": "drop",  # Must set reason for soft-accept
+                }
+            ),
         )
         patched = _uncommitted_change(git_ws)
         write_state_for_solidify(_last_run())
@@ -239,12 +243,14 @@ class TestGateReject:
         monkeypatch.setattr(
             gate_mod,
             "gate_verdict",
-            lambda **_kw: _verdict({
-                "score": 0.6,
-                "baseline": 1.0,
-                "verdict": "reject",
-                "reason": "drop",  # Must set reason for soft-accept
-            }),
+            lambda **_kw: _verdict(
+                {
+                    "score": 0.6,
+                    "baseline": 1.0,
+                    "verdict": "reject",
+                    "reason": "drop",  # Must set reason for soft-accept
+                }
+            ),
         )
         write_state_for_solidify(_last_run())
         solidify(skip_validation=True)

@@ -148,15 +148,18 @@ def get_repo_root(cwd: Path | str | None = None, *, _quiet: bool | None = None) 
             print(f"[paths] Using EVOLVER_REPO_ROOT: {chosen}", file=sys.stderr)
         return chosen
 
-    if os.environ.get("EVOLVER_NO_PARENT_GIT") == "1":
-        return None
-
     start = Path(cwd or os.getcwd()).resolve()
     direct = _walk_up_for_git(start)
     if direct is not None:
         if not _quiet:
             print(f"[paths] Using host git repository at: {direct}", file=sys.stderr)
         return direct
+
+    # EVOLVER_NO_PARENT_GIT: still discover .git from cwd (above), but do not
+    # fall through to host workspace env / config.json — those are the
+    # "parent" lookups that pollute CI sandboxes into the product checkout.
+    if os.environ.get("EVOLVER_NO_PARENT_GIT") == "1":
+        return None
 
     # Check host project env vars and ~/.evolver/config.json as fallback
     for env_key in (

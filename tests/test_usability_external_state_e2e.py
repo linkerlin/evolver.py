@@ -14,7 +14,6 @@ from evolver.cli import main as cli_main
 from evolver.gep.eval_worktree import isolated_eval_cwd
 from evolver.gep.hypothesis import (
     hypothesis_path,
-    load_hypothesis,
     record_hypothesis,
 )
 from evolver.gep.paths import (
@@ -109,7 +108,13 @@ def test_u1_u3_externalized_workspace_paths_zero_repo_footprint(
     state_root = tmp_path / "evolver_home"
     monkeypatch.setenv("EVOLVER_STATE_ROOT", str(state_root))
     monkeypatch.setenv("WORKSPACE_DIR", str(repo))
-    for k in ("MEMORY_DIR", "EVOLUTION_DIR", "GEP_ASSETS_DIR", "EVOLVER_LOGS_DIR"):
+    for k in (
+        "MEMORY_DIR",
+        "EVOLUTION_DIR",
+        "GEP_ASSETS_DIR",
+        "EVOLVER_LOGS_DIR",
+        "EVOLVER_SESSION_SCOPE",
+    ):
         monkeypatch.delenv(k, raising=False)
 
     ws_id = compute_workspace_id(repo)
@@ -139,8 +144,16 @@ def test_u1_repo_root_resolution_from_config_and_parent(
     state_root = tmp_path / "evolver_home"
     state_root.mkdir(parents=True)
     monkeypatch.setenv("EVOLVER_STATE_ROOT", str(state_root))
-    for k in ("EVOLVER_REPO_ROOT", "EVOLVER_PROJECT_DIR", "WORKSPACE_DIR", "OPENCLAW_WORKSPACE"):
+    for k in (
+        "EVOLVER_REPO_ROOT",
+        "EVOLVER_PROJECT_DIR",
+        "WORKSPACE_DIR",
+        "OPENCLAW_WORKSPACE",
+        "EVOLVER_SESSION_SCOPE",
+    ):
         monkeypatch.delenv(k, raising=False)
+    # Allow walk-up from explicit paths even under CI's NO_PARENT_GIT=1.
+    monkeypatch.delenv("EVOLVER_NO_PARENT_GIT", raising=False)
 
     # 1. Resolve from child subdir inside repo
     subdir = repo / "src" / "nested"
@@ -190,6 +203,7 @@ def test_u3_phase1_legacy_read_fallback_and_warning(
 def test_u2_not_a_git_repo_includes_suggested_actions(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
+    """Soft-default: no-git soft-continues with warnings pointing at child repos."""
     outer = tmp_path / "workspace_container"
     outer.mkdir()
     child_repo = _init_git_repo(outer / "evolver_child")
@@ -200,6 +214,10 @@ def test_u2_not_a_git_repo_includes_suggested_actions(
 
     candidates = discover_git_candidates(outer)
     assert str(child_repo.resolve()) in candidates
+
+    monkeypatch.setenv("EVOLVER_HOME", str(tmp_path / "evomap_home"))
+    monkeypatch.setenv("EVOLVER_STATE_ROOT", str(tmp_path / "evolver_home"))
+    _arm_synthetic_pack()
 
     write_state_for_solidify(
         {
@@ -214,15 +232,15 @@ def test_u2_not_a_git_repo_includes_suggested_actions(
             },
         }
     )
+    record_hypothesis(synth_hypothesis(run_id="run_u2_test"))
 
-    res = solidify()
-    assert res["ok"] is False
-    assert res["error"] == "not_a_git_repo"
-    actions = res.get("suggested_actions")
-    assert isinstance(actions, dict)
-    assert str(outer.resolve()) in actions["init_git_at"]
-    assert str(child_repo.resolve()) in actions["set_repo_root_to"]
-    assert "not a git repository" in actions["message"]
+    res = solidify(skip_validation=True)
+    assert res["ok"] is True, res
+    assert res.get("severity") == "soft"
+    assert res.get("no_git_repo") is True
+    warnings = " ".join(res.get("warnings") or [])
+    assert "git" in warnings.lower()
+    assert str(child_repo.resolve()) in warnings or "EVOLVER_REPO_ROOT" in warnings
 
 
 # ---------------------------------------------------------------------------
@@ -264,43 +282,16 @@ def test_u4_u5_rejected_mutation_stashed_restorable_and_hypothesis_preserved(
     (repo / "src" / "app.py").write_text("def add(a, b):\n    return a + b + 0\n", encoding="utf-8")
     (repo / "src" / "helper.py").write_text("HELPER = True\n", encoding="utf-8")
 
-    # 1. Failing related command -> worktree rolled back into stash, hypothesis preserved
-    res_fail = solidify(
+    # Soft-default: failing related validation soft-continues (no rollback/stash).
+    res_soft = solidify(
         validation_scope="related",
         related_commands=[[sys.executable, "-c", "import sys; sys.exit(1)"]],
     )
-    assert res_fail["ok"] is False
-    assert res_fail["error"] == "validation_failed"
-    assert res_fail.get("rejected_stash") is not None
-    assert res_fail["rejected_stash"]["ok"] is True
-
-    # Working tree was rolled back cleanly
-    assert "return a + b + 0" not in (repo / "src" / "app.py").read_text(encoding="utf-8")
-    assert not (repo / "src" / "helper.py").exists()
-
-    # Hypothesis survived the failed solidify!
-    preserved_hyp = load_hypothesis()
-    assert preserved_hyp is not None
-    assert preserved_hyp.get("preserved_from_failed_run") == run_id
-
-    # 2. Restore stash via solidify(restore_stash=True)
-    res_restore = solidify(restore_stash=True)
-    assert res_restore["ok"] is True
-    assert res_restore["run_id"] == run_id
+    assert res_soft["ok"] is True
+    assert res_soft.get("severity") == "soft" or res_soft.get("validation_soft_failed") is True
     assert "return a + b + 0" in (repo / "src" / "app.py").read_text(encoding="utf-8")
-    assert (repo / "src" / "helper.py").read_text(encoding="utf-8") == "HELPER = True\n"
-
-    # Refine restored patch and run solidify WITHOUT re-declaring hypothesis
-    (repo / "src" / "app.py").write_text(
-        "def add(a, b):\n    return int(a) + int(b)\n", encoding="utf-8"
-    )
-
-    res_pass = solidify(
-        validation_scope="related",
-        related_commands=[[sys.executable, "-c", "print('related ok')"]],
-    )
-    assert res_pass["ok"] is True
-    # Now that solidify succeeded, hypothesis.json is consumed (deleted)
+    assert (repo / "src" / "helper.py").exists()
+    # Soft success consumes hypothesis (ok == True path).
     assert not hypothesis_path().exists()
 
 
@@ -472,7 +463,7 @@ async def test_full_e2e_loop_from_non_git_host_cwd(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """Verify: boot(project=repo) -> tick -> edit -> distill -> hypothesis ->
-    failed solidify (stash + hypothesis kept) -> restore-stash -> passing solidify -> feedback,
+    soft-continue solidify on validation warnings -> feedback,
     all while host cwd is an unrelated non-git directory.
     """
     host_cwd = tmp_path / "mcp_host_scratch"
@@ -535,34 +526,21 @@ async def test_full_e2e_loop_from_non_git_host_cwd(
     run_id = str((state_data.get("last_run") or {}).get("run_id") or "")
     record_hypothesis(synth_hypothesis(run_id=run_id))
 
-    # 6. First solidify fails due to failing related command -> stashed & hypothesis preserved
+    # 6. Soft-default: failing related validation soft-continues (worktree kept).
     fail_solidify = swarm_solidify(
         validation_scope="related",
         related_commands=[[sys.executable, "-c", "import sys; sys.exit(1)"]],
     )
-    assert fail_solidify["ok"] is False
-    assert fail_solidify.get("rejected_stash", {}).get("ok") is True
-    assert hypothesis_path().is_file()
-
-    # 7. Restore stash via swarm_solidify(restore_stash=True)
-    restore_res = swarm_solidify(restore_stash=True)
-    assert restore_res["ok"] is True
+    assert fail_solidify["ok"] is True
+    assert (
+        fail_solidify.get("severity") == "soft"
+        or fail_solidify.get("validation_soft_failed") is True
+    )
     assert "def mul(a, b):" in (repo / "src" / "app.py").read_text(encoding="utf-8")
-
-    # Refine restored code slightly and re-run solidify without re-recording hypothesis
-    (repo / "src" / "app.py").write_text(
-        "def add(a, b):\n    return a + b\n\ndef mul(a, b):\n    return int(a) * int(b)\n",
-        encoding="utf-8",
-    )
-
-    # 8. Second solidify succeeds without re-recording hypothesis
-    pass_solidify = swarm_solidify(
-        validation_scope="related",
-        related_commands=[[sys.executable, "-c", "import sys; sys.exit(0)"]],
-    )
-    assert pass_solidify["ok"] is True
+    # Soft success consumes hypothesis.
     assert not hypothesis_path().exists()
 
+    # 9. Submit feedback
     # 9. Submit feedback
     fb_res = swarm_feedback(
         primary_score=0.95,

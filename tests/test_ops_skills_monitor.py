@@ -59,8 +59,21 @@ class TestCheckSkillsHealth:
         assert "skills/my-py-skill" in dirs
         assert "skills/bare-skill" in dirs
 
-    def test_no_repo_returns_error(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        monkeypatch.setenv("EVOLVER_REPO_ROOT", "")
+    def test_no_repo_returns_error(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+        # EVOLVER_NO_PARENT_GIT still walks cwd for .git; only skips host
+        # env/config parent fallbacks. Use a temp cwd with no .git ancestor.
+        orphan = tmp_path / "orphan"
+        orphan.mkdir()
+        monkeypatch.chdir(orphan)
+        monkeypatch.delenv("EVOLVER_REPO_ROOT", raising=False)
+        monkeypatch.delenv("EVOLVER_PROJECT_DIR", raising=False)
+        for key in (
+            "OPENCLAW_WORKSPACE",
+            "WORKSPACE_DIR",
+            "CURSOR_PROJECT_DIR",
+            "CLAUDE_PROJECT_DIR",
+        ):
+            monkeypatch.delenv(key, raising=False)
         monkeypatch.setenv("EVOLVER_NO_PARENT_GIT", "1")
         result = check_skills_health()
         assert result["ok"] is False

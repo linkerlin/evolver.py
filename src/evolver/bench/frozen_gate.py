@@ -75,14 +75,16 @@ GATE_SPLIT: Final = "val"
 #: with warnings + next_steps so hosts can complete the loop and write experience.
 #: Soft-accept MUST NOT call save_baseline / establish a fake Parent bar.
 #: Only hard blocks remain: secrets and protected state paths.
-USABILITY_SOFT_REASONS: Final = frozenset({
-    "no_baseline",
-    "pack_absent", 
-    "unmeasured",
-    "drop",
-    "flat",
-    "regression",
-})
+USABILITY_SOFT_REASONS: Final = frozenset(
+    {
+        "no_baseline",
+        "pack_absent",
+        "unmeasured",
+        "drop",
+        "flat",
+        "regression",
+    }
+)
 
 
 def is_usability_soft_reason(reason: str | None) -> bool:
@@ -124,7 +126,6 @@ def enrich_soft_accept(verdict: dict[str, Any]) -> dict[str, Any]:
     if steps.get("message") and not out.get("hint"):
         out["hint"] = steps["message"]
     return out
-
 
 
 def frozen_pack_path() -> Path:

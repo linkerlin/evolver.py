@@ -753,7 +753,12 @@ def _build_parser() -> argparse.ArgumentParser:
     token_p = sub.add_parser("webui-token", help="Generate or revoke WebUI tokens")
     token_p.add_argument("--generate", action="store_true", help="Create a new token")
     token_p.add_argument("--role", default="readonly", help="Token role: readonly or admin")
-    token_p.add_argument("--revoke", default=None, help="Revoke a token")
+    token_p.add_argument(
+        "--revoke",
+        default=None,
+        metavar="TOKEN",
+        help="Revoke a token (dash-prefixed: --revoke=TOKEN)",
+    )
     traj_p = sub.add_parser("trajectory", help="Export proxy traces into coding trajectories")
     traj_p.add_argument("--input", default=None, help="Input JSONL trace file")
     traj_p.add_argument(
@@ -882,9 +887,37 @@ def _run_cli_contract(raw_args: list[str]) -> int | None:
     return None
 
 
+def _bind_option_values(argv: list[str], options: set[str]) -> list[str]:
+    """Bind ``--opt value`` into ``--opt=value`` when *value* starts with ``-``.
+
+    argparse otherwise treats a following dash-prefixed token as a new flag
+    (``error: argument --revoke: expected one argument``). Equals-form also
+    works; this makes the spaced form safe for urlsafe tokens.
+    """
+    out: list[str] = []
+    i = 0
+    while i < len(argv):
+        arg = argv[i]
+        if arg in options and i + 1 < len(argv):
+            nxt = argv[i + 1]
+            if nxt == "--" and i + 2 < len(argv):
+                out.append(f"{arg}={argv[i + 2]}")
+                i += 3
+                continue
+            if nxt.startswith("-"):
+                out.append(f"{arg}={nxt}")
+                i += 2
+                continue
+        out.append(arg)
+        i += 1
+    return out
+
+
 def main(argv: Sequence[str] | None = None) -> int:
     _load_dotenv()
     raw_args = list(argv) if argv is not None else sys.argv[1:]
+    # Options whose values may be urlsafe tokens starting with '-'.
+    raw_args = _bind_option_values(raw_args, {"--revoke"})
     contract_result = _run_cli_contract(raw_args)
     if contract_result is not None:
         return contract_result
@@ -1230,8 +1263,7 @@ def _cmd_solidify(args: argparse.Namespace) -> int:
     return 1
 
 
-
-def _print_doctor_report(report: dict) -> None:
+def _print_doctor_report(report: dict[str, Any]) -> None:
     """Human-readable open-box doctor/setup report."""
     if report.get("loop_ready"):
         ready = "READY"
@@ -1267,8 +1299,7 @@ def _print_doctor_report(report: dict) -> None:
             print(f"   commands: {', '.join(cmds)}")
     for action in report.get("actions") or []:
         print(
-            f"-- action: {action.get('action')} -> "
-            f"{action.get('result') or action.get('reason')}"
+            f"-- action: {action.get('action')} -> {action.get('result') or action.get('reason')}"
         )
     auto = report.get("auto_evolution") or {}
     if report.get("loop_ready"):

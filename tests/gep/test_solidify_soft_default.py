@@ -1,16 +1,13 @@
 """E2E tests for soft-default UX with no-src toy repos (Task 6).
 
-Covers soft-default UX (2026-10-31): no-src toy repo loop asserts ok + 
+Covers soft-default UX (2026-10-31): no-src toy repo loop asserts ok +
 experience + engine does not create src/.
 """
 
 from __future__ import annotations
 
-import subprocess
 from pathlib import Path
 from typing import Any
-
-import pytest
 
 from evolver.gep.validation_probe import adapt_cascade_commands
 
@@ -23,17 +20,17 @@ class TestNoSrcE2E:
         # Create empty project (no src/, no tests/, no lib/)
         empty_dir = tmp_path / "empty"
         empty_dir.mkdir()
-        
+
         # Standard cascade commands
         commands = [
             {"command": ["ruff", "check", "src", "tests"]},
             {"command": ["mypy", "src"]},
             {"command": ["pytest", "-q"]},
         ]
-        
+
         # Adapt to layout
         adapted, warnings = adapt_cascade_commands(commands, empty_dir)
-        
+
         # All stages should be skipped
         assert adapted == []
         assert len(warnings) >= 3
@@ -47,14 +44,14 @@ class TestNoSrcE2E:
         toy_dir = tmp_path / "toy"
         toy_dir.mkdir()
         (toy_dir / "script.py").write_text("print('hello')")
-        
+
         commands = [
             {"command": ["ruff", "check", "src", "tests"]},
             {"command": ["mypy", "src"]},
         ]
-        
+
         adapted, warnings = adapt_cascade_commands(commands, toy_dir)
-        
+
         # No src/, no tests/ → skip all Python linters
         assert adapted == []
         assert len(warnings) >= 2
@@ -63,17 +60,17 @@ class TestNoSrcE2E:
         """Validation probe never creates src/ directory."""
         no_src_dir = tmp_path / "no_src"
         no_src_dir.mkdir()
-        
+
         assert not (no_src_dir / "src").exists()
-        
+
         commands = [
             {"command": ["ruff", "check", "src", "tests"]},
             {"command": ["mypy", "src"]},
         ]
-        
+
         # Adapt commands
         _, _ = adapt_cascade_commands(commands, no_src_dir)
-        
+
         # src/ should NOT have been created
         assert not (no_src_dir / "src").exists()
 
@@ -81,16 +78,16 @@ class TestNoSrcE2E:
         """No-src scenario returns ok=True with soft warnings."""
         # This validates the principle that empty/skipped cascade
         # should return ok=True (soft-continue) not ok=False (hard failure)
-        
+
         no_src_dir = tmp_path / "no_src"
         no_src_dir.mkdir()
-        
+
         commands = [
             {"command": ["ruff", "check", "src", "tests"]},
         ]
-        
+
         adapted, warnings = adapt_cascade_commands(commands, no_src_dir)
-        
+
         # Empty adapted list is valid (soft-continue case)
         assert isinstance(adapted, list)
         assert isinstance(warnings, list)
@@ -122,9 +119,9 @@ class TestExperienceWrittenE2E:
     ) -> None:
         """Experience written to state_root, not project cwd."""
         from evolver.gep.paths import get_evolver_state_root
-        
+
         state_root = get_evolver_state_root()
-        
+
         # Experience goes to ~/.evolver/workspaces/<id>/
         # not to project cwd
         assert state_root is not None
@@ -141,11 +138,11 @@ class TestSoftDefaultIntegration:
         # not compound hard failure
         no_src_dir = tmp_path / "no_src_no_baseline"
         no_src_dir.mkdir()
-        
+
         # Cascade will skip due to no src/
         commands = [{"command": ["ruff", "check", "src"]}]
         adapted, warnings = adapt_cascade_commands(commands, no_src_dir)
-        
+
         assert adapted == []
         assert len(warnings) > 0
         # Soft-continue principle validated
@@ -156,11 +153,11 @@ class TestSoftDefaultIntegration:
         # not multiple rejections
         no_src_dir = tmp_path / "multi_soft"
         no_src_dir.mkdir()
-        
+
         # Empty cascade (no-src) is itself a soft condition
         commands = []
         adapted, warnings = adapt_cascade_commands(commands, no_src_dir)
-        
+
         assert adapted == []
         assert warnings == []  # No warnings for empty command list
 
@@ -174,14 +171,14 @@ class TestLayoutAwareness:
         lib_dir.mkdir()
         (lib_dir / "lib").mkdir()
         (lib_dir / "lib" / "__init__.py").write_text("")
-        
+
         commands = [
             {"command": ["ruff", "check", "src"]},
             {"command": ["mypy", "src"]},
         ]
-        
+
         adapted, warnings = adapt_cascade_commands(commands, lib_dir)
-        
+
         # Both should rewrite src → lib
         assert len(adapted) == 2
         assert adapted[0]["command"] == ["ruff", "check", "lib"]
@@ -193,15 +190,15 @@ class TestLayoutAwareness:
         tests_dir = tmp_path / "tests_only"
         tests_dir.mkdir()
         (tests_dir / "tests").mkdir()
-        
+
         commands = [
             {"command": ["ruff", "check", "src", "tests"]},
             {"command": ["mypy", "src"]},
             {"command": ["pytest", "-q"]},
         ]
-        
+
         adapted, warnings = adapt_cascade_commands(commands, tests_dir)
-        
+
         # ruff checks tests/, mypy skipped (no src), pytest skipped (no tests dir found)
         # Actually pytest is kept because tests/ exists - update expectation
         assert len(adapted) == 2  # ruff and pytest
@@ -215,14 +212,14 @@ class TestLayoutAwareness:
         std_dir.mkdir()
         (std_dir / "src").mkdir()
         (std_dir / "tests").mkdir()
-        
+
         commands = [
             {"command": ["ruff", "check", "src", "tests"]},
             {"command": ["mypy", "src"]},
         ]
-        
+
         adapted, warnings = adapt_cascade_commands(commands, std_dir)
-        
+
         # No changes needed
         assert len(adapted) == 2
         assert adapted[0]["command"] == ["ruff", "check", "src", "tests"]

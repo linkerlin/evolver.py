@@ -172,6 +172,7 @@ def test_readme_mentions_setup_doctor_and_val_seal() -> None:
     assert "doctor" in lowered or "setup" in lowered
     assert "open sealed" in lowered or "不得解 val" in readme or "密封" in readme
 
+
 def test_doctor_soft_continue_ok_when_only_usability_gaps(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

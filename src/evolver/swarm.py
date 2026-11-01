@@ -149,11 +149,7 @@ def build_instrument_prompt(state: dict[str, Any]) -> str:
     boot_once_json = json.dumps(boot_once, ensure_ascii=False)
     hotl = gate_handoff_skipped()
     gate_handoff = "hotl" if hotl else "human"
-    hotl_note = (
-        "\n当前 `gate_handoff: hotl`：人已选择不在 tick 前等待。"
-        if hotl
-        else ""
-    )
+    hotl_note = "\n当前 `gate_handoff: hotl`：人已选择不在 tick 前等待。" if hotl else ""
     soft_gate_note = (
         "\n门未就绪（pack_absent / no_baseline）时默认 **soft-continue**：仍可 "
         "`swarm_tick` / `swarm_solidify`；Accept/publish 走 soft-accept（带 "
@@ -296,7 +292,8 @@ def build_instrument_prompt(state: dict[str, Any]) -> str:
 - `ok=true` 且 `bench_pack.accept=true`（含 soft_accept）：停并报告。发布要人执行
   `evolver session accept`（soft 时 CLI 会打印 warnings）。没有配对会话时，
   这次返回就是最终结果。
-- secrets/credentials 入仓、改写 ~/.evolver 等引擎保护路径、val_seal 泄露：硬拒绝，不要重试同一失败。
+- secrets/credentials 入仓、改写 ~/.evolver 等引擎保护路径、val_seal 泄露：硬拒绝，
+  不要重试同一失败。
 {hotl_note}{soft_gate_note}
 {working_block}
 ## 当前状态
@@ -574,9 +571,7 @@ def swarm_status() -> dict[str, Any]:
             "inbound": len(inbound_pending),
             "outbound": len(store.poll_outbound(limit=100)),
             "unacked_hello": sum(
-                1
-                for m in inbound_pending
-                if getattr(m, "type", "") == "swarm.hello"
+                1 for m in inbound_pending if getattr(m, "type", "") == "swarm.hello"
             ),
         }
     except Exception:

@@ -58,6 +58,7 @@ def _isolate_evolver_state_root(tmp_path: Path, monkeypatch: pytest.MonkeyPatch)
     monkeypatch.delenv("EVOLVER_REPO_ROOT", raising=False)
     monkeypatch.delenv("EVOLVER_PROJECT_DIR", raising=False)
     monkeypatch.delenv("EVOLVER_WORKSPACE_ID", raising=False)
+    monkeypatch.delenv("EVOLVER_SESSION_SCOPE", raising=False)
 
 
 @pytest.fixture(autouse=True)

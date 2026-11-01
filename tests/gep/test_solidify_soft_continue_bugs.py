@@ -14,11 +14,10 @@ executes when we did NOT soft-continue.
 
 from __future__ import annotations
 
+import contextlib
 import json
 from pathlib import Path
-from unittest.mock import Mock, patch
-
-import pytest
+from unittest.mock import patch
 
 
 def test_soft_continue_does_not_rollback(tmp_path: Path, monkeypatch):
@@ -28,7 +27,7 @@ def test_soft_continue_does_not_rollback(tmp_path: Path, monkeypatch):
     ruff failures (~178), the next event was still failed/validation_failed and
     solidify hard-rejected — soft-continue appeared to fall through into legacy
     hard-fail/rollback path.
-    
+
     Expected: Soft-continue returns ok=True, severity="soft", working tree untouched.
     """
     from evolver.gep.solidify import _handle_cascade_validation_failure
@@ -69,9 +68,7 @@ def test_soft_continue_does_not_rollback(tmp_path: Path, monkeypatch):
 
     monkeypatch.setattr("evolver.gep.solidify.rollback_tracked", mock_rollback)
     monkeypatch.setattr("evolver.gep.solidify.snapshot_rejected_worktree", mock_snapshot)
-    monkeypatch.setattr(
-        "evolver.gep.solidify.rollback_new_untracked_files", lambda *a, **k: None
-    )
+    monkeypatch.setattr("evolver.gep.solidify.rollback_new_untracked_files", lambda *a, **k: None)
     monkeypatch.setattr("evolver.gep.solidify.record_solidify_failure", lambda *a, **k: None)
     monkeypatch.setattr("evolver.gep.solidify._wiki_rejection", lambda *a, **k: None)
     monkeypatch.setattr("evolver.gep.solidify.append_event_jsonl", lambda e: None)
@@ -105,10 +102,10 @@ def test_soft_continue_preserves_working_tree_for_episode(tmp_path: Path, monkey
 
     Symptom: After solidify success with bench_pack soft_accept, working-tree dirty
     changes disappeared and episode records had empty diff text (0 chars).
-    
+
     Root cause: Same as Bug 1 — the legacy rollback path was executing even on
     soft-continue, wiping the working tree before episode diff capture.
-    
+
     Expected: Working tree changes remain, episode diff is non-empty.
     """
     from evolver.gep.solidify import _solidify_cycle
@@ -163,20 +160,28 @@ def test_soft_continue_preserves_working_tree_for_episode(tmp_path: Path, monkey
     # Mock various solidify dependencies
     with patch("evolver.gep.solidify.is_git_repo", return_value=True):
         with patch("evolver.gep.solidify.get_fitness_cascade_commands", return_value=[]):
-            with patch("evolver.gep.solidify._run_validations", return_value=mock_validation_result):
-                with patch("evolver.gep.solidify.capture_diff_snapshot", side_effect=mock_capture_diff):
+            with patch(
+                "evolver.gep.solidify._run_validations", return_value=mock_validation_result
+            ):
+                with patch(
+                    "evolver.gep.solidify.capture_diff_snapshot", side_effect=mock_capture_diff
+                ):
                     with patch("evolver.gep.solidify.is_enabled", return_value=True):
-                        with patch("evolver.gep.solidify._compute_blast_radius", return_value={"files": 1, "lines": 10}):
+                        with patch(
+                            "evolver.gep.solidify._compute_blast_radius",
+                            return_value={"files": 1, "lines": 10},
+                        ):
                             with patch("evolver.gep.solidify.append_event_jsonl"):
-                                with patch("evolver.gep.solidify.load_hypothesis", return_value=None):
-                                    with patch("evolver.gep.solidify.build_execution_trace", return_value=[]):
-                                        # Execute solidify with soft-continue scenario
-                                        try:
-                                            result = _solidify_cycle()
-                                        except Exception as exc:
-                                            # For this test, we mostly care that capture_diff was called
-                                            # and working tree wasn't rolled back
-                                            pass
+                                with patch(
+                                    "evolver.gep.hypothesis.load_hypothesis", return_value=None
+                                ):
+                                    with patch(
+                                        "evolver.gep.solidify.build_execution_trace",
+                                        return_value=[],
+                                    ):
+                                        # Soft-continue scenario: care that capture_diff ran.
+                                        with contextlib.suppress(Exception):
+                                            _solidify_cycle()
 
     # Bug 2 verification: diff capture should have found changes (not empty)
     # In the buggy version, rollback would have cleaned the tree first

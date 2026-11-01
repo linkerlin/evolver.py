@@ -269,9 +269,7 @@ def test_soft_accept_allows_pack_absent_and_unmeasured(session: EvolutionSession
 
 
 @pytest.mark.parametrize("reason", ["drop", "flat", "regression"])
-def test_soft_accept_allows_fitness_soft_reasons(
-    session: EvolutionSession, reason: str
-) -> None:
+def test_soft_accept_allows_fitness_soft_reasons(session: EvolutionSession, reason: str) -> None:
     """Fitness soft reasons (drop/flat/regression) now soft-accept with warnings."""
     session.begin_round("h", f"cand-{reason}")
     session.record_gate_decision({"accept": False, "reason": reason})
