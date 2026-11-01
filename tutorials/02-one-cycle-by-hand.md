@@ -59,7 +59,7 @@
 
 ## 守门员 `solidify` 是怎么防闯祸的？
 
-派工单印出来了，代码也改完了。现在你敲下 `uv run evolver solidify`。守门员（`gep/solidify.py`）按顺序做下面几步，一步不对立刻回滚：
+派工单印出来了，代码也改完了。现在你敲下 `uv run evolver solidify`。守门员（`gep/solidify.py`）按顺序做下面几步。默认路径是 soft-accept：缺基线、分数没抬上去、普通验证失败都记警告并继续，经验写入 `~/.evolver/workspaces/<id>/`，不自动 git commit。密钥、改写 `~/.evolver/`、`val_seal` 才回滚：
 
 1. **先备份现场**：在动任何东西之前，先把当前工作区状态存好（默认走 `git stash` 策略）。万一后面炸了，一秒钟恢复原状。
 2. **查假说门（`hypothesis.py`）**：如果你在配对会话里，必须先声明“我这次改了什么、为什么觉得能过、预计哪些检查会过”。不写假说就想闯关？门都没有。

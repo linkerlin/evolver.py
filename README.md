@@ -80,12 +80,12 @@ The inner workings of `evolver.py` revolve around a 7-stage asynchronous pipelin
              │ Hypothesis & Gate     │ ── Declares single hypothesis ➔ validation suite
              └───────────┬───────────┘
                          │
-                [ Passed Validation ]
+        [ Soft-accept (default) / hard accept ]
                          │
                          ▼
              ┌───────────────────────┐
-             │ Solidify & Retain     │ ── Git commit ➔ Gene lifecycle promotion
-             └───────────────────────┘
+             │ Solidify & Retain     │ ── Experience under ~/.evolver/…
+             └───────────────────────┘     (no auto git commit)
 ```
 
 ### 1. Seven-Stage Evolution Pipeline
@@ -150,7 +150,7 @@ Incorporates mechanical verification and contrastive synthesis inspired by *Harn
 
 ```bash
 # Clone the repository and install dependencies
-git clone https://github.com/evomap/evolver.py.git
+git clone https://github.com/linkerlin/evolver.py.git
 cd evolver.py
 uv sync
 ```
@@ -170,6 +170,26 @@ uv run evolver --review
 # Check system health
 uv run evolver check
 ```
+
+### First run (`setup` / `doctor`)
+
+The loop starts even when the frozen pack or Parent baseline is missing. Those gaps are warnings. Run the open-box commands once so you can see what is still recommended:
+
+```bash
+uv run evolver doctor          # git, freeze pack, Parent baseline, user lock
+uv run evolver doctor --fix    # installs the freeze pack; measures a baseline only if val sandboxes are already filled
+uv run evolver setup           # same as `doctor --fix`
+```
+
+Exit code `0` means you may continue (`soft_continue`), including when only the pack or baseline is missing. Exit code `2` means a hard blocker (the directory is not a git repo, or a user lock is held). `loop_ready` stays honest: it is true only when git, the pack, and the Parent baseline are all present. `--fix` never invents val answers and never opens sealed val material in the candidate chat.
+
+Runtime state lives outside the source tree, under `~/.evolver/workspaces/<id>/` (`<id>` is `sha256(realpath(repo))[:16]`). If this checkout still has legacy in-repo files (`memory/`, `.evolver/gep/`), move them:
+
+```bash
+uv run evolver migrate-state
+```
+
+`swarm_status` reports `state_root`, `workspace_id`, and `state_health.legacy_in_repo` (including `migrate_command`). `migration_checklist()` is the same recommendation as a dict for callers that want `{needed, step}`.
 
 > **Optional Services**: To enable the visual WebUI dashboard or the local A2A proxy, install the `server` extra:
 > ```bash
@@ -215,6 +235,10 @@ For **ZCode** or direct virtualenv execution:
 }
 ```
 
+After `uv sync`, a pull, or any install, **restart the MCP server**. A long-lived `evolver mcp` process keeps the old modules in memory. `swarm_boot` and `swarm_status` expose `source_revision` (the git SHA of the running source tree) next to `code_staleness`; boot also auto-acks this agent's own pending `swarm.hello`.
+
+On Grok Bot the evolution workspace root is `/workspace` and the evolver.py checkout is `/workspace/evolver-research/evolver.py`. Point `EVOLVER_REPO_ROOT` at the checkout. The full env block is in [`examples/swarm-quickstart/README.md`](examples/swarm-quickstart/README.md).
+
 ### 2. Closed-Loop Protocol Flow
 
 Once connected, host agents communicate via standardized tool calls:
@@ -224,12 +248,31 @@ Once connected, host agents communicate via standardized tool calls:
 4. *(Host edits code and applies refactorings)*
 5. `swarm_distill`: Extracts structured Gene and Capsule data from the diff (with optional `strict_transferable` triad auditing and automatic `confounded` round filtering).
 6. `swarm_hypothesis`: Declares the single testable hypothesis for the round, with an optional `expected_outcome` listing the checks expected to pass.
-7. `swarm_solidify`: Executes validation gates, commits accepted changes via Git, and records `prediction_delta` by comparing `expected_outcome` against the checks that actually ran.
+7. `swarm_solidify`: Runs the gates and settles the round. The default is **soft-accept** (see below). The engine records `prediction_delta` by comparing `expected_outcome` with the checks that actually ran.
 8. `swarm_feedback`: Reports multi-dimensional metrics to steer future cycles.
 
 When the previous round's check output or diff is clipped, or when the host is about to compact its context, two companion tools keep the loop grounded:
 - **Zoom into truncated evidence (`episode_inspect`)**: The prompt carries a bounded summary (for example, `stdout truncated at 400/2208 chars; call episode_inspect to zoom in`). Instead of guessing, the host passes a concrete question and a line window (such as `{"kind":"check","name":"pytest","offset_lines":0,"limit_lines":80}`) to read the raw scene without modifying `episode.json`.
 - **Save session scratch before compaction (`swarm_checkpoint_working`)**: A `precompact` hook or four consecutive failed solidifications pauses mutation tools until the host writes the active hypothesis, ruled-out approaches, and key episode IDs to `WORKING_SESSION.md` (16,000-char cap). `swarm_boot` returns the full text, the next dispatch prompt appends a `[host_working]` clue after the evidence pack, and session boundaries archive and unlink the file so scratch never leaks into durable memory.
+
+For the first five ticks, and only when no run is waiting to solidify, the instrument prompt returned by `swarm_boot` adds **Core Loop Tools / 核心循环工具**: tick → edit → distill → hypothesis → solidify → feedback. Follow each tool's `next_action`.
+
+#### Soft-accept is the default MCP path
+
+`no_baseline`, `pack_absent`, `unmeasured`, `drop`, `flat`, and `regression` no longer stop the loop. Boot and `swarm_tick` **soft-continue** (`severity=soft`, plus `gap` / `warning` / `gate_soft_continue` — these are not a hard `error`). `swarm_solidify` and session Accept **soft-accept**:
+
+- The round is fast. Warnings and `next_steps` are normal on a first run.
+- Experience (events, and the episode when the swarm layer records the round) is written only under `~/.evolver/workspaces/<id>/`.
+- Solidify does **not** create a git commit. The worktree stays as the host left it. Publishing is a later human step (`evolver session accept`).
+- Soft-accept does **not** write the Parent baseline and does not open sealed val material. The measurement layer still records the original reason.
+
+Soft-accept selects a minimal T0 probe (`determine_t0_mode` returns `minimal`; `skip` is also implemented). The acceptance hook (`solidify_hook`) uses that depth when the run is already marked `soft_accept`. A hard accept still runs the full T0 suite. If the settled verdict includes a skip or minimal probe, its warnings contain `t0_skipped_soft` or `t0_probe=minimal`.
+
+`pending_solidify` is true only while `last_run.run_id` differs from `last_solidify.run_id`. A successful solidify, including soft-accept, writes `last_solidify`, so the next status or boot reports `pending_solidify: false` and the opening action returns to `swarm_tick`. While a run is pending, `boot_once` is empty and the host solidifies first.
+
+These still hard-stop (do not retry the same failure): secrets or credentials in the diff, edits that rewrite engine state under `~/.evolver/`, and a `val_seal` breach. A damaged bench gate (`gate_error`) and an anchor failure on a verifier-surface edit also reject. Declaring no hypothesis still refuses the round (`hypothesis_missing`) until `swarm_hypothesis` succeeds.
+
+`EVOLVER_SWARM_GATE_HANDOFF=hotl` is a label in the instrument prompt. It is not a switch that is required before the loop may tick. The default (`human`) already soft-continues.
 
 ### 3. One-Command Demos
 
@@ -257,7 +300,9 @@ Commands are organized logically by lifecycle and domain:
 | **Evolution** | `evolver run` | Run a single self-evolution cycle (default) |
 | | `evolver --loop` | Run continuous autonomous evolution daemon |
 | | `evolver --review` | Interactive review mode before mutations apply |
-| | `evolver solidify` | Apply, validate (`--validation-scope=related\|cascade`), and commit pending mutations, or restore rejected patches (`--restore-stash`) |
+| | `evolver solidify` | Validate (`--validation-scope=related\|cascade`) and settle a pending run. Default is soft-accept: experience is written, no auto git commit. Hard blocks roll back. Restore a rejected patch with `--restore-stash` |
+| | `evolver setup` | First-run entry, same as `doctor --fix` |
+| | `evolver doctor` | Diagnose git / freeze pack / Parent baseline / user lock (`--fix` installs the pack; measures a baseline only if val sandboxes are already filled) |
 | | `evolver round --host` | Single-entry host workflow chaining `boot → status → tick → checklist` |
 | | `evolver migrate-state` | Migrate legacy in-repo `memory/` and `.evolver/gep/` into externalized `~/.evolver/workspaces/<id>/` |
 | | `evolver apply-proposal` | Apply a single proposal or selectively compose multiple `INV × DOM` proposals |
@@ -290,7 +335,7 @@ Commands are organized logically by lifecycle and domain:
 
 `evolver.py` modifies code autonomously, which demands strict security guardrails:
 
-- **Git Blast Radius Control**: All modifications are bounded by Git. Clean snapshots are saved before mutation via `git stash`. Genes specify strict file limits (`constraints.max_files`) and forbidden paths (`forbidden_paths`). Any gate failure triggers an immediate, atomic rollback.
+- **Git blast radius, with a soft default**: Genes still cap files (`constraints.max_files`) and list forbidden paths (`forbidden_paths`). Solidify does not auto-commit. On the default path, a missing pack or baseline, a flat or lower score, and ordinary validation failures soft-accept or soft-continue: warnings are expected, the worktree is left as the host left it, and experience is written only under `~/.evolver/workspaces/<id>/`. Hard blocks still roll back: secrets in the diff, edits aimed at `~/.evolver/`, and a `val_seal` breach. Soft-accept never writes the Parent baseline.
 - **Content Addressing & Hash Integrity**: Asset IDs embed SHA-256 digests (`sha256:...`). Corrupted or tampered records are rejected on load, and incoming data is sanitized by `sanitize.py`.
 - **Credential Redaction**: A dedicated redaction engine scrubs API tokens, JWTs, private keys, and passwords before any events, prompts, or logs are written to disk or exposed to WebUI streams.
 - **OS-Level Instance Locks**: Workspace integrity is enforced by OS-level locks (`instance_lock.py`), ensuring that exactly one evolver daemon writes to a given repository at any time.
@@ -323,7 +368,7 @@ src/evolver/
 │   ├── supervision.py      # Human-On-The-Loop supervision & tripwires
 │   ├── skill_assets.py     # Skill ecosystem bridge and distiller
 │   ├── gene_lifecycle.py   # Gene lifecycle state machine governance
-│   └── solidify.py         # Mutation staging, test gating, and Git solidification
+│   └── solidify.py         # Staging, gates, soft-accept; experience write, no auto-commit
 ├── bench/                  # Frozen task packs, scoring harnesses, and statistical checks
 ├── experiment/             # Controlled ablation suite (placebo arms, sufficiency audits)
 ├── adapters/               # IDE hooks and telemetry adapters (Cursor, Claude Code, Codex)

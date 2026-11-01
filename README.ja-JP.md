@@ -150,7 +150,7 @@
 
 ```bash
 # リポジトリのクローンと依存関係の同期
-git clone https://github.com/evomap/evolver.py.git
+git clone https://github.com/linkerlin/evolver.py.git
 cd evolver.py
 uv sync
 ```

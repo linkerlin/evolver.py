@@ -80,12 +80,12 @@
        │  一假说门 & 固化验证   │ ── 声明唯一演化假说 ➔ 运行沙箱与测试集门禁
        └───────────┬───────────┘
                    │
-          [ 通过门禁检验 ]
+     [ 软接受（默认）/ 硬接受 ]
                    │
                    ▼
        ┌───────────────────────┐
-       │  Solidify (固化沉淀)  │ ── Git 提交入库 ➔ 基因生命周期晋升 ➔ 反馈自适应
-       └───────────────────────┘
+       │  Solidify (固化沉淀)  │ ── 经验写入 ~/.evolver/…
+       └───────────────────────┘     （不自动 git commit）
 ```
 
 ### 1. 七阶段演进流水线（Evolution Pipeline）
@@ -151,7 +151,7 @@
 
 ```bash
 # 克隆仓库并安装依赖
-git clone https://github.com/evomap/evolver.py.git
+git clone https://github.com/linkerlin/evolver.py.git
 cd evolver.py
 uv sync
 ```
@@ -171,6 +171,26 @@ uv run evolver --review
 # 启动系统健康检查
 uv run evolver check
 ```
+
+### 开箱（`setup` / `doctor`）
+
+冻结包或 Parent 基线还没齐，循环也可以开始。这些缺口是警告。先跑一次开箱命令，看清还建议补什么：
+
+```bash
+uv run evolver doctor          # git、冻结包、Parent 基线、user lock
+uv run evolver doctor --fix    # 写入冻结包；仅当 val 沙箱已经齐备时才测量基线
+uv run evolver setup           # 等同 `doctor --fix`
+```
+
+退出码 `0` 表示可以继续（`soft_continue`），只缺包或基线也算。退出码 `2` 是硬阻塞（目录不是 git 仓库，或 user lock 被占用）。`loop_ready` 保持诚实：只有 git、冻结包、Parent 基线都在时才为真。`--fix` 不会编造 val 答案，也不会在候选对话里打开密封材料。
+
+运行态在源码树之外：`~/.evolver/workspaces/<id>/`（`<id>` 为 `sha256(realpath(repo))[:16]`）。若仓库里还留着旧的 `memory/`、`.evolver/gep/`：
+
+```bash
+uv run evolver migrate-state
+```
+
+`swarm_status` 会给出 `state_root`、`workspace_id`，以及 `state_health.legacy_in_repo`（含 `migrate_command`）。`migration_checklist()` 是同一建议的字典形态（`needed` 加一步 `step`）。
 
 > **可选服务组件**：若需启动可视化 WebUI 仪表盘或分布式 A2A 代理，需安装 `server` 扩展依赖：
 > ```bash
@@ -216,6 +236,10 @@ uv run evolver check
 }
 ```
 
+`uv sync`、拉取或安装之后，**重启 MCP 进程**。长期驻留的 `evolver mcp` 仍加载旧模块。`swarm_boot` 与 `swarm_status` 带 `source_revision`（正在跑的源码树 git SHA），与 `code_staleness` 并列；boot 会自动确认本 agent 自己尚未 ack 的 `swarm.hello`。
+
+在 Grok Bot 上，进化工作区根是 `/workspace`，evolver.py 检出在 `/workspace/evolver-research/evolver.py`。把 `EVOLVER_REPO_ROOT` 指到检出目录。完整环境块见 [`examples/swarm-quickstart/README.md`](examples/swarm-quickstart/README.md)。
+
 ### 2. 闭环工具协议调用链
 
 接入后，宿主智能体即可通过以下标准工具链协作运转：
@@ -225,12 +249,31 @@ uv run evolver check
 4. *（宿主执行文件修改与逻辑重构）*
 5. `swarm_distill`：从修改成果中提取出结构化 Gene 与 Capsule（支持 `strict_transferable` 三元组校验与 `confounded` 混杂轮自动过滤）。
 6. `swarm_hypothesis`：在验证前向系统提交本轮演化的唯一假说声明，可选 `expected_outcome` 写明预计通过的检查。
-7. `swarm_solidify`：触发沙箱门禁检验，验证通过后执行 Git 固化提交；结算时对照 `expected_outcome` 与实际检查，写入 `prediction_delta`。
+7. `swarm_solidify`：跑门禁并结算本轮。默认是 **soft-accept**（见下）。引擎对照 `expected_outcome` 与实际检查，写入 `prediction_delta`。
 8. `swarm_feedback`：回传多维评测指标，驱动下一轮自适应变异。
 
 当上一轮的检查输出或 diff 因预算被截断、或上下文即将压缩时，还有两条配套动作：
 - **按问题读回截断原文（`episode_inspect`）**：提示词只保留有界摘要（如 `stdout truncated at 400/2208 chars; call episode_inspect to zoom in`）。宿主不凭猜测重写，而是传入具体问题与行号窗口（如 `{"kind":"check","name":"pytest","offset_lines":0,"limit_lines":80}`）只读拉取原始现场。调用不修改 `episode.json`。
 - **压缩前留存草稿（`swarm_checkpoint_working`）**：收到 `precompact` 钩子或连续 4 次固化失败时，变异工具会暂停，要求宿主先把当前假说、已排除方案与关键 episode 写入 `WORKING_SESSION.md`（16000 字上限）。下一轮 `swarm_boot` 交回全文，dispatch 提示词在证据包之后附上 `[host_working]` 线索；会话结束时自动归档并清除，不污染长期记忆。
+
+前 5 次 tick、且没有待固化 run 时，`swarm_boot` 返回的仪器提示会加上 **核心循环工具 / Core Loop Tools**：tick → 编辑 → distill → hypothesis → solidify → feedback。每个工具的 `next_action` 照做即可。
+
+#### 默认 MCP 路径是 soft-accept
+
+`no_baseline`、`pack_absent`、`unmeasured`、`drop`、`flat`、`regression` 不再卡住循环。boot 与 `swarm_tick` **soft-continue**（`severity=soft`，并带 `gap` / `warning` / `gate_soft_continue`；这些不是硬失败字段 `error`）。`swarm_solidify` 与会话 Accept **soft-accept**：
+
+- 这一轮很快。首次运行出现 warnings 与 `next_steps` 是正常的。
+- 经验（事件，以及蜂群层记下本轮时的 episode）只写在 `~/.evolver/workspaces/<id>/`。
+- solidify **不会**自动 `git commit`。工作区保持宿主留下的样子。发布是之后的人工步骤（`evolver session accept`）。
+- soft-accept **不会**写入 Parent 基线，也不打开 val 密封材料。测量层仍记下原来的 reason。
+
+soft-accept 选用 minimal T0 探针（`determine_t0_mode` 返回 `minimal`；`skip` 也已实现）。验收钩子（`solidify_hook`）在本轮已标 `soft_accept` 时按这个深度跑。硬接受仍跑完整 T0。若结算裁决带了 skip 或 minimal 探针，warnings 里会有 `t0_skipped_soft` 或 `t0_probe=minimal`。
+
+`pending_solidify` 仅在 `last_run.run_id` 与 `last_solidify.run_id` 不同时为真。成功的 solidify（含 soft-accept）会写下 `last_solidify`，下一次 status 或 boot 报告 `pending_solidify: false`，开局动作回到 `swarm_tick`。仍有待固化 run 时，`boot_once` 为空，宿主先固化。
+
+下列情况仍硬停（不要重试同一次失败）：diff 里的密钥或凭据、改写 `~/.evolver/` 下的引擎状态、`val_seal` 泄露。损坏的 bench 门（`gate_error`）以及验证面改动的 anchor 失败也会拒绝。没有假说时本轮仍被拒（`hypothesis_missing`），直到 `swarm_hypothesis` 成功。
+
+`EVOLVER_SWARM_GATE_HANDOFF=hotl` 只是仪器提示里的标签，不是「否则不准 tick」的开关。默认值 `human` 已经 soft-continue。
 
 ### 3. 一键体验闭环脚本
 
@@ -258,7 +301,9 @@ DEEPSEEK_API_KEY=sk-... uv run python examples/swarm-quickstart/demo_swarm_loop.
 | **演化控制** | `evolver run` | 触发单个自演化周期（默认动作） |
 | | `evolver --loop` | 启动自主演进守护进程 |
 | | `evolver --review` | 交互式审查模式，变异后等待操作者确认 |
-| | `evolver solidify` | 验证（`--validation-scope=related\|cascade`）并固化代码变异，或一键恢复被拒补丁（`--restore-stash`） |
+| | `evolver solidify` | 验证（`--validation-scope=related\|cascade`）并结算待定轮。默认 soft-accept：写入经验，不自动 git commit。硬阻断才回滚。`--restore-stash` 恢复被拒补丁 |
+| | `evolver setup` | 开箱入口，等同 `doctor --fix` |
+| | `evolver doctor` | 诊断 git / 冻结包 / Parent 基线 / user lock（`--fix` 安装冻结包；仅当 val 沙箱已齐时测量基线） |
 | | `evolver round --host` | 宿主单入口协议命令，一步串起 `boot → status → tick → checklist` |
 | | `evolver migrate-state` | 将仓库内遗留 `memory/` 与 `.evolver/gep/` 一键迁入外置状态根 `~/.evolver/workspaces/<id>/` |
 | | `evolver apply-proposal` | 应用单份结构化基因提案，或对多份 `INV × DOM` 提案执行机械式选择性合成 |
@@ -291,7 +336,7 @@ DEEPSEEK_API_KEY=sk-... uv run python examples/swarm-quickstart/demo_swarm_loop.
 
 `evolver.py` 具有自动修改代码并提交的能力，因此安全设计贯穿于每一个执行环节：
 
-- **Git 爆炸半径防御**：所有变异操作严格绑定 Git 仓库。变异执行前自动通过 `git stash` 建立保护快照；每个基因均明确限定变异文件上限（`constraints.max_files`）与路径黑名单（`forbidden_paths`）。一旦检验失败或中断，系统自动执行无损回滚。
+- **Git 爆炸半径，默认走软路径**：基因仍限定文件上限（`constraints.max_files`）与禁区路径（`forbidden_paths`）。solidify 不自动提交。默认路径上，缺包或缺基线、分数持平或下降、以及普通验证失败，都是 soft-accept 或 soft-continue：警告正常，工作区保持宿主留下的样子，经验只写入 `~/.evolver/workspaces/<id>/`。硬阻断仍回滚：diff 中的密钥、指向 `~/.evolver/` 的修改、`val_seal` 泄露。soft-accept 从不写入 Parent 基线。
 - **内容寻址与哈希防篡改**：资产 ID 强制绑定 SHA-256 摘要（如 `sha256:...`），存储与加载过程实时比对，静默剔除篡改条目；输入经专门的净化器（`sanitize.py`）过滤危险属性。
 - **敏感凭据脱敏防护**：系统集成专门的过滤引擎，在所有落地事件、提示词缓存与 WebUI 序列化前，严格擦除 API 密钥、JWT 令牌、密码及会话痕迹。
 - **单实例与状态互斥锁**：通过 OS 级单实例锁（`instance_lock.py`）保障同一工作区永远只有一个演化循环在写入，根绝多进程并发带来的状态竞态与脏数据覆盖。
@@ -324,7 +369,7 @@ src/evolver/
 │   ├── supervision.py      # 人在环上（HOTL）实时监督与自动熔断
 │   ├── skill_assets.py     # 外部技能生态桥接与蒸馏器
 │   ├── gene_lifecycle.py   # 基因全生命周期流转与状态机治理
-│   └── solidify.py         # 变异应用、安全验证与 Git 固化提交
+│   └── solidify.py         # 暂存、门禁、soft-accept；写经验，不自动提交
 ├── bench/                  # 锚侧冻结任务包、评分器与统计检验套件
 ├── experiment/             # 受控消融裁决套件（双臂盲测、占位对照与充足性审计）
 ├── adapters/               # IDE 深度集成适配器（Cursor / Claude Code / Codex 等钩子）

@@ -156,7 +156,7 @@ gep/                GEP（基因组进化协议）核心。150+ 模块，下按�
   candidate_isolation.py 进程内候选隔离（Python 模块面）
   eval_worktree.py  S26.5：干净 git worktree 中评估变异（enable_eval_worktree；
                     失败回退 live cwd 并告警，STRICT=1 改为失败）
-  solidify.py       应用基因 → 验证 → 持久化 → 发布（折账在进周期前取假说正文，
+  solidify.py       应用基因 → 验证 → 经验落盘（默认 soft-accept，不自动提交、不写 Parent；折账在进周期前取假说正文，
                     round-91）
   solidify_helpers.py 固化过程辅助（v1.94.0 parity）
   proposal.py       基因提案（S29）：结构化变异 + 机械应用（apply-proposal）
@@ -387,8 +387,15 @@ stdio）即执行器。常驻 instructions：本条消息已有别的任务就�
 resume，不必让用户敲命令。
 全文协议在 MCP prompt `evolver_swarm` 与 `swarm_boot` 的返回里（覆盖不渲染
 prompt 的宿主）。`boot_once` 只登记会话（`swarm_hook_event` session_start），
-不在开机时同步技能。冻结包未装或没有基线时 boot 与 `swarm_tick` 都返回
-`next_action=await_human`，不跑周期；人设 `EVOLVER_SWARM_GATE_HANDOFF=hotl` 时照常 tick。
+不在开机时同步技能。冻结包未装或没有基线时 boot 与 `swarm_tick` **soft-continue**
+（`severity=soft`，带 warnings + next_steps，进入循环）；Accept/publish 为 soft-accept
+（不写 Parent baseline、不自动 git commit，经验只落在 `~/.evolver/workspaces/<id>/`）。
+硬阻断仅限密钥、改写 `~/.evolver/`、`val_seal`。`EVOLVER_SWARM_GATE_HANDOFF=hotl`
+是仪器上的人在环上标签，不是「否则停 tick」的开关。前 5 次 tick 且无待固化 run 时，
+instrument 增加「核心循环工具 / Core Loop Tools」。soft-accept 的 T0 为 minimal
+（`t0_probe.py`）；成功结算后 `pending_solidify` 为 false（`last_run` 与
+`last_solidify` 的 run id 一致）。`swarm_boot` / `swarm_status` 带 `source_revision`，
+boot 自动 ack 本 agent 的 `swarm.hello`。安装或拉代码后须重启 MCP。
 已暂停时 `next_action=await_supervisor_resume`。有待固化 run 时仍先固化，
 此时 `boot_once` 为空。首次准备见 `examples/swarm-quickstart/README.md`。
 `EVOLVER_SWARM_AUTO_HIJACK=1` 不改这段文字，只强制打开 HITL 并拒绝宿主转达放行。
@@ -587,7 +594,7 @@ inspect` 同源）按行放大读回——空 question 拒绝、切片过 val-se
 | `EVOLVER_FORCE_UPDATE_RETRY_COOLDOWN_MS` | `300000` (5min) | Hub 推送强制更新的最小间隔冷却 |
 | `A2A_NODE_SECRET_VERSION` | （无） | 节点密钥版本号——Hub 轮换密钥时递增，客户端据此检测陈旧 secret |
 | `EVOLVER_SWARM_AUTO_HIJACK` | `false` | 置 `1` 时强制打开 HITL，并拒绝宿主转达 approve/resume/unveto。不改常驻 instructions |
-| `EVOLVER_SWARM_GATE_HANDOFF` | `human` | 冻结包或基线缺失时：`human` 让 boot/tick 返回 `await_human`；`hotl` 照常 tick（门照常拒绝回滚、不发布，绊线照常自动暂停）。其他值按 `human` |
+| `EVOLVER_SWARM_GATE_HANDOFF` | `human` | 仪器提示里的门交接标签。默认与 `hotl` 都 soft-continue 进 tick；soft-accept 不写 Parent、不自动提交。硬阻断：密钥、`~/.evolver/`、`val_seal`。由人在 MCP 配置里设，宿主不得改 |
 | `EVOLVER_SWARM_TICK_LOG_MAX_CHARS` | `8000` | `swarm_tick` 返回之 `engine_log` 尾部截断预算（dispatch prompt 不截断） |
 | `EVOLVER_FEEDBACK_DEGRADED_THRESHOLD` | `0.5` | 蜂群反馈降级阈值——低于此分或 `success=false` 注入 repair-bias 信号 |
 | `EVOLVER_HITL_MODE` | `off` | HITL 审批门——`on`/`true`/`1`/`yes` 打开；`off`/`false`/`0`/`no` 关闭；**未知值（如 `disabled`）fail-closed 为 on**；`AUTO_HIJACK=1` 强制 on |
