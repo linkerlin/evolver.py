@@ -133,6 +133,8 @@ class TestProtocol:
     def test_read_only_annotations_present(self, client: _McpClient) -> None:
         tools = {t["name"]: t for t in client.request("tools/list")["result"]["tools"]}
         assert tools["swarm_status"]["annotations"]["readOnlyHint"] is True
+        assert tools["swarm_doctor"]["annotations"]["readOnlyHint"] is True
+        assert "fix" not in (tools["swarm_doctor"]["inputSchema"].get("properties") or {})
         assert tools["swarm_solidify"]["annotations"]["destructiveHint"] is True
 
     def test_prompt_renders_takeover_protocol(self, client: _McpClient) -> None:
@@ -167,6 +169,10 @@ class TestProtocol:
     def test_tool_call_round_trip(self, client: _McpClient, tmp_path: Path) -> None:
         status = client.call_tool("swarm_status", {})
         assert status["ok"] is True
+        assert status["next_action"] == "swarm_boot"
+        assert "swarm_boot" in status["hint"]
+        empty = client.call_tool("tool_asset_search", {"query": "zzz_no_such_asset"})
+        assert empty["ok"] is True and empty["items"] == [] and empty["hint"]
 
         hook = client.call_tool(
             "swarm_hook_event",

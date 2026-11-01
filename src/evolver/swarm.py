@@ -52,6 +52,9 @@ _SWARM_STATE_FILENAME = "swarm_state.json"
 _ABORT_REASON_RE = re.compile(r"Preflight abort: (.+)")
 # One hello per agent name per server process (a process = one MCP session).
 _hello_sent: set[str] = set()
+# Set by a successful ``swarm_boot`` in this process. Cold ``swarm_status``
+# reads this to tell the host to boot before the loop.
+_session_claim: dict[str, str] | None = None
 
 
 # ---------------------------------------------------------------------------
@@ -301,6 +304,8 @@ experience 仍写入 ~/.evolver/workspaces/<id>/，不自动提交。补齐基�
 - 返回 `next_action=call_swarm_checkpoint_working`：先 `swarm_checkpoint_working` 把假设、
   已排除路径和 episode id 写入 WORKING_SESSION.md，再压缩或开新会话。
 - 要看状态、不跑周期：`swarm_status`。资源 `evolver://status` 是同一份。
+  本进程还没 `swarm_boot` 时，status 的 `next_action` 是 `swarm_boot`。
+- 要看开箱就绪、不改状态：`swarm_doctor`（只读，等同 `evolver doctor` 摘要，不执行 --fix）。
 - 要看最近周期：`tool_cycle_timeline`，或资源 `evolver://events/recent`。
   投影陈旧时再 `tool_rebuild_views`。
 - 多节点：`tool_mailbox_poll` / `tool_mailbox_send`。
@@ -548,6 +553,47 @@ def _build_state_health(
     }
 
 
+def _claim_session(agent_name: str) -> None:
+    """Remember that this process successfully entered via ``swarm_boot``."""
+    global _session_claim
+    _session_claim = {"agent_name": str(agent_name or "host-agent")}
+
+
+def _attach_host_session(status: dict[str, Any]) -> dict[str, Any]:
+    """Cold hosts must see ``next_action=swarm_boot``; claimed hosts keep soft gaps.
+
+    A missing claim is the whole signal. Soft gaps (no pack / no baseline) are
+    attached only after boot, and they stay ``severity=soft`` — not an ``error``.
+    """
+    claim = _session_claim
+    if not claim:
+        status["session_claimed"] = False
+        status["agent_name"] = None
+        status["next_action"] = "swarm_boot"
+        status["hint"] = (
+            "This session is not claimed. Call swarm_boot first and follow its "
+            "instrument_prompt and next_action."
+        )
+        status["hint_zh"] = "本会话尚未认领。请先调用 swarm_boot，再按其 next_action 继续。"
+        return status
+
+    status["session_claimed"] = True
+    status["agent_name"] = claim["agent_name"]
+    action, prose = _opening_action(status)
+    status["next_action"] = action
+    status["hint"] = prose
+    gap = _gate_gap(status.get("bench_pack_gate"))
+    if gap is None:
+        return status
+    from evolver.ops.open_box import apply_soft_gap
+
+    # Keep the opening action. apply_soft_gap does not replace an existing hint,
+    # and it still attaches warning / next_steps for the soft gap.
+    surfaced = apply_soft_gap(status, gap)
+    surfaced["next_action"] = action
+    return surfaced
+
+
 def swarm_status() -> dict[str, Any]:
     """Summarize engine state for swarm agents (cheap, no cycle side effects)."""
     from evolver import __version__
@@ -607,45 +653,120 @@ def swarm_status() -> dict[str, Any]:
     except Exception:
         mailbox = {"inbound": -1, "outbound": -1}
 
+    return _attach_host_session(
+        {
+            "ok": True,
+            "version": __version__,
+            "protocol_version": SWARM_PROTOCOL_VERSION,
+            "workspace_root": str(ws_root),
+            "repo_root": str(repo_root or ""),
+            "workspace_id": ws_id,
+            "state_root": str(state_root),
+            "mismatch": mismatch,
+            "git_candidates": git_candidates,
+            "state_health": _build_state_health(
+                workspace_id=ws_id,
+                state_root=state_root,
+                bench_gate=bench_gate,
+                legacy_info=legacy_info,
+            ),
+            "bridge_enabled": determine_bridge_enabled(),
+            "genes": len(load_genes()),
+            "capsules": len(load_capsules()),
+            "pending_solidify": _pending_solidify_state(),
+            "last_prompt_artifact": str(prompt_artifact) if prompt_artifact.exists() else None,
+            "source_revision": _source_revision(),
+            "code_staleness": _code_staleness(),
+            "tick_count": int(swarm_state.get("ticks") or 0),
+            "last_tick": swarm_state.get("last_tick"),
+            "feedback": {
+                "recent_count": len(recent_feedback),
+                "last": recent_feedback[-1] if recent_feedback else None,
+                "stability": _feedback_stability(recent_feedback),
+                "mutation_bias": feedback_mutation_bias(recent_feedback),
+            },
+            "hitl": {
+                "mode": "on" if hitl_mode_enabled() else "off",
+                "pending": len(list_pending()),
+            },
+            "supervision": supervision_summary(),
+            "bench_pack_gate": bench_gate,
+            "mailbox_pending": mailbox,
+            "working_session": _working_snapshot(),
+        }
+    )
+
+
+def swarm_doctor() -> dict[str, Any]:
+    """Read-only open-box summary. Does not install a pack or write a baseline.
+
+    Same checks as ``evolver doctor`` without ``--fix``. ``no_baseline`` /
+    ``pack_absent`` / ``unmeasured`` stay soft warnings. ``fixes`` are command
+    hints for the host to show a person; this function never runs them.
+    """
+    from evolver.ops.open_box import SOFT_GAP_ERRORS, doctor
+
+    report = doctor(fix=False)
+    warnings: list[dict[str, Any]] = []
+    fixes: list[str] = []
+    for rec in report.get("recommendations") or []:
+        warnings.append(
+            {
+                "gap": rec.get("gap") or rec.get("error"),
+                "severity": "soft",
+                "message": rec.get("message"),
+            }
+        )
+        for cmd in rec.get("commands") or []:
+            text = str(cmd)
+            if text not in fixes:
+                fixes.append(text)
+    blockers: list[dict[str, Any]] = []
+    for blocker in report.get("blockers") or []:
+        blockers.append(
+            {
+                "error": blocker.get("error"),
+                "severity": "hard",
+                "message": blocker.get("message"),
+                "next_steps": list(blocker.get("next_steps") or []),
+            }
+        )
+        for cmd in blocker.get("commands") or []:
+            text = str(cmd)
+            if text not in fixes:
+                fixes.append(text)
+    checks: list[dict[str, Any]] = []
+    for check in report.get("checks") or []:
+        err = check.get("error")
+        if check.get("ok"):
+            severity = "ok"
+        elif err in SOFT_GAP_ERRORS:
+            severity = "soft"
+        else:
+            severity = "hard"
+        checks.append(
+            {
+                "id": check.get("id"),
+                "ok": bool(check.get("ok")),
+                "error": err,
+                "severity": severity,
+            }
+        )
     return {
-        "ok": True,
-        "version": __version__,
-        "protocol_version": SWARM_PROTOCOL_VERSION,
-        "workspace_root": str(ws_root),
-        "repo_root": str(repo_root or ""),
-        "workspace_id": ws_id,
-        "state_root": str(state_root),
-        "mismatch": mismatch,
-        "git_candidates": git_candidates,
-        "state_health": _build_state_health(
-            workspace_id=ws_id,
-            state_root=state_root,
-            bench_gate=bench_gate,
-            legacy_info=legacy_info,
+        "ok": bool(report.get("ok")),
+        "soft_continue": bool(report.get("soft_continue")),
+        "loop_ready": bool(report.get("loop_ready")),
+        "read_only": True,
+        "checks": checks,
+        "warnings": warnings,
+        "blockers": blockers,
+        "fixes": fixes,
+        "hint": (
+            "Read-only doctor. Soft gaps (no_baseline, pack_absent, unmeasured) "
+            "do not block the loop. fixes are command hints; this tool does not apply them."
         ),
-        "bridge_enabled": determine_bridge_enabled(),
-        "genes": len(load_genes()),
-        "capsules": len(load_capsules()),
-        "pending_solidify": _pending_solidify_state(),
-        "last_prompt_artifact": str(prompt_artifact) if prompt_artifact.exists() else None,
-        "source_revision": _source_revision(),
-        "code_staleness": _code_staleness(),
-        "tick_count": int(swarm_state.get("ticks") or 0),
-        "last_tick": swarm_state.get("last_tick"),
-        "feedback": {
-            "recent_count": len(recent_feedback),
-            "last": recent_feedback[-1] if recent_feedback else None,
-            "stability": _feedback_stability(recent_feedback),
-            "mutation_bias": feedback_mutation_bias(recent_feedback),
-        },
-        "hitl": {
-            "mode": "on" if hitl_mode_enabled() else "off",
-            "pending": len(list_pending()),
-        },
-        "supervision": supervision_summary(),
-        "bench_pack_gate": bench_gate,
-        "mailbox_pending": mailbox,
-        "working_session": _working_snapshot(),
+        "repo_root": report.get("repo_root"),
+        "workspace_id": report.get("workspace_id"),
     }
 
 
@@ -795,6 +916,7 @@ def swarm_boot(
     with contextlib.suppress(Exception):
         ensure_workspace_meta()
 
+    _claim_session(agent_name)
     state = swarm_status()
     prompt = build_instrument_prompt({**state, "agent_name": agent_name})
     payload: dict[str, Any] = {
@@ -2194,6 +2316,7 @@ __all__ = [
     "swarm_boot",
     "swarm_checkpoint_working",
     "swarm_distill",
+    "swarm_doctor",
     "swarm_feedback",
     "swarm_hook_event",
     "swarm_hooks",

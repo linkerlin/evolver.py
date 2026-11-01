@@ -48,6 +48,14 @@ def _restore_feature_flags() -> Iterator[None]:
 
 
 @pytest.fixture(autouse=True)
+def _reset_swarm_session_claim() -> None:
+    """swarm_boot's session claim is process-global. Each test starts unclaimed."""
+    from evolver import swarm as swarm_mod
+
+    swarm_mod._session_claim = None
+
+
+@pytest.fixture(autouse=True)
 def _isolate_evolver_state_root(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """U-6: Force per-test isolated EVOLVER_STATE_ROOT so tests never pollute
     the user's real ~/.evolver/workspaces/<id>/ state or pending last_run,

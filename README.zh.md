@@ -238,6 +238,8 @@ uv run evolver migrate-state
 
 `uv sync`、拉取或安装之后，**重启 MCP 进程**。长期驻留的 `evolver mcp` 仍加载旧模块。`swarm_boot` 与 `swarm_status` 带 `source_revision`（正在跑的源码树 git SHA），与 `code_staleness` 并列；boot 会自动确认本 agent 自己尚未 ack 的 `swarm.hello`。
 
+本进程尚未 `swarm_boot` 时，`swarm_status` 返回 `next_action=swarm_boot` 和一句 hint。boot 之后 status 仍带 `agent_name`、`source_revision`，以及软缺口的 `gap` / warnings。`tool_asset_search`、`tool_mailbox_poll`、`tool_cycle_timeline` 一律返回 `{ok, items, hint}`，没有命中也不是空正文。只读 `swarm_doctor` 等同 `evolver doctor` 且不执行 `--fix`（`ok`、软警告、`fixes` 里的命令提示）。`no_baseline` / `pack_absent` / `unmeasured` 仍是 soft-continue。
+
 在 Grok Bot 上，进化工作区根是 `/workspace`，evolver.py 检出在 `/workspace/evolver-research/evolver.py`。把 `EVOLVER_REPO_ROOT` 指到检出目录。完整环境块见 [`examples/swarm-quickstart/README.md`](examples/swarm-quickstart/README.md)。
 
 ### 2. 闭环工具协议调用链

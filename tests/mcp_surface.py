@@ -28,6 +28,7 @@ MCP_TOOL_NAMES: frozenset[str] = frozenset(
         "swarm_feedback",
         "swarm_report",
         "swarm_status",
+        "swarm_doctor",
         "swarm_approvals",
         "swarm_approval_resolve",
         "swarm_supervise",

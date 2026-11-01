@@ -237,6 +237,8 @@ For **ZCode** or direct virtualenv execution:
 
 After `uv sync`, a pull, or any install, **restart the MCP server**. A long-lived `evolver mcp` process keeps the old modules in memory. `swarm_boot` and `swarm_status` expose `source_revision` (the git SHA of the running source tree) next to `code_staleness`; boot also auto-acks this agent's own pending `swarm.hello`.
 
+A cold `swarm_status` (this process has not called `swarm_boot`) returns `next_action=swarm_boot` and a short hint. After boot, status keeps `agent_name`, `source_revision`, and any soft `gap` / warnings. `tool_asset_search`, `tool_mailbox_poll`, and `tool_cycle_timeline` always return `{ok, items, hint}` — an empty match is not a blank body. Read-only `swarm_doctor` mirrors `evolver doctor` without `--fix` (`ok`, soft warnings, command hints in `fixes`). `no_baseline` / `pack_absent` / `unmeasured` stay soft-continue.
+
 On Grok Bot the evolution workspace root is `/workspace` and the evolver.py checkout is `/workspace/evolver-research/evolver.py`. Point `EVOLVER_REPO_ROOT` at the checkout. The full env block is in [`examples/swarm-quickstart/README.md`](examples/swarm-quickstart/README.md).
 
 ### 2. Closed-Loop Protocol Flow
