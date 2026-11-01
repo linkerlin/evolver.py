@@ -210,10 +210,12 @@ def test_solo_cli_routes_into_loop_and_cuts_services(tmp_path: Path) -> None:
         env=_solo_env(repo),
         capture_output=True,
         text=True,
+        encoding="utf-8",
+        errors="replace",
         timeout=60,
         check=False,
     )
-    combined = proc.stdout + proc.stderr
+    combined = (proc.stdout or "") + (proc.stderr or "")
 
     # Banner present (routes into loop + solo banner).
     assert "受约束的野性模式已启动" in combined

@@ -7,9 +7,6 @@ adapt/skip cascade commands, never create src/.
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Any
-
-import pytest
 
 from evolver.gep import validation_probe
 
@@ -130,7 +127,7 @@ class TestAdaptCascadeCommands:
         """Adaptation preserves non-command fields."""
         (tmp_path / "lib").mkdir()
         commands = [{"command": ["mypy", "src"], "timeout_ms": 120_000}]
-        adapted, warnings = validation_probe.adapt_cascade_commands(commands, tmp_path)
+        adapted, _warnings = validation_probe.adapt_cascade_commands(commands, tmp_path)
         assert len(adapted) == 1
         assert adapted[0]["command"] == ["mypy", "lib"]
         assert adapted[0]["timeout_ms"] == 120_000
@@ -155,7 +152,7 @@ class TestAdaptCascadeCommands:
             {"command": ["npm", "run", "lint"]},
             {"command": ["mypy", "src"]},
         ]
-        adapted, warnings = validation_probe.adapt_cascade_commands(commands, tmp_path)
+        adapted, _warnings = validation_probe.adapt_cascade_commands(commands, tmp_path)
         assert len(adapted) == 3
         assert adapted[0]["command"] == ["ruff", "check", "lib"]
         assert adapted[1]["command"] == ["npm", "run", "lint"]

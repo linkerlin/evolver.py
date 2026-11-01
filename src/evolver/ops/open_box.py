@@ -95,7 +95,10 @@ def next_steps_for(error: str, *, context: dict[str, Any] | None = None) -> dict
                 "via `evolver bench prompt <task-id> --pack <pack>` — do NOT open sealed "
                 "val secrets in the candidate conversation.",
                 "Measure Parent: `evolver bench baseline` (soft-accept will NOT invent this).",
-                "Continue swarm_tick / swarm_solidify / session accept; warnings stay until baseline exists.",
+                (
+                    "Continue swarm_tick / swarm_solidify / session accept; "
+                    "warnings stay until baseline exists."
+                ),
             ],
             "commands": [
                 "evolver doctor --fix",
@@ -110,9 +113,15 @@ def next_steps_for(error: str, *, context: dict[str, Any] | None = None) -> dict
                 "may proceed with warnings; install the pack for a real fitness bar."
             ),
             "next_steps": [
-                "Recommended: `evolver doctor --fix` or `evolver bench freeze` to install the pack.",
+                (
+                    "Recommended: `evolver doctor --fix` or `evolver bench freeze` "
+                    "to install the pack."
+                ),
                 "Then prepare val sandboxes in another context and run `evolver bench baseline`.",
-                "You may continue swarm / soft-accept now; doctor loop_ready stays false until ready.",
+                (
+                    "You may continue swarm / soft-accept now; doctor loop_ready stays "
+                    "false until ready."
+                ),
             ],
             "commands": [
                 "evolver doctor --fix",
@@ -127,7 +136,10 @@ def next_steps_for(error: str, *, context: dict[str, Any] | None = None) -> dict
             "next_steps": [
                 "In another context, solve pending val tasks into sandboxes/r1 and sandboxes/r2.",
                 "Do NOT open sealed val material in the candidate-writing dialogue.",
-                "Re-run swarm_solidify after sandboxes are filled; soft-accept allowed before that.",
+                (
+                    "Re-run swarm_solidify after sandboxes are filled; soft-accept allowed "
+                    "before that."
+                ),
             ],
             "commands": [
                 "evolver doctor",
@@ -325,12 +337,8 @@ def diagnose(*, project: str | Path | None = None) -> dict[str, Any]:
         _check_user_lock(),
     ]
     failed = [c for c in checks if not c.get("ok")]
-    soft_gap_checks = [
-        c for c in failed if str(c.get("error") or "") in SOFT_GAP_ERRORS
-    ]
-    hard_checks = [
-        c for c in failed if str(c.get("error") or "") not in SOFT_GAP_ERRORS
-    ]
+    soft_gap_checks = [c for c in failed if str(c.get("error") or "") in SOFT_GAP_ERRORS]
+    hard_checks = [c for c in failed if str(c.get("error") or "") not in SOFT_GAP_ERRORS]
     loop_ready = all(
         c.get("ok") for c in checks if c["id"] in ("git", "freeze_pack", "parent_baseline")
     )

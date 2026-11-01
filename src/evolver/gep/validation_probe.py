@@ -15,7 +15,6 @@ import copy
 from pathlib import Path
 from typing import Any
 
-
 # Conventional check roots we discover (order matters for priority)
 _CONVENTIONAL_ROOTS = [
     "src",
@@ -45,9 +44,7 @@ def discover_check_roots(cwd: Path) -> list[str]:
     return roots
 
 
-def _rewrite_path_args(
-    command: list[str], from_paths: list[str], to_paths: list[str]
-) -> list[str]:
+def _rewrite_path_args(command: list[str], from_paths: list[str], to_paths: list[str]) -> list[str]:
     """Rewrite path arguments in a command.
 
     Replace occurrences of from_paths with to_paths in the command argv.
@@ -173,16 +170,15 @@ def adapt_cascade_commands(
 
             # Special handling for pytest
             if tool == "pytest":
-                # Keep pytest only if we have tests/, or if there are .py files that might have tests
+                # Keep pytest only if we have tests/, or if there are .py files that
+                # might have tests
                 # In a truly empty project, skip it
                 if has_tests:
                     spec["command"] = original_command
                     adapted.append(spec)
                 else:
                     # No tests/ directory - this is a skip with warning
-                    warnings.append(
-                        f"pytest: tests/ directory not found, skipping pytest"
-                    )
+                    warnings.append("pytest: tests/ directory not found, skipping pytest")
                 continue
 
             # Rewrite src → lib if lib exists but src doesn't
@@ -196,8 +192,7 @@ def adapt_cascade_commands(
             if not command or len(command) <= 1:
                 # Skip this stage entirely
                 warnings.append(
-                    f"{tool}: no suitable paths found "
-                    f"(original: {' '.join(original_command[1:])})"
+                    f"{tool}: no suitable paths found (original: {' '.join(original_command[1:])})"
                 )
                 continue
 

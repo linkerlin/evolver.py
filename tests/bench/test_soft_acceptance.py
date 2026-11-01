@@ -6,8 +6,6 @@ soft-accept with warnings, experience written, no Parent baseline invented.
 
 from __future__ import annotations
 
-import pytest
-
 from evolver.bench.frozen_gate import enrich_soft_accept, is_usability_soft_reason
 
 

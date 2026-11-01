@@ -78,6 +78,8 @@ class _McpClient:
             stdout=subprocess.PIPE,
             stderr=subprocess.DEVNULL,
             text=True,
+            encoding="utf-8",
+            errors="replace",
             bufsize=1,
             cwd=str(cwd),
             env=env,
@@ -252,6 +254,8 @@ def _run_precompact_hook(ws: Path) -> dict[str, Any]:
         env=_workspace_env(ws),
         capture_output=True,
         text=True,
+        encoding="utf-8",
+        errors="replace",
         check=True,
     )
     return json.loads(completed.stdout)
