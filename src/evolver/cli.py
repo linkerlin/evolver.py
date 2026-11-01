@@ -1263,7 +1263,7 @@ def _cmd_solidify(args: argparse.Namespace) -> int:
     return 1
 
 
-def _print_doctor_report(report: dict) -> None:
+def _print_doctor_report(report: dict[str, Any]) -> None:
     """Human-readable open-box doctor/setup report."""
     if report.get("loop_ready"):
         ready = "READY"
