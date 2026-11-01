@@ -81,6 +81,62 @@ def _tail(text: str, max_chars: int) -> str:
     return "…[truncated head]\n" + text[-max_chars:]
 
 
+_GEP_LOG_BANNER: Final = "GENOME EVOLUTION PROTOCOL"
+# Stdout spans that inline the gene preview. Short ticks point at the artifact
+# instead of repeating this text in ``engine_log``.
+_GEP_LOG_SPANS: Final[tuple[tuple[str, str], ...]] = (
+    ("BUILT_PROMPT\n", "SOLIDIFY REQUIRED"),
+    ("BUILT_MULTI_PROPOSE_PROMPT\n", "MULTI PROPOSE REQUIRED"),
+)
+
+
+def _shorten_engine_log(log: str, *, artifact: str | None) -> str:
+    """Drop an inlined GEP preview from captured stdout.
+
+    Full mode keeps the print. Short mode already returns a checklist and
+    points at ``last_prompt.md`` / ``evolver://dispatch/last``; the same
+    preview otherwise rides along in ``engine_log`` (the ``BUILT_PROMPT``
+    body, or the first 4000 characters inside ``sessions_spawn``).
+    """
+    if _GEP_LOG_BANNER not in log:
+        return log
+    where = artifact or "evolver://dispatch/last"
+    pointer = f"[gene preview omitted from engine_log; full GEP prompt: {where}]"
+
+    for start, end in _GEP_LOG_SPANS:
+        begin = log.find(start)
+        if begin < 0 or _GEP_LOG_BANNER not in log[begin:]:
+            continue
+        finish = log.find(end, begin + len(start))
+        if finish < 0:
+            return log[:begin] + pointer + "\n"
+        return log[:begin] + pointer + "\n" + log[finish + len(end) :]
+
+    marker = "sessions_spawn("
+    search_from = 0
+    while True:
+        begin = log.find(marker, search_from)
+        if begin < 0:
+            break
+        line_end = log.find("\n", begin)
+        if line_end < 0:
+            line_end = len(log)
+        if _GEP_LOG_BANNER in log[begin:line_end]:
+            return log[:begin] + pointer + log[line_end:]
+        search_from = line_end if line_end > begin else begin + len(marker)
+
+    # Banner survived an unexpected wrapper. Keep the prefix and phase trailer.
+    head, _, tail = log.partition(_GEP_LOG_BANNER)
+    for introducer in ("BUILT_PROMPT\n", "BUILT_MULTI_PROPOSE_PROMPT\n", marker):
+        cut = head.rfind(introducer)
+        if cut >= 0:
+            head = head[:cut]
+            break
+    phases = [line for line in tail.splitlines() if line.startswith("cycle phases:")]
+    trailer = f"\n{phases[-1]}" if phases else ""
+    return head.rstrip() + "\n" + pointer + trailer + "\n"
+
+
 @contextlib.contextmanager
 def _capture_stdout() -> Iterator[io.StringIO]:
     """Capture engine prints; MCP stdio transport owns the real stdout."""
@@ -1174,6 +1230,9 @@ async def swarm_tick(
     editing tools, then closes the loop via ``swarm_distill`` →
     ``swarm_solidify``. Engine stdout is captured into ``engine_log`` (stdio
     MCP owns stdout; a stray print would corrupt JSON-RPC framing).
+    ``prompt_mode="short"`` drops the inlined gene preview from that log and
+    leaves a pointer at the artifact. ``include_prompt=False`` only clears
+    ``dispatch_prompt``; the full log stays unless the mode is short.
 
     HOTL supervision (v1.101.0): the tripwire runs first (consecutive
     degraded feedback may auto-pause), a paused state refuses the cycle, and
@@ -1393,10 +1452,13 @@ async def _swarm_tick_locked(
         except ImportError as exc:  # stale-host lazy import (round-17)
             return _stale_import_error(exc)
         except Exception as exc:  # engine crash must not kill the MCP session
+            crashed = capture.getvalue()
+            if prompt_mode == "short":
+                crashed = _shorten_engine_log(crashed, artifact=None)
             return {
                 "ok": False,
                 "error": f"cycle_crashed: {exc}",
-                "engine_log": _tail(capture.getvalue(), log_budget),
+                "engine_log": _tail(crashed, log_budget),
             }
     log = capture.getvalue()
 
@@ -1483,7 +1545,10 @@ async def _swarm_tick_locked(
         "prompt_mode": "short" if short else "full",
         "dispatch_prompt": shown,
         "checklist": checklist,
-        "engine_log": _tail(log, log_budget),
+        "engine_log": _tail(
+            _shorten_engine_log(log, artifact=artifact) if short else log,
+            log_budget,
+        ),
         "next_action": (
             "stop_and_report" if aborted else ("swarm_tick" if not prompt else "execute_prompt")
         ),

@@ -238,7 +238,7 @@ uv run evolver migrate-state
 
 `uv sync`、拉取或安装之后，**重启 MCP 进程**。长期驻留的 `evolver mcp` 仍加载旧模块。`swarm_boot` 与 `swarm_status` 带 `source_revision`（正在跑的源码树 git SHA），与 `code_staleness` 并列；boot 会自动确认本 agent 自己尚未 ack 的 `swarm.hello`。
 
-本进程尚未 `swarm_boot` 时，`swarm_status` 返回 `next_action=swarm_boot` 和一句 hint。boot 之后 status 仍带 `agent_name`、`source_revision`，以及软缺口的 `gap` / warnings。`tool_asset_search`、`tool_mailbox_poll`、`tool_cycle_timeline` 一律返回 `{ok, items, hint}`，没有命中也不是空正文。只读 `swarm_doctor` 等同 `evolver doctor` 且不执行 `--fix`（`ok`、软警告、`fixes` 里的命令提示）。`no_baseline` / `pack_absent` / `unmeasured` 仍是 soft-continue。
+本进程尚未 `swarm_boot` 时，`swarm_status` 返回 `next_action=swarm_boot` 和一句 hint。boot 之后 status 仍带 `agent_name`、`source_revision`，以及软缺口的 `gap` / warnings。`tool_asset_search`、`tool_mailbox_poll`、`tool_cycle_timeline`、`swarm_approvals` 一律返回 `{ok, items, hint}`，没有命中也不是空正文。`swarm_approvals` 另外保留 `pending`（与 `items` 同一队列）和 `recent`。只读 `swarm_doctor` 等同 `evolver doctor` 且不执行 `--fix`（`ok`、软警告、`fixes` 里的命令提示）。`no_baseline` / `pack_absent` / `unmeasured` 仍是 soft-continue。
 
 `swarm_boot(project=...)` 只在路径是已存在目录时绑定。`bound_paths.repo_root` 是代码根（从该目录向上找到的 git 根，否则就是该目录本身）。`bound_paths.workspace_root` 是变异所用目录。两者不一致，或 `project` 只是一段自由文本而不是目录时，同一对象带 `warning` 和 `next_steps`。这是软警告：`ok` 仍为 true，循环继续。自由文本不会被当成新的工作区。
 
@@ -248,7 +248,7 @@ uv run evolver migrate-state
 
 接入后，宿主智能体即可通过以下标准工具链协作运转：
 1. `swarm_boot`：初始化演化会话，报告当前状态。
-2. `swarm_tick`：获取最新的 GEP 变异提示词及上下文（含上一轮结算生成的 `[attribution]` 四向归因与 `[contrast]` 跨轮行为对比尾注）。`prompt_mode=short` 或 `checklist_only=true` 只返回核心循环清单，不含基因预览；全文仍在 `last_prompt.md`（`dispatch_prompt_artifact`，资源 `evolver://dispatch/last`）。默认仍是全文。
+2. `swarm_tick`：获取最新的 GEP 变异提示词及上下文（含上一轮结算生成的 `[attribution]` 四向归因与 `[contrast]` 跨轮行为对比尾注）。默认参数是 `prompt_mode=full`，会内联基因预览。短载荷必须显式传 `prompt_mode=short` 或 `checklist_only=true`：回复只含核心循环清单，`engine_log` 去掉内联的 GEP 全文，完整提示词仍在 `last_prompt.md`（`dispatch_prompt_artifact`，资源 `evolver://dispatch/last`）。
 3. `swarm_propose`*（可选）*：在动手修改前校验结构化基因提案的 `H2-4` 组件成本层级完整性（`check_component_integrity`），或对多份 `INV × DOM` 候选提案执行机械式选择性合成（`candidates`）。
 4. *（宿主执行文件修改与逻辑重构）*
 5. `swarm_distill`：从修改成果中提取出结构化 Gene 与 Capsule（支持 `strict_transferable` 三元组校验与 `confounded` 混杂轮自动过滤）。
