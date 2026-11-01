@@ -792,12 +792,12 @@ def _apply_bench_pack_gate(
     """Charter 配对会话 + Soft-default UX (2026-10-31): frozen val pack decides.
 
     ONLY a strict improvement over the Parent publishes as a full Accept.
-    
+
     Soft-default UX: drop/flat/regression/no_baseline/pack_absent/unmeasured all
     soft-accept with warnings + next_steps. This lets hosts complete the loop and
     write experience. Soft-accept does NOT write a Parent baseline and does NOT
     open sealed val. Returns ``(rejection, verdict)``.
-    
+
     Only hard blocks (secrets, protected state) trigger rejection + rollback.
     """
     try:
@@ -958,18 +958,18 @@ def get_fitness_cascade_commands() -> list[dict[str, Any]]:
     Dogfood round-1 finding (v1.107.0): when evolver runs under a bare venv
     python (no activated environment), ruff/mypy/pytest live next to the
     interpreter — fall back to ``<sys.executable>'s dir`` before skipping.
-    
+
     Soft-default UX (2026-10-31): adapts commands to project layout via
     validation_probe before checking tool availability.
     """
     from evolver.gep.validation_probe import adapt_cascade_commands
-    
+
     # First adapt to project layout
     cwd = get_workspace_root()
     adapted, probe_warnings = adapt_cascade_commands(list(FITNESS_CASCADE_COMMANDS), cwd)
     for warning in probe_warnings:
         logger.info("validation probe: %s", warning)
-    
+
     # Then check tool availability
     bin_dir = Path(sys.executable).parent
     runnable: list[dict[str, Any]] = []
@@ -1287,27 +1287,25 @@ def _classify_env_blockers(
     return blockers
 
 
-def _is_hard_block_mutation(
-    mutation: dict[str, Any], cwd: Path
-) -> tuple[bool, str | None]:
+def _is_hard_block_mutation(mutation: dict[str, Any], cwd: Path) -> tuple[bool, str | None]:
     """Check if mutation is a hard block (secrets or protected state paths).
-    
+
     Returns (is_hard_block, reason).
     Only hard blocks: secrets, mutations targeting state_root/~/.evolver.
     Everything else is soft-continue.
-    
+
     Soft-default UX (2026-10-31 spec).
     """
     from evolver.gep.paths import get_evolver_state_root
-    
+
     # Check for secrets via policy check
     try:
         from evolver.gep.policy_check import check_policy
-        
+
         # Get diff for secret checking
         diff_text = capture_diff_snapshot(cwd)
         policy_report = check_policy(diff_text=diff_text)
-        
+
         if not policy_report.ok:
             # Look for secret violations
             for violation in policy_report.violations:
@@ -1315,26 +1313,26 @@ def _is_hard_block_mutation(
                     return True, f"secret_leak: {violation.message}"
     except Exception:
         logger.warning("Policy check failed during hard-block detection", exc_info=True)
-    
+
     # Check for protected state paths
     try:
         state_root = get_evolver_state_root()
         state_root_str = str(state_root.resolve())
-        
+
         changes = mutation.get("changes", [])
         for change in changes:
             file_path = change.get("file", "")
             if not file_path:
                 continue
-            
+
             # Resolve to absolute path
             abs_path = (cwd / file_path).resolve()
             abs_str = str(abs_path)
-            
+
             # Check if touching state_root or ~/.evolver
             if abs_str.startswith(state_root_str):
                 return True, f"protected_state: {file_path} targets state_root"
-            
+
             # Check for explicit do_not_touch patterns
             if ".evolver/" in file_path or "memory/" in file_path:
                 # These might be legacy paths that should be protected
@@ -1342,7 +1340,7 @@ def _is_hard_block_mutation(
                     return True, f"protected_state: {file_path} targets engine state"
     except Exception:
         logger.warning("Protected path check failed during hard-block detection", exc_info=True)
-    
+
     return False, None
 
 
@@ -1356,21 +1354,21 @@ def _handle_cascade_validation_failure(
     eval_meta: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Soft-default UX (2026-10-31): validation failures soft-continue with warnings.
-    
+
     Only hard-block for secrets or protected state paths. Everything else:
     - Returns ok=True with severity="soft"
     - Populates warnings with validation failures
     - Does NOT rollback worktree
     - Still writes experience (handled by caller continuing to success path)
-    
+
     Sprint 22.2 graded failure behavior (score, event, memory-graph) preserved
     for backwards compatibility and repair-loop signals.
     """
     score = _cascade_score(validation_result["results"])
-    
+
     # Check for hard blocks (secrets or protected state)
     is_hard_block, block_reason = _is_hard_block_mutation(mutation, cwd)
-    
+
     if is_hard_block:
         # Hard block: rollback and reject as before
         diff_snapshot = _failure_diff(cwd)
@@ -1394,7 +1392,12 @@ def _handle_cascade_validation_failure(
             last_run,
             mutation,
             failed_blast,
-            {"status": "failed", "score": score, "error": "hard_block_validation", "block_reason": block_reason},
+            {
+                "status": "failed",
+                "score": score,
+                "error": "hard_block_validation",
+                "block_reason": block_reason,
+            },
             validation_result=validation_result,
             eval_meta=eval_meta,
             novelty_fingerprint=failed_fp[:4000],
@@ -1423,7 +1426,7 @@ def _handle_cascade_validation_failure(
             "env_blocker_only": bool(env_blockers),
             "details": details,
         }
-    
+
     # Soft-continue path: capture failure details but don't rollback
     # Build warnings from validation failures
     warnings: list[str] = []
@@ -1436,12 +1439,12 @@ def _handle_cascade_validation_failure(
                 # Truncate stderr for warning
                 stderr_brief = stderr[:200] + "..." if len(stderr) > 200 else stderr
                 warnings.append(f"  {stderr_brief}")
-    
+
     # Still record event for repair-loop signals and history
     diff_snapshot = _failure_diff(cwd)
     failed_blast = _compute_blast_radius()
     failed_fp, failed_added = _novelty_fingerprint(cwd)
-    
+
     event = _failure_event(
         last_run,
         mutation,
@@ -1454,17 +1457,17 @@ def _handle_cascade_validation_failure(
         diff_snapshot=diff_snapshot,
     )
     append_event_jsonl(event)
-    
+
     # Note: NOT calling record_solidify_failure or _wiki_rejection for soft failures
     # The caller will continue to success path and write experience
-    
+
     # Return ok=True with soft severity and warnings
     # The caller should continue to persist Gene/Episode/events
     details = dict(validation_result)
     details["score"] = score
     if validation_report is not None:
         details["validation_report"] = validation_report
-    
+
     return {
         "ok": True,  # Soft-continue!
         "severity": "soft",
@@ -1908,8 +1911,7 @@ def _solidify_cycle(
             no_git_repo = True
             candidates = discover_git_candidates(cwd)
             no_git_warnings.append(
-                f"No git repository found at {cwd}. "
-                "Experience will still be written to state_root."
+                f"No git repository found at {cwd}. Experience will still be written to state_root."
             )
             if candidates:
                 no_git_warnings.append(
@@ -2075,7 +2077,10 @@ def _solidify_cycle(
                         eval_meta=eval_meta,
                     )
                     # Soft-default UX: check if this is a soft-continue or hard block
-                    if failure_result.get("ok") is True and failure_result.get("severity") == "soft":
+                    if (
+                        failure_result.get("ok") is True
+                        and failure_result.get("severity") == "soft"
+                    ):
                         # Soft-continue: capture warnings and proceed to success path
                         # The success path will incorporate these warnings
                         validation_soft_warnings = failure_result.get("warnings", [])
@@ -2088,7 +2093,7 @@ def _solidify_cycle(
                 else:
                     # Legacy non-cascade path: always hard-fail with rollback
                     pass
-                
+
                 # Legacy hard-fail path: only execute if we did NOT soft-continue
                 if not validation_soft_failed:
                     # Blast radius and diff must be captured BEFORE the rollback
@@ -2356,7 +2361,7 @@ def _solidify_cycle(
         # not only inside the persisted event (round-79).
         "score": outcome_score,
     }
-    
+
     # Soft-default UX: add validation soft warnings if present
     all_warnings = list(validation_soft_warnings) + list(no_git_warnings)
     if validation_soft_failed or no_git_repo:
@@ -2372,7 +2377,7 @@ def _solidify_cycle(
             "Soft-continue under permanent soft-default policy",
             "Experience has been written to state_root for this cycle",
         ]
-    
+
     # Soft-default UX (Task 5): add experience_written for MCP visibility
     # Track what was written to state_root this cycle
     experience_written: dict[str, list[str]] = {
@@ -2380,15 +2385,15 @@ def _solidify_cycle(
         "episodes": [],
         "events": [event["id"]],  # Always write an event
     }
-    
+
     # Gene was selected and event created, record it
     if last_run.get("selected_gene_id"):
         experience_written["genes"].append(str(last_run["selected_gene_id"]))
-    
+
     # If episode was recorded (from episode_record in swarm layer)
     # it will be added by the caller; we provide the structure
     result["experience_written"] = experience_written
-    
+
     if bench_pack_verdict is not None:
         result["bench_pack"] = {
             "score": bench_pack_verdict.get("score"),
@@ -2404,7 +2409,14 @@ def _solidify_cycle(
         }
         if bench_pack_verdict.get("soft_accept"):
             result["soft_accept"] = True
-            result["warnings"] = list(bench_pack_verdict.get("warnings") or [])
+            # Merge pack soft-accept warnings with validation/no-git warnings
+            # instead of overwriting (soft-default UX needs both visible).
+            merged = list(result.get("warnings") or [])
+            for w in bench_pack_verdict.get("warnings") or []:
+                if w not in merged:
+                    merged.append(w)
+            if merged:
+                result["warnings"] = merged
             if bench_pack_verdict.get("next_steps"):
                 result["next_steps"] = list(bench_pack_verdict["next_steps"])
             if bench_pack_verdict.get("commands"):

@@ -83,7 +83,13 @@ def test_no_pending_run(git_ws: Path) -> None:
     assert result["error"] == "no_pending_run"
 
 
-def test_not_a_git_repo(temp_workspace: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_not_a_git_repo(
+    temp_workspace: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    declared_hypothesis: dict,
+) -> None:
+    """Soft-default: missing git is a warning, not a hard reject (experience still written)."""
+    _ = declared_hypothesis
     monkeypatch.setenv("EVOLVER_REPO_ROOT", str(temp_workspace))
     monkeypatch.setenv("OPENCLAW_WORKSPACE", str(temp_workspace))
     evo = temp_workspace / "memory" / "evolution"
@@ -93,9 +99,12 @@ def test_not_a_git_repo(temp_workspace: Path, monkeypatch: pytest.MonkeyPatch) -
     gep.mkdir(parents=True, exist_ok=True)
     monkeypatch.setenv("GEP_ASSETS_DIR", str(gep))
     write_state_for_solidify(_last_run())
-    result = solidify()
-    assert result["ok"] is False
-    assert result["error"] == "not_a_git_repo"
+    result = solidify(skip_validation=True)
+    assert result["ok"] is True, result
+    assert result.get("severity") == "soft"
+    assert result.get("no_git_repo") is True
+    warnings = result.get("warnings") or []
+    assert any("git" in w.lower() for w in warnings), warnings
 
 
 def test_success_skip_validation(

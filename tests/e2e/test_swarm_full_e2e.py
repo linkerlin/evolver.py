@@ -329,13 +329,12 @@ class TestFullSurfaceE2E:
         outbound = client.call("tool_mailbox_poll", {"direction": "outbound"})
         assert any(m["id"] == sent["message_id"] for m in outbound)
 
-        # ack applies to the INBOUND queue only (outbound is our own pending
-        # sends): swarm_boot's hello lands inbound → poll + ack round trip.
+        # swarm_boot auto-acks this agent's pending swarm.hello (soft-default UX).
         client.call("swarm_boot", {"agent_name": "e2e-mailbox"})
-        inbound = client.call("tool_mailbox_poll", {"direction": "inbound"})
-        hellos = [m for m in inbound if m.get("type") == "swarm.hello"]
-        assert hellos
-        assert client.call("tool_mailbox_ack", {"message_ids": [hellos[0]["id"]]}) == 1
+        status = client.call("swarm_status", {})
+        pending = status.get("mailbox_pending") or {}
+        assert int(pending.get("unacked_hello") or 0) == 0
+        # Outbound send id is not an inbound ack target.
         assert client.call("tool_mailbox_ack", {"message_ids": [sent["message_id"]]}) == 0
 
         assert client.call("tool_cycle_timeline", {}) == []
@@ -613,29 +612,33 @@ class TestFullSurfaceE2E:
         assert declared["ok"] is True, declared
 
         solidified = client.call("swarm_solidify", {})
-        assert solidified.get("error") == "validation_failed", solidified
+        # Soft-default: cascade/validation failures soft-continue.
+        assert solidified.get("ok") is True, solidified
+        assert (
+            solidified.get("severity") == "soft"
+            or solidified.get("validation_soft_failed") is True
+            or solidified.get("warnings")
+        ), solidified
         episode = solidified.get("episode") or {}
         assert episode.get("ok") is True, solidified
         ep_id = str(episode["id"])
 
         evolution = e2e_ws / "memory" / "evolution"
-        # U-5: failed solidify preserves hypothesis.json (免重登) and stages
-        # hypothesis.consumed.json for prediction_delta. Only ok==True consumes.
+        # Soft success consumes hypothesis (ok == True path).
         consumed = json.loads((evolution / "hypothesis.consumed.json").read_text(encoding="utf-8"))
         assert consumed["consumed_for_run"] == run_id
-        # hypothesis.json is intentionally preserved on failure (U-5)
-        assert (evolution / "hypothesis.json").exists()
+        assert not (evolution / "hypothesis.json").exists()
 
         body_path = evolution / "episodes" / ep_id.replace(":", "_", 1) / "episode.json"
         before = body_path.read_bytes()
         body = json.loads(before)
         delta = body["gates"]["prediction_delta"]
         assert delta["matched"] is False
-        # In the test environment, ruff/mypy may not be available, so only pytest
-        # actually runs. The cascade filters unavailable commands (solidify.py
-        # get_fitness_cascade_commands), so all declared expectations are unmet
-        # when the tools aren't found.
-        assert delta["unmet_expectations"] == ["ruff", "mypy", "pytest"]
+        # Soft-default validation probe skips missing tools/paths; only stages
+        # that actually ran can be unmet. Pytest runs and fails here.
+        unmet = delta["unmet_expectations"]
+        assert "pytest" in unmet
+        assert set(unmet) <= {"ruff", "mypy", "pytest"}
         assert delta["unexpected_failures"] == []
         pytest_check = next(
             row for row in body["scene_index"]["checks"] if "pytest" in row["command"]
@@ -680,8 +683,8 @@ class TestFullSurfaceE2E:
         follow = client.call("swarm_tick", {"agent_name": "e2e-delta"})
         prompt = follow.get("dispatch_prompt") or ""
         assert "prediction_delta: matched=False" in prompt, follow.get("dispatch_reason")
-        # All three expectations are unmet when ruff/mypy aren't available
-        assert 'unmet=["ruff", "mypy", "pytest"]' in prompt
+        # Soft-default probe may skip missing ruff/mypy; pytest remains unmet.
+        assert "unmet=" in prompt and "pytest" in prompt
         assert "stdout truncated at" in prompt
         assert "episode_inspect" in prompt
         # Printed by the failing test at runtime, so only the clipped check

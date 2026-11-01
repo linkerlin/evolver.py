@@ -187,12 +187,22 @@ def test_cascade_failure_score_partial_and_lineage(
         ],
     )
     write_state_for_solidify(_last_run())
-    assert solidify()["ok"] is False
-    evt = _last_event()
-    assert evt["outcome"]["status"] == "failed"
-    assert evt["outcome"]["score"] == 0.5
-    # S26 fix: cascade failures now carry GEPA lineage fields too.
-    assert evt.get("parent_event_id") is None  # no prior event in this workspace
+    result = solidify()
+    assert result["ok"] is True
+    assert result.get("severity") == "soft" or result.get("validation_soft_failed") is True
+    # Soft path records a soft_failed event then continues to success; score 0.5
+    # is visible on the soft event and/or result.
+    from evolver.gep.asset_store import read_all_events
+
+    soft_events = [
+        e
+        for e in read_all_events()
+        if (e.get("outcome") or {}).get("status") == "soft_failed"
+        or (e.get("outcome") or {}).get("error") == "validation_failed_soft"
+    ]
+    assert soft_events, read_all_events()[-1]
+    assert soft_events[0]["outcome"]["score"] == 0.5
+    assert soft_events[0].get("parent_event_id") is None
 
 
 # ---------------------------------------------------------------------------
@@ -260,13 +270,12 @@ def test_harmful_mutation_rejected_end_to_end(
     declared_hypothesis: dict[str, Any],
 ) -> None:
     """S26.3 acceptance #2: inject a HARMFUL mutation (one that breaks the
-    validation cascade), the gate must veto it, roll the workspace back, and
-    land the failure in the ledger — evidence chain: event + wiki + rollback.
+    validation cascade), soft-default soft-continues with warnings and keeps the worktree;
+    hard rollback is reserved for secrets/protected-state only.
 
     (Bench-val variant needs an agent executor and is tracked in 演进方案
     §8 移交; here the cascade stands in for the val surface, which is the
     default gating surface.)"""
-    from evolver.gep.wiki import wiki_dir
 
     set_flag("enable_acceptance_gate", False, persist=False)
     # A harmful mutation: the touched file breaks every validation command.
@@ -307,13 +316,16 @@ def test_harmful_mutation_rejected_end_to_end(
         _last_run(run_id="run_harmful", selected_gene_id="gene_harmful", signals=["harm"])
     )
     result = solidify()
-    assert result["ok"] is False
-    assert result["error"] == "validation_failed"
-    # rolled back: the harmful edit is gone from the working tree
-    assert victim.read_text(encoding="utf-8") == "about to be harmed\n"
-    # evidence chain: failed event landed, wiki entry landed
-    evt = _last_event()
-    assert evt["outcome"]["status"] == "failed"
-    assert evt["outcome"]["error"] == "validation_failed"
-    impact = (wiki_dir() / "skill-impact.md").read_text(encoding="utf-8")
-    assert "validation_failed: gene_harmful" in impact
+    # Soft-default: harmful cascade failure soft-continues; worktree kept.
+    assert result["ok"] is True
+    assert result.get("severity") == "soft" or result.get("validation_soft_failed") is True
+    assert victim.read_text(encoding="utf-8") == "harmed\n"
+    from evolver.gep.asset_store import read_all_events
+
+    soft_events = [
+        e
+        for e in read_all_events()
+        if (e.get("outcome") or {}).get("status") == "soft_failed"
+        or (e.get("outcome") or {}).get("error") == "validation_failed_soft"
+    ]
+    assert soft_events

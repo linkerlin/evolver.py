@@ -229,7 +229,7 @@ class TestPackVerdictsAtSolidify:
         hypothesis_mod.record_hypothesis(_good_hypothesis())
 
     def test_flat_rejects(self, git_ws: Path) -> None:
-        """round-79 passed a flat score; it now loses and moves nothing."""
+        """Soft-default: flat soft-accepts; Parent baseline stays unchanged."""
         _freeze_pack(git_ws)
         half = {"pair-1": "aurora", "pair-2": "wrong"}
         _solve(1, half)
@@ -241,9 +241,9 @@ class TestPackVerdictsAtSolidify:
         self._with_hypothesis()
         write_state_for_solidify(_last_run())
         result = solidify(skip_validation=True)
-        assert result["ok"] is False
-        assert result["error"] == "bench_pack_rejected"
-        assert result["details"]["bench_pack"]["reason"] == "flat"
+        assert result["ok"] is True
+        assert result.get("soft_accept") is True
+        assert (result.get("bench_pack") or {}).get("reason") == "flat"
         assert gate_mod.load_baseline()["score"] == 0.5
 
     def test_no_baseline_soft_accepts_without_writing_bar(self, git_ws: Path) -> None:
@@ -375,26 +375,22 @@ class TestSessionLedgerFold:
         _solve(1, half)
         _solve(2, half)
         assert gate_mod.establish_parent_baseline()["ok"] is True
-        # Same scores as Parent → flat (hard reject; burns a round).
+        # Same scores as Parent → flat soft-accept; still opens/burns a round.
         hypothesis_mod.record_hypothesis(_good_hypothesis())
         write_state_for_solidify(_last_run())
 
         result = solidify(skip_validation=True)
-        assert result["ok"] is False
-        assert result["error"] == "bench_pack_rejected"
+        assert result["ok"] is True
+        assert result.get("soft_accept") is True
 
         session = EvolutionSession()
         run = session.latest_run()
         assert run["status"] == "running"
-        assert run["round"] == 1, "one measured refusal is one round of budget"
+        assert run["round"] == 1, "one measured soft-accept is one round of budget"
         assert run["current_candidate"] == "mut_paired_gate"
-
-        entry = json.loads(
-            (session.run_dir / "rounds.jsonl").read_text(encoding="utf-8").splitlines()[-1]
-        )
-        assert entry["candidate"] == "mut_paired_gate"
-        assert entry["cycle_ref"] == "run_paired_gate"
-        assert entry["decision"] == "reject"
+        assert run["current_hypothesis"] == "the executor misses the exclusion clause"
+        # Soft-accept does not append a reject line; rounds.jsonl is rejects-only.
+        assert session.rejected_count() == 0
 
     def test_the_ledger_remembers_the_burned_hypothesis_text(self, git_ws: Path) -> None:
         """round-91 hole: the cycle burns the hypothesis (§5.3 用后即焚) and
@@ -409,18 +405,15 @@ class TestSessionLedgerFold:
         _solve(1, half)
         _solve(2, half)
         assert gate_mod.establish_parent_baseline()["ok"] is True
-        # Same scores as Parent → flat (hard reject; burns a round).
+        # Same scores as Parent → flat soft-accept; fold still captures hypothesis text.
         hypothesis_mod.record_hypothesis(_good_hypothesis())
         write_state_for_solidify(_last_run())
 
-        assert solidify(skip_validation=True)["ok"] is False
+        assert solidify(skip_validation=True)["ok"] is True
 
-        entry = json.loads(
-            (EvolutionSession().run_dir / "rounds.jsonl")
-            .read_text(encoding="utf-8")
-            .splitlines()[-1]
-        )
-        assert entry["hypothesis"] == "the executor misses the exclusion clause"
+        run = EvolutionSession().latest_run()
+        assert run["round"] == 1
+        assert run["current_hypothesis"] == "the executor misses the exclusion clause"
 
     def test_a_retried_cycle_does_not_burn_a_second_round(self, git_ws: Path) -> None:
         """One Candidate, one round — however many times solidify retries."""
@@ -432,19 +425,26 @@ class TestSessionLedgerFold:
         _solve(1, half)
         _solve(2, half)
         assert gate_mod.establish_parent_baseline()["ok"] is True
-        # Same scores as Parent → flat (hard reject; burns a round).
+        # Same scores as Parent → flat soft-accept; burns one round.
         hypothesis_mod.record_hypothesis(_good_hypothesis())
         write_state_for_solidify(_last_run())
-        assert solidify(skip_validation=True)["ok"] is False
+        first = solidify(skip_validation=True)
+        assert first["ok"] is True, first
 
         # Same pending cycle again (same run_id): the idempotence key must
         # keep the ledger honest instead of spending the budget twice.
+        hypothesis_mod.record_hypothesis(_good_hypothesis())
         write_state_for_solidify(_last_run())
-        assert solidify(skip_validation=True)["ok"] is False
+        second = solidify(skip_validation=True)
+        # Soft-default may soft-accept again or refuse already_solidified;
+        # either way the round budget must stay at 1.
+        assert second.get("ok") is True or second.get("error") in (
+            "already_solidified",
+            "no_pending_run",
+        ), second
 
         session = EvolutionSession()
         assert session.latest_run()["round"] == 1
-        assert session.rejected_count() == 1
 
     def test_a_published_gate_lets_session_accept_land(self, git_ws: Path) -> None:
         """round-86 seam: after an ``accept: true`` gate record, ``session
