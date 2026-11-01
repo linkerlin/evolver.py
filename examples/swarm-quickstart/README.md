@@ -73,7 +73,7 @@ swarm_boot → swarm_tick → 执行/mutate → swarm_distill → swarm_hypothes
 
 CLI 侧也可用 `evolver round --host` 串起 boot→tick→checklist；完整脚本演示见上文 `demo_swarm_loop.py`。
 
-MCP/CLI 在 `not_a_git_repo`、`hypothesis_missing`、`no_baseline` / `pack_absent` / `unmeasured`、`user_lock`、`preflight_abort` 时会附带 `next_steps` 与 `commands`（可直接照做）。可用性缺口（无 baseline / 无 val / 无 pack）改为 soft-accept + 警告，不再硬卡住；drop/flat/regression 与 val_seal/secrets 等危险门禁仍硬拒绝。`evolver doctor` 的 `loop_ready` 仍诚实反映缺口。
+MCP/CLI 在 `not_a_git_repo`、`hypothesis_missing`、`no_baseline` / `pack_absent` / `unmeasured`、`user_lock`、`preflight_abort` 时会附带 `next_steps` 与 `commands`（可直接照做）。可用性缺口（无 baseline / 无包 / 未测量）以及 `drop` / `flat` / `regression` 都是 soft-accept + 警告，不再硬卡住。硬阻断是密钥入仓、改写 `~/.evolver/`、`val_seal`。`gate_error` 与验证面 anchor 失败仍拒绝。`evolver doctor` 的 `loop_ready` 仍诚实反映缺口。成功的 soft-accept 不自动 git commit，经验只写入 `~/.evolver/workspaces/<id>/`，并清掉 `pending_solidify`。前 5 次 tick 的仪器提示含「核心循环工具 / Core Loop Tools」。soft T0 为 minimal（warnings 可能含 `t0_probe=minimal` 或 `t0_skipped_soft`）。
 
 软缺口在 MCP 返回面上用 `severity=soft` + `gap`/`warning`/`gate_soft_continue` 表达，**不**写入硬失败字段 `error`（宿主只看 `error` 时不得停）。危险门禁仍用 `error` + `severity=hard`。
 
@@ -107,7 +107,7 @@ OMEN16 环境替换为 `EVOLVER_REPO_ROOT=C:\GitHub\evolver.py`（原 PATH）。
 
 ## 首次准备
 
-进化循环在冻结包和 Parent 基线都齐之前不会开始。优先跑上一节的 `evolver setup` / `doctor --fix`；下面三步仍是手动细节（尤其 val 沙箱必须在进化对话之外做）。
+下面三步用来装上真正的外部尺子（冻结包 + Parent 基线）。缺了它们循环仍然开始：boot / tick 是 soft-continue，solidify 是 soft-accept（带 warnings）。优先跑上一节的 `evolver setup` / `doctor --fix`；val 沙箱必须在进化对话之外做。
 
 1. 安装冻结包。
 
@@ -131,9 +131,9 @@ uv run evolver bench prompt <task-id> --pack "$EVOLVER_HOME/anchor/bench/charter
 uv run evolver bench baseline
 ```
 
-沙箱不全会退出，并列出还缺的题。成功之后回到宿主对话，再说一次要开始进化。宿主会重新 `swarm_boot`，这时才进入循环。
+沙箱不全会退出，并列出还缺的题。成功之后 `loop_ready` 才为真；在此之前循环已经可以 soft-continue。回到宿主对话后重新 `swarm_boot`，警告会少一条。
 
-不想先做这三步，可以在 MCP 配置的 `env` 里设 `"EVOLVER_SWARM_GATE_HANDOFF": "hotl"`：循环照常跑，人在环上用「停」和 veto 监督。门照常拒绝并回滚每个候选，不发布任何东西。连续降级反馈仍会自动暂停（`EVOLVER_SUPERVISION_AUTO_PAUSE_STREAK`，默认 3）。这个开关由人设，宿主不得自己改。
+`EVOLVER_SWARM_GATE_HANDOFF=hotl` 只是仪器提示里的人在环上标签，不是「否则不 tick」的开关。默认（`human`）同样 soft-continue。人仍可用「停」和 veto 监督；连续降级反馈仍会自动暂停（`EVOLVER_SUPERVISION_AUTO_PAUSE_STREAK`，默认 3）。这个开关由人设，宿主不得自己改。密钥、改写 `~/.evolver/`、`val_seal` 仍硬拒绝并回滚。
 
 `EVOLVER_SWARM_AUTO_HIJACK=1` 不改这段文字。它强制打开 HITL，并拒绝宿主转达放行。
 

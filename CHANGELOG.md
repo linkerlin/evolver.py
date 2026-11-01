@@ -8,10 +8,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## Unreleased
 
+### Docs
+- **README 对齐软默认与 MCP 口味（英/中）**：soft-accept 为 MCP 默认路径（经验写入 `~/.evolver/workspaces/<id>/`，不自动 git commit，不写 Parent baseline；`no_baseline` / `pack_absent` / `unmeasured` / `drop` / `flat` / `regression` 为警告）。硬阻断仍为密钥、`~/.evolver/`、`val_seal`。补开箱 `setup` / `doctor`、soft T0、前 5 tick 核心循环、`pending_solidify`、安装后重启 MCP，以及本 fork 的 clone URL（`linkerlin/evolver.py`）。顺手修正仍写「缺基线即停 / 过门即 commit / drop 仍硬拒绝」的 quickstart、AGENTS.md 与教程句子。
+
 ### Added
 - **MCP 可用性五件套（soft-gap severity / source_revision / hello auto-ack / Grok Bot 路径 / e2e）**：
   soft gaps（`no_baseline`/`pack_absent`/`unmeasured`）在 boot/tick 用 `severity=soft` + `gap`/`warning`/`gate_soft_continue`，不再写入硬失败 `error`；危险门禁仍 `error`+hard。`swarm_boot`/`swarm_status` 增加 `source_revision`（运行包源码树 git SHA），与 `code_staleness` 并列；boot 自动 ack 本 agent 的 pending `swarm.hello`；status 暴露 `mailbox_pending.unacked_hello`。常驻 instructions 注明 Grok Bot `/workspace` vs `/workspace/evolver-research/evolver.py`（仍 <1200 字）；细节见 `examples/swarm-quickstart/README.md`。
-- **Accept/publish 可用性软门（soft-accept）**：`no_baseline` / `pack_absent` / `unmeasured` 不再硬阻塞 open-box→swarm→solidify 主路径；swarm boot/tick soft-continue，solidify/session Accept soft-accept（warnings + next_steps），**不**伪造 `loop_ready`、**不**由候选写入 Parent baseline、**不**打开 val 密封材料。drop/flat/regression、gate_error、val_seal 等危险门禁仍硬拒绝。测量层 `gate_verdict` 仍返回原 reason（诚实）。
+- **Accept/publish 可用性软门（soft-accept）**：`no_baseline` / `pack_absent` / `unmeasured` 不再硬阻塞 open-box→swarm→solidify 主路径；swarm boot/tick soft-continue，solidify/session Accept soft-accept（warnings + next_steps），**不**伪造 `loop_ready`、**不**由候选写入 Parent baseline、**不**打开 val 密封材料。`drop` / `flat` / `regression` 与上述可用性缺口同为 soft-accept（测量层 `gate_verdict` 仍返回原 reason，诚实）。硬阻断仅限密钥、改写 `~/.evolver/`、`val_seal`；`gate_error` 与验证面 anchor 失败仍拒绝。solidify 成功路径不自动 git commit。
 - **开箱 setup/doctor（open-box）**：`evolver setup` / `evolver doctor [--fix]` 检测 git / freeze pack / Parent baseline / user lock；`--fix` 仅安全补齐冻结包，并在 val 沙箱已齐时尝试 `bench baseline`（永不在候选对话中打开 val 密封材料）。MCP/CLI 对 `not_a_git_repo`、`hypothesis_missing`、`no_baseline`/`pack_absent`、`user_lock`、`preflight_abort` 附带 `next_steps`+`commands`。`examples/swarm-quickstart/README.md` 增加开箱节与自动进化路径说明；随后放宽为 soft-accept（见上条）。
 
 ## [Unreleased]

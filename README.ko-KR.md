@@ -150,7 +150,7 @@
 
 ```bash
 # 저장소 복제 및 의존성 동기화
-git clone https://github.com/evomap/evolver.py.git
+git clone https://github.com/linkerlin/evolver.py.git
 cd evolver.py
 uv sync
 ```

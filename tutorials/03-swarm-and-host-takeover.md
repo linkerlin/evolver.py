@@ -33,9 +33,11 @@
    （宿主自己在编辑器里读文件、改代码）
 3. swarm_distill    ──▶ “我改完了，把我的改动提炼成候选 Gene / Capsule 吧。”
 4. swarm_hypothesis ──▶ “在跑测试之前，我先押注：我改了哪、为什么能成、预计哪些检查会过。”
-5. swarm_solidify   ──▶ “请启动门禁验货！过了就 git commit，没过就回滚并告诉我哪错了。”
+5. swarm_solidify   ──▶ “请结算。默认 soft-accept：经验写入 ~/.evolver，不自动 git commit；密钥、~/.evolver/、val_seal 才硬拒绝并回滚。”
 6. swarm_feedback   ──▶ “把这轮的得分和诊断写进反馈账本，帮下轮调整方向。”
 ```
+
+前 5 次 tick、且没有待固化 run 时，`swarm_boot` 的仪器提示会多一节「核心循环工具 / Core Loop Tools」，把上面六步再写一遍。默认 solidify 的 T0 是 minimal（返回里可能见到 `t0_probe=minimal` 或 `t0_skipped_soft`）；硬接受才跑完整 T0。成功后 `pending_solidify` 变为 false。
 
 注意一个关键细节：如果这一个信号族下面已经连续失败了好几次，`swarm_tick` 印出的派工单上会标一行醒目的 **`PROPOSAL REQUIRED`**（或者返回 `proposal_required=true`）。这时候宿主**不准直接改文件**，必须改调 `swarm_propose` 先交一份干预提案。为什么？因为同一条路已经撞墙三次了，再闷头硬改只是浪费时间。
 
