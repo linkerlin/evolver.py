@@ -246,7 +246,7 @@ uv run evolver migrate-state
 
 接入后，宿主智能体即可通过以下标准工具链协作运转：
 1. `swarm_boot`：初始化演化会话，报告当前状态。
-2. `swarm_tick`：获取最新的 GEP 变异提示词及上下文（含上一轮结算生成的 `[attribution]` 四向归因与 `[contrast]` 跨轮行为对比尾注）。
+2. `swarm_tick`：获取最新的 GEP 变异提示词及上下文（含上一轮结算生成的 `[attribution]` 四向归因与 `[contrast]` 跨轮行为对比尾注）。`prompt_mode=short` 或 `checklist_only=true` 只返回核心循环清单，不含基因预览；全文仍在 `last_prompt.md`（`dispatch_prompt_artifact`，资源 `evolver://dispatch/last`）。默认仍是全文。
 3. `swarm_propose`*（可选）*：在动手修改前校验结构化基因提案的 `H2-4` 组件成本层级完整性（`check_component_integrity`），或对多份 `INV × DOM` 候选提案执行机械式选择性合成（`candidates`）。
 4. *（宿主执行文件修改与逻辑重构）*
 5. `swarm_distill`：从修改成果中提取出结构化 Gene 与 Capsule（支持 `strict_transferable` 三元组校验与 `confounded` 混杂轮自动过滤）。

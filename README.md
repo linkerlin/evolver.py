@@ -245,7 +245,7 @@ On Grok Bot the evolution workspace root is `/workspace` and the evolver.py chec
 
 Once connected, host agents communicate via standardized tool calls:
 1. `swarm_boot`: Initializes the evolution session and reports status.
-2. `swarm_tick`: Retrieves the latest GEP mutation prompt and context (including `[attribution]` and `[contrast]` notes from the prior episode).
+2. `swarm_tick`: Retrieves the latest GEP mutation prompt and context (including `[attribution]` and `[contrast]` notes from the prior episode). `prompt_mode=short` or `checklist_only=true` returns the core-loop checklist without the gene preview; the full prompt stays in `last_prompt.md` (`dispatch_prompt_artifact`, resource `evolver://dispatch/last`). The default remains the full prompt.
 3. `swarm_propose` *(optional)*: Validates structured gene proposals against the `H2-4` component cost hierarchy (`check_component_integrity`) or mechanically composes multiple `INV × DOM` candidates (`candidates`) before editing.
 4. *(Host edits code and applies refactorings)*
 5. `swarm_distill`: Extracts structured Gene and Capsule data from the diff (with optional `strict_transferable` triad auditing and automatic `confounded` round filtering).

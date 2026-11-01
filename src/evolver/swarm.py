@@ -298,6 +298,8 @@ experience 仍写入 ~/.evolver/workspaces/<id>/，不自动提交。补齐基�
 - 用户说的是一套多步修复或创新，而不是一轮基因：`swarm_workflow_run`，`template` 用
   `repair-cycle` 或 `innovate-cycle`。按返回的 `awaiting_agent` 做完，用 `swarm_workflow_act` 交回。
   要回看全状态用 `swarm_workflow_status`。
+- 名字：`swarm_*` 是核心循环。`tool_*` 是辅助面（资产、邮箱、投影），不是循环本身。
+  `episode_get` / `episode_inspect` 只读记录。
 - 要按关键词找基因：`tool_asset_search`。要全文再 `tool_asset_get`。
 - 要按 id 读上一轮：`episode_get`。`dispatch_prompt` 里已有摘要时不必再读。
 - 摘要写了 truncated：`episode_inspect`，必须带 `question`，按 `views` 看未截断现场。
@@ -1012,8 +1014,42 @@ def _ack_own_hello(agent_name: str) -> dict[str, Any]:
         return {"acked": 0, "ids": [], "agent_name": agent_name, "error": str(exc)[:200]}
 
 
-async def swarm_tick(agent_name: str | None = None, include_prompt: bool = True) -> dict[str, Any]:
+def _normalize_prompt_mode(prompt_mode: str, checklist_only: bool) -> str | None:
+    """``short`` when the host opted out of the gene preview; else ``full``."""
+    if checklist_only:
+        return "short"
+    mode = str(prompt_mode or "full").strip().lower()
+    if mode not in ("full", "short"):
+        return None
+    return mode
+
+
+def _short_tick_prompt(checklist: dict[str, Any], artifact: str | None) -> str:
+    """Core-loop checklist without the GEP gene preview."""
+    footer = _format_tick_checklist_footer(checklist).strip()
+    lines = [
+        "## Core loop checklist (prompt_mode=short)",
+        "Gene preview omitted from this payload. Full GEP prompt:",
+    ]
+    if artifact:
+        lines.append(f"- file: `{artifact}`")
+    lines.append("- resource: `evolver://dispatch/last`")
+    if footer:
+        lines.append(footer)
+    return "\n".join(lines)
+
+
+async def swarm_tick(
+    agent_name: str | None = None,
+    include_prompt: bool = True,
+    prompt_mode: str = "full",
+    checklist_only: bool = False,
+) -> dict[str, Any]:
     """Run one full evolution cycle and return its GEP dispatch prompt.
+
+    ``prompt_mode="full"`` (default) inlines the gene preview.
+    ``prompt_mode="short"`` or ``checklist_only=True`` returns the core-loop
+    checklist instead and points at ``last_prompt.md`` for the full text.
 
     The host agent executes the returned ``dispatch_prompt`` with its own
     editing tools, then closes the loop via ``swarm_distill`` →
@@ -1026,6 +1062,14 @@ async def swarm_tick(agent_name: str | None = None, include_prompt: bool = True)
     A gate usability gap (no pack / no baseline) soft-continues the cycle with
     warnings + next_steps instead of hard-stopping on ``await_human``.
     """
+    mode = _normalize_prompt_mode(prompt_mode, checklist_only)
+    if mode is None:
+        return {
+            "ok": False,
+            "error": "invalid_prompt_mode",
+            "allowed": ["full", "short"],
+        }
+
     from evolver.config import SWARM_TICK_LOG_MAX_CHARS
 
     try:
@@ -1065,6 +1109,7 @@ async def swarm_tick(agent_name: str | None = None, include_prompt: bool = True)
         result = await _swarm_tick_locked(
             agent_name=agent_name,
             include_prompt=include_prompt,
+            prompt_mode=mode,
             tripwire=tripwire,
             run_cycle=_run_single_cycle,
             log_budget=SWARM_TICK_LOG_MAX_CHARS,
@@ -1221,6 +1266,7 @@ async def _swarm_tick_locked(
     run_cycle: Any,
     log_budget: int,
     supervision: Any,
+    prompt_mode: str = "full",
 ) -> dict[str, Any]:
     with _capture_stdout() as capture:
         try:
@@ -1286,6 +1332,23 @@ async def _swarm_tick_locked(
         proposal_required=proposal_required,
     )
     full_prompt = f"{prompt.rstrip()}\n{_format_tick_checklist_footer(checklist)}" if prompt else ""
+    short = prompt_mode == "short"
+    artifact: str | None = None
+    if short and full_prompt:
+        try:
+            from evolver.gep.paths import get_evolution_dir
+
+            artifact_path = get_evolution_dir() / "last_prompt.md"
+            if artifact_path.is_file():
+                artifact = str(artifact_path)
+        except Exception:
+            artifact = None
+    if not include_prompt or not full_prompt:
+        shown: str | None = None
+    elif short:
+        shown = _short_tick_prompt(checklist, artifact)
+    else:
+        shown = full_prompt
 
     result: dict[str, Any] = {
         "ok": True,
@@ -1298,7 +1361,8 @@ async def _swarm_tick_locked(
         "selected_gene": selected_gene_info,
         "supervision_veto": veto,
         "proposal_required": proposal_required,
-        "dispatch_prompt": (full_prompt or None) if include_prompt else None,
+        "prompt_mode": "short" if short else "full",
+        "dispatch_prompt": shown,
         "checklist": checklist,
         "engine_log": _tail(log, log_budget),
         "next_action": (
@@ -1307,6 +1371,10 @@ async def _swarm_tick_locked(
         "tripwire": tripwire,
         "working_session": _working_snapshot(),
     }
+    if short and full_prompt:
+        result["gene_preview_omitted"] = True
+        result["dispatch_prompt_artifact"] = artifact
+        result["dispatch_prompt_resource"] = "evolver://dispatch/last"
     if aborted or reason == "preflight_abort":
         from evolver.ops.open_box import attach_next_steps
 
@@ -1911,27 +1979,44 @@ def swarm_report(
     description: str | None = None,
     resolution: str | None = None,
     no_write: bool = False,
+    dry_run: bool = False,
 ) -> dict[str, Any]:
-    """Heartbeat: capture friction/lessons into the living memory."""
+    """Heartbeat: capture friction/lessons into the living memory.
+
+    ``no_write`` and ``dry_run`` are one switch. Either one skips rule
+    encoding, ``LESSONS_LEARNED.md``, and ``self_report.json``. The
+    response always says what happened: ``wrote`` false and ``written``
+    empty, or ``wrote`` true plus the files this call persisted.
+    """
     from evolver.config import SWARM_TICK_LOG_MAX_CHARS
     from evolver.gep.autopoiesis import run_self_report_cli
 
+    write_free = bool(no_write or dry_run)
     with _capture_stdout() as capture:
         try:
             data = run_self_report_cli(
                 category=category,
                 description=description,
                 resolution=resolution,
-                no_write=no_write,
+                no_write=write_free,
             )
         except Exception as exc:
             return {
                 "ok": False,
                 "error": f"self_report_failed: {exc}",
                 "engine_log": _tail(capture.getvalue(), SWARM_TICK_LOG_MAX_CHARS),
+                "wrote": False,
+                "written": [],
+                "no_write": write_free,
+                "dry_run": write_free,
             }
+    written = data.get("written") if isinstance(data, dict) else None
     return {
         "ok": True,
+        "wrote": bool(data.get("wrote")) if isinstance(data, dict) else not write_free,
+        "written": list(written) if isinstance(written, list) else [],
+        "no_write": write_free,
+        "dry_run": write_free,
         "report": data,
         "engine_log": _tail(capture.getvalue(), SWARM_TICK_LOG_MAX_CHARS),
     }

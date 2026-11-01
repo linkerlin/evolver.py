@@ -175,7 +175,13 @@ def rebuild_views() -> dict[str, Any]:
 
 
 def cycle_timeline(limit: int = 20) -> list[dict[str, Any]]:
-    """Recent per-run cycle timelines (stage ladder + outcome)."""
+    """Recent per-run cycle timelines (stage ladder + the same settlement).
+
+    ``stage`` and ``outcome_status`` come from the last terminal event.
+    success settles as ``solidified``; any other non-abort settlement
+    settles as ``failed``; ``cycle_abort`` settles as ``aborted``.
+    ``outcome_matches_stage`` is true when those two fields agree.
+    """
     from evolver.gep.asset_store import read_all_events
     from evolver.gep.event_projection import project_events
 
@@ -202,6 +208,24 @@ _EMPTY_MAILBOX_HINT: Final[str] = (
 _EMPTY_TIMELINE_HINT: Final[str] = (
     "No evolution cycles recorded yet. swarm_tick writes events; "
     "call tool_cycle_timeline again after a cycle."
+)
+_TIMELINE_SEMANTICS: Final[str] = (
+    "stage and outcome_status come from the last terminal event. "
+    "success settles as solidified; other non-abort settlements settle as failed; "
+    "cycle_abort settles as aborted. An earlier soft_failed does not leave "
+    "stage=failed once a later success is recorded."
+)
+_CORE_LOOP_TOOLS: Final[frozenset[str]] = frozenset(
+    {
+        "swarm_boot",
+        "swarm_tick",
+        "swarm_distill",
+        "swarm_hypothesis",
+        "swarm_propose",
+        "swarm_solidify",
+        "swarm_feedback",
+        "swarm_report",
+    }
 )
 
 
@@ -260,34 +284,45 @@ def build_server() -> Any:
     # Typed defs first, registered via decorator *expressions* — keeps mypy
     # strict clean (the mcp package ships no stubs, so @server.tool() is Any).
     def tool_asset_search(query: str, limit: int = 10) -> dict[str, Any]:
-        """Search local GEP assets (Genes/Capsules) by keyword."""
+        """Read-only auxiliary. Search local GEP assets (Genes/Capsules) by keyword."""
         return list_envelope(asset_search(query, limit), empty_hint=_EMPTY_ASSET_SEARCH_HINT)
 
     def tool_asset_get(asset_id: str) -> dict[str, Any]:
-        """Fetch one local Gene/Capsule by id."""
+        """Read-only auxiliary. Fetch one local Gene/Capsule by id."""
         return asset_get(asset_id)
 
     def tool_mailbox_send(
         type: str, payload: dict[str, Any], priority: str = "normal"
     ) -> dict[str, Any]:
-        """Send a durable mailbox message to the evolver daemon."""
+        """Auxiliary. Send a durable mailbox message to the evolver daemon."""
         return mailbox_send(type, payload, priority)
 
     def tool_mailbox_poll(limit: int = 10, direction: str = "inbound") -> dict[str, Any]:
-        """Poll mailbox messages (direction: inbound|outbound)."""
+        """Read-only auxiliary. Poll mailbox messages (direction: inbound|outbound)."""
         return list_envelope(mailbox_poll(limit, direction), empty_hint=_EMPTY_MAILBOX_HINT)
 
     def tool_mailbox_ack(message_ids: list[str]) -> int:
-        """Acknowledge processed mailbox messages."""
+        """Auxiliary. Acknowledge processed mailbox messages."""
         return mailbox_ack(message_ids)
 
     def tool_rebuild_views() -> dict[str, Any]:
-        """Rebuild event-log projections (gene tallies, cycle timelines)."""
+        """Auxiliary. Rebuild event-log projections (gene tallies, cycle timelines)."""
         return rebuild_views()
 
     def tool_cycle_timeline(limit: int = 20) -> dict[str, Any]:
-        """Recent evolution cycle timelines derived from the event log."""
-        return list_envelope(cycle_timeline(limit), empty_hint=_EMPTY_TIMELINE_HINT)
+        """Read-only auxiliary. Recent cycle timelines from the event log.
+
+        stage and outcome_status describe one settlement: the last terminal
+        event. success settles as solidified; any other non-abort settlement
+        settles as failed; cycle_abort settles as aborted.
+        outcome_matches_stage is true when the two fields agree. A non-empty
+        result also includes semantics.
+        """
+        items = cycle_timeline(limit)
+        payload = list_envelope(items, empty_hint=_EMPTY_TIMELINE_HINT)
+        if items:
+            payload["semantics"] = _TIMELINE_SEMANTICS
+        return payload
 
     # Swarm takeover surface (evolver.swarm; clean names, not tool_* — these
     # are the names host agents see and must match the instrument prompt).
@@ -295,21 +330,34 @@ def build_server() -> Any:
         agent_name: str = "host-agent",
         project: str | None = None,
     ) -> dict[str, Any]:
-        """Take over this host as an evolver swarm worker (returns the protocol)."""
+        """Core loop. Take over this host as an evolver swarm worker (returns the protocol)."""
         from evolver.swarm import swarm_boot
 
         return swarm_boot(agent_name, project=project)
 
     async def tool_swarm_tick(
-        agent_name: str | None = None, include_prompt: bool = True
+        agent_name: str | None = None,
+        include_prompt: bool = True,
+        prompt_mode: Literal["full", "short"] = "full",
+        checklist_only: bool = False,
     ) -> dict[str, Any]:
-        """Run one evolution cycle; returns the GEP mutation prompt to execute."""
+        """Core loop. Run one evolution cycle; returns the GEP prompt to execute.
+
+        prompt_mode=full (default) inlines the gene preview. prompt_mode=short
+        or checklist_only=true returns the core-loop checklist instead; the
+        full prompt is at dispatch_prompt_artifact and evolver://dispatch/last.
+        """
         from evolver.swarm import swarm_tick
 
-        return await swarm_tick(agent_name=agent_name, include_prompt=include_prompt)
+        return await swarm_tick(
+            agent_name=agent_name,
+            include_prompt=include_prompt,
+            prompt_mode=prompt_mode,
+            checklist_only=checklist_only,
+        )
 
     def tool_swarm_distill(response_text: str, dry_run: bool = False) -> dict[str, Any]:
-        """Distill executed work output into Gene/Capsule candidates."""
+        """Core loop. Distill executed work output into Gene/Capsule candidates."""
         from evolver.swarm import swarm_distill
 
         return swarm_distill(response_text, dry_run=dry_run)
@@ -317,7 +365,7 @@ def build_server() -> Any:
     def tool_swarm_hypothesis(
         hypothesis: dict[str, Any], agent_name: str = "host-agent"
     ) -> dict[str, Any]:
-        """Declare this Candidate's one primary hypothesis (演进方案.md §5.3).
+        """Core loop. Declare this Candidate's one primary hypothesis (演进方案.md §5.3).
 
         Fields: hypothesis (what you claim), dimension (content|tool|schema),
         mechanism_family, target_hook, mechanism_check (train task refs only —
@@ -335,7 +383,7 @@ def build_server() -> Any:
         agent_name: str = "host-agent",
         hypothesis: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
-        """S29 mechanical mutation application: validate-all-first, exact unique anchor matching.
+        """Core loop. S29 mechanical mutation: validate-all-first, exact unique anchor matching.
 
         hypothesis (§5.3) is recorded before the proposal is applied.
         """
@@ -352,7 +400,7 @@ def build_server() -> Any:
         related_commands: list[list[str]] | None = None,
         restore_stash: bool = False,
     ) -> dict[str, Any]:
-        """Run the solidify gate: validations, acceptance gate, commit/rollback.
+        """Core loop. Run the solidify gate: validations, acceptance gate, commit/rollback.
 
         skip_validation=True is high-risk: it passes the HITL approval gate
         (blocked → await_human_approval; timeout fails safe to reject).
@@ -373,7 +421,7 @@ def build_server() -> Any:
         )
 
     def tool_swarm_approvals() -> dict[str, Any]:
-        """List pending HITL approval requests awaiting a human decision."""
+        """Read-only. List pending HITL approval requests awaiting a human decision."""
         from evolver.gep.hitl import list_pending, list_recent
 
         return {"pending": list_pending(), "recent": list_recent(limit=10)}
@@ -381,7 +429,7 @@ def build_server() -> Any:
     def tool_swarm_approval_resolve(
         request_id: str, approve: bool, note: str = ""
     ) -> dict[str, Any]:
-        """Relay a HUMAN decision on a pending HITL request (ask the user first)."""
+        """Swarm control. Relay a HUMAN decision on a pending HITL request (ask the user first)."""
         from evolver.gep.hitl import resolve_approval
         from evolver.swarm import host_relay_blocked
 
@@ -398,8 +446,14 @@ def build_server() -> Any:
         description: str | None = None,
         resolution: str | None = None,
         no_write: bool = False,
+        dry_run: bool = False,
     ) -> dict[str, Any]:
-        """Heartbeat: capture friction/lessons into the living memory."""
+        """Core loop. Heartbeat: capture friction/lessons into the living memory.
+
+        no_write and dry_run are the same switch. Either one persists nothing
+        (no rules, no lessons, no report file) and returns wrote=false.
+        The default writes and returns wrote=true plus written.
+        """
         from evolver.swarm import swarm_report
 
         return swarm_report(
@@ -407,16 +461,17 @@ def build_server() -> Any:
             description=description,
             resolution=resolution,
             no_write=no_write,
+            dry_run=dry_run,
         )
 
     def tool_swarm_status() -> dict[str, Any]:
-        """Lightweight engine status for swarm agents (no cycle side effects)."""
+        """Read-only. Lightweight engine status for swarm agents (no cycle side effects)."""
         from evolver.swarm import swarm_status
 
         return swarm_status()
 
     def tool_swarm_doctor() -> dict[str, Any]:
-        """Read-only open-box summary (same checks as evolver doctor, never --fix)."""
+        """Read-only. Open-box summary (same checks as evolver doctor, never --fix)."""
         from evolver.swarm import swarm_doctor
 
         return swarm_doctor()
@@ -429,7 +484,7 @@ def build_server() -> Any:
         reason: str = "",
         by: str = "human-via-host",
     ) -> dict[str, Any]:
-        """HOTL supervision (relay a HUMAN decision — ask the user first).
+        """Swarm control. HOTL supervision (relay a HUMAN decision — ask the user first).
 
         pause/resume the loop, veto a substring pattern, or inject a steering
         directive. tick refuses cycles while paused; vetoed genes have their
@@ -459,7 +514,7 @@ def build_server() -> Any:
         force: bool = False,
         dry_run: bool = False,
     ) -> dict[str, Any]:
-        """Manage IDE/agent file hooks (cursor/claude-code/codex/kiro/opencode...).
+        """Swarm control. Manage IDE/agent file hooks (cursor/claude-code/codex/kiro/opencode...).
 
         action=status previews what setup-hooks would write for the platform.
         """
@@ -474,7 +529,7 @@ def build_server() -> Any:
         )
 
     def tool_swarm_checkpoint_working(content: str) -> dict[str, Any]:
-        """Write WORKING_SESSION.md and clear a pending compaction checkpoint."""
+        """Swarm control. Write WORKING_SESSION.md and clear a pending compaction checkpoint."""
         from evolver.swarm import swarm_checkpoint_working
 
         return swarm_checkpoint_working(content)
@@ -484,7 +539,7 @@ def build_server() -> Any:
         payload: dict[str, Any] | None = None,
         source: str = "host-agent",
     ) -> dict[str, Any]:
-        """In-process hook bridge (for hosts without file hooks).
+        """Swarm control. In-process hook bridge (for hosts without file hooks).
 
         Call at session boundaries and when error output is observed; the
         payload's `content` text is scanned and detected signals are injected
@@ -506,7 +561,7 @@ def build_server() -> Any:
         run_id: str | None = None,
         cycle_id: str | None = None,
     ) -> dict[str, Any]:
-        """Report unified evaluation feedback E (score/metrics/gradient)."""
+        """Core loop. Report unified evaluation feedback E (score/metrics/gradient)."""
         from evolver.swarm import swarm_feedback
 
         return swarm_feedback(
@@ -526,7 +581,7 @@ def build_server() -> Any:
         action: Literal["scan", "list", "sync"],
         dry_run: bool = False,
     ) -> dict[str, Any]:
-        """Skill ecosystem bridge: scan host skill roots (project > user >
+        """Swarm control. Skill ecosystem bridge: scan host skill roots (project > user >
         builtin), list synced skill genes, or sync skills into the store."""
         from evolver.swarm import swarm_skills
 
@@ -537,7 +592,7 @@ def build_server() -> Any:
         template: str | None = None,
         workflow_id: str | None = None,
     ) -> dict[str, Any]:
-        """Start a durable evolution workflow from a YAML/JSON spec file or a
+        """Swarm control. Start a durable evolution workflow from a YAML/JSON spec file or a
         bundled template (repair-cycle / innovate-cycle). Returns the state,
         including the agent role + instruction the host should execute now."""
         from evolver.swarm import swarm_workflow_run
@@ -550,14 +605,14 @@ def build_server() -> Any:
         result: Any = None,
         note: str | None = None,
     ) -> dict[str, Any]:
-        """Advance a waiting workflow: approve/reject its approval gate,
+        """Swarm control. Advance a waiting workflow: approve/reject its approval gate,
         complete its agent step with the host's result, resume, or cancel."""
         from evolver.swarm import swarm_workflow_act
 
         return swarm_workflow_act(workflow_id=workflow_id, action=action, result=result, note=note)
 
     def tool_swarm_workflow_status(workflow_id: str) -> dict[str, Any]:
-        """Full state of one workflow run — step index, variables, gate
+        """Read-only. Full state of one workflow run — step index, variables, gate
         verdicts, and what the host executor should do next."""
         from evolver.swarm import swarm_workflow_status
 
@@ -641,7 +696,19 @@ def build_server() -> Any:
         "tool_cycle_timeline": tool_cycle_timeline,
     }
     for name, ann in classic_tools:
-        server.tool(name=name, annotations=ann)(classic_fns[name])
+        fn = classic_fns[name]
+        read_only_hint = bool(ann is not None and ann.read_only_hint)
+        if name.startswith("episode_"):
+            role = "Read-only record"
+        elif read_only_hint:
+            role = "Read-only auxiliary"
+        else:
+            role = "Auxiliary"
+        server.tool(name=name, title=f"{role}: {name}", annotations=ann)(fn)
+
+    # Schema titles follow the function __name__. The wrappers below are
+    # named tool_swarm_* in source; align that to the public swarm_* name
+    # so hosts do not see tool_swarm_tickArguments for a tool called swarm_tick.
 
     swarm_tools: list[tuple[str, Callable[..., Any], ToolAnnotations | None]] = [
         ("swarm_boot", tool_swarm_boot, None),
@@ -666,7 +733,15 @@ def build_server() -> Any:
         ("swarm_workflow_status", tool_swarm_workflow_status, read_only),
     ]
     for name, fn, ann in swarm_tools:
-        server.tool(name=name, annotations=ann)(fn)
+        fn.__name__ = name
+        read_only_hint = bool(ann is not None and ann.read_only_hint)
+        if name in _CORE_LOOP_TOOLS:
+            role = "Core loop"
+        elif read_only_hint:
+            role = "Read-only"
+        else:
+            role = "Swarm"
+        server.tool(name=name, title=f"{role}: {name}", annotations=ann)(fn)
 
     server.prompt(name="evolver_swarm", title="Evolver Swarm Takeover")(prompt_evolver_swarm)
 
