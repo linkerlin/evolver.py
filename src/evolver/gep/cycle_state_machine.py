@@ -5,10 +5,18 @@ Concept harvest from Node v2 ``cycle/stateMachine.d.ts`` + the
 Pure functions only: no I/O, no clock, no rng — safe to unit-test and to
 call from projectors.
 
-Stage lattice (forward-only)::
+Stage lattice (forward-only until a settlement)::
 
     none → started → signals_collected → gene_selected → mutation_built
-         → solidified | failed | aborted   (terminal)
+         → solidified | failed | aborted   (terminal peers)
+
+Terminal stages are peers, not a rank ladder. ``advance`` replaces one
+terminal with a later terminal event (the last settlement wins) and
+ignores non-terminal noise after a settlement. ``outcome_status`` is
+taken from that same event, so a row cannot show ``stage=failed`` next
+to ``outcome_status=success`` (a soft_failed event followed by the
+success path, or a ``cycle_end`` whose ``outcome`` is the string
+``"success"``).
 
 ``stage_for_event`` maps this repo's event vocabulary onto the lattice;
 unknown event types map to ``None`` (no stage change). Sprint 24.2
@@ -28,7 +36,10 @@ STAGE_SOLIDIFIED: str = "solidified"
 STAGE_FAILED: str = "failed"
 STAGE_ABORTED: str = "aborted"
 
-#: Stage lattice in strict forward order (index = rank).
+#: Open-lattice rank. Terminals outrank ``mutation_built`` so a settlement
+#: is a forward step, but they are peers: ``is_valid_transition`` refuses
+#: to leave a terminal, and ``advance`` replaces one only for a later
+#: terminal event.
 STAGE_ORDER: tuple[str, ...] = (
     STAGE_NONE,
     STAGE_STARTED,
@@ -57,8 +68,43 @@ EVENT_STAGE_MAP: dict[str, str] = {
 
 
 def is_valid_transition(before: str, after: str) -> bool:
-    """Forward-only check: *after* must rank strictly above *before*."""
+    """Forward-only check along the open lattice.
+
+    *after* must rank strictly above *before*. A terminal stage does not
+    move this way: settlements replace each other in ``advance``.
+    """
+    if before in TERMINAL_STAGES:
+        return False
     return _STAGE_RANK.get(after, -1) > _STAGE_RANK.get(before, -1)
+
+
+def _status_is_success(text: str) -> bool:
+    lowered = text.strip().lower()
+    return bool(lowered) and ("success" in lowered or lowered == "ok")
+
+
+def _cycle_end_status_text(event: dict[str, object]) -> str:
+    """Status text for a ``cycle_end`` event.
+
+    The pipeline field is ``status``. The WebUI observer also logs
+    ``outcome`` as a plain string (``"success"`` / ``"failure"``) or as
+    ``{"status": ...}``. An empty event carries no settlement.
+    """
+    raw_status = event.get("status")
+    if isinstance(raw_status, str) and raw_status.strip():
+        return raw_status.strip()
+    outcome = event.get("outcome")
+    if isinstance(outcome, str) and outcome.strip():
+        return outcome.strip()
+    if isinstance(outcome, dict):
+        inner = outcome.get("status")
+        if isinstance(inner, str) and inner.strip():
+            return inner.strip()
+        if inner is not None and not isinstance(inner, str):
+            rendered = str(inner).strip()
+            if rendered:
+                return rendered
+    return ""
 
 
 def stage_for_event(event: dict[str, object]) -> str | None:
@@ -76,27 +122,69 @@ def stage_for_event(event: dict[str, object]) -> str | None:
         status = outcome.get("status") if isinstance(outcome, dict) else None
         return STAGE_SOLIDIFIED if str(status or "").lower() == "success" else STAGE_FAILED
     if etype == "cycle_end":
-        raw_status = event.get("status")
-        if not isinstance(raw_status, str) or not raw_status:
-            outcome = event.get("outcome")
-            raw_status = str(outcome.get("status") or "") if isinstance(outcome, dict) else ""
-        lowered = raw_status.lower() if isinstance(raw_status, str) else ""
-        ok = "success" in lowered or lowered == "ok"
-        return STAGE_SOLIDIFIED if ok else STAGE_FAILED
+        text = _cycle_end_status_text(event)
+        if not text:
+            return None
+        return STAGE_SOLIDIFIED if _status_is_success(text) else STAGE_FAILED
     if etype == "cycle_abort":
         return STAGE_ABORTED
     return EVENT_STAGE_MAP.get(etype)
 
 
+def outcome_matches_stage(stage: str, outcome_status: object) -> bool:
+    """True when a settlement status agrees with the lattice stage.
+
+    An empty outcome does not contradict a stage (the run may still be
+    open). ``success`` / ``ok`` agree only with ``solidified``; ``aborted``
+    agrees only with ``aborted``; every other status agrees only with
+    ``failed``.
+    """
+    text = str(outcome_status or "").strip().lower()
+    if not text:
+        return True
+    if _status_is_success(text):
+        return stage == STAGE_SOLIDIFIED
+    if text == "aborted":
+        return stage == STAGE_ABORTED
+    return stage == STAGE_FAILED
+
+
+def _terminal_outcome(event: dict[str, object]) -> tuple[str, object, object] | None:
+    """``(stage, outcome_status, outcome_error)`` for a settlement event."""
+    stage = stage_for_event(event)
+    if stage not in TERMINAL_STAGES:
+        return None
+    etype = event.get("type")
+    if etype == "EvolutionEvent":
+        outcome = event.get("outcome")
+        if isinstance(outcome, dict):
+            return stage, outcome.get("status"), outcome.get("error")
+        return stage, None, None
+    if etype == "cycle_end":
+        return stage, _cycle_end_status_text(event) or None, event.get("error")
+    if etype == "cycle_abort":
+        reason = event.get("error")
+        if reason is None:
+            reason = event.get("reason")
+        return stage, "aborted", reason
+    return stage, None, None
+
+
 def advance(current: str, event: dict[str, object]) -> str:
     """Return the stage after applying *event* to *current*.
 
-    Monotonic clamp: invalid regressions and terminal-stage events leave
-    the state unchanged (an event log may contain interleaved noise; the
-    projection must stay stable under replay).
+    Non-terminals only move forward. Once a run has settled, a later
+    terminal event replaces that settlement (last terminal wins) and any
+    other event is noise. Replay stays deterministic.
     """
     target = stage_for_event(event)
-    if target is None or not is_valid_transition(current, target):
+    if target is None:
+        return current
+    if current in TERMINAL_STAGES:
+        if target in TERMINAL_STAGES:
+            return target
+        return current
+    if not is_valid_transition(current, target):
         return current
     return target
 
@@ -144,11 +232,11 @@ def build_cycle_timeline(events: list[dict[str, object]]) -> list[dict[str, obje
             row.stage = after
             row.stages_seen.append(after)
 
-        if evt.get("type") == "EvolutionEvent":
-            outcome = evt.get("outcome")
-            if isinstance(outcome, dict):
-                row.outcome_status = outcome.get("status")
-                row.outcome_error = outcome.get("error")
+        settled = _terminal_outcome(evt)
+        if settled is not None:
+            _stage, status, error = settled
+            row.outcome_status = status
+            row.outcome_error = error
 
     return [
         {
@@ -160,6 +248,7 @@ def build_cycle_timeline(events: list[dict[str, object]]) -> list[dict[str, obje
             "stages_seen": row.stages_seen,
             "outcome_status": row.outcome_status,
             "outcome_error": row.outcome_error,
+            "outcome_matches_stage": outcome_matches_stage(row.stage, row.outcome_status),
         }
         for row in timelines
     ]
@@ -180,5 +269,6 @@ __all__ = [
     "advance",
     "build_cycle_timeline",
     "is_valid_transition",
+    "outcome_matches_stage",
     "stage_for_event",
 ]

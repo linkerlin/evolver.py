@@ -89,6 +89,10 @@ class TestStageForEvent:
     def test_cycle_end_status_decides(self) -> None:
         assert stage_for_event({"type": "cycle_end", "status": "success"}) == STAGE_SOLIDIFIED
         assert stage_for_event({"type": "cycle_end", "status": "error"}) == STAGE_FAILED
+        # WebUI logs outcome as a string. That is a settlement, not a failure.
+        assert stage_for_event({"type": "cycle_end", "outcome": "success"}) == STAGE_SOLIDIFIED
+        # No status at all is not a settlement, so it cannot invent stage=failed.
+        assert stage_for_event({"type": "cycle_end"}) is None
 
     def test_unmapped_and_malformed(self) -> None:
         assert stage_for_event({"type": "llm_review"}) is None

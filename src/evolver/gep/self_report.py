@@ -317,13 +317,33 @@ class SelfReport:
         no_write: bool = False,
         print_human: bool = False,
     ) -> tuple[Path | None, dict[str, Any]]:
-        """Full self-report cycle: observe → encode → remember → report."""
+        """Full self-report cycle: observe → encode → remember → report.
+
+        ``no_write`` skips rule encoding, living memory, and the report
+        file. The payload still describes observed friction, but
+        ``auto_encoded`` / ``new_rules_this_run`` stay 0 and ``wrote`` is
+        false. A real run sets ``wrote`` true and lists ``written``.
+        """
         self.load_system_state()
-        self.auto_encode(write=not no_write)
+        new_rules = 0
+        written: list[str] = []
         if not no_write:
+            new_rules = self.auto_encode(write=True)
             self.write_lessons()
+            written.append("LESSONS_LEARNED.md")
+            if new_rules:
+                written.extend(["autopoiesis_rules.json", "pending_signals"])
         self.generate_report()
-        report_path = None if no_write else self.save_report()
+        if no_write:
+            # Counters describe what was persisted. Nothing was.
+            self.report["friction_summary"]["auto_encoded"] = 0
+            self.report["evolution"]["new_rules_this_run"] = 0
+        report_path = None
+        if not no_write:
+            report_path = self.save_report()
+            written.append("self_report.json")
+        self.report["wrote"] = not no_write
+        self.report["written"] = written
         if print_human:
             logger.info(
                 "[SelfReport] friction=%s evolution_count=%s",
