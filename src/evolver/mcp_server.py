@@ -210,6 +210,13 @@ _EMPTY_TIMELINE_HINT: Final[str] = (
     "No evolution cycles recorded yet. swarm_tick writes events; "
     "call tool_cycle_timeline again after a cycle."
 )
+_EMPTY_APPROVALS_HINT: Final[str] = (
+    "No HITL requests are waiting for a human. An empty queue is normal, not a tool failure."
+)
+_APPROVALS_SEMANTICS: Final[str] = (
+    "items and pending are the same waiting queue. recent is the latest "
+    "journal, including rows already decided."
+)
 _TIMELINE_SEMANTICS: Final[str] = (
     "stage and outcome_status come from the last terminal event. "
     "success settles as solidified; other non-abort settlements settle as failed; "
@@ -417,9 +424,12 @@ def build_server() -> Any:
     ) -> dict[str, Any]:
         """Core loop. Run one evolution cycle; returns the GEP prompt to execute.
 
-        prompt_mode=full (default) inlines the gene preview. prompt_mode=short
-        or checklist_only=true returns the core-loop checklist instead; the
-        full prompt is at dispatch_prompt_artifact and evolver://dispatch/last.
+        prompt_mode=full (default) inlines the gene preview. A short payload
+        requires prompt_mode=short or checklist_only=true: the core-loop
+        checklist replaces the preview, and engine_log drops the inlined GEP
+        text. The full prompt stays at dispatch_prompt_artifact and
+        evolver://dispatch/last. include_prompt=false only clears
+        dispatch_prompt.
         """
         from evolver.swarm import swarm_tick
 
@@ -495,10 +505,24 @@ def build_server() -> Any:
         )
 
     def tool_swarm_approvals() -> dict[str, Any]:
-        """Read-only. List pending HITL approval requests awaiting a human decision."""
+        """Read-only. List HITL requests waiting for a human decision.
+
+        Same list envelope as mailbox and timeline: ok, items, hint.
+        items and pending are the waiting queue. recent is the latest
+        journal, including rows already decided. An empty queue is still
+        that object.
+        """
         from evolver.gep.hitl import list_pending, list_recent
 
-        return {"pending": list_pending(), "recent": list_recent(limit=10)}
+        pending = list_pending()
+        recent = list_recent(limit=10)
+        payload = list_envelope(pending, empty_hint=_EMPTY_APPROVALS_HINT)
+        payload["pending"] = pending
+        payload["recent"] = recent
+        payload["semantics"] = _APPROVALS_SEMANTICS
+        if pending or recent:
+            payload["hint"] = f"{len(pending)} pending, {len(recent)} recent."
+        return payload
 
     def tool_swarm_approval_resolve(
         request_id: str, approve: bool, note: str = ""
