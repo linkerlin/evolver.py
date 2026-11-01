@@ -279,6 +279,18 @@ class TestFullSurfaceE2E:
         status = client.call("swarm_status", {})
         for key in ("version", "supervision", "hitl", "feedback", "mailbox_pending", "genes"):
             assert key in status
+        assert status["session_claimed"] is True
+        assert status["agent_name"] == "e2e-worker"
+        assert status["source_revision"]
+        assert status["next_action"] == "swarm_tick"
+        assert status.get("severity") == "soft"
+        assert status.get("error") not in ("pack_absent", "no_baseline", "unmeasured")
+
+        doctor = client.call("swarm_doctor", {})
+        assert doctor["read_only"] is True
+        assert doctor["ok"] is True
+        assert doctor.get("error") not in ("pack_absent", "no_baseline", "unmeasured")
+        assert doctor["fixes"]
 
         for uri, needle in (
             ("evolver://status", '"ok"'),
@@ -321,7 +333,10 @@ class TestFullSurfaceE2E:
 
         # The skill gene is searchable through the classic asset tools too.
         hits = client.call("tool_asset_search", {"query": "demo-skill"})
-        assert any(h.get("id") == "gene_distilled_s2g-demo-skill" for h in hits)
+        assert hits["ok"] is True
+        assert any(h.get("id") == "gene_distilled_s2g-demo-skill" for h in hits["items"])
+        missed = client.call("tool_asset_search", {"query": "zzz_no_such_asset"})
+        assert missed["ok"] is True and missed["items"] == [] and missed["hint"]
         one = client.call("tool_asset_get", {"asset_id": "gene_distilled_s2g-demo-skill"})
         assert one["type"] == "Gene"
 
@@ -331,7 +346,8 @@ class TestFullSurfaceE2E:
         )
         assert sent["status"] in ("pending", "queued", "new")
         outbound = client.call("tool_mailbox_poll", {"direction": "outbound"})
-        assert any(m["id"] == sent["message_id"] for m in outbound)
+        assert outbound["ok"] is True
+        assert any(m["id"] == sent["message_id"] for m in outbound["items"])
 
         # swarm_boot auto-acks this agent's pending swarm.hello (soft-default UX).
         client.call("swarm_boot", {"agent_name": "e2e-mailbox"})
@@ -341,7 +357,8 @@ class TestFullSurfaceE2E:
         # Outbound send id is not an inbound ack target.
         assert client.call("tool_mailbox_ack", {"message_ids": [sent["message_id"]]}) == 0
 
-        assert client.call("tool_cycle_timeline", {}) == []
+        timeline = client.call("tool_cycle_timeline", {})
+        assert timeline["ok"] is True and timeline["items"] == [] and timeline["hint"]
         views = client.call("tool_rebuild_views", {})
         assert "event_count" in views and "cycles" in views
 

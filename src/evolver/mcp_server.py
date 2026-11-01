@@ -18,7 +18,7 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from pathlib import Path
-from typing import Any, Literal
+from typing import Any, Final, Literal
 
 from evolver.proxy.mailbox.store import MailboxStore
 
@@ -192,6 +192,30 @@ def rebuild_projections_safe() -> dict[str, Any]:
     return views
 
 
+_EMPTY_ASSET_SEARCH_HINT: Final[str] = (
+    "No local Genes or Capsules matched. Try fewer keywords, or tool_asset_get "
+    "when you already have an id."
+)
+_EMPTY_MAILBOX_HINT: Final[str] = (
+    "No mailbox messages in this direction. An empty poll is normal, not a tool failure."
+)
+_EMPTY_TIMELINE_HINT: Final[str] = (
+    "No evolution cycles recorded yet. swarm_tick writes events; "
+    "call tool_cycle_timeline again after a cycle."
+)
+
+
+def list_envelope(items: list[dict[str, Any]], *, empty_hint: str) -> dict[str, Any]:
+    """Object payload for list/search tools. Empty matches stay a dict, never ``[]``.
+
+    Hosts that only read ``content[]`` drop a bare empty list (the body is blank).
+    ``ok`` / ``items`` / ``hint`` are present for both empty and non-empty results.
+    """
+    count = len(items)
+    hint = empty_hint if count == 0 else f"{count} item(s)."
+    return {"ok": True, "items": items, "hint": hint}
+
+
 def standing_instructions() -> str:
     """Takeover the host sees on connect. The full protocol is ``swarm_boot``.
 
@@ -235,9 +259,9 @@ def build_server() -> Any:
 
     # Typed defs first, registered via decorator *expressions* — keeps mypy
     # strict clean (the mcp package ships no stubs, so @server.tool() is Any).
-    def tool_asset_search(query: str, limit: int = 10) -> list[dict[str, Any]]:
+    def tool_asset_search(query: str, limit: int = 10) -> dict[str, Any]:
         """Search local GEP assets (Genes/Capsules) by keyword."""
-        return asset_search(query, limit)
+        return list_envelope(asset_search(query, limit), empty_hint=_EMPTY_ASSET_SEARCH_HINT)
 
     def tool_asset_get(asset_id: str) -> dict[str, Any]:
         """Fetch one local Gene/Capsule by id."""
@@ -249,9 +273,9 @@ def build_server() -> Any:
         """Send a durable mailbox message to the evolver daemon."""
         return mailbox_send(type, payload, priority)
 
-    def tool_mailbox_poll(limit: int = 10, direction: str = "inbound") -> list[dict[str, Any]]:
+    def tool_mailbox_poll(limit: int = 10, direction: str = "inbound") -> dict[str, Any]:
         """Poll mailbox messages (direction: inbound|outbound)."""
-        return mailbox_poll(limit, direction)
+        return list_envelope(mailbox_poll(limit, direction), empty_hint=_EMPTY_MAILBOX_HINT)
 
     def tool_mailbox_ack(message_ids: list[str]) -> int:
         """Acknowledge processed mailbox messages."""
@@ -261,9 +285,9 @@ def build_server() -> Any:
         """Rebuild event-log projections (gene tallies, cycle timelines)."""
         return rebuild_views()
 
-    def tool_cycle_timeline(limit: int = 20) -> list[dict[str, Any]]:
+    def tool_cycle_timeline(limit: int = 20) -> dict[str, Any]:
         """Recent evolution cycle timelines derived from the event log."""
-        return cycle_timeline(limit)
+        return list_envelope(cycle_timeline(limit), empty_hint=_EMPTY_TIMELINE_HINT)
 
     # Swarm takeover surface (evolver.swarm; clean names, not tool_* — these
     # are the names host agents see and must match the instrument prompt).
@@ -390,6 +414,12 @@ def build_server() -> Any:
         from evolver.swarm import swarm_status
 
         return swarm_status()
+
+    def tool_swarm_doctor() -> dict[str, Any]:
+        """Read-only open-box summary (same checks as evolver doctor, never --fix)."""
+        from evolver.swarm import swarm_doctor
+
+        return swarm_doctor()
 
     def tool_swarm_supervise(
         action: Literal["status", "pause", "resume", "direct", "veto", "unveto"],
@@ -623,6 +653,7 @@ def build_server() -> Any:
         ("swarm_feedback", tool_swarm_feedback, None),
         ("swarm_report", tool_swarm_report, None),
         ("swarm_status", tool_swarm_status, read_only),
+        ("swarm_doctor", tool_swarm_doctor, read_only),
         ("swarm_approvals", tool_swarm_approvals, read_only),
         ("swarm_approval_resolve", tool_swarm_approval_resolve, destructive),
         ("swarm_supervise", tool_swarm_supervise, destructive),
