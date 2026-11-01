@@ -16,6 +16,7 @@ Run with ``evolver mcp`` (stdio transport).
 
 from __future__ import annotations
 
+import json
 from collections.abc import Callable
 from pathlib import Path
 from typing import Any, Final, Literal
@@ -229,6 +230,47 @@ _CORE_LOOP_TOOLS: Final[frozenset[str]] = frozenset(
 )
 
 
+def tool_failure_envelope(tool: str, exc: BaseException) -> dict[str, Any]:
+    """Structured failure for a tool the SDK would otherwise stringify.
+
+    Soft-accept paths that already return ``{ok: false, ...}`` do not come
+    through here. Raised errors (missing episode, bad enum, bad priority)
+    do. ``message`` keeps the underlying text; ``next_steps`` is the action.
+    """
+    cause = exc.__cause__ or exc
+    text = str(exc)
+    prefix = f"Error executing tool {tool}: "
+    detail = text[len(prefix) :] if text.startswith(prefix) else text
+    message = str(cause).strip() or detail
+    lowered = message.lower()
+    if isinstance(cause, LookupError) or "not found" in lowered:
+        error = "not_found"
+        steps = [
+            f"The id passed to `{tool}` is not in this workspace.",
+            "List existing ids (episode list, tool_asset_search, or "
+            "tool_cycle_timeline) and call the tool again.",
+        ]
+    elif isinstance(cause, ValueError) or "validation error" in lowered:
+        error = "invalid_arguments"
+        steps = [
+            f"Read message and fix the arguments for `{tool}` so they match the tool schema.",
+            "Call the tool again. This does not stop the swarm loop.",
+        ]
+    else:
+        error = "tool_error"
+        steps = [
+            f"Read message for `{tool}` and correct the call.",
+            "Call swarm_status if the workspace binding looks wrong, then retry once.",
+        ]
+    return {
+        "ok": False,
+        "error": error,
+        "message": message,
+        "tool": tool,
+        "next_steps": steps,
+    }
+
+
 def list_envelope(items: list[dict[str, Any]], *, empty_hint: str) -> dict[str, Any]:
     """Object payload for list/search tools. Empty matches stay a dict, never ``[]``.
 
@@ -278,8 +320,35 @@ def standing_instructions() -> str:
 def build_server() -> Any:
     """Construct the MCP server instance (stdio transport via ``run``)."""
     from mcp.server.mcpserver import MCPServer
+    from mcp.server.mcpserver.context import Context
+    from mcp.shared.exceptions import MCPError
+    from mcp_types import CallToolResult, TextContent
 
-    server: Any = MCPServer("evolver", instructions=standing_instructions())
+    class _HostFacingServer(MCPServer):
+        """Same tools, but raised failures are a structured envelope."""
+
+        async def _handle_call_tool(self, ctx: Any, params: Any) -> Any:
+            context = Context(
+                request_context=ctx,
+                mcp_server=self,
+                input_params=params,
+                subscriptions=self._subscriptions,
+            )
+            try:
+                return await self.call_tool(params.name, params.arguments or {}, context)
+            except MCPError:
+                raise
+            except Exception as exc:
+                envelope = tool_failure_envelope(str(getattr(params, "name", "") or ""), exc)
+                return CallToolResult(
+                    content=[
+                        TextContent(type="text", text=json.dumps(envelope, ensure_ascii=False))
+                    ],
+                    structured_content=envelope,
+                    is_error=True,
+                )
+
+    server: Any = _HostFacingServer("evolver", instructions=standing_instructions())
 
     # Typed defs first, registered via decorator *expressions* — keeps mypy
     # strict clean (the mcp package ships no stubs, so @server.tool() is Any).
@@ -330,7 +399,12 @@ def build_server() -> Any:
         agent_name: str = "host-agent",
         project: str | None = None,
     ) -> dict[str, Any]:
-        """Core loop. Take over this host as an evolver swarm worker (returns the protocol)."""
+        """Core loop. Take over this host as an evolver swarm worker (returns the protocol).
+
+        project binds only an existing directory. bound_paths states repo_root
+        (code root) and workspace_root. A difference, or a label that is not a
+        directory, is a soft warning; the loop still continues.
+        """
         from evolver.swarm import swarm_boot
 
         return swarm_boot(agent_name, project=project)
@@ -757,9 +831,17 @@ def main(project: str | None = None) -> int:
     from evolver.ops.soak_env import maybe_route_to_soak
 
     if project and str(project).strip():
-        resolved = Path(str(project).strip()).expanduser().resolve()
-        os.environ["EVOLVER_REPO_ROOT"] = str(resolved)
-        os.environ["OPENCLAW_WORKSPACE"] = str(resolved)
+        import sys
+
+        from evolver.swarm import bind_project_directory
+
+        info = bind_project_directory(project)
+        if not info.get("project_applied"):
+            print(
+                f"[mcp] project {info.get('project')!r} is not an existing directory; "
+                "workspace was not rebound",
+                file=sys.stderr,
+            )
     else:
         found = get_repo_root(_quiet=True)
         if found is not None and not os.environ.get("EVOLVER_REPO_ROOT"):

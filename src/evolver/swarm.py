@@ -655,48 +655,49 @@ def swarm_status() -> dict[str, Any]:
     except Exception:
         mailbox = {"inbound": -1, "outbound": -1}
 
-    return _attach_host_session(
-        {
-            "ok": True,
-            "version": __version__,
-            "protocol_version": SWARM_PROTOCOL_VERSION,
-            "workspace_root": str(ws_root),
-            "repo_root": str(repo_root or ""),
-            "workspace_id": ws_id,
-            "state_root": str(state_root),
-            "mismatch": mismatch,
-            "git_candidates": git_candidates,
-            "state_health": _build_state_health(
-                workspace_id=ws_id,
-                state_root=state_root,
-                bench_gate=bench_gate,
-                legacy_info=legacy_info,
-            ),
-            "bridge_enabled": determine_bridge_enabled(),
-            "genes": len(load_genes()),
-            "capsules": len(load_capsules()),
-            "pending_solidify": _pending_solidify_state(),
-            "last_prompt_artifact": str(prompt_artifact) if prompt_artifact.exists() else None,
-            "source_revision": _source_revision(),
-            "code_staleness": _code_staleness(),
-            "tick_count": int(swarm_state.get("ticks") or 0),
-            "last_tick": swarm_state.get("last_tick"),
-            "feedback": {
-                "recent_count": len(recent_feedback),
-                "last": recent_feedback[-1] if recent_feedback else None,
-                "stability": _feedback_stability(recent_feedback),
-                "mutation_bias": feedback_mutation_bias(recent_feedback),
-            },
-            "hitl": {
-                "mode": "on" if hitl_mode_enabled() else "off",
-                "pending": len(list_pending()),
-            },
-            "supervision": supervision_summary(),
-            "bench_pack_gate": bench_gate,
-            "mailbox_pending": mailbox,
-            "working_session": _working_snapshot(),
-        }
-    )
+    body = {
+        "ok": True,
+        "version": __version__,
+        "protocol_version": SWARM_PROTOCOL_VERSION,
+        "workspace_root": str(ws_root),
+        "repo_root": str(repo_root or ""),
+        "workspace_id": ws_id,
+        "state_root": str(state_root),
+        "mismatch": mismatch,
+        "git_candidates": git_candidates,
+        "state_health": _build_state_health(
+            workspace_id=ws_id,
+            state_root=state_root,
+            bench_gate=bench_gate,
+            legacy_info=legacy_info,
+        ),
+        "bridge_enabled": determine_bridge_enabled(),
+        "genes": len(load_genes()),
+        "capsules": len(load_capsules()),
+        "pending_solidify": _pending_solidify_state(),
+        "last_prompt_artifact": str(prompt_artifact) if prompt_artifact.exists() else None,
+        "source_revision": _source_revision(),
+        "code_staleness": _code_staleness(),
+        "tick_count": int(swarm_state.get("ticks") or 0),
+        "last_tick": swarm_state.get("last_tick"),
+        "feedback": {
+            "recent_count": len(recent_feedback),
+            "last": recent_feedback[-1] if recent_feedback else None,
+            "stability": _feedback_stability(recent_feedback),
+            "mutation_bias": feedback_mutation_bias(recent_feedback),
+        },
+        "hitl": {
+            "mode": "on" if hitl_mode_enabled() else "off",
+            "pending": len(list_pending()),
+        },
+        "supervision": supervision_summary(),
+        "bench_pack_gate": bench_gate,
+        "mailbox_pending": mailbox,
+        "working_session": _working_snapshot(),
+    }
+    bound = describe_bound_paths()
+    body["bound_paths"] = bound
+    return _surface_bound_paths(_attach_host_session(body), bound)
 
 
 def swarm_doctor() -> dict[str, Any]:
@@ -885,6 +886,124 @@ def _opening_action(state: dict[str, Any]) -> tuple[str, str]:
     return ("swarm_tick", "调用 `swarm_tick` 开始第一轮进化")
 
 
+_BOUND_PATHS_SEMANTICS: Final[str] = (
+    "repo_root is the bound code root: the git root walked from the project "
+    "pin, or the pin itself when it is not inside a git repo. workspace_root "
+    "is the directory mutations use (EVOLVER_REPO_ROOT / OPENCLAW_WORKSPACE). "
+    "project binds only an existing directory; a free-text label does not "
+    "create a workspace. When repo_root and workspace_root differ, warning "
+    "and next_steps are set and the loop still soft-continues (ok stays true, "
+    "no hard error)."
+)
+
+
+def bind_project_directory(project: str | Path | None) -> dict[str, Any]:
+    """Point the process at ``project`` only when that path is a directory.
+
+    A free-text label used to become ``cwd / label`` via ``Path.resolve``.
+    ``get_repo_root`` then walked up to a different git root, so
+    ``workspace_root != repo_root`` with nothing in the tool result that said
+    so. Non-directories leave the current pin untouched.
+    """
+    if project is None or not str(project).strip():
+        return {"project": None, "project_applied": False, "project_reason": "not_requested"}
+    raw = str(project).strip()
+    resolved = Path(raw).expanduser().resolve()
+    if not resolved.is_dir():
+        return {
+            "project": raw,
+            "project_resolved": str(resolved),
+            "project_applied": False,
+            "project_reason": "not_a_directory",
+        }
+    os.environ["EVOLVER_REPO_ROOT"] = str(resolved)
+    os.environ["OPENCLAW_WORKSPACE"] = str(resolved)
+    return {
+        "project": raw,
+        "project_resolved": str(resolved),
+        "project_applied": True,
+        "project_reason": "bound_existing_directory",
+    }
+
+
+def describe_bound_paths(bind: dict[str, Any] | None = None) -> dict[str, Any]:
+    """Code root versus mutation directory, plus this call's project outcome."""
+    from evolver.gep.paths import get_repo_root, get_workspace_root
+
+    workspace = get_workspace_root().resolve()
+    repo = get_repo_root(_quiet=True)
+    repo_text = str(repo.resolve()) if repo is not None else ""
+    differ = repo is not None and repo.resolve() != workspace
+    out: dict[str, Any] = {
+        "repo_root": repo_text,
+        "workspace_root": str(workspace),
+        "code_root": repo_text or str(workspace),
+        "differ": differ,
+        "semantics": _BOUND_PATHS_SEMANTICS,
+    }
+    if bind is not None:
+        out["project"] = bind.get("project")
+        out["project_resolved"] = bind.get("project_resolved")
+        out["project_applied"] = bool(bind.get("project_applied"))
+        out["project_reason"] = bind.get("project_reason")
+    notes: list[str] = []
+    steps: list[str] = []
+    if bind is not None and bind.get("project_reason") == "not_a_directory":
+        label = bind.get("project")
+        notes.append(
+            f"project {label!r} is not an existing directory. "
+            "The workspace was not moved; repo_root stays the code root."
+        )
+        steps.extend(
+            [
+                "Pass swarm_boot project as the absolute path of the git checkout to evolve.",
+                "Or set EVOLVER_REPO_ROOT to that checkout before starting evolver mcp.",
+                "The current binding is unchanged. Soft-continue.",
+            ]
+        )
+    if differ:
+        notes.append(
+            f"workspace_root ({workspace}) != repo_root ({repo_text}). "
+            "repo_root is the bound code root; workspace_root is the mutation directory."
+        )
+        steps.extend(
+            [
+                "Pass swarm_boot project as the git checkout to evolve, "
+                "or set EVOLVER_REPO_ROOT to that checkout.",
+                "repo_root stays the code root. workspace_root is explicit and was not retargeted.",
+                "This is a soft warning. Continue the loop; it is not a hard stop.",
+            ]
+        )
+    if notes:
+        out["warning"] = " ".join(notes)
+        out["next_steps"] = steps
+    return out
+
+
+def _surface_bound_paths(payload: dict[str, Any], bound: dict[str, Any]) -> dict[str, Any]:
+    """Attach ``bound_paths``. A mismatch is a soft warning, never ``error``."""
+    payload["bound_paths"] = bound
+    warning = bound.get("warning")
+    if not warning:
+        return payload
+    warnings = list(payload.get("warnings") or [])
+    text = str(warning)
+    if text not in warnings:
+        warnings.append(text)
+    payload["warnings"] = warnings
+    if not payload.get("warning"):
+        payload["warning"] = text
+    steps = list(payload.get("next_steps") or [])
+    for step in bound.get("next_steps") or []:
+        if step not in steps:
+            steps.append(step)
+    if steps:
+        payload["next_steps"] = steps
+    if payload.get("severity") != "hard" and not payload.get("severity"):
+        payload["severity"] = "soft"
+    return payload
+
+
 def _boot_once(pending_solidify: bool) -> list[dict[str, Any]]:
     """Tools the host runs once per session, before the evolution step.
 
@@ -911,10 +1030,7 @@ def swarm_boot(
     """
     from evolver.gep.paths import ensure_workspace_meta
 
-    if project is not None and str(project).strip():
-        resolved_proj = Path(str(project).strip()).expanduser().resolve()
-        os.environ["EVOLVER_REPO_ROOT"] = str(resolved_proj)
-        os.environ["OPENCLAW_WORKSPACE"] = str(resolved_proj)
+    bind = bind_project_directory(project)
     with contextlib.suppress(Exception):
         ensure_workspace_meta()
 
@@ -968,7 +1084,10 @@ def swarm_boot(
         payload.setdefault("severity", "hard")
     payload["source_revision"] = state.get("source_revision")
     payload["mailbox_hello_ack"] = _ack_own_hello(agent_name)
-    return payload
+    bound = describe_bound_paths(bind)
+    if isinstance(payload.get("state"), dict):
+        payload["state"]["bound_paths"] = bound
+    return _surface_bound_paths(payload, bound)
 
 
 def _announce(agent_name: str) -> str | None:
@@ -2389,6 +2508,7 @@ async def swarm_host_round(
         "mismatch": state.get("mismatch"),
         "state_health": state.get("state_health"),
         "boot_next_action": boot.get("next_action"),
+        "bound_paths": boot.get("bound_paths"),
         "next_action": next_act,
         "tick": tick_res,
         "checklist": checklist,

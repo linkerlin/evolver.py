@@ -239,6 +239,8 @@ After `uv sync`, a pull, or any install, **restart the MCP server**. A long-live
 
 A cold `swarm_status` (this process has not called `swarm_boot`) returns `next_action=swarm_boot` and a short hint. After boot, status keeps `agent_name`, `source_revision`, and any soft `gap` / warnings. `tool_asset_search`, `tool_mailbox_poll`, and `tool_cycle_timeline` always return `{ok, items, hint}` — an empty match is not a blank body. Read-only `swarm_doctor` mirrors `evolver doctor` without `--fix` (`ok`, soft warnings, command hints in `fixes`). `no_baseline` / `pack_absent` / `unmeasured` stay soft-continue.
 
+`swarm_boot(project=...)` binds a directory only when that path exists. `bound_paths.repo_root` is the code root (the git root walked from that directory, or the directory itself). `bound_paths.workspace_root` is the mutation directory. When they differ, or when `project` is a free-text label rather than a directory, the same object carries `warning` and `next_steps`. That is a soft warning: `ok` stays true and the loop still continues. A label is not turned into a new workspace.
+
 On Grok Bot the evolution workspace root is `/workspace` and the evolver.py checkout is `/workspace/evolver-research/evolver.py`. Point `EVOLVER_REPO_ROOT` at the checkout. The full env block is in [`examples/swarm-quickstart/README.md`](examples/swarm-quickstart/README.md).
 
 ### 2. Closed-Loop Protocol Flow

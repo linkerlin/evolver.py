@@ -483,7 +483,10 @@ class TestFullSurfaceE2E:
 
     def test_07_invalid_input_structured_feedback(self, client: _McpClient) -> None:
         text = client.call_raw_text("swarm_hook_event", {"event": "bogus"})
-        assert text.startswith("Error executing tool")
+        body = json.loads(text)
+        assert body["ok"] is False
+        assert body["error"] == "invalid_arguments"
+        assert body["next_steps"]
         assert client.call("swarm_status", {})["ok"] is True  # server survived
 
     def test_09_hypothesis_hooks_workflow_and_episode(
@@ -514,8 +517,11 @@ class TestFullSurfaceE2E:
         got = client.call("episode_get", {"episode_id": stored["id"]})
         assert got["run_id"] == "run_e2e_episode"
         assert got["event_id"] == "evt_e2e_episode"
-        missing = client.call_raw_text("episode_get", {"episode_id": "sha256:nope"})
-        assert "episode not found" in missing
+        missing = json.loads(client.call_raw_text("episode_get", {"episode_id": "sha256:nope"}))
+        assert missing["ok"] is False
+        assert missing["error"] == "not_found"
+        assert "episode not found" in missing["message"]
+        assert missing["next_steps"]
 
         hyp = client.call(
             "swarm_hypothesis",

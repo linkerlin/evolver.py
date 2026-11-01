@@ -201,7 +201,13 @@ class TestProtocol:
             "tools/call", {"name": "swarm_hook_event", "arguments": {"event": "bogus"}}
         )
         text = res["result"]["content"][0]["text"]
-        assert text.startswith("Error executing tool")
+        body = json.loads(text)
+        assert body["ok"] is False
+        assert body["error"] == "invalid_arguments"
+        assert body["tool"] == "swarm_hook_event"
+        assert body["message"]
+        assert body["next_steps"]
+        assert res["result"].get("isError") is True
         # The server must still be alive afterwards.
         assert client.call_tool("swarm_status", {})["ok"] is True
 

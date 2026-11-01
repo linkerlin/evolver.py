@@ -240,6 +240,8 @@ uv run evolver migrate-state
 
 本进程尚未 `swarm_boot` 时，`swarm_status` 返回 `next_action=swarm_boot` 和一句 hint。boot 之后 status 仍带 `agent_name`、`source_revision`，以及软缺口的 `gap` / warnings。`tool_asset_search`、`tool_mailbox_poll`、`tool_cycle_timeline` 一律返回 `{ok, items, hint}`，没有命中也不是空正文。只读 `swarm_doctor` 等同 `evolver doctor` 且不执行 `--fix`（`ok`、软警告、`fixes` 里的命令提示）。`no_baseline` / `pack_absent` / `unmeasured` 仍是 soft-continue。
 
+`swarm_boot(project=...)` 只在路径是已存在目录时绑定。`bound_paths.repo_root` 是代码根（从该目录向上找到的 git 根，否则就是该目录本身）。`bound_paths.workspace_root` 是变异所用目录。两者不一致，或 `project` 只是一段自由文本而不是目录时，同一对象带 `warning` 和 `next_steps`。这是软警告：`ok` 仍为 true，循环继续。自由文本不会被当成新的工作区。
+
 在 Grok Bot 上，进化工作区根是 `/workspace`，evolver.py 检出在 `/workspace/evolver-research/evolver.py`。把 `EVOLVER_REPO_ROOT` 指到检出目录。完整环境块见 [`examples/swarm-quickstart/README.md`](examples/swarm-quickstart/README.md)。
 
 ### 2. 闭环工具协议调用链
