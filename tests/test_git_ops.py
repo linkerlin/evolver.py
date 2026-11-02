@@ -89,6 +89,80 @@ def test_is_git_repo_true_and_false(tmp_path: Path) -> None:
     assert is_git_repo(tmp_path) is True
 
 
+def _init_repo(path: Path) -> None:
+    subprocess.run(["git", "init"], cwd=path, check=True, capture_output=True)
+    subprocess.run(
+        ["git", "config", "user.email", "t@t.com"], cwd=path, check=True, capture_output=True
+    )
+    subprocess.run(["git", "config", "user.name", "T"], cwd=path, check=True, capture_output=True)
+    (path / "README.md").write_text("init\n", encoding="utf-8")
+    subprocess.run(["git", "add", "README.md"], cwd=path, check=True, capture_output=True)
+    subprocess.run(
+        ["git", "-c", "commit.gpgsign=false", "commit", "-m", "init"],
+        cwd=path,
+        check=True,
+        capture_output=True,
+    )
+
+
+def test_capture_diff_snapshot_includes_untracked_new_file(tmp_path: Path) -> None:
+    """DEBUG #57: a new file that was never git-added is part of the scene."""
+    _init_repo(tmp_path)
+    (tmp_path / "notes.md").write_text("untracked-notes-marker\n", encoding="utf-8")
+    snap = capture_diff_snapshot(tmp_path)
+    assert "diff --git a/notes.md b/notes.md" in snap
+    assert "+untracked-notes-marker" in snap
+
+
+def test_capture_diff_snapshot_includes_staged_new_file(tmp_path: Path) -> None:
+    """A new file already in the index stays visible via git diff HEAD."""
+    _init_repo(tmp_path)
+    (tmp_path / "added.py").write_text("staged-new-marker\n", encoding="utf-8")
+    subprocess.run(["git", "add", "added.py"], cwd=tmp_path, check=True, capture_output=True)
+    snap = capture_diff_snapshot(tmp_path)
+    assert "staged-new-marker" in snap
+
+
+def test_capture_diff_snapshot_keeps_tracked_edit_beside_untracked(tmp_path: Path) -> None:
+    _init_repo(tmp_path)
+    (tmp_path / "README.md").write_text("tracked-edit-marker\n", encoding="utf-8")
+    (tmp_path / "notes.md").write_text("untracked-notes-marker\n", encoding="utf-8")
+    snap = capture_diff_snapshot(tmp_path)
+    assert "tracked-edit-marker" in snap
+    assert "untracked-notes-marker" in snap
+
+
+def test_capture_diff_snapshot_skips_noise_and_binaries(tmp_path: Path) -> None:
+    """Explosion-radius noise and binaries must not crowd the mutation scene."""
+    _init_repo(tmp_path)
+    (tmp_path / "notes.md").write_text("untracked-notes-marker\n", encoding="utf-8")
+    noise = {
+        tmp_path / ".venv" / "lib" / "x.py": "noise-venv-marker\n",
+        tmp_path / "pkg" / "node_modules" / "leftpad.js": "noise-node-modules-marker\n",
+        tmp_path / "src" / "__pycache__" / "x.pyc": "noise-pycache-marker\n",
+        tmp_path / "memory" / "evolution_solidify_state.json": "noise-memory-marker\n",
+        tmp_path / ".evolver" / "gep" / "events.jsonl": "noise-evolver-marker\n",
+        tmp_path / ".env": "API_KEY=noise-env-marker\n",
+    }
+    for path, text in noise.items():
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(text, encoding="utf-8")
+    blob = tmp_path / "payload.bin"
+    blob.write_bytes(b"\x00noise-binary-marker")
+    snap = capture_diff_snapshot(tmp_path)
+    assert "untracked-notes-marker" in snap
+    for marker in (
+        "noise-venv-marker",
+        "noise-node-modules-marker",
+        "noise-pycache-marker",
+        "noise-memory-marker",
+        "noise-evolver-marker",
+        "noise-env-marker",
+        "noise-binary-marker",
+    ):
+        assert marker not in snap
+
+
 def test_capture_diff_snapshot_truncates(tmp_path: Path) -> None:
     subprocess.run(["git", "init"], cwd=tmp_path, check=True, capture_output=True)
     subprocess.run(

@@ -8,6 +8,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## Unreleased
 
+### Fixed
+- **失败现场 diff 包含未跟踪新文件（DEBUG #57）**：`capture_diff_snapshot` 在 `git diff HEAD` 之后追加未跟踪新文件的 unified diff。失败侧 `_failure_diff` 与成功侧共用这一 helper。依赖树、缓存、运行态目录、受保护路径和含 NUL 的二进制不进入这份补充。不改固化门，不写 Parent baseline，不开 val 密封。
+
 ### Docs
 - **README 对齐软默认与 MCP 口味（英/中）**：soft-accept 为 MCP 默认路径（经验写入 `~/.evolver/workspaces/<id>/`，不自动 git commit，不写 Parent baseline；`no_baseline` / `pack_absent` / `unmeasured` / `drop` / `flat` / `regression` 为警告）。硬阻断仍为密钥、`~/.evolver/`、`val_seal`。补开箱 `setup` / `doctor`、soft T0、前 5 tick 核心循环、`pending_solidify`、安装后重启 MCP，以及本 fork 的 clone URL（`linkerlin/evolver.py`）。顺手修正仍写「缺基线即停 / 过门即 commit / drop 仍硬拒绝」的 quickstart、AGENTS.md 与教程句子。
 

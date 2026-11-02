@@ -231,6 +231,52 @@ def test_run_validations_timeout(git_ws: Path, monkeypatch: pytest.MonkeyPatch) 
     assert res["results"][0]["stderr"]
 
 
+def test_hypothesis_rejection_records_untracked_new_file(git_ws: Path) -> None:
+    """DEBUG #57: a gate reject must keep an untracked new file in the scene.
+
+    The file is rolled back afterwards; the episode is the only copy left.
+    """
+    (git_ws / "notes.md").write_text("untracked-notes-marker\n", encoding="utf-8")
+    write_state_for_solidify(_last_run())
+    result = solidify()
+    assert result["ok"] is False
+    assert result["error"] == "hypothesis_missing"
+    from evolver.gep.episode_record import load_episode, record_round
+
+    stored = record_round(event_id=str(result["event_id"]))
+    body = load_episode(stored["id"])
+    assert body is not None
+    assert "diff --git a/notes.md b/notes.md" in body["diff"]
+    assert "untracked-notes-marker" in body["diff"]
+    assert not (git_ws / "notes.md").exists()
+
+
+def test_success_diff_snapshot_includes_untracked_new_file(
+    git_ws: Path,
+    armed_pack: dict[str, Any],
+    declared_hypothesis: dict[str, Any],
+) -> None:
+    """Success uses the same snapshot helper, so a new file is recorded there too."""
+    _ = armed_pack, declared_hypothesis
+    set_flag("enable_fitness_cascade", False, persist=False)
+    (git_ws / "notes.md").write_text("untracked-notes-marker\n", encoding="utf-8")
+    write_state_for_solidify(
+        _last_run(
+            mutation={
+                "id": "mut_untracked_ok",
+                "validation": [[sys.executable, "-c", "print(1)"]],
+            }
+        )
+    )
+    result = solidify()
+    assert result["ok"] is True
+    evt = json.loads(
+        (get_gep_assets_dir() / "events.jsonl").read_text(encoding="utf-8").strip().splitlines()[-1]
+    )
+    assert "untracked-notes-marker" in str(evt.get("diff_snapshot") or "")
+    assert "diff --git a/notes.md" in str(evt.get("diff_snapshot") or "")
+
+
 def test_hypothesis_rejection_leaves_a_recordable_scene(git_ws: Path) -> None:
     """A settled Reject is an engine scene: gene, diff, and the gate verdict."""
     (git_ws / "README.md").write_text("changed by the candidate\n", encoding="utf-8")
