@@ -395,9 +395,14 @@ prompt 的宿主）。`boot_once` 只登记会话（`swarm_hook_event` session_s
 instrument 增加「核心循环工具 / Core Loop Tools」。soft-accept 的 T0 为 minimal
 （`t0_probe.py`）；成功结算后 `pending_solidify` 为 false（`last_run` 与
 `last_solidify` 的 run id 一致）。`swarm_boot` / `swarm_status` 带 `source_revision`，
-boot 自动 ack 本 agent 的 `swarm.hello`。安装或拉代码后须重启 MCP。
-已暂停时 `next_action=await_supervisor_resume`。有待固化 run 时仍先固化，
-此时 `boot_once` 为空。首次准备见 `examples/swarm-quickstart/README.md`。
+boot 自动 ack 本 agent 的 `swarm.hello`。安装或拉代码后须重启 MCP；若宿主目录仍只列出
+`swarm_tick` 的 `agent_name` 与 `include_prompt`，或搜不到 `swarm_doctor`，那是客户端
+对 `tools/list` 的缓存（现网 schema 已含 `prompt_mode`/`checklist_only` 与只读
+`swarm_doctor`），新开宿主会话才会重读。
+已暂停时 `next_action=await_supervisor_resume`。有待固化 run 时 `next_action` 仍是
+`swarm_solidify`（`hint` 写明先固化；软缺口留在 `warning`，不盖掉这句），并带
+`readonly_smoke`：只读冒烟用 `swarm_doctor` / `swarm_status`，不结算、不放宽门、不写
+Parent。此时 `boot_once` 为空。首次准备见 `examples/swarm-quickstart/README.md`。
 `EVOLVER_SWARM_AUTO_HIJACK=1` 不改这段文字，只强制打开 HITL 并拒绝宿主转达放行。
 常驻文本仍不是工具地图。它多两条环内规则：`PROPOSAL REQUIRED`（或
 `proposal_required=true`）改走 `swarm_propose`；`next_action=await_human_approval`

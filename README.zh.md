@@ -238,6 +238,10 @@ uv run evolver migrate-state
 
 `uv sync`、拉取或安装之后，**重启 MCP 进程**。长期驻留的 `evolver mcp` 仍加载旧模块。`swarm_boot` 与 `swarm_status` 带 `source_revision`（正在跑的源码树 git SHA），与 `code_staleness` 并列；boot 会自动确认本 agent 自己尚未 ack 的 `swarm.hello`。
 
+现网 `tools/list` 已经公布 `swarm_tick` 的 `prompt_mode`（`full` 或 `short`）和 `checklist_only`，参数上带说明，并注册只读 `swarm_doctor`。宿主目录若仍只列出 `agent_name` 与 `include_prompt`，或搜不到 `swarm_doctor`，那是客户端会话缓存。重启进程只重载代码；要重读 `tools/list`，需要新开一次宿主会话。
+
+若上一轮 run 还没固化，`swarm_boot` 的 `next_action` 仍是 `swarm_solidify`，顶层带 `pending_solidify`，并多一个 `readonly_smoke`（`tools` 为 `swarm_doctor` 与 `swarm_status`，`settles_run` 为 false）。`hint` 写明先固化。软缺口（`no_baseline` / `pack_absent` / `unmeasured`）仍附 `warning` 与 `next_steps`，但不盖掉这句 hint，也不放宽固化门。只读冒烟可以调 `swarm_doctor` 或 `swarm_status`：它们不结算这条 run，也不伪造 Parent baseline。
+
 本进程尚未 `swarm_boot` 时，`swarm_status` 返回 `next_action=swarm_boot` 和一句 hint。boot 之后 status 仍带 `agent_name`、`source_revision`，以及软缺口的 `gap` / warnings。`tool_asset_search`、`tool_mailbox_poll`、`tool_cycle_timeline`、`swarm_approvals` 一律返回 `{ok, items, hint}`，没有命中也不是空正文。`swarm_approvals` 另外保留 `pending`（与 `items` 同一队列）和 `recent`。只读 `swarm_doctor` 等同 `evolver doctor` 且不执行 `--fix`（`ok`、软警告、`fixes` 里的命令提示）。`no_baseline` / `pack_absent` / `unmeasured` 仍是 soft-continue。
 
 `swarm_boot(project=...)` 只在路径是已存在目录时绑定。`bound_paths.repo_root` 是代码根（从该目录向上找到的 git 根，否则就是该目录本身）。`bound_paths.workspace_root` 是变异所用目录。两者不一致，或 `project` 只是一段自由文本而不是目录时，同一对象带 `warning` 和 `next_steps`。这是软警告：`ok` 仍为 true，循环继续。自由文本不会被当成新的工作区。

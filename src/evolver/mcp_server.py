@@ -16,10 +16,13 @@ Run with ``evolver mcp`` (stdio transport).
 
 from __future__ import annotations
 
+import inspect
 import json
 from collections.abc import Callable
 from pathlib import Path
-from typing import Any, Final, Literal
+from typing import Annotated, Any, Final, Literal
+
+from pydantic import Field
 
 from evolver.proxy.mailbox.store import MailboxStore
 
@@ -278,6 +281,11 @@ def tool_failure_envelope(tool: str, exc: BaseException) -> dict[str, Any]:
     }
 
 
+def _host_tool_description(fn: Callable[..., Any]) -> str:
+    """Docstring text for tools/list, without the indent of a nested def."""
+    return inspect.cleandoc(fn.__doc__ or "")
+
+
 def list_envelope(items: list[dict[str, Any]], *, empty_hint: str) -> dict[str, Any]:
     """Object payload for list/search tools. Empty matches stay a dict, never ``[]``.
 
@@ -419,8 +427,27 @@ def build_server() -> Any:
     async def tool_swarm_tick(
         agent_name: str | None = None,
         include_prompt: bool = True,
-        prompt_mode: Literal["full", "short"] = "full",
-        checklist_only: bool = False,
+        prompt_mode: Annotated[
+            Literal["full", "short"],
+            Field(
+                description=(
+                    "full (default) inlines the gene preview. "
+                    "short returns the core-loop checklist and drops the inlined "
+                    "GEP text from engine_log. The full prompt stays at "
+                    "dispatch_prompt_artifact and evolver://dispatch/last."
+                )
+            ),
+        ] = "full",
+        checklist_only: Annotated[
+            bool,
+            Field(
+                description=(
+                    "When true, same payload as prompt_mode=short. "
+                    "When false, prompt_mode stays in control. "
+                    "Does not change include_prompt."
+                )
+            ),
+        ] = False,
     ) -> dict[str, Any]:
         """Core loop. Run one evolution cycle; returns the GEP prompt to execute.
 
@@ -782,7 +809,7 @@ def build_server() -> Any:
         ("tool_rebuild_views", None),
         ("tool_cycle_timeline", read_only),
     ]
-    classic_fns = {
+    classic_fns: dict[str, Callable[..., Any]] = {
         "tool_asset_search": tool_asset_search,
         "tool_asset_get": tool_asset_get,
         "episode_get": episode_get,
@@ -802,7 +829,12 @@ def build_server() -> Any:
             role = "Read-only auxiliary"
         else:
             role = "Auxiliary"
-        server.tool(name=name, title=f"{role}: {name}", annotations=ann)(fn)
+        server.tool(
+            name=name,
+            title=f"{role}: {name}",
+            description=_host_tool_description(fn),
+            annotations=ann,
+        )(fn)
 
     # Schema titles follow the function __name__. The wrappers below are
     # named tool_swarm_* in source; align that to the public swarm_* name
@@ -839,7 +871,12 @@ def build_server() -> Any:
             role = "Read-only"
         else:
             role = "Swarm"
-        server.tool(name=name, title=f"{role}: {name}", annotations=ann)(fn)
+        server.tool(
+            name=name,
+            title=f"{role}: {name}",
+            description=_host_tool_description(fn),
+            annotations=ann,
+        )(fn)
 
     server.prompt(name="evolver_swarm", title="Evolver Swarm Takeover")(prompt_evolver_swarm)
 
