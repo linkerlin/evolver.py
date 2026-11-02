@@ -67,7 +67,17 @@ class TestTickSchemaIsOnTheLiveList:
         tick = tools["swarm_tick"]
         props = _schema(tick).get("properties") or {}
 
-        assert set(props) >= {"agent_name", "include_prompt", "prompt_mode", "checklist_only"}
+        assert set(props) >= {
+            "agent_name",
+            "include_prompt",
+            "prompt_mode",
+            "checklist_only",
+            "supersede_pending",
+        }
+        supersede = str((props["supersede_pending"] or {}).get("description") or "")
+        assert "cycle_started" in supersede
+        assert "true" in supersede
+        assert props["supersede_pending"].get("default") is False
         mode = props["prompt_mode"]
         assert mode.get("enum") == ["full", "short"]
         assert "short" in str(mode.get("description") or "")
@@ -156,6 +166,8 @@ class TestPendingBootSmokeHint:
         assert "先调用 `swarm_solidify`" in pending
         assert "只读冒烟" in pending
         assert "swarm_doctor" in pending
+        assert "cycle_started=false" in pending
+        assert "supersede_pending=true" in pending
         assert "await_supervisor_resume" not in pending
 
         ready = build_instrument_prompt(
@@ -167,6 +179,147 @@ class TestPendingBootSmokeHint:
         )
         assert "调用 `swarm_tick` 开始第一轮进化" in ready
         assert "只读冒烟" not in ready
+
+
+class TestPendingTickRedirect:
+    async def test_tick_while_pending_does_not_start_a_cycle(
+        self, isolated_swarm_env: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        from evolver.gep.paths import get_solidify_state_path
+        from evolver.swarm import swarm_tick
+
+        _write_pending("run_keep")
+        state_path = get_solidify_state_path()
+        before = state_path.read_text(encoding="utf-8")
+        calls = {"n": 0}
+
+        async def boom(is_loop: bool = False) -> dict[str, Any]:
+            _ = is_loop
+            calls["n"] += 1
+            return {"run_id": "should_not", "dispatch_prompt": "nope"}
+
+        monkeypatch.setattr("evolver.evolve.runner._run_single_cycle", boom)
+        result = await swarm_tick(agent_name="ignore-next")
+
+        assert calls["n"] == 0
+        assert state_path.read_text(encoding="utf-8") == before
+        assert result["ok"] is True
+        assert result["cycle_started"] is False
+        assert result["next_action"] == "swarm_solidify"
+        assert result["pending_solidify"] is True
+        assert result["run_id"] == "run_keep"
+        assert result["dispatch_prompt"] is None
+        assert result["dispatch_reason"] == "pending_solidify"
+        assert result["redirect_reason"] == "pending_solidify"
+        assert result["supersede_pending"] is False
+        assert result.get("error") not in _SOFT_GAPS
+        assert result.get("error") is None
+        assert result["severity"] == "soft"
+        assert result["readonly_smoke"]["settles_run"] is False
+        hint = str(result.get("hint") or "")
+        assert "swarm_solidify" in hint
+        assert "supersede_pending=true" in hint
+        assert "not installed" not in hint.lower()
+        assert result.get("gap") in _SOFT_GAPS
+        assert any("cycle_started=false" in str(item) for item in result.get("warnings") or [])
+        assert not (isolated_swarm_env / "evolution" / "swarm_state.json").exists()
+
+    async def test_ready_gate_redirect_stays_soft(
+        self, isolated_swarm_env: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        from evolver.swarm import swarm_tick
+
+        _write_pending("run_ready_gate")
+
+        def ready() -> dict[str, Any]:
+            return {"armed": True, "baseline": 1.0, "train_ids": ["train-a"]}
+
+        monkeypatch.setattr("evolver.bench.frozen_gate.gate_snapshot", ready)
+        result = await swarm_tick()
+
+        assert result["ok"] is True
+        assert result["cycle_started"] is False
+        assert result["next_action"] == "swarm_solidify"
+        assert result["severity"] == "soft"
+        assert result.get("error") is None
+        assert "gap" not in result
+        assert result.get("gate_soft_continue") is not True
+        assert "Parent baseline" in str(result.get("note") or "")
+
+    async def test_supersede_pending_replaces_the_unfinished_run(
+        self, isolated_swarm_env: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        from evolver.gep.paths import get_solidify_state_path
+        from evolver.gep.solidify import write_state_for_solidify
+        from evolver.swarm import swarm_tick
+
+        _write_pending("run_old")
+        calls = {"n": 0}
+
+        async def fake(is_loop: bool = False) -> dict[str, Any]:
+            _ = is_loop
+            calls["n"] += 1
+            write_state_for_solidify(
+                {
+                    "run_id": "run_new",
+                    "signals": ["log_error"],
+                    "selected_gene_id": "g_new",
+                    "mutation": {"id": "m_new", "validation": []},
+                }
+            )
+            return {
+                "run_id": "run_new",
+                "cycle_id": "0002",
+                "dispatch_prompt": "# GENOME EVOLUTION PROTOCOL\nnew",
+                "selected_gene": {"id": "g_new", "name": "N"},
+            }
+
+        monkeypatch.setattr("evolver.evolve.runner._run_single_cycle", fake)
+        result = await swarm_tick(supersede_pending=True)
+
+        assert calls["n"] == 1
+        assert result["ok"] is True
+        assert result["cycle_started"] is True
+        assert result["supersede_pending"] is True
+        assert result["superseded_run_id"] == "run_old"
+        assert result["run_id"] == "run_new"
+        assert result["dispatch_reason"] == "dispatched"
+        assert any("run_old" in str(item) for item in result.get("warnings") or [])
+        stored = json.loads(get_solidify_state_path().read_text(encoding="utf-8"))
+        assert stored["last_run"]["run_id"] == "run_new"
+
+    async def test_checkpoint_and_pause_outrank_supersede(
+        self, isolated_swarm_env: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        from evolver.gep.compact_gate import request_checkpoint
+        from evolver.gep.supervision import set_state
+        from evolver.swarm import swarm_tick
+
+        calls = {"n": 0}
+
+        async def boom(is_loop: bool = False) -> dict[str, Any]:
+            _ = is_loop
+            calls["n"] += 1
+            return {"run_id": "nope", "dispatch_prompt": "nope"}
+
+        monkeypatch.setattr("evolver.evolve.runner._run_single_cycle", boom)
+        _write_pending("run_blocked")
+        request_checkpoint("precompact_hook")
+        blocked = await swarm_tick(supersede_pending=True)
+        assert calls["n"] == 0
+        assert blocked["next_action"] == "call_swarm_checkpoint_working"
+        assert blocked.get("cycle_started") is not True
+
+        from evolver.gep.compact_gate import clear_checkpoint
+
+        clear_checkpoint()
+        set_state(True, by="human", reason="hold")
+        paused = await swarm_tick(supersede_pending=True)
+        assert calls["n"] == 0
+        assert paused["ok"] is True
+        assert paused["paused"] is True
+        assert paused["cycle_started"] is False
+        assert paused["next_action"] == "await_supervisor_resume"
 
 
 def test_wire_tools_list_publishes_prompt_mode(tmp_path: Path) -> None:
@@ -192,5 +345,7 @@ def test_wire_tools_list_publishes_prompt_mode(tmp_path: Path) -> None:
     assert tick["prompt_mode"]["enum"] == ["full", "short"]
     assert "short" in tick["prompt_mode"]["description"]
     assert "short" in tick["checklist_only"]["description"]
+    assert "cycle_started" in tick["supersede_pending"]["description"]
+    assert tick["supersede_pending"]["default"] is False
     assert tools["swarm_doctor"]["annotations"]["readOnlyHint"] is True
     assert json.dumps(tools["swarm_tick"]["description"]).count("\\n        ") == 0

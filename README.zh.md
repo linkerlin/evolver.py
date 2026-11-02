@@ -277,7 +277,7 @@ uv run evolver migrate-state
 
 soft-accept 选用 minimal T0 探针（`determine_t0_mode` 返回 `minimal`；`skip` 也已实现）。验收钩子（`solidify_hook`）在本轮已标 `soft_accept` 时按这个深度跑。硬接受仍跑完整 T0。若结算裁决带了 skip 或 minimal 探针，warnings 里会有 `t0_skipped_soft` 或 `t0_probe=minimal`。
 
-`pending_solidify` 仅在 `last_run.run_id` 与 `last_solidify.run_id` 不同时为真。成功的 solidify（含 soft-accept）会写下 `last_solidify`，下一次 status 或 boot 报告 `pending_solidify: false`，开局动作回到 `swarm_tick`。仍有待固化 run 时，`boot_once` 为空，宿主先固化。
+`pending_solidify` 仅在 `last_run.run_id` 与 `last_solidify.run_id` 不同时为真。成功的 solidify（含 soft-accept）会写下 `last_solidify`，下一次 status 或 boot 报告 `pending_solidify: false`，开局动作回到 `swarm_tick`。仍有待固化 run 时，`boot_once` 为空，宿主先固化。此时再调 `swarm_tick` 默认不启新周期（`ok` 仍为 true，`severity=soft`，`cycle_started=false`，`next_action` 仍是 `swarm_solidify`，不改 `last_run`）。要替换这条 run 才传 `supersede_pending=true`。暂停与压缩检查点仍优先于这个参数。
 
 下列情况仍硬停（不要重试同一次失败）：diff 里的密钥或凭据、改写 `~/.evolver/` 下的引擎状态、`val_seal` 泄露。损坏的 bench 门（`gate_error`）以及验证面改动的 anchor 失败也会拒绝。没有假说时本轮仍被拒（`hypothesis_missing`），直到 `swarm_hypothesis` 成功。
 

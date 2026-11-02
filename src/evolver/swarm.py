@@ -290,6 +290,9 @@ experience 仍写入 ~/.evolver/workspaces/<id>/，不自动提交。补齐基�
    本轮改动**必须**经 `swarm_propose` 提交，不得自由编辑；自由编辑仅限新颖信号与结构性
    改动。`paused=true`、`preflight_aborted=true`、`supervision_veto` 非空、
    `next_action=stop_and_report`（含 `error=instance_lock_held`）都停下来报告。
+   若返回 `cycle_started=false` 且 `pending_solidify=true`，本调用没有新周期：
+   去 `swarm_solidify`，不要把这次当失败重试 tick。要换掉未完成 run 才传
+   `supersede_pending=true`（会替换 `last_run`，不放宽固化门）。
 2. 编辑 — 只改 `dispatch_prompt` 锚点所写的范围。工作区是 {workspace}。
 3. `swarm_distill` — `response_text` 里要有下面这种围栏。
    `genes + capsules + mutations` 为 0 时按返回的 `hint` 重交，不重做编辑。
@@ -910,6 +913,79 @@ def gate_handoff_skipped() -> bool:
     return SWARM_GATE_HANDOFF.strip().lower() == "hotl"
 
 
+def _pending_tick_redirect(gap: str | None) -> dict[str, Any]:
+    """Soft envelope when ``swarm_tick`` is called with an unfinished run.
+
+    A tick writes a fresh ``last_run`` and would replace the run the host
+    has not solidified. Default: do not start that cycle. ``ok`` stays true
+    and there is no hard ``error`` — the host follows ``next_action``.
+    ``supersede_pending=true`` is the explicit replace. Soft gaps stay
+    advisory and do not cover this hint. No Parent baseline is written.
+    """
+    meta = _pending_solidify_meta()
+    _, prose = _opening_action({"pending_solidify": True})
+    run_id = meta.get("run_id") or None
+    payload: dict[str, Any] = {
+        "ok": True,
+        "severity": "soft",
+        "pending_solidify": True,
+        "cycle_started": False,
+        "dispatch_prompt": None,
+        "dispatch_reason": "pending_solidify",
+        "redirect_reason": "pending_solidify",
+        "run_id": run_id,
+        "next_action": "swarm_solidify",
+        "hint": prose,
+        "readonly_smoke": _readonly_smoke_block(),
+        "supersede_pending": False,
+        "note": (
+            "swarm_tick did not start a cycle because a run is still unfinished. "
+            "ok stays true and this is not a hard gate. Follow "
+            "next_action=swarm_solidify. Pass supersede_pending=true only to "
+            "replace that run. The solidify gate is unchanged and no Parent "
+            "baseline is written."
+        ),
+    }
+    if gap is None:
+        return payload
+    from evolver.ops.open_box import apply_soft_gap
+
+    surfaced = apply_soft_gap(payload, gap)
+    surfaced["next_action"] = "swarm_solidify"
+    surfaced["hint"] = prose
+    surfaced["cycle_started"] = False
+    surfaced["pending_solidify"] = True
+    surfaced["dispatch_prompt"] = None
+    surfaced["dispatch_reason"] = "pending_solidify"
+    surfaced["redirect_reason"] = "pending_solidify"
+    surfaced["supersede_pending"] = False
+    extra = (
+        "pending_solidify: cycle_started=false. The soft gap stays advisory; "
+        "it did not start this tick."
+    )
+    warnings = list(surfaced.get("warnings") or [])
+    if extra not in warnings:
+        warnings.append(extra)
+    surfaced["warnings"] = warnings
+    return surfaced
+
+
+def _note_superseded_run(result: dict[str, Any], old_run_id: str) -> None:
+    """Mark a tick that explicitly replaced an unfinished run."""
+    note = (
+        "supersede_pending=true: this tick started a new cycle and replaced "
+        f"unfinished run {old_run_id or '(unknown)'}. "
+        "The default (false) leaves that run in place and does not start a cycle."
+    )
+    warnings = list(result.get("warnings") or [])
+    if note not in warnings:
+        warnings.append(note)
+    result["warnings"] = warnings
+    result["superseded_run_id"] = old_run_id or None
+    result["supersede_pending"] = True
+    result["cycle_started"] = True
+
+
 def _readonly_smoke_block() -> dict[str, Any]:
     """Read-only alternative while ``next_action`` stays ``swarm_solidify``.
 
@@ -942,6 +1018,8 @@ def _opening_action(state: dict[str, Any]) -> tuple[str, str]:
         return (
             "swarm_solidify",
             "存在待固化 run——先调用 `swarm_solidify` 完成固化，再回到步骤 1。"
+            "此时直接 `swarm_tick` 不启新周期（`cycle_started=false`）。"
+            "要替换这条 run 才传 `supersede_pending=true`。"
             "只读冒烟请改调 `swarm_doctor` 或 `swarm_status`"
             "（不结算这条 run，不放宽固化门，不写 Parent baseline）。",
         )
@@ -1255,6 +1333,7 @@ async def swarm_tick(
     include_prompt: bool = True,
     prompt_mode: str = "full",
     checklist_only: bool = False,
+    supersede_pending: bool = False,
 ) -> dict[str, Any]:
     """Run one full evolution cycle and return its GEP dispatch prompt.
 
@@ -1269,6 +1348,12 @@ async def swarm_tick(
     ``prompt_mode="short"`` drops the inlined gene preview from that log and
     leaves a pointer at the artifact. ``include_prompt=False`` only clears
     ``dispatch_prompt``; the full log stays unless the mode is short.
+
+    An unfinished run (``pending_solidify``) makes a default tick return a
+    soft redirect: ``ok`` true, ``cycle_started`` false, ``next_action``
+    ``swarm_solidify``. That does not start a cycle and does not replace
+    ``last_run``. ``supersede_pending=True`` is the explicit replace.
+    Checkpoint and pause still outrank that flag.
 
     HOTL supervision (v1.101.0): the tripwire runs first (consecutive
     degraded feedback may auto-pause), a paused state refuses the cycle, and
@@ -1287,9 +1372,7 @@ async def swarm_tick(
     from evolver.config import SWARM_TICK_LOG_MAX_CHARS
 
     try:
-        from evolver.evolve.runner import _run_single_cycle
         from evolver.gep import supervision
-        from evolver.gep.instance_lock import instance_lock_ctx
     except ImportError as exc:
         # Stale long-lived host: in-memory modules predate the on-disk tree.
         return _stale_import_error(exc)
@@ -1304,6 +1387,7 @@ async def swarm_tick(
         return {
             "ok": True,
             "paused": True,
+            "cycle_started": False,
             "supervision": summary,
             "tripwire": tripwire,
             "agent_name": agent_name or "host-agent",
@@ -1311,6 +1395,16 @@ async def swarm_tick(
         }
 
     gap = _gate_gap(_bench_gate_snapshot())
+    was_pending = _pending_solidify_state()
+    old_run_id = _pending_solidify_meta()["run_id"] if was_pending else ""
+    if was_pending and not supersede_pending:
+        return _pending_tick_redirect(gap)
+
+    try:
+        from evolver.evolve.runner import _run_single_cycle
+        from evolver.gep.instance_lock import instance_lock_ctx
+    except ImportError as exc:
+        return _stale_import_error(exc)
 
     with instance_lock_ctx(blocking=False, timeout=0) as lock_ok:
         if not lock_ok:
@@ -1318,6 +1412,7 @@ async def swarm_tick(
                 "ok": False,
                 "error": "instance_lock_held",
                 "agent_name": agent_name or "host-agent",
+                "cycle_started": False,
                 "next_action": "stop_and_report",
             }
         result = await _swarm_tick_locked(
@@ -1352,6 +1447,8 @@ async def swarm_tick(
                 if note not in warnings:
                     warnings.append(note)
                 result["warnings"] = warnings
+        if was_pending and supersede_pending and isinstance(result, dict):
+            _note_superseded_run(result, old_run_id)
         return result
 
 
@@ -1579,6 +1676,7 @@ async def _swarm_tick_locked(
         "supervision_veto": veto,
         "proposal_required": proposal_required,
         "prompt_mode": "short" if short else "full",
+        "cycle_started": True,
         "dispatch_prompt": shown,
         "checklist": checklist,
         "engine_log": _tail(
