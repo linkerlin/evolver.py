@@ -301,7 +301,8 @@ experience 仍写入 ~/.evolver/workspaces/<id>/，不自动提交。补齐基�
    `redirect_count` 在涨，说明还是这一条 run。两次返回都带
    `session_not_failed=true`、`preserve_pending=true`、`abandon_run=false`、
    `action_required=swarm_solidify`。   `session_not_failed=true` 表示会话没有失败，
-   先读它再读别的旗标。`tick_again=false` 表示不要再 tick。
+   先读它再读别的旗标。`tick_again=false` 与 `retryable=false` 都表示不要再 tick
+   （第一次重定向也写 `retryable=false`，`ok` 仍为 true）。
    有软缺口时 `gate_soft_continue is omitted`
    （第一次也是，`ok` 仍为 true，没有 `error`）：缺这个键不是 false，
    不是失败的会话，软缺口仍在 `warning`。再 tick 才是 `ok=false`、
@@ -1022,7 +1023,8 @@ def _prefer_solidify_steps(
             "gate_soft_continue is omitted. "
             "Omitted is not false, so the session is not failed. "
             "tick_again=false means do not tick. "
-            "ok is still true and there is no error."
+            "ok is still true and there is no error. "
+            "retryable=false means do not tick."
         )
     elif hold_tick and closed:
         lead += (
@@ -1102,6 +1104,7 @@ def _pending_redirect_note(count: int, closed: bool, *, gap: bool) -> str:
             "swarm_tick did not start a cycle because a run is still unfinished "
             f"(redirect_count={count}, progress=false). "
             "ok stays true and this is not a hard gate. "
+            "retryable=false means do not call swarm_tick. "
             f"{keep} "
             f"{omitted}"
             "Another swarm_tick on this same run returns "
@@ -1142,7 +1145,9 @@ def _pending_tick_redirect(gap: str | None) -> dict[str, Any]:
     ``pending_solidify``. That fuse is not a gate and not a ``next_action``
     value. Both calls set
     ``session_not_failed`` true, ``preserve_pending`` true, ``abandon_run``
-    false, and ``action_required`` to ``swarm_solidify``. Read
+    false, and ``action_required`` to ``swarm_solidify``. Both calls set
+    ``retryable`` false. Absent is not a license to tick again; strict false
+    means do not tick. The first call still keeps ``ok`` true. Read
     ``session_not_failed`` before other flags. True means the session is
     not failed: call ``swarm_solidify`` and keep the run.
     When a soft gap is present, ``gate_soft_continue`` is omitted on the
@@ -1173,6 +1178,7 @@ def _pending_tick_redirect(gap: str | None) -> dict[str, Any]:
         "progress": False,
         "redirect_count": count,
         "tick_again": False,
+        "retryable": False,
         "tick_closed": closed,
         "dispatch_prompt": None,
         "dispatch_reason": "pending_solidify",
@@ -1673,8 +1679,10 @@ async def swarm_tick(
     (``severity`` soft, ``retryable`` false). ``next_action`` stays
     ``swarm_solidify``. That is not a gate failure and not an abandon signal.
     Both calls set
-    ``session_not_failed`` true, ``preserve_pending`` true, and
-    ``abandon_run`` false. Read ``session_not_failed`` before other flags.
+    ``session_not_failed`` true, ``preserve_pending`` true,
+    ``abandon_run`` false, and ``retryable`` false. An omitted ``retryable``
+    is not permission to tick again. The first call still keeps ``ok`` true.
+    Read ``session_not_failed`` before other flags.
     A soft gap omits ``gate_soft_continue`` on the first redirect and on
     the fuse. The first call keeps ``ok`` true and sets no ``error``.
     Neither call starts a cycle or replaces ``last_run``.
