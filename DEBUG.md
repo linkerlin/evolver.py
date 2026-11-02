@@ -61,6 +61,7 @@
 | 56 | 全量回归一次性失败无留存：36% 处红灯后无失败名留存，lastfailed 37 条 id 全陈旧、`--lf` 零命中静默变全量 | tests/测试治理 | 评估会话 | 未发版 |
 | 57 | 失败现场 diff 看不见未跟踪文件：MCP 验证脚本新建 notes.md 走拒绝后 episode diff 为空，成功侧同 helper 同盲区（未修，待单独一轮） | solidify/episode | 评估会话 | 未发版 |
 | 58 | 外部 MCP 评审 P1 四项全属实并修：solidify/propose 未取实例锁、journal 裸句柄、instructions 漏新工具、测试名实不符 + 版本硬编码 | swarm/mcp/tests | 评估会话 | 未发版 |
+| 69 | 未完成 run 的第一次 tick 重定向不写 `retryable`，缺席被当成再 tick | mcp/swarm | MCP 易用性 | 未发版 |
 
 ## 条目
 
@@ -1213,6 +1214,13 @@
 - **修复**：常驻 instructions 改成 `loop_fuse=pending_redirect_loop`，不写 `error=pending_redirect_loop`，也不把裸码当成 `next_action`，长度仍小于 1200。保险丝（无软缺口的早返回，以及有软缺口的返回）把 `redirect_reason` 写成 `pending_redirect_loop`。`dispatch_reason` 仍是 `pending_solidify`。`loop_fuse`、`ok=false`、`error` 缺席、`session_not_failed=true`、preserve 三元组、`tick_again=false` 不动。有软缺口时仍不写 `gate_soft_continue`。第一次重定向的 `redirect_reason` 仍是 `pending_solidify`，没有 `loop_fuse`。`next_action` 仍是 `swarm_solidify`。不写 Parent baseline，不放宽固化门。目录缓存（DEBUG #61）未做假修复。
 - **经验**：**字段名要和码一起出现。** 裸码会被读成 `next_action`。`error` 不能再写回这个码，否则「任意 error 即放弃」的宿主又会丢掉 run。非失败的原因字段是保险丝上的 `redirect_reason`。
 - **仍在的宿主摩擦**（#20 的 1、2、4，这次没有关）：
-  1. 把缺席的 `gate_soft_continue` 当成「继续 tick」（只在严格 false 时才停），并且不看 `tick_again` / `next_action` / `ok` 的宿主，仍可能再 tick。保险丝上 `ok=false` 仍能停住只看 `ok` 的宿主。
-  2. 把 `ok=false` 本身当成整段会话失败、且不读 `session_not_failed` 与 `loop_fuse` 的宿主，仍会在第二次 tick 上停掉会话。`ok=false` 留着，是因为只看 `ok` 的宿主靠它停止空转。
+  1. 把缺席的 `gate_soft_continue` 当成「继续 tick」（只在严格 false 时才停），并且不看 `tick_again` / `next_action` / `ok` / `retryable` 的宿主，仍可能再 tick。保险丝上 `ok=false` 仍能停住只看 `ok` 的宿主。`retryable=false` 能停住「缺席即再 tick、严格 false 才停」这一型里读这个字段的宿主（见 #69），但不能靠把 `gate_soft_continue` 写成 false 来停——那会让不读 `session_not_failed` 的宿主把整段会话判死。
+  2. 把 `ok=false` 本身当成整段会话失败、且不读 `session_not_failed` 与 `loop_fuse` 的宿主，仍会在第二次 tick 上停掉会话。`ok=false` 留着，是因为只看 `ok` 的宿主靠它停止空转。第一次重定向仍是 `ok=true`。
   4. 宿主 `tools/list` 缓存滞后（DEBUG #61）没有做假修复。安全信号在返回体上。
+
+### 69. 第一次 tick 重定向不写 `retryable`，缺席被当成再 tick（MCP 易用性，已修）
+
+- **症状**：#68 之后，有软缺口的第一次 `swarm_tick` 重定向不带 `gate_soft_continue`，`ok=true`，`tick_again=false`，`next_action=swarm_solidify`，并且没有 `retryable`。常驻 instructions 写 `retryable=true: swarm_tick again`。把缺席的继续位当成「再 tick」、只在严格 false 时才停、同时不看 `tick_again` / `next_action` / `ok` 的宿主，会再 tick 一次，落到保险丝的 `ok=false`。只看 `gate_soft_continue`、完全不读 `retryable` 的宿主仍会再 tick：把那个键写成 false 会让「任意严格 false 即整段会话失败、且不读 `session_not_failed`」的宿主在第一次就停掉会话。
+- **根因**：保险丝写了 `retryable=false`，第一次重定向没写。缺席不是 false。`gate_soft_continue` 不能借来当停 tick 的 false，那个名字在不读旁注的宿主那里就是会话失败。
+- **修复**：未完成 run 的两次默认 tick（有软缺口与无软缺口）都写 `retryable=false`。第一次仍是 `ok=true`、没有 `error`、没有 `loop_fuse`，`gate_soft_continue` 在软缺口上仍然缺席。`session_not_failed=true` 与 preserve 三元组不动。保险丝仍是 `ok=false`。不写 Parent baseline，不放宽固化门。目录缓存（DEBUG #61）未做假修复。
+- **经验**：**停 tick 的严格 false 要写在本来就表示「要不要再试」的字段上。** `gate_soft_continue=false` 和第一次就翻 `ok=false` 都会被另一类宿主读成整段失败。`retryable` 缺席必须当成「未说可以再 tick」，写上 false 才盖住把缺席默认成继续的那一型。只认 `gate_soft_continue` 的宿主这次仍覆盖不到。

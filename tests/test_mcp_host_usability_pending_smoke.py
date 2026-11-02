@@ -77,6 +77,29 @@ def _host_ticks_only_on_gate_soft_continue(payload: dict[str, Any]) -> bool:
     return payload.get("gate_soft_continue") is True
 
 
+def _host_ticks_unless_retryable_is_false(payload: dict[str, Any]) -> bool:
+    """Keep ticking unless ``retryable`` is strict false.
+
+    An omitted ``retryable`` counts as continue. ``tick_again``,
+    ``next_action``, and ``ok`` are ignored. An omitted
+    ``gate_soft_continue`` is not a stop. Strict false of that flag would
+    stop this host too, and would also end the session for a host that
+    treats that false as death, so the redirect must not set it.
+    """
+    if payload.get("gate_soft_continue") is False:
+        return False
+    return payload.get("retryable") is not False
+
+
+def _host_dies_on_nonretryable_failed_ok(payload: dict[str, Any]) -> bool:
+    """``retryable=false`` ends the session only together with ``ok`` false.
+
+    The first redirect stays ``ok`` true, so this host does not die there.
+    ``session_not_failed`` is ignored on purpose.
+    """
+    return payload.get("retryable") is False and payload.get("ok") is False
+
+
 def _host_abandons_on_any_error(payload: dict[str, Any]) -> bool:
     """Drop the run whenever ``error`` is set. Preserve flags are ignored."""
     return bool(payload.get("error"))
@@ -210,7 +233,12 @@ def _assert_stop_is_not_failure(payload: dict[str, Any], *, closed: bool, gap: b
     assert "gate_soft_continue" not in payload
     assert "error" not in payload
     assert payload.get("tick_again") is False
+    assert payload.get("retryable") is False
+    assert "retryable=false" in str(payload.get("note") or "")
     assert _host_ticks_only_on_gate_soft_continue(payload) is False
+    assert _host_ticks_unless_retryable_is_false(payload) is False
+    if not closed:
+        assert _host_dies_on_nonretryable_failed_ok(payload) is False
     assert _host_dies_on_soft_continue_false_ignoring_new_flags(payload) is False
     assert _host_ends_session_on_soft_continue_false(payload) is False
     assert _host_abandons_on_any_error(payload) is False

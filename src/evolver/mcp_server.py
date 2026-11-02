@@ -457,8 +457,9 @@ def build_server() -> Any:
                     "Default false. While a run is unfinished, the first "
                     "swarm_tick does not start a cycle: ok stays true, "
                     "severity=soft, cycle_started=false, progress=false, "
-                    "tick_again=false, next_action=swarm_solidify, and last_run "
-                    "stays. A repeat on that same run returns ok=false, "
+                    "tick_again=false, retryable=false, next_action=swarm_solidify, "
+                    "and last_run stays. Absent retryable is not a license to tick "
+                    "again. A repeat on that same run returns ok=false, "
                     "severity=soft, retryable=false, "
                     "loop_fuse=pending_redirect_loop, "
                     "redirect_reason=pending_redirect_loop, and no error field. "
@@ -490,9 +491,10 @@ def build_server() -> Any:
 
         If a run is unfinished, the first default call does not start a cycle
         (cycle_started=false, next_action=swarm_solidify, ok=true, severity=soft,
-        progress=false, tick_again=false). A repeat on that run returns ok=false
-        and loop_fuse=pending_redirect_loop with redirect_reason the same code
-        and no error field (severity=soft, retryable=false). next_action stays
+        progress=false, tick_again=false, retryable=false). A repeat on that
+        run returns ok=false and loop_fuse=pending_redirect_loop with
+        redirect_reason the same code and no error field (severity=soft,
+        retryable=false). next_action stays
         swarm_solidify. The fuse code is not an error and not a next_action
         value. It still does not start a cycle. dispatch_reason stays
         pending_solidify. The first redirect keeps

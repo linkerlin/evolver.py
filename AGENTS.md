@@ -415,7 +415,7 @@ Parent。此时 `boot_once` 为空。忽略 `next_action` 再调 `swarm_tick` �
 `preserve_pending=true`、`abandon_run=false`、
 `action_required=swarm_solidify`（boot/status 在仍要固化时同样带上）。有软缺口时，
 第一次 tick 与保险丝都不带 `gate_soft_continue`（缺席不是 false；`ok` 第一次仍为 true，
-没有 `error`；`tick_again=false` 表示不要再 tick）。两次 tick 都带
+没有 `error`；`tick_again=false` 与 `retryable=false` 都表示不要再 tick，第一次也写 `retryable=false`，缺席不再当成可以再 tick）。两次 tick 都带
 `session_not_failed=true`：先读它，会话没有失败。`loop_fuse` 不在 `error` 里，
 preserve 三元组仍指向 `swarm_solidify`。
 boot/status 的 `gate_soft_continue` 仍为 true，且不带 `session_not_failed`。
