@@ -300,13 +300,14 @@ experience 仍写入 ~/.evolver/workspaces/<id>/，不自动提交。补齐基�
    立刻调用 `swarm_solidify`，不要再 `swarm_tick`。`progress=false` 且
    `redirect_count` 在涨，说明还是这一条 run。两次返回都带
    `session_not_failed=true`、`preserve_pending=true`、`abandon_run=false`、
-   `action_required=swarm_solidify`。`session_not_failed=true` 表示会话没有失败，
-   先读它再读别的旗标。有软缺口时 `gate_soft_continue=false`
-   （第一次也是，`ok` 仍为 true，没有 `error`）只表示不要再 tick，
-   软缺口仍在 `warning`。再 tick 才是 `ok=false`、
-   `error=pending_redirect_loop`、`severity=soft`、`retryable=false`：
-   这不是门禁失败。这个 error 不放弃 run——`session_not_failed=true` 时
-   preserve 三元组优先，仍调用 `swarm_solidify`。要换掉未完成 run 才传
+   `action_required=swarm_solidify`。   `session_not_failed=true` 表示会话没有失败，
+   先读它再读别的旗标。`tick_again=false` 表示不要再 tick。
+   有软缺口时 `gate_soft_continue is omitted`
+   （第一次也是，`ok` 仍为 true，没有 `error`）：缺这个键不是 false，
+   不是失败的会话，软缺口仍在 `warning`。再 tick 才是 `ok=false`、
+   `loop_fuse=pending_redirect_loop`、没有 `error` 字段、`severity=soft`、
+   `retryable=false`：这不是门禁失败，也不放弃 run。preserve 三元组仍指向
+   `swarm_solidify`。要换掉未完成 run 才传
    `supersede_pending=true`（会替换 `last_run`，不放宽固化门）。
 2. 编辑 — 只改 `dispatch_prompt` 锚点所写的范围。工作区是 {workspace}。
 3. `swarm_distill` — `response_text` 里要有下面这种围栏。
@@ -347,11 +348,11 @@ experience 仍写入 ~/.evolver/workspaces/<id>/，不自动提交。补齐基�
   人决定后才 `swarm_approval_resolve`。返回 `error=host_relay_blocked` 时请人执行
   `evolver hitl approve` 或 `evolver hitl reject`。不要自己批准。
 - 连续 3 次 `failure_mode.reasonClass` 相同：先 `swarm_report` 再停。
-- `error=pending_redirect_loop`：`session_not_failed=true`。停止 tick，调用
-  `swarm_solidify`。不是固化门失败，也不是整段会话失败。先读
-  `session_not_failed`，再读 `preserve_pending=true`、`abandon_run=false`，
-  不要放弃这条 run。有软缺口时第一次 tick 的 `gate_soft_continue` 已经是
-  false，不必再 tick 到这里。
+- `loop_fuse=pending_redirect_loop`：`session_not_failed=true`。停止 tick，调用
+  `swarm_solidify`。没有 `error` 字段。不是固化门失败，也不是整段会话失败。
+  先读 `session_not_failed`，再读 `preserve_pending=true`、`abandon_run=false`，
+  不要放弃这条 run。有软缺口时第一次 tick 的 `gate_soft_continue is omitted`，
+  不必再 tick 到这里。
 
 `retryable=true` 的拒绝是稳态，回到步骤 1。
 
@@ -976,9 +977,9 @@ def _stamp_preserve_pending(payload: dict[str, Any]) -> None:
 def _stamp_session_not_failed(payload: dict[str, Any]) -> None:
     """The unfinished-run tick redirect is not a failed session.
 
-    ``gate_soft_continue=false`` only stops another tick. ``error=
-    pending_redirect_loop`` is that same fuse. Hosts read
-    ``session_not_failed`` before either signal. True means call
+    A soft-gap redirect omits ``gate_soft_continue``. ``loop_fuse=
+    pending_redirect_loop`` is the tick fuse and is not an ``error``.
+    Hosts read ``session_not_failed`` before either signal. True means call
     ``swarm_solidify`` and keep the run. The preserve triad still says how.
     Absent on boot, status, and a real cycle: this flag is not a general
     health bit.
@@ -995,10 +996,13 @@ def _prefer_solidify_steps(
     """Name ``swarm_solidify`` as the next call while a run is unfinished.
 
     ``hold_tick`` is only the pending tick redirect that already carries a
-    soft gap. It sets ``gate_soft_continue`` false so a host that ticks while
-    the flag is true does not take a second tick. ``ok`` and ``error`` are
-    left alone: false is not a failed session. Boot and status keep the flag
-    that ``apply_soft_gap`` set.
+    soft gap. ``apply_soft_gap`` sets ``gate_soft_continue`` true, which
+    invites another tick and is the only value a loop-while-true host reads.
+    This drops that key. Absent is not true, so that host stops. Absent is
+    not false, so a host that ends the session on strict false stays up
+    even when it ignores ``session_not_failed``. ``tick_again`` stays false.
+    ``ok`` and ``error`` are left alone. Boot and status keep the flag that
+    ``apply_soft_gap`` set.
     """
     rid = str(run_id if run_id is not None else payload.get("run_id") or "").strip()
     who = f"run_id={rid}" if rid else "this unfinished run"
@@ -1011,22 +1015,25 @@ def _prefer_solidify_steps(
     if hold_tick and not closed:
         lead += (
             " session_not_failed=true. "
-            "gate_soft_continue=false means do not tick. "
-            "ok is still true and there is no error, so the session is not failed."
+            "gate_soft_continue is omitted. "
+            "Omitted is not false, so the session is not failed. "
+            "tick_again=false means do not tick. "
+            "ok is still true and there is no error."
         )
     elif hold_tick and closed:
         lead += (
             " session_not_failed=true. "
-            "gate_soft_continue=false means do not tick. "
-            "pending_redirect_loop is not a gate failure. "
-            "Read session_not_failed and the preserve flags before that error. "
+            "gate_soft_continue is omitted. "
+            "Omitted is not false, so the session is not failed. "
+            "tick_again=false means do not tick. "
+            "loop_fuse=pending_redirect_loop is not an error field. "
             "Do not abandon the run."
         )
     elif payload.get("session_not_failed") is True:
         lead += (
             " session_not_failed=true: the session is not failed. "
-            "If error is pending_redirect_loop, read session_not_failed "
-            "and the preserve flags before that error. Do not abandon the run."
+            "If loop_fuse is pending_redirect_loop, there is no error field. "
+            "Read session_not_failed and the preserve flags. Do not abandon the run."
         )
     rewritten: list[str] = []
     for step in payload.get("next_steps") or []:
@@ -1046,18 +1053,18 @@ def _prefer_solidify_steps(
     payload["next_steps"] = rewritten
     if not hold_tick:
         return
-    payload["gate_soft_continue"] = False
+    payload.pop("gate_soft_continue", None)
     if closed:
         steer = (
             "session_not_failed=true. "
-            "gate_soft_continue=false means do not call swarm_tick. "
-            "Call swarm_solidify. pending_redirect_loop is not a failed session. "
-            "Read session_not_failed and the preserve flags before that error."
+            "gate_soft_continue is omitted: do not call swarm_tick. "
+            "Call swarm_solidify. loop_fuse=pending_redirect_loop is not a failed session. "
+            "There is no error field."
         )
     else:
         steer = (
             "session_not_failed=true. "
-            "gate_soft_continue=false means do not call swarm_tick. "
+            "gate_soft_continue is omitted: do not call swarm_tick. "
             "Call swarm_solidify. ok is true and there is no error. "
             "The session is not failed. The soft gap stays advisory."
         )
@@ -1072,46 +1079,37 @@ def _pending_redirect_note(count: int, closed: bool, *, gap: bool) -> str:
     keep = (
         "session_not_failed=true. "
         "preserve_pending=true, abandon_run=false, action_required=swarm_solidify. "
-        "Read session_not_failed before gate_soft_continue and before error. "
+        "tick_again=false means do not call swarm_tick. "
+        "Read session_not_failed before any other flag. "
         "Do not drop this unfinished run. Call swarm_solidify now."
     )
+    omitted = ""
+    if gap:
+        omitted = (
+            "gate_soft_continue is omitted. "
+            "Omitted is not false, so this is not a failed session. "
+            "The soft gap stays in warning. "
+        )
     if not closed:
-        gap_sentence = ""
-        if gap:
-            gap_sentence = (
-                "A soft gap is present and gate_soft_continue is false: "
-                "do not call swarm_tick again. session_not_failed is true. "
-                "ok stays true and error is absent, so this is not a failed session. "
-                "The gap stays in warning. "
-            )
         return (
             "swarm_tick did not start a cycle because a run is still unfinished "
             f"(redirect_count={count}, progress=false). "
             "ok stays true and this is not a hard gate. "
             f"{keep} "
-            f"{gap_sentence}"
-            "Another swarm_tick on this same run returns error=pending_redirect_loop "
+            f"{omitted}"
+            "Another swarm_tick on this same run returns "
+            "loop_fuse=pending_redirect_loop with ok false and no error field, "
             "and still does not start a cycle. "
             "Pass supersede_pending=true only to replace that run. "
             "The solidify gate is unchanged and no Parent baseline is written."
-        )
-    fuse_gate = ""
-    if gap:
-        fuse_gate = (
-            "gate_soft_continue is false. session_not_failed is true. "
-            "It was already false on the first soft-gap redirect. "
-            "False means do not tick, not that the session failed. "
-            "Read session_not_failed and the preserve flags before "
-            "pending_redirect_loop. The soft gap stays advisory in warning "
-            "and next_steps. "
         )
     return (
         "Repeated swarm_tick on the same unfinished run "
         f"(redirect_count={count}, progress=false). "
         "ok is false so a host that only checks ok stops. "
-        "error=pending_redirect_loop is not a gate failure and not a soft-gap "
-        "hard stop. severity stays soft. retryable=false. Do not tick again. "
-        f"{keep} {fuse_gate}"
+        "loop_fuse=pending_redirect_loop is not a gate failure. "
+        "error is absent. severity stays soft. retryable=false. Do not tick again. "
+        f"{keep} {omitted}"
         "Call swarm_solidify for this run_id. "
         "Pass supersede_pending=true only to replace that run. "
         "No cycle was started and no Parent baseline was written."
@@ -1122,18 +1120,21 @@ def _pending_tick_redirect(gap: str | None) -> dict[str, Any]:
     """Soft envelope when ``swarm_tick`` is called with an unfinished run.
 
     A tick writes a fresh ``last_run`` and would replace the run the host
-    has not solidified. Default: do not start that cycle.     The first call
+    has not solidified. Default: do not start that cycle. The first call
     keeps ``ok`` true. The same run's next call sets ``ok`` false with
-    ``error=pending_redirect_loop`` so a host that only checks ``ok`` stops.
-    That error is not a gate. Both calls set ``session_not_failed`` true,
-    ``preserve_pending`` true, ``abandon_run`` false, and
-    ``action_required`` to ``swarm_solidify``. Read ``session_not_failed``
-    before ``gate_soft_continue`` and before ``error``. True means the
-    session is not failed: call ``swarm_solidify`` and keep the run.
-    When a soft gap is present, ``gate_soft_continue`` is false on the first
-    redirect and on the fuse, so a host that loops only on that flag does
-    not take a second tick. The first call keeps ``ok`` true and sets no
-    ``error``, so false means do not tick, not that the session failed.
+    ``loop_fuse=pending_redirect_loop`` and no ``error`` field, so a host
+    that only checks ``ok`` stops and a host that abandons on any ``error``
+    keeps the run. That fuse is not a gate. Both calls set
+    ``session_not_failed`` true, ``preserve_pending`` true, ``abandon_run``
+    false, and ``action_required`` to ``swarm_solidify``. Read
+    ``session_not_failed`` before other flags. True means the session is
+    not failed: call ``swarm_solidify`` and keep the run.
+    When a soft gap is present, ``gate_soft_continue`` is omitted on the
+    first redirect and on the fuse. Absent is not true, so a host that
+    loops only while the flag is true does not take another tick. Absent
+    is not false, so a host that treats strict false as session death stays
+    up even if it ignores ``session_not_failed``. ``tick_again`` is false.
+    The first call keeps ``ok`` true and sets no ``error``.
     The gap itself stays in ``warning``. Elsewhere, including boot and
     status, a soft gap still sets ``gate_soft_continue`` true, and
     ``session_not_failed`` stays absent.
@@ -1170,13 +1171,15 @@ def _pending_tick_redirect(gap: str | None) -> dict[str, Any]:
     _stamp_preserve_pending(payload)
     _stamp_session_not_failed(payload)
     if closed:
-        payload["error"] = "pending_redirect_loop"
+        payload.pop("error", None)
+        payload["loop_fuse"] = "pending_redirect_loop"
         payload["retryable"] = False
         payload["warnings"] = [
             (
                 "pending_redirect_loop: session_not_failed=true. "
                 "Stop swarm_tick and call swarm_solidify. "
-                "Read session_not_failed and the preserve flags before this error. "
+                "loop_fuse is not an error field. "
+                "Read session_not_failed and the preserve flags. "
                 "Not a gate failure. The unfinished run is unchanged."
             )
         ]
@@ -1204,10 +1207,12 @@ def _pending_tick_redirect(gap: str | None) -> dict[str, Any]:
     _stamp_preserve_pending(surfaced)
     _stamp_session_not_failed(surfaced)
     if closed:
-        surfaced["error"] = "pending_redirect_loop"
+        surfaced.pop("error", None)
+        surfaced["loop_fuse"] = "pending_redirect_loop"
         surfaced["retryable"] = False
     else:
         surfaced.pop("error", None)
+        surfaced.pop("loop_fuse", None)
     extra = (
         "pending_solidify: cycle_started=false. The soft gap stays advisory; "
         "it did not start this tick."
@@ -1219,16 +1224,16 @@ def _pending_tick_redirect(gap: str | None) -> dict[str, Any]:
         loop_warn = (
             "pending_redirect_loop: session_not_failed=true. "
             "Stop swarm_tick and call swarm_solidify. "
-            "Read session_not_failed and the preserve flags before this error. "
+            "loop_fuse is not an error field. "
             "preserve_pending=true, abandon_run=false. Not a gate failure. "
-            "gate_soft_continue=false means do not tick again. "
+            "gate_soft_continue is omitted. tick_again=false means do not tick again. "
             "The soft gap stays advisory."
         )
         if loop_warn not in warnings:
             warnings.append(loop_warn)
     surfaced["warnings"] = warnings
-    # False on the first soft-gap redirect as well as the fuse. ok and error
-    # stay as set above, so the flag only withdraws another tick.
+    # Drop gate_soft_continue. ok and error stay as set above: the missing
+    # flag only withdraws another tick, and it is not a failed session.
     _prefer_solidify_steps(surfaced, hold_tick=True)
     return surfaced
 
@@ -1283,10 +1288,12 @@ def _opening_action(state: dict[str, Any]) -> tuple[str, str]:
             "存在待固化 run——先调用 `swarm_solidify` 完成固化，再回到步骤 1。"
             "此时直接 `swarm_tick` 不启新周期（`cycle_started=false`，`progress=false`）。"
             "两次 tick 返回都带 `session_not_failed=true`：会话没有失败。"
-            "有软缺口时这次 tick 的 `gate_soft_continue=false`"
-            "（`ok` 仍为 true，没有 `error`）：只表示不要再 tick。"
-            "同一条 run 再 tick 得到 `pending_redirect_loop`（仍不启周期，不是门禁失败）。"
-            "`session_not_failed=true` 优先于这个 error：返回带 "
+            "有软缺口时这次 tick 的 `gate_soft_continue is omitted`"
+            "（`ok` 仍为 true，没有 `error`）：缺这个键不是 false，不是失败的会话，"
+            "`tick_again=false` 表示不要再 tick。"
+            "同一条 run 再 tick 得到 `loop_fuse=pending_redirect_loop`"
+            "（`ok=false`，没有 `error` 字段，仍不启周期，不是门禁失败）。"
+            "`session_not_failed=true` 优先：返回带 "
             "`preserve_pending=true`、`abandon_run=false`，不要丢掉这条 run。"
             "要替换这条 run 才传 `supersede_pending=true`。"
             "只读冒烟请改调 `swarm_doctor` 或 `swarm_status`"
@@ -1633,13 +1640,13 @@ async def swarm_tick(
     An unfinished run (``pending_solidify``) makes a default tick return a
     soft redirect: the first call keeps ``ok`` true, ``cycle_started`` false,
     ``progress`` false, ``next_action`` ``swarm_solidify``. The same run's
-    next call returns ``ok`` false and ``error=pending_redirect_loop``
-    (``severity`` soft, ``retryable`` false). That is not a gate failure.
-    Both calls set ``session_not_failed`` true, ``preserve_pending`` true,
-    and ``abandon_run`` false. Read ``session_not_failed`` before
-    ``gate_soft_continue`` and before ``error``. A soft gap sets
-    ``gate_soft_continue`` false on the first redirect and on the fuse.
-    The first call keeps ``ok`` true and sets no ``error``.
+    next call returns ``ok`` false and ``loop_fuse=pending_redirect_loop``
+    with no ``error`` field (``severity`` soft, ``retryable`` false). That
+    is not a gate failure and not an abandon signal. Both calls set
+    ``session_not_failed`` true, ``preserve_pending`` true, and
+    ``abandon_run`` false. Read ``session_not_failed`` before other flags.
+    A soft gap omits ``gate_soft_continue`` on the first redirect and on
+    the fuse. The first call keeps ``ok`` true and sets no ``error``.
     Neither call starts a cycle or replaces ``last_run``.
     ``supersede_pending=True`` is the explicit replace. Checkpoint and pause
     still outrank that flag and do not consume the redirect count.
