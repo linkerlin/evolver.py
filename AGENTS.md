@@ -407,6 +407,9 @@ Parent。此时 `boot_once` 为空。忽略 `next_action` 再调 `swarm_tick` �
 `redirect_count=1`，`next_action` 仍是 `swarm_solidify`，不改 `last_run`。
 同一条 run 再 tick 返回 `ok=false`、`error=pending_redirect_loop`（`severity=soft`，
 `retryable=false`），仍不启周期；这不是门禁失败，软缺口留在 `warning`。
+两次返回都带 `preserve_pending=true`、`abandon_run=false`、`action_required=swarm_solidify`
+（boot/status 在仍要固化时同样带上），看到 `error` 也不要丢掉这条 run。有软缺口时，
+第一次的 `gate_soft_continue` 仍为 true，保险丝那次为 false（只表示不要再 tick）。
 要替换这条 run 才传 `supersede_pending=true`。暂停与压缩检查点仍优先，且不消耗这次计数。
 首次准备见 `examples/swarm-quickstart/README.md`。
 `EVOLVER_SWARM_AUTO_HIJACK=1` 不改这段文字，只强制打开 HITL 并拒绝宿主转达放行。

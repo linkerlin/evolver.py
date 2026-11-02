@@ -459,6 +459,10 @@ def build_server() -> Any:
                     "on that same run returns ok=false, severity=soft, "
                     "retryable=false, error=pending_redirect_loop, and still "
                     "does not start a cycle. That error is not a gate failure. "
+                    "Both returns set preserve_pending=true, abandon_run=false, "
+                    "and action_required=swarm_solidify. Do not drop the run. "
+                    "A soft gap stays in warning. On the fuse, gate_soft_continue "
+                    "is false so a host that loops only on that flag stops. "
                     "true starts a new cycle and replaces that run. Does not "
                     "weaken the solidify gate or write a Parent baseline. "
                     "Checkpoint and pause still refuse the cycle."
@@ -479,8 +483,11 @@ def build_server() -> Any:
         (cycle_started=false, next_action=swarm_solidify, ok=true, severity=soft,
         progress=false). A repeat on that run returns ok=false and
         error=pending_redirect_loop (severity=soft, retryable=false) and still
-        does not start a cycle. That is not a gate failure. Pass
-        supersede_pending=true to replace that run. This does not weaken
+        does not start a cycle. That is not a gate failure. Both returns set
+        preserve_pending=true, abandon_run=false, and
+        action_required=swarm_solidify: do not drop the unfinished run. A soft
+        gap stays in warning. On the fuse, gate_soft_continue is false.
+        Pass supersede_pending=true to replace that run. This does not weaken
         the solidify gate and does not write a Parent baseline.
         """
         from evolver.swarm import swarm_tick

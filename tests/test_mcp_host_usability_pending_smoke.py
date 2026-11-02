@@ -59,6 +59,31 @@ def _write_pending(run_id: str = "run_pending_smoke") -> None:
     )
 
 
+def _host_drops_run_because_error(payload: dict[str, Any]) -> bool:
+    """Treat any ``error`` as abandon, unless the preserve flags say keep the run.
+
+    ``next_action`` is ignored on purpose: that is the host this signal is for.
+    """
+    if not payload.get("error"):
+        return False
+    if payload.get("abandon_run") is False and payload.get("preserve_pending") is True:
+        if payload.get("action_required") == "swarm_solidify":
+            return False
+    return True
+
+
+def _host_ticks_only_on_gate_soft_continue(payload: dict[str, Any]) -> bool:
+    """Loop while ``gate_soft_continue`` is true. ``ok`` is ignored."""
+    return payload.get("gate_soft_continue") is True
+
+
+def _assert_preserve_pending(payload: dict[str, Any]) -> None:
+    assert payload["preserve_pending"] is True
+    assert payload["abandon_run"] is False
+    assert payload["action_required"] == "swarm_solidify"
+    assert _host_drops_run_because_error(payload) is False
+
+
 class TestTickSchemaIsOnTheLiveList:
     def test_prompt_mode_and_doctor_are_listed_with_descriptions(self) -> None:
         from evolver.mcp_server import build_server
@@ -78,6 +103,9 @@ class TestTickSchemaIsOnTheLiveList:
         assert "cycle_started" in supersede
         assert "true" in supersede
         assert "pending_redirect_loop" in supersede
+        assert "preserve_pending" in supersede
+        assert "abandon_run" in supersede
+        assert "gate_soft_continue" in supersede
         assert props["supersede_pending"].get("default") is False
         mode = props["prompt_mode"]
         assert mode.get("enum") == ["full", "short"]
@@ -130,6 +158,12 @@ class TestPendingBootSmokeHint:
         assert status["next_action"] == "swarm_solidify"
         assert status["readonly_smoke"]["settles_run"] is False
         assert status["readonly_smoke"]["tools"] == smoke["tools"]
+        _assert_preserve_pending(boot)
+        _assert_preserve_pending(status)
+        # The soft gap stays advisory on boot. The tick fuse is what flips the flag.
+        assert boot.get("gate_soft_continue") is True
+        assert status.get("gate_soft_continue") is True
+        assert boot.get("error") not in _SOFT_GAPS
 
     def test_soft_boot_without_a_pending_run_does_not_grow_a_smoke_block(
         self, isolated_swarm_env: Path
@@ -142,6 +176,8 @@ class TestPendingBootSmokeHint:
         assert "readonly_smoke" not in boot
         assert boot.get("severity") == "soft"
         assert boot.get("gate_soft_continue") is True
+        assert "preserve_pending" not in boot
+        assert "abandon_run" not in boot
         hint = str(boot.get("hint") or "")
         assert "recommended" in hint or "Soft-accept" in hint or "soft-continue" in hint
 
@@ -170,6 +206,9 @@ class TestPendingBootSmokeHint:
         assert "cycle_started=false" in pending
         assert "supersede_pending=true" in pending
         assert "pending_redirect_loop" in pending
+        assert "preserve_pending=true" in pending
+        assert "abandon_run=false" in pending
+        assert "gate_soft_continue" in pending
         assert "await_supervisor_resume" not in pending
 
         ready = build_instrument_prompt(
@@ -220,6 +259,9 @@ class TestPendingTickRedirect:
         assert result["tick_closed"] is False
         assert result.get("error") not in _SOFT_GAPS
         assert result.get("error") is None
+        _assert_preserve_pending(result)
+        assert result.get("gate_soft_continue") is True
+        assert _host_ticks_only_on_gate_soft_continue(result) is True
         assert result["severity"] == "soft"
         assert result["readonly_smoke"]["settles_run"] is False
         hint = str(result.get("hint") or "")
@@ -254,6 +296,8 @@ class TestPendingTickRedirect:
         assert result["redirect_count"] == 1
         assert result["progress"] is False
         assert result["tick_closed"] is False
+        _assert_preserve_pending(result)
+        assert "preserve_pending" in str(result.get("note") or "")
 
         again = await swarm_tick()
         assert again["ok"] is False
@@ -266,6 +310,8 @@ class TestPendingTickRedirect:
         assert "gap" not in again
         assert again.get("gate_soft_continue") is not True
         assert "Parent baseline" in str(again.get("note") or "")
+        _assert_preserve_pending(again)
+        assert _host_ticks_only_on_gate_soft_continue(again) is False
 
     async def test_repeat_tick_on_the_same_run_closes_without_a_cycle(
         self, isolated_swarm_env: Path, monkeypatch: pytest.MonkeyPatch
@@ -323,6 +369,10 @@ class TestPendingTickRedirect:
         assert first["cycle_started"] is False
         assert first["next_action"] == "swarm_solidify"
         assert first["run_id"] == "run_loop"
+        _assert_preserve_pending(first)
+        assert first.get("gate_soft_continue") is True
+        assert _host_ticks_only_on_gate_soft_continue(first) is True
+        assert "preserve_pending" in str(first.get("note") or "")
 
         for closed in (second, third):
             assert closed["ok"] is False
@@ -342,9 +392,15 @@ class TestPendingTickRedirect:
             assert closed.get("gap") in _SOFT_GAPS
             assert closed.get("warning")
             assert closed.get("next_steps")
+            assert closed["gate_soft_continue"] is False
+            _assert_preserve_pending(closed)
+            assert _host_ticks_only_on_gate_soft_continue(closed) is False
             note = str(closed.get("note") or "")
             assert "pending_redirect_loop" in note
             assert "not a gate" in note.lower()
+            assert "preserve_pending" in note
+            assert "abandon_run" in note
+            assert "gate_soft_continue" in note
             assert any(
                 "pending_redirect_loop" in str(item) for item in closed.get("warnings") or []
             )
@@ -396,6 +452,8 @@ class TestPendingTickRedirect:
         assert opened["ok"] is True
         assert opened["redirect_count"] == 1
         assert opened.get("error") is None
+        _assert_preserve_pending(opened)
+        assert opened.get("gate_soft_continue") is True
         _ = isolated_swarm_env
 
     async def test_supersede_pending_replaces_the_unfinished_run(
@@ -499,6 +557,8 @@ def test_wire_tools_list_publishes_prompt_mode(tmp_path: Path) -> None:
     assert "short" in tick["checklist_only"]["description"]
     assert "cycle_started" in tick["supersede_pending"]["description"]
     assert "pending_redirect_loop" in tick["supersede_pending"]["description"]
+    assert "preserve_pending" in tick["supersede_pending"]["description"]
+    assert "abandon_run" in tick["supersede_pending"]["description"]
     assert tick["supersede_pending"]["default"] is False
     assert tools["swarm_doctor"]["annotations"]["readOnlyHint"] is True
     assert json.dumps(tools["swarm_tick"]["description"]).count("\\n        ") == 0
