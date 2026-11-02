@@ -1164,3 +1164,10 @@
 - **根因**：`next_action` 与 `note` 已经指向固化，但没有一个和 `error` 对着干的布尔。`apply_soft_gap` 无条件把 `gate_soft_continue` 设为 true，`_pending_tick_redirect` 在套上软缺口之后没有改它。
 - **修复**：两次重定向以及待固化的 boot/status 写 `preserve_pending=true`、`abandon_run=false`、`action_required=swarm_solidify`。软缺口仍不进 `error`。仅在有软缺口的保险丝上把 `gate_soft_continue` 写成 false；第一次重定向、boot、status，以及没有未完成 run 的 soft-continue，仍为 true。不改固化门，不写 Parent baseline。宿主目录缓存（DEBUG #61）未做假修复：这些字段在返回体上，不依赖 `tools/list` 是否看得到 `supersede_pending`。
 - **经验**：**把回路从「再 tick」改到「去固化」，要同时改宿主实际分支的那个字段**。`error` 需要一个明确的「不要放弃」布尔；`gate_soft_continue` 只在保险丝上关掉，软缺口的警告不能跟着变成硬失败。
+
+### 65. 软缺口的第一次重定向仍邀请再 tick，第二次才把宿主送进保险丝（MCP 易用性，已修）
+
+- **症状**：#64 之后，有软缺口的第一次 `swarm_tick` 重定向仍是 `gate_soft_continue=true`，`next_steps` 里还有 “Continue swarm_tick”。只按这个旗标循环的宿主会再 tick 一次，落到 `ok=false`、`error=pending_redirect_loop`、`gate_soft_continue=false`。把任意 `error` 当放弃、或把 false 配上失败体当整段会话失败的宿主，就在这第二次丢掉未完成 run，始终不调用 `swarm_solidify`。
+- **根因**：`apply_soft_gap` 在第一次重定向上把旗标写回 true，缺口目录的 `next_steps` 又明确说可以 `swarm_tick`。preserve 三元组只对会读新字段的宿主有用。保险丝同时带 `error` 和 false，正好打中另外两类宿主。boot / status 的 true 是开局 soft-continue，不该和这次 tick 混成同一个信号。
+- **修复**：有软缺口的 tick 重定向（第一次和保险丝）都把 `gate_soft_continue` 写成 false。第一次仍 `ok=true`、无 `error`、`severity=soft`、`next_action=swarm_solidify`。false 只表示不要再 tick，不是会话失败，软缺口仍在 `warning`。`next_steps` 第一条改为现在调用 `swarm_solidify`，并改写会邀请再 tick 的步骤。boot / status 的旗标保持 true，但待固化时 `next_steps` 同样先指向 `swarm_solidify`。只看 `ok` 的宿主再 tick 仍会碰到保险丝。不写 Parent baseline，不放宽固化门。目录缓存（DEBUG #61）未做假修复。
+- **经验**：**「不要再 tick」要写在第一次重定向上，而且不要靠 `ok=false` + `error` 来表达。** 开局的 soft-continue 旗标保持 true，避免一开机就像会话失败。仍会把任意 `gate_soft_continue=false`（哪怕 `ok=true` 且没有 `error`）当成整段会话失败的宿主，以及完全不看旗标、只因 `ok=true` 再 tick、又把保险丝的 `error` 当放弃的宿主，这次覆盖不到。
