@@ -640,6 +640,8 @@ def _attach_host_session(status: dict[str, Any]) -> dict[str, Any]:
     action, prose = _opening_action(status)
     status["next_action"] = action
     status["hint"] = prose
+    if status.get("pending_solidify") and action == "swarm_solidify":
+        status["readonly_smoke"] = _readonly_smoke_block()
     gap = _gate_gap(status.get("bench_pack_gate"))
     if gap is None:
         return status
@@ -908,6 +910,25 @@ def gate_handoff_skipped() -> bool:
     return SWARM_GATE_HANDOFF.strip().lower() == "hotl"
 
 
+def _readonly_smoke_block() -> dict[str, Any]:
+    """Read-only alternative while ``next_action`` stays ``swarm_solidify``.
+
+    Doctor and status do not settle the unfinished run. The solidify gate
+    is unchanged, and this block does not invent a Parent baseline.
+    """
+    return {
+        "safe": True,
+        "tools": ["swarm_doctor", "swarm_status"],
+        "settles_run": False,
+        "note": (
+            "A prior run is unfinished, so next_action stays swarm_solidify. "
+            "That does not skip or weaken the solidify gate and does not invent "
+            "a Parent baseline. A read-only smoke can call swarm_doctor or "
+            "swarm_status; neither settles the run."
+        ),
+    }
+
+
 def _opening_action(state: dict[str, Any]) -> tuple[str, str]:
     """What the host does after boot, as ``(next_action, prose)``.
 
@@ -920,7 +941,9 @@ def _opening_action(state: dict[str, Any]) -> tuple[str, str]:
     if state.get("pending_solidify"):
         return (
             "swarm_solidify",
-            "存在待固化 run——先调用 `swarm_solidify` 完成固化，再回到步骤 1",
+            "存在待固化 run——先调用 `swarm_solidify` 完成固化，再回到步骤 1。"
+            "只读冒烟请改调 `swarm_doctor` 或 `swarm_status`"
+            "（不结算这条 run，不放宽固化门，不写 Parent baseline）。",
         )
     supervision = state.get("supervision")
     if isinstance(supervision, dict) and supervision.get("state") == "paused":
@@ -1093,6 +1116,8 @@ def swarm_boot(
     _claim_session(agent_name)
     state = swarm_status()
     prompt = build_instrument_prompt({**state, "agent_name": agent_name})
+    next_action, first_action = _opening_action(state)
+    pending = bool(state.get("pending_solidify"))
     payload: dict[str, Any] = {
         "ok": True,
         "protocol_version": SWARM_PROTOCOL_VERSION,
@@ -1103,8 +1128,8 @@ def swarm_boot(
         "instrument_prompt": prompt,
         "state": state,
         "mailbox_hello": _announce(agent_name),
-        "boot_once": _boot_once(bool(state.get("pending_solidify"))),
-        "next_action": _opening_action(state)[0],
+        "boot_once": _boot_once(pending),
+        "next_action": next_action,
     }
     from evolver.gep.working_memory import read_working
 
@@ -1120,6 +1145,17 @@ def swarm_boot(
         payload["next_action"] = blocked["next_action"]
         payload["checkpoint"] = blocked
         payload["steer_message"] = blocked["steer_message"]
+    embedded = payload.get("state")
+    if pending and payload.get("next_action") == "swarm_solidify":
+        # Set the hint before a soft gap is attached. apply_soft_gap keeps an
+        # existing hint and still adds warning / next_steps for the gap.
+        payload["pending_solidify"] = True
+        payload["hint"] = first_action
+        payload["readonly_smoke"] = _readonly_smoke_block()
+    elif isinstance(embedded, dict):
+        # Status was snapshotted before the checkpoint override. Do not leave
+        # a solidify smoke block on that copy when boot is asking for something else.
+        embedded.pop("readonly_smoke", None)
     gap = _gate_gap(state.get("bench_pack_gate"))
     if gap is not None and str(payload.get("next_action") or "") != "await_supervisor_resume":
         from evolver.ops.open_box import apply_soft_gap
