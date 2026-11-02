@@ -1150,3 +1150,10 @@
 - **根因**：仪器和 boot 从 2026-09-05 起就写「先固化，否则 tick 会覆盖」，但 `swarm_tick` 本身不读 `pending_solidify`。保护停在提示词上。
 - **修复**：默认返回软重定向（`ok=true`，`severity=soft`，`cycle_started=false`，`next_action=swarm_solidify`，不写周期、不改 `last_run`）。软缺口仍附 `warning`，不盖 hint，也不写进硬 `error`。显式 `supersede_pending=true` 才启动新周期并替换。压缩检查点与暂停仍优先。不放宽固化门，不写 Parent baseline。
 - **经验**：**会覆盖状态的入口不能只靠提示词**。软重定向保持 `ok=true`，宿主按 `next_action` 走；硬 `error` 会被当成门禁失败。故意换 run 必须是显式参数，默认路径不丢未完成 run。
+
+### 63. 只看 `ok=true` 的宿主在软重定向上空转（MCP 易用性，已修）
+
+- **症状**：#62 之后，未完成 run 上的默认 `swarm_tick` 不启周期，但每次返回同一份 `ok=true`、`severity=soft`、`cycle_started=false`、同一个 `run_id`。只看 `ok` 的宿主会反复 tick，未完成 run 安全，循环没有进展。
+- **根因**：软重定向是 pending 状态的纯函数，跨调用没有计数，也没有第二个不同的信号。`next_action` / `cycle_started` 已经写明去固化，只读 `ok` 的宿主看不见。
+- **修复**：按 `run_id` 记 `redirect_count`（`pending_tick_redirects.json`，不写 `swarm_state.json`，不改 `last_run`）。第一次仍是软重定向，并带 `progress=false`、`tick_again=false`。同一条 run 的下一次返回 `ok=false`、`error=pending_redirect_loop`、`severity=soft`、`retryable=false`，`next_action` 仍是 `swarm_solidify`。软缺口留在 `warning`，不写进这个 `error`。`supersede_pending=true` 仍替换。暂停与压缩检查点优先，且不增加计数。
+- **经验**：**只看一个布尔的宿主，回路必须改这个布尔**。第一次保持软，是为了偶然的一次 tick 不象门禁失败；重复才把 `ok` 翻成 false。翻过来的 `error` 必须是专用码，不能借用 `pack_absent` / `no_baseline`，否则软缺口又变成硬错误。

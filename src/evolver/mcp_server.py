@@ -452,12 +452,16 @@ def build_server() -> Any:
             bool,
             Field(
                 description=(
-                    "Default false. While a run is unfinished, swarm_tick does "
-                    "not start a cycle: ok stays true, severity=soft, "
-                    "cycle_started=false, next_action=swarm_solidify, and "
-                    "last_run stays. true starts a new cycle and replaces that "
-                    "run. Does not weaken the solidify gate or write a Parent "
-                    "baseline. Checkpoint and pause still refuse the cycle."
+                    "Default false. While a run is unfinished, the first "
+                    "swarm_tick does not start a cycle: ok stays true, "
+                    "severity=soft, cycle_started=false, progress=false, "
+                    "next_action=swarm_solidify, and last_run stays. A repeat "
+                    "on that same run returns ok=false, severity=soft, "
+                    "retryable=false, error=pending_redirect_loop, and still "
+                    "does not start a cycle. That error is not a gate failure. "
+                    "true starts a new cycle and replaces that run. Does not "
+                    "weaken the solidify gate or write a Parent baseline. "
+                    "Checkpoint and pause still refuse the cycle."
                 )
             ),
         ] = False,
@@ -471,9 +475,12 @@ def build_server() -> Any:
         evolver://dispatch/last. include_prompt=false only clears
         dispatch_prompt.
 
-        If a run is unfinished, the default call does not start a cycle
-        (cycle_started=false, next_action=swarm_solidify, ok=true, severity=soft).
-        Pass supersede_pending=true to replace that run. This does not weaken
+        If a run is unfinished, the first default call does not start a cycle
+        (cycle_started=false, next_action=swarm_solidify, ok=true, severity=soft,
+        progress=false). A repeat on that run returns ok=false and
+        error=pending_redirect_loop (severity=soft, retryable=false) and still
+        does not start a cycle. That is not a gate failure. Pass
+        supersede_pending=true to replace that run. This does not weaken
         the solidify gate and does not write a Parent baseline.
         """
         from evolver.swarm import swarm_tick
