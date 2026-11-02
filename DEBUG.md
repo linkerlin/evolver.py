@@ -1157,3 +1157,10 @@
 - **根因**：软重定向是 pending 状态的纯函数，跨调用没有计数，也没有第二个不同的信号。`next_action` / `cycle_started` 已经写明去固化，只读 `ok` 的宿主看不见。
 - **修复**：按 `run_id` 记 `redirect_count`（`pending_tick_redirects.json`，不写 `swarm_state.json`，不改 `last_run`）。第一次仍是软重定向，并带 `progress=false`、`tick_again=false`。同一条 run 的下一次返回 `ok=false`、`error=pending_redirect_loop`、`severity=soft`、`retryable=false`，`next_action` 仍是 `swarm_solidify`。软缺口留在 `warning`，不写进这个 `error`。`supersede_pending=true` 仍替换。暂停与压缩检查点优先，且不增加计数。
 - **经验**：**只看一个布尔的宿主，回路必须改这个布尔**。第一次保持软，是为了偶然的一次 tick 不象门禁失败；重复才把 `ok` 翻成 false。翻过来的 `error` 必须是专用码，不能借用 `pack_absent` / `no_baseline`，否则软缺口又变成硬错误。
+
+### 64. `pending_redirect_loop` 被当成放弃未完成 run，软缺口又把保险丝盖住（MCP 易用性，已修）
+
+- **症状**：#63 之后，同一条未完成 run 的第二次 `swarm_tick` 是 `ok=false`、`error=pending_redirect_loop`。只把任意 `error` 当成「放弃这条 run」的宿主会跳过 `swarm_solidify`。另：有软缺口时 `apply_soft_gap` 在保险丝返回上仍写 `gate_soft_continue=true`。只按这个字段循环、同时忽略 `ok` 的宿主会继续 tick（不启周期，但是噪声）。无软缺口的保险丝本来就没有这个字段。
+- **根因**：`next_action` 与 `note` 已经指向固化，但没有一个和 `error` 对着干的布尔。`apply_soft_gap` 无条件把 `gate_soft_continue` 设为 true，`_pending_tick_redirect` 在套上软缺口之后没有改它。
+- **修复**：两次重定向以及待固化的 boot/status 写 `preserve_pending=true`、`abandon_run=false`、`action_required=swarm_solidify`。软缺口仍不进 `error`。仅在有软缺口的保险丝上把 `gate_soft_continue` 写成 false；第一次重定向、boot、status，以及没有未完成 run 的 soft-continue，仍为 true。不改固化门，不写 Parent baseline。宿主目录缓存（DEBUG #61）未做假修复：这些字段在返回体上，不依赖 `tools/list` 是否看得到 `supersede_pending`。
+- **经验**：**把回路从「再 tick」改到「去固化」，要同时改宿主实际分支的那个字段**。`error` 需要一个明确的「不要放弃」布尔；`gate_soft_continue` 只在保险丝上关掉，软缺口的警告不能跟着变成硬失败。
