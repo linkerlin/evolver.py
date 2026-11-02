@@ -317,11 +317,12 @@ def standing_instructions() -> str:
         "PROPOSAL REQUIRED or proposal_required=true: swarm_propose that edit, "
         "no free edit.\n"
         "next_action=swarm_solidify or pending_redirect_loop: call "
-        "swarm_solidify. Do not tick or abandon. Soft gap: severity=soft.\n"
+        "swarm_solidify. session_not_failed=true: not failed. "
+        "Do not tick or abandon. Soft gap: severity=soft.\n"
         "Grok Bot: /workspace root; src=/workspace/evolver-research/evolver.py; "
         "restart mcp after pull.\n"
         "\n"
-        "Stop and never retry on next_action=stop_and_report, await_human, "
+        "never retry: next_action=stop_and_report, await_human, "
         "await_human_approval, await_supervisor_resume, paused=true, "
         "preflight_aborted=true, error=instance_lock_held. "
         "await_human_approval: swarm_approvals, then swarm_approval_resolve "
@@ -329,7 +330,7 @@ def standing_instructions() -> str:
         "retryable=true: swarm_tick again. "
         "停: swarm_supervise action pause, then stop. "
         "继续: action resume, then swarm_boot again.\n"
-        "Never edit .evolver/ by hand, never solve val here, never call skip_validation."
+        "Never edit .evolver/, solve val here, or call skip_validation."
     )
 
 
@@ -460,9 +461,13 @@ def build_server() -> Any:
                     "on that same run returns ok=false, severity=soft, "
                     "retryable=false, error=pending_redirect_loop, and still "
                     "does not start a cycle. That error is not a gate failure. "
-                    "Both returns set preserve_pending=true, abandon_run=false, "
-                    "and action_required=swarm_solidify. Do not drop the run. "
-                    "A soft gap stays in warning. gate_soft_continue is false "
+                    "Both returns set session_not_failed=true, "
+                    "preserve_pending=true, abandon_run=false, "
+                    "and action_required=swarm_solidify. Read session_not_failed "
+                    "before gate_soft_continue and before error. True means the "
+                    "session is not failed: do not drop the run, call "
+                    "swarm_solidify. A soft gap stays in warning. "
+                    "gate_soft_continue is false "
                     "on the first soft-gap redirect and on the fuse: do not tick "
                     "again. The first redirect keeps ok true and sets no error. "
                     "true starts a new cycle and replaces that run. Does not "
@@ -486,13 +491,14 @@ def build_server() -> Any:
         progress=false). A repeat on that run returns ok=false and
         error=pending_redirect_loop (severity=soft, retryable=false) and still
         does not start a cycle. That is not a gate failure. Both returns set
-        preserve_pending=true, abandon_run=false, and
-        action_required=swarm_solidify: do not drop the unfinished run. A soft
+        session_not_failed=true, preserve_pending=true, abandon_run=false, and
+        action_required=swarm_solidify. Read session_not_failed before
+        gate_soft_continue and before error. True means the session is not
+        failed: do not drop the unfinished run, call swarm_solidify. A soft
         gap stays in warning. gate_soft_continue is false on the first soft-gap
         redirect and on the fuse: do not tick again. The first redirect keeps
-        ok true and sets no error, so the session is not failed. Call
-        swarm_solidify. Pass supersede_pending=true to replace that run. This
-        does not weaken
+        ok true and sets no error. Pass supersede_pending=true to replace that
+        run. This does not weaken
         the solidify gate and does not write a Parent baseline.
         """
         from evolver.swarm import swarm_tick
