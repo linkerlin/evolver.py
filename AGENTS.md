@@ -402,9 +402,12 @@ boot 自动 ack 本 agent 的 `swarm.hello`。安装或拉代码后须重启 MCP
 已暂停时 `next_action=await_supervisor_resume`。有待固化 run 时 `next_action` 仍是
 `swarm_solidify`（`hint` 写明先固化；软缺口留在 `warning`，不盖掉这句），并带
 `readonly_smoke`：只读冒烟用 `swarm_doctor` / `swarm_status`，不结算、不放宽门、不写
-Parent。此时 `boot_once` 为空。忽略 `next_action` 再调 `swarm_tick` 时默认不启新周期
-（`ok=true`，`severity=soft`，`cycle_started=false`，`next_action` 仍是 `swarm_solidify`，
-不改 `last_run`）；要替换这条 run 才传 `supersede_pending=true`。暂停与压缩检查点仍优先。
+Parent。此时 `boot_once` 为空。忽略 `next_action` 再调 `swarm_tick` 时默认不启新周期。
+第一次 `ok=true`、`severity=soft`、`cycle_started=false`、`progress=false`、
+`redirect_count=1`，`next_action` 仍是 `swarm_solidify`，不改 `last_run`。
+同一条 run 再 tick 返回 `ok=false`、`error=pending_redirect_loop`（`severity=soft`，
+`retryable=false`），仍不启周期；这不是门禁失败，软缺口留在 `warning`。
+要替换这条 run 才传 `supersede_pending=true`。暂停与压缩检查点仍优先，且不消耗这次计数。
 首次准备见 `examples/swarm-quickstart/README.md`。
 `EVOLVER_SWARM_AUTO_HIJACK=1` 不改这段文字，只强制打开 HITL 并拒绝宿主转达放行。
 常驻文本仍不是工具地图。它多两条环内规则：`PROPOSAL REQUIRED`（或

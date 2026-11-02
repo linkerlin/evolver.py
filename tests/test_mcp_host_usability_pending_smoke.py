@@ -77,6 +77,7 @@ class TestTickSchemaIsOnTheLiveList:
         supersede = str((props["supersede_pending"] or {}).get("description") or "")
         assert "cycle_started" in supersede
         assert "true" in supersede
+        assert "pending_redirect_loop" in supersede
         assert props["supersede_pending"].get("default") is False
         mode = props["prompt_mode"]
         assert mode.get("enum") == ["full", "short"]
@@ -168,6 +169,7 @@ class TestPendingBootSmokeHint:
         assert "swarm_doctor" in pending
         assert "cycle_started=false" in pending
         assert "supersede_pending=true" in pending
+        assert "pending_redirect_loop" in pending
         assert "await_supervisor_resume" not in pending
 
         ready = build_instrument_prompt(
@@ -212,6 +214,10 @@ class TestPendingTickRedirect:
         assert result["dispatch_reason"] == "pending_solidify"
         assert result["redirect_reason"] == "pending_solidify"
         assert result["supersede_pending"] is False
+        assert result["redirect_count"] == 1
+        assert result["progress"] is False
+        assert result["tick_again"] is False
+        assert result["tick_closed"] is False
         assert result.get("error") not in _SOFT_GAPS
         assert result.get("error") is None
         assert result["severity"] == "soft"
@@ -245,6 +251,152 @@ class TestPendingTickRedirect:
         assert "gap" not in result
         assert result.get("gate_soft_continue") is not True
         assert "Parent baseline" in str(result.get("note") or "")
+        assert result["redirect_count"] == 1
+        assert result["progress"] is False
+        assert result["tick_closed"] is False
+
+        again = await swarm_tick()
+        assert again["ok"] is False
+        assert again["error"] == "pending_redirect_loop"
+        assert again["severity"] == "soft"
+        assert again["retryable"] is False
+        assert again["cycle_started"] is False
+        assert again["next_action"] == "swarm_solidify"
+        assert again["run_id"] == "run_ready_gate"
+        assert "gap" not in again
+        assert again.get("gate_soft_continue") is not True
+        assert "Parent baseline" in str(again.get("note") or "")
+
+    async def test_repeat_tick_on_the_same_run_closes_without_a_cycle(
+        self, isolated_swarm_env: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """A host that only checks ``ok`` stops on the second identical tick.
+
+        The first redirect stays soft. The repeat flips ``ok`` with
+        ``pending_redirect_loop`` and still does not start a cycle. The soft
+        gap stays on ``warning``, not in ``error``. An explicit supersede
+        still replaces the run. A different unfinished run starts the count
+        over.
+        """
+        from evolver.gep.paths import get_evolution_dir, get_solidify_state_path
+        from evolver.gep.solidify import write_state_for_solidify
+        from evolver.swarm import swarm_tick
+
+        _write_pending("run_loop")
+        state_path = get_solidify_state_path()
+        before = state_path.read_text(encoding="utf-8")
+        calls = {"n": 0}
+
+        async def boom(is_loop: bool = False) -> dict[str, Any]:
+            _ = is_loop
+            calls["n"] += 1
+            write_state_for_solidify(
+                {
+                    "run_id": "run_replaced",
+                    "signals": ["log_error"],
+                    "selected_gene_id": "g_new",
+                    "mutation": {"id": "m_new", "validation": []},
+                }
+            )
+            return {"run_id": "run_replaced", "dispatch_prompt": "started"}
+
+        monkeypatch.setattr("evolver.evolve.runner._run_single_cycle", boom)
+        first = await swarm_tick()
+        second = await swarm_tick()
+        third = await swarm_tick()
+
+        assert calls["n"] == 0
+        assert state_path.read_text(encoding="utf-8") == before
+        assert not (isolated_swarm_env / "evolution" / "swarm_state.json").exists()
+        ledger = get_evolution_dir() / "pending_tick_redirects.json"
+        assert json.loads(ledger.read_text(encoding="utf-8")) == {
+            "run_id": "run_loop",
+            "count": 3,
+        }
+
+        assert first["ok"] is True
+        assert first.get("error") is None
+        assert first["redirect_count"] == 1
+        assert first["progress"] is False
+        assert first["tick_again"] is False
+        assert first["tick_closed"] is False
+        assert first["cycle_started"] is False
+        assert first["next_action"] == "swarm_solidify"
+        assert first["run_id"] == "run_loop"
+
+        for closed in (second, third):
+            assert closed["ok"] is False
+            assert closed["error"] == "pending_redirect_loop"
+            assert closed["error"] not in _SOFT_GAPS
+            assert closed["severity"] == "soft"
+            assert closed["retryable"] is False
+            assert closed["tick_closed"] is True
+            assert closed["progress"] is False
+            assert closed["tick_again"] is False
+            assert closed["cycle_started"] is False
+            assert closed["pending_solidify"] is True
+            assert closed["next_action"] == "swarm_solidify"
+            assert closed["run_id"] == "run_loop"
+            assert closed["dispatch_prompt"] is None
+            assert closed["supersede_pending"] is False
+            assert closed.get("gap") in _SOFT_GAPS
+            assert closed.get("warning")
+            assert closed.get("next_steps")
+            note = str(closed.get("note") or "")
+            assert "pending_redirect_loop" in note
+            assert "not a gate" in note.lower()
+            assert any(
+                "pending_redirect_loop" in str(item) for item in closed.get("warnings") or []
+            )
+        assert second["redirect_count"] == 2
+        assert third["redirect_count"] == 3
+
+        replaced = await swarm_tick(supersede_pending=True)
+        assert calls["n"] == 1
+        assert replaced["ok"] is True
+        assert replaced["cycle_started"] is True
+        assert replaced["supersede_pending"] is True
+        assert replaced.get("error") != "pending_redirect_loop"
+
+        _write_pending("run_other")
+        fresh = await swarm_tick()
+        assert calls["n"] == 1
+        assert fresh["ok"] is True
+        assert fresh.get("error") is None
+        assert fresh["run_id"] == "run_other"
+        assert fresh["redirect_count"] == 1
+        assert fresh["cycle_started"] is False
+        assert fresh["progress"] is False
+
+    async def test_checkpoint_does_not_burn_the_redirect_count(
+        self, isolated_swarm_env: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        from evolver.gep.compact_gate import clear_checkpoint, request_checkpoint
+        from evolver.gep.paths import get_evolution_dir
+        from evolver.swarm import swarm_tick
+
+        calls = {"n": 0}
+
+        async def boom(is_loop: bool = False) -> dict[str, Any]:
+            _ = is_loop
+            calls["n"] += 1
+            return {"run_id": "nope", "dispatch_prompt": "nope"}
+
+        monkeypatch.setattr("evolver.evolve.runner._run_single_cycle", boom)
+        _write_pending("run_checkpoint")
+        request_checkpoint("precompact_hook")
+        blocked = await swarm_tick()
+        assert calls["n"] == 0
+        assert blocked["next_action"] == "call_swarm_checkpoint_working"
+        assert not (get_evolution_dir() / "pending_tick_redirects.json").exists()
+
+        clear_checkpoint()
+        opened = await swarm_tick()
+        assert calls["n"] == 0
+        assert opened["ok"] is True
+        assert opened["redirect_count"] == 1
+        assert opened.get("error") is None
+        _ = isolated_swarm_env
 
     async def test_supersede_pending_replaces_the_unfinished_run(
         self, isolated_swarm_env: Path, monkeypatch: pytest.MonkeyPatch
@@ -346,6 +498,7 @@ def test_wire_tools_list_publishes_prompt_mode(tmp_path: Path) -> None:
     assert "short" in tick["prompt_mode"]["description"]
     assert "short" in tick["checklist_only"]["description"]
     assert "cycle_started" in tick["supersede_pending"]["description"]
+    assert "pending_redirect_loop" in tick["supersede_pending"]["description"]
     assert tick["supersede_pending"]["default"] is False
     assert tools["swarm_doctor"]["annotations"]["readOnlyHint"] is True
     assert json.dumps(tools["swarm_tick"]["description"]).count("\\n        ") == 0
