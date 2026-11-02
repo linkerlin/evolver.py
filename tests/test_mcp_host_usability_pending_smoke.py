@@ -82,6 +82,15 @@ def _host_abandons_on_any_error(payload: dict[str, Any]) -> bool:
     return bool(payload.get("error"))
 
 
+def _host_dies_on_soft_continue_false_ignoring_new_flags(payload: dict[str, Any]) -> bool:
+    """Strict ``gate_soft_continue=false`` ends the session.
+
+    ``session_not_failed``, ``ok``, ``tick_again``, and ``next_action`` are
+    ignored. A missing flag is not false, so the session stays up.
+    """
+    return payload.get("gate_soft_continue") is False
+
+
 def _host_dies_when_the_body_looks_failed(payload: dict[str, Any]) -> bool:
     """Treat ``gate_soft_continue=false`` as session death only with a failed body.
 
@@ -170,6 +179,37 @@ def _assert_preserve_pending(payload: dict[str, Any]) -> None:
     assert _host_drops_run_because_error(payload) is False
 
 
+def _assert_stop_is_not_failure(payload: dict[str, Any], *, closed: bool, gap: bool) -> None:
+    """Stop-tick signals stay off the fail and abandon fields.
+
+    ``gate_soft_continue`` is omitted, so a host that dies on strict false
+    stays up, and a host that loops only while the flag is true does not tick.
+    The fuse code lives in ``loop_fuse``. ``error`` is absent, so a host that
+    abandons on any error keeps the run. ``ok`` is still false on the fuse.
+    """
+    assert "gate_soft_continue" not in payload
+    assert "error" not in payload
+    assert payload.get("tick_again") is False
+    assert _host_ticks_only_on_gate_soft_continue(payload) is False
+    assert _host_dies_on_soft_continue_false_ignoring_new_flags(payload) is False
+    assert _host_ends_session_on_soft_continue_false(payload) is False
+    assert _host_abandons_on_any_error(payload) is False
+    assert _host_abandons_error_before_preserve_triad(payload) is False
+    note = str(payload.get("note") or "")
+    if closed:
+        assert payload["ok"] is False
+        assert payload["loop_fuse"] == "pending_redirect_loop"
+        assert payload["retryable"] is False
+        assert "loop_fuse" in note
+        assert "pending_redirect_loop" in note
+    else:
+        assert payload["ok"] is True
+        assert "loop_fuse" not in payload
+    if gap:
+        assert "gate_soft_continue is omitted" in note
+        assert "not a failed session" in note.lower()
+
+
 class TestTickSchemaIsOnTheLiveList:
     def test_prompt_mode_and_doctor_are_listed_with_descriptions(self) -> None:
         from evolver.mcp_server import build_server
@@ -189,9 +229,10 @@ class TestTickSchemaIsOnTheLiveList:
         assert "cycle_started" in supersede
         assert "true" in supersede
         assert "pending_redirect_loop" in supersede
+        assert "loop_fuse" in supersede
         assert "preserve_pending" in supersede
         assert "abandon_run" in supersede
-        assert "gate_soft_continue" in supersede
+        assert "omitted" in supersede
         assert "session_not_failed" in supersede
         assert props["supersede_pending"].get("default") is False
         mode = props["prompt_mode"]
@@ -304,7 +345,9 @@ class TestPendingBootSmokeHint:
         assert "pending_redirect_loop" in pending
         assert "preserve_pending=true" in pending
         assert "abandon_run=false" in pending
-        assert "gate_soft_continue=false" in pending
+        assert "loop_fuse=pending_redirect_loop" in pending
+        assert "gate_soft_continue is omitted" in pending
+        assert "error=pending_redirect_loop" not in pending
         assert "session_not_failed=true" in pending
         assert "swarm_solidify" in pending
         assert "await_supervisor_resume" not in pending
@@ -359,14 +402,10 @@ class TestPendingTickRedirect:
         assert result.get("error") is None
         _assert_preserve_pending(result)
         _assert_session_not_failed(result)
-        assert result.get("gate_soft_continue") is False
-        assert _host_ticks_only_on_gate_soft_continue(result) is False
-        assert _host_abandons_on_any_error(result) is False
+        _assert_stop_is_not_failure(result, closed=False, gap=True)
         assert _host_dies_when_the_body_looks_failed(result) is False
         assert _host_next_call(result) == "swarm_solidify"
         _assert_solidify_step_first(result)
-        assert "gate_soft_continue is false" in str(result.get("note") or "")
-        assert "not a failed session" in str(result.get("note") or "").lower()
         assert result["severity"] == "soft"
         assert result["readonly_smoke"]["settles_run"] is False
         hint = str(result.get("hint") or "")
@@ -394,45 +433,39 @@ class TestPendingTickRedirect:
         assert result["cycle_started"] is False
         assert result["next_action"] == "swarm_solidify"
         assert result["severity"] == "soft"
-        assert result.get("error") is None
         assert "gap" not in result
-        assert result.get("gate_soft_continue") is not True
         assert "Parent baseline" in str(result.get("note") or "")
         assert result["redirect_count"] == 1
         assert result["progress"] is False
         assert result["tick_closed"] is False
         _assert_preserve_pending(result)
         _assert_session_not_failed(result)
+        _assert_stop_is_not_failure(result, closed=False, gap=False)
         assert "preserve_pending" in str(result.get("note") or "")
         _assert_solidify_step_first(result)
         assert _host_next_call(result) == "swarm_solidify"
-        assert _host_abandons_on_any_error(result) is False
 
         again = await swarm_tick()
-        assert again["ok"] is False
-        assert again["error"] == "pending_redirect_loop"
         assert again["severity"] == "soft"
-        assert again["retryable"] is False
         assert again["cycle_started"] is False
         assert again["next_action"] == "swarm_solidify"
         assert again["run_id"] == "run_ready_gate"
         assert "gap" not in again
-        assert again.get("gate_soft_continue") is not True
         assert "Parent baseline" in str(again.get("note") or "")
         _assert_preserve_pending(again)
         _assert_session_not_failed(again)
-        assert _host_ticks_only_on_gate_soft_continue(again) is False
+        _assert_stop_is_not_failure(again, closed=True, gap=False)
 
     async def test_repeat_tick_on_the_same_run_closes_without_a_cycle(
         self, isolated_swarm_env: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         """A host that only checks ``ok`` stops on the second identical tick.
 
-        The first redirect stays soft. The repeat flips ``ok`` with
-        ``pending_redirect_loop`` and still does not start a cycle. The soft
-        gap stays on ``warning``, not in ``error``. An explicit supersede
-        still replaces the run. A different unfinished run starts the count
-        over.
+        The first redirect stays soft. The repeat flips ``ok`` and sets
+        ``loop_fuse=pending_redirect_loop`` with no ``error`` field, and still
+        does not start a cycle. The soft gap stays on ``warning``. An explicit
+        supersede still replaces the run. A different unfinished run starts
+        the count over.
         """
         from evolver.gep.paths import get_evolution_dir, get_solidify_state_path
         from evolver.gep.solidify import write_state_for_solidify
@@ -481,21 +514,14 @@ class TestPendingTickRedirect:
         assert first["run_id"] == "run_loop"
         _assert_preserve_pending(first)
         _assert_session_not_failed(first)
-        assert first.get("gate_soft_continue") is False
-        assert _host_ticks_only_on_gate_soft_continue(first) is False
-        assert _host_abandons_on_any_error(first) is False
+        _assert_stop_is_not_failure(first, closed=False, gap=True)
         assert _host_dies_when_the_body_looks_failed(first) is False
         assert _host_next_call(first) == "swarm_solidify"
         _assert_solidify_step_first(first)
         assert "preserve_pending" in str(first.get("note") or "")
-        assert "gate_soft_continue is false" in str(first.get("note") or "")
 
         for closed in (second, third):
-            assert closed["ok"] is False
-            assert closed["error"] == "pending_redirect_loop"
-            assert closed["error"] not in _SOFT_GAPS
             assert closed["severity"] == "soft"
-            assert closed["retryable"] is False
             assert closed["tick_closed"] is True
             assert closed["progress"] is False
             assert closed["tick_again"] is False
@@ -508,18 +534,15 @@ class TestPendingTickRedirect:
             assert closed.get("gap") in _SOFT_GAPS
             assert closed.get("warning")
             assert closed.get("next_steps")
-            assert closed["gate_soft_continue"] is False
             _assert_preserve_pending(closed)
             _assert_session_not_failed(closed)
-            assert _host_ticks_only_on_gate_soft_continue(closed) is False
+            _assert_stop_is_not_failure(closed, closed=True, gap=True)
             _assert_solidify_step_first(closed)
             assert _host_next_call(closed) == "swarm_solidify"
             note = str(closed.get("note") or "")
-            assert "pending_redirect_loop" in note
             assert "not a gate" in note.lower()
             assert "preserve_pending" in note
             assert "abandon_run" in note
-            assert "gate_soft_continue" in note
             assert any(
                 "pending_redirect_loop" in str(item) for item in closed.get("warnings") or []
             )
@@ -532,6 +555,7 @@ class TestPendingTickRedirect:
         assert replaced["cycle_started"] is True
         assert replaced["supersede_pending"] is True
         assert replaced.get("error") != "pending_redirect_loop"
+        assert "loop_fuse" not in replaced
         assert "session_not_failed" not in replaced
 
         _write_pending("run_other")
@@ -574,8 +598,7 @@ class TestPendingTickRedirect:
         assert opened.get("error") is None
         _assert_preserve_pending(opened)
         _assert_session_not_failed(opened)
-        assert opened.get("gate_soft_continue") is False
-        assert _host_ticks_only_on_gate_soft_continue(opened) is False
+        _assert_stop_is_not_failure(opened, closed=False, gap=True)
         assert _host_next_call(opened) == "swarm_solidify"
         _ = isolated_swarm_env
 
@@ -681,8 +704,10 @@ def test_wire_tools_list_publishes_prompt_mode(tmp_path: Path) -> None:
     assert "short" in tick["checklist_only"]["description"]
     assert "cycle_started" in tick["supersede_pending"]["description"]
     assert "pending_redirect_loop" in tick["supersede_pending"]["description"]
+    assert "loop_fuse" in tick["supersede_pending"]["description"]
     assert "preserve_pending" in tick["supersede_pending"]["description"]
     assert "abandon_run" in tick["supersede_pending"]["description"]
+    assert "omitted" in tick["supersede_pending"]["description"]
     assert "session_not_failed" in tick["supersede_pending"]["description"]
     assert tick["supersede_pending"]["default"] is False
     assert tools["swarm_doctor"]["annotations"]["readOnlyHint"] is True

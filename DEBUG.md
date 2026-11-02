@@ -1178,3 +1178,10 @@
 - **根因**：`false` 只写在 `gate_soft_continue` 上，旁边没有一个正向的「会话没有失败」布尔。保险丝的 `error` 仍是宿主先看见的失败码，preserve 三元组要等宿主自己回头去读。
 - **修复**：未完成 run 的两次默认 tick 都写 `session_not_failed=true`。先读它，再读 `gate_soft_continue` 和 `error`。true 表示去 `swarm_solidify`，不要结束会话，也不要放弃 run；preserve 三元组仍说明怎么留。`ok`、`error`、`gate_soft_continue` 的值不改。boot / status 不带这个字段（开局 soft-continue 仍是 `gate_soft_continue=true`）。不写 Parent baseline，不放宽固化门。目录缓存（DEBUG #61）未做假修复。
 - **经验**：**「不要再 tick」和「会话失败」必须是两个布尔。** 把 false 放在名字像「继续」的字段上，宿主会把 false 读成整段停。正向的 `session_not_failed=true` 先回答「失败了没有」，preserve 三元组才答「这条 run 留不留」。完全不读 `session_not_failed` 的宿主这次仍覆盖不到。
+
+### 67. 不读 `session_not_failed` 的宿主仍把 false 和 `error` 当成失败（MCP 易用性，已修）
+
+- **症状**：#66 之后，完全不读 `session_not_failed` 的宿主有两类。一类把任意 `gate_soft_continue=false` 当成整段会话失败，在第一次软缺口重定向上停住，不去 `swarm_solidify`。另一类也不读 preserve 三元组，把保险丝上的任意 `error` 当成放弃，在 `pending_redirect_loop` 上丢掉未完成 run。
+- **根因**：`gate_soft_continue=true` 的原义是「软缺口，会话继续」；`error` 是硬停字段（`apply_soft_gap` 写明软缺口不得进 `error`）。#17–#19 把「不要再 tick」写进这两个失败形字段，再请宿主先读新旗标。不读新旗标的宿主按原义处理。
+- **修复**：未完成 run 的 tick 重定向（第一次和保险丝）在软缺口上删掉 `gate_soft_continue`，不写成 false，也不留 true。缺键不是 true，只按 true 循环的宿主不再 tick；缺键不是 false，只把严格 false 当会话失败的宿主不会结束会话，哪怕它不读 `session_not_failed`。`tick_again=false` 仍表示不要再 tick。保险丝码从 `error` 挪到 `loop_fuse=pending_redirect_loop`，`error` 字段不出现，`ok` 仍为 false。只看 `ok` 的宿主会停；只因 `error` 放弃的宿主不会丢掉 run。`session_not_failed` 与 preserve 三元组仍在。boot / status 的 `gate_soft_continue` 仍为 true，且不带 `session_not_failed`。不写 Parent baseline，不放宽固化门。目录缓存（DEBUG #61）未做假修复。
+- **经验**：**停 tick 不能借用失败字段。** `false` 写在名字像「继续」的旗标上，不读旁注的宿主会把 false 读成整段停。`error` 是硬停槽，保险丝码放进去就会被当成放弃。缺键同时躲开「只在 true 时 tick」和「只在 false 时判死」。仍把缺键当成「继续 tick」的宿主，以及把 `ok=false` 本身当成整段失败的宿主，这次覆盖不到。
