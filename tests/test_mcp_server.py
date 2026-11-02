@@ -270,6 +270,10 @@ class TestInstructions:
         server = build_server()
         text = server.instructions or ""
         assert len(text) < 1200
+        assert "loop_fuse=pending_redirect_loop" in text
+        assert " or pending_redirect_loop" not in text
+        assert "error=pending_redirect_loop" not in text
+        assert "next_action=pending_redirect_loop" not in text
         assert "swarm_boot" in text
         assert "THIS message" in text
         assert "never retry" in text

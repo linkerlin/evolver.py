@@ -118,6 +118,11 @@ class TestProtocol:
         assert "await_human_approval" in instructions
         assert "swarm_propose" in instructions
         assert "never retry" in instructions
+        assert "loop_fuse=pending_redirect_loop" in instructions
+        assert " or pending_redirect_loop" not in instructions
+        assert "error=pending_redirect_loop" not in instructions
+        assert "next_action=pending_redirect_loop" not in instructions
+        assert len(instructions) < 1200
         assert "swarm_hook_event" not in instructions
 
     def test_tools_list_is_the_closed_surface(self, client: _McpClient) -> None:

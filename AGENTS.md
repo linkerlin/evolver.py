@@ -405,9 +405,14 @@ boot 自动 ack 本 agent 的 `swarm.hello`。安装或拉代码后须重启 MCP
 Parent。此时 `boot_once` 为空。忽略 `next_action` 再调 `swarm_tick` 时默认不启新周期。
 第一次 `ok=true`、`severity=soft`、`cycle_started=false`、`progress=false`、
 `redirect_count=1`，`next_action` 仍是 `swarm_solidify`，不改 `last_run`。
-同一条 run 再 tick 返回 `ok=false`、`loop_fuse=pending_redirect_loop`（`severity=soft`，
-`retryable=false`，没有 `error` 字段），仍不启周期；这不是门禁失败，也不是放弃，
-软缺口留在 `warning`。两次返回都带 `preserve_pending=true`、`abandon_run=false`、
+同一条 run 再 tick 返回 `ok=false`、`loop_fuse=pending_redirect_loop`、
+`redirect_reason=pending_redirect_loop`（`severity=soft`，`retryable=false`，
+没有 `error` 字段），仍不启周期；这不是门禁失败，也不是放弃，也不是另一个
+`next_action`。`next_action` 仍是 `swarm_solidify`。`dispatch_reason` 仍是
+`pending_solidify`。第一次重定向的 `redirect_reason` 仍是 `pending_solidify`，
+没有 `loop_fuse`。常驻 instructions 写 `loop_fuse=pending_redirect_loop`，
+不把裸码当成 `next_action`。软缺口留在 `warning`。两次返回都带
+`preserve_pending=true`、`abandon_run=false`、
 `action_required=swarm_solidify`（boot/status 在仍要固化时同样带上）。有软缺口时，
 第一次 tick 与保险丝都不带 `gate_soft_continue`（缺席不是 false；`ok` 第一次仍为 true，
 没有 `error`；`tick_again=false` 表示不要再 tick）。两次 tick 都带
