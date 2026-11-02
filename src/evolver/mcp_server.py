@@ -308,24 +308,25 @@ def standing_instructions() -> str:
         "EVOLVER SWARM is connected. If THIS message already asks for something "
         "else, do that and do not start the loop.\n"
         "If it does not, call swarm_boot and follow its instrument_prompt, "
-        "including boot_once. Then one sentence on the actual state: soft-continue "
-        "(severity=soft), hard gate, or paused. Say 停 to stop.\n"
+        "including boot_once. One sentence on the actual state: severity=soft, "
+        "hard gate, or paused.\n"
         "\n"
         "Loop per turn via next_action:\n"
         "  swarm_tick → edit dispatch_prompt → swarm_distill →\n"
         "  swarm_hypothesis → swarm_solidify → swarm_feedback (score or 0)\n"
         "PROPOSAL REQUIRED or proposal_required=true: swarm_propose that edit, "
         "no free edit.\n"
-        "Soft gaps (no_baseline/pack_absent/unmeasured): severity=soft; continue.\n"
+        "next_action=swarm_solidify or pending_redirect_loop: call "
+        "swarm_solidify. Do not tick or abandon. Soft gap: severity=soft.\n"
         "Grok Bot: /workspace root; src=/workspace/evolver-research/evolver.py; "
-        "restart evolver mcp after pull.\n"
+        "restart mcp after pull.\n"
         "\n"
         "Stop and never retry on next_action=stop_and_report, await_human, "
         "await_human_approval, await_supervisor_resume, paused=true, "
         "preflight_aborted=true, error=instance_lock_held. "
         "await_human_approval: swarm_approvals, then swarm_approval_resolve "
         "after user decides. "
-        "failure_mode.retryable=true: back to swarm_tick. "
+        "retryable=true: swarm_tick again. "
         "停: swarm_supervise action pause, then stop. "
         "继续: action resume, then swarm_boot again.\n"
         "Never edit .evolver/ by hand, never solve val here, never call skip_validation."
@@ -461,8 +462,9 @@ def build_server() -> Any:
                     "does not start a cycle. That error is not a gate failure. "
                     "Both returns set preserve_pending=true, abandon_run=false, "
                     "and action_required=swarm_solidify. Do not drop the run. "
-                    "A soft gap stays in warning. On the fuse, gate_soft_continue "
-                    "is false so a host that loops only on that flag stops. "
+                    "A soft gap stays in warning. gate_soft_continue is false "
+                    "on the first soft-gap redirect and on the fuse: do not tick "
+                    "again. The first redirect keeps ok true and sets no error. "
                     "true starts a new cycle and replaces that run. Does not "
                     "weaken the solidify gate or write a Parent baseline. "
                     "Checkpoint and pause still refuse the cycle."
@@ -486,8 +488,11 @@ def build_server() -> Any:
         does not start a cycle. That is not a gate failure. Both returns set
         preserve_pending=true, abandon_run=false, and
         action_required=swarm_solidify: do not drop the unfinished run. A soft
-        gap stays in warning. On the fuse, gate_soft_continue is false.
-        Pass supersede_pending=true to replace that run. This does not weaken
+        gap stays in warning. gate_soft_continue is false on the first soft-gap
+        redirect and on the fuse: do not tick again. The first redirect keeps
+        ok true and sets no error, so the session is not failed. Call
+        swarm_solidify. Pass supersede_pending=true to replace that run. This
+        does not weaken
         the solidify gate and does not write a Parent baseline.
         """
         from evolver.swarm import swarm_tick
