@@ -11,7 +11,7 @@ import subprocess
 import time
 from collections.abc import Sequence
 from pathlib import Path
-from typing import Any
+from typing import Any, Final
 
 from evolver.solo.git_guard import guard_git_subcommand
 
@@ -95,12 +95,120 @@ def git_list_untracked_files(cwd: Path | str | None = None) -> list[str]:
     return [line for line in raw.splitlines() if line.strip()]
 
 
+# Path components that are dependency or cache trees, including nested ones.
+# Top-level prefixes are also dropped by is_constraint_counted_path.
+_SNAPSHOT_NOISE_PARTS: Final[frozenset[str]] = frozenset(
+    {
+        ".git",
+        "node_modules",
+        ".venv",
+        "venv",
+        "__pycache__",
+        ".pytest_cache",
+    }
+)
+# Top-level runtime heads. Same set as solidify._is_runtime_state: the
+# engine's own write domain, not the mutation scene. Only the untracked
+# supplement is filtered; `git diff HEAD` is left unchanged.
+_SNAPSHOT_RUNTIME_HEADS: Final[frozenset[str]] = frozenset(
+    {
+        ".evolver",
+        ".evolver_settings",
+        ".evomap",
+        ".pytest_cache",
+        "logs",
+        "memory",
+    }
+)
+_BINARY_SNIFF_BYTES: Final = 8192
+
+
+def _untracked_snapshot_candidate(rel: str) -> bool:
+    """True when an untracked path belongs in the mutation diff scene."""
+    norm = normalize_rel_path(rel)
+    if not norm or not is_constraint_counted_path(norm):
+        return False
+    if norm.startswith("evolver/.config/") or norm.endswith(".pyc"):
+        return False
+    parts = norm.split("/")
+    if parts[0] in _SNAPSHOT_RUNTIME_HEADS:
+        return False
+    return all(part not in _SNAPSHOT_NOISE_PARTS for part in parts)
+
+
+def _format_new_file_diff(rel: str, text: str) -> str:
+    """Unified diff for a file that exists only in the worktree."""
+    path = normalize_rel_path(rel)
+    header = f"diff --git a/{path} b/{path}\nnew file mode 100644\n--- /dev/null\n+++ b/{path}\n"
+    if text == "":
+        return header
+    lines = text.splitlines()
+    body = "\n".join(f"+{line}" for line in lines)
+    if text.endswith("\n"):
+        body += "\n"
+    else:
+        body += "\n\\ No newline at end of file\n"
+    return f"{header}@@ -0,0 +1,{len(lines)} @@\n{body}"
+
+
+def _read_text_prefix(path: Path, limit: int) -> str | None:
+    """UTF-8 prefix of a regular file, or None when it is missing or binary."""
+    if limit <= 0 or not path.is_file():
+        return None
+    try:
+        with path.open("rb") as handle:
+            sniff = handle.read(_BINARY_SNIFF_BYTES)
+            if b"\x00" in sniff:
+                return None
+            blob = sniff[:limit] if len(sniff) >= limit else sniff + handle.read(limit - len(sniff))
+    except OSError:
+        return None
+    return blob.decode("utf-8", errors="replace")
+
+
+def _untracked_diff_text(cwd: Path, *, budget: int) -> str:
+    """New-file diffs for untracked candidates, capped at ``budget`` chars."""
+    if budget <= 0:
+        return ""
+    chunks: list[str] = []
+    used = 0
+    for rel in git_list_untracked_files(cwd):
+        if used >= budget or not _untracked_snapshot_candidate(rel):
+            continue
+        remaining = budget - used
+        text = _read_text_prefix(cwd / rel, remaining)
+        if text is None:
+            continue
+        chunk = _format_new_file_diff(rel, text)
+        if len(chunk) > remaining:
+            chunk = chunk[:remaining]
+        chunks.append(chunk)
+        used += len(chunk)
+    return "".join(chunks)
+
+
 def capture_diff_snapshot(
     cwd: Path | str | None = None,
     max_chars: int = 80_000,
 ) -> str:
-    """Capture current diff vs HEAD, truncated to max_chars."""
-    raw = try_run_cmd(["diff", "HEAD"], cwd=cwd)
+    """Capture the worktree vs HEAD, including untracked new files.
+
+    ``git diff HEAD`` already contains staged and unstaged edits to tracked
+    paths. A file that was never ``git add``ed is absent from that diff, so
+    its content is appended as a ``diff --git`` new-file hunk. Failure and
+    success snapshots share this helper. Noise trees, runtime-state dirs,
+    protected paths, and binaries are left out of the untracked supplement.
+    The result is truncated to ``max_chars``.
+    """
+    root = Path(cwd) if cwd is not None else Path.cwd()
+    raw = try_run_cmd(["diff", "HEAD"], cwd=root)
+    if len(raw) > max_chars:
+        return raw[:max_chars] + "\n...[truncated]\n"
+    extra = _untracked_diff_text(root, budget=max_chars - len(raw))
+    if extra:
+        if raw and not raw.endswith("\n"):
+            raw += "\n"
+        raw += extra
     if len(raw) > max_chars:
         return raw[:max_chars] + "\n...[truncated]\n"
     return raw
