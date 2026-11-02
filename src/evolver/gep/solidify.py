@@ -132,9 +132,15 @@ def _failure_event(
     return event
 
 
+# Stored scene budget for failure episodes and success events. Applied inside
+# capture_diff_snapshot so a large tracked diff cannot push untracked hunks
+# past the cut (DEBUG #57).
+_STORED_DIFF_CHARS: Final = 2000
+
+
 def _failure_diff(cwd: Path) -> str:
     """The mutation's diff, captured before rollback. After rollback it is gone."""
-    return capture_diff_snapshot(cwd)[:2000]
+    return capture_diff_snapshot(cwd, max_chars=_STORED_DIFF_CHARS)
 
 
 def _remember_failure_scene(
@@ -2212,7 +2218,7 @@ def _solidify_cycle(
         return pack_rejection
 
     blast_radius = _compute_blast_radius()
-    diff_snapshot = capture_diff_snapshot(cwd)
+    diff_snapshot = capture_diff_snapshot(cwd, max_chars=_STORED_DIFF_CHARS)
 
     # S26.3 strict-improvement gate (wikiskill R_val > R_best): compare the
     # measured score against the fitness ledger. Shadow period: verdict is
@@ -2246,7 +2252,7 @@ def _solidify_cycle(
         "signals": last_run.get("signals", []),
         "mutation": mutation,
         "blast_radius": blast_radius,
-        "diff_snapshot": diff_snapshot[:2000],
+        "diff_snapshot": diff_snapshot,
         # S26 honest score: a MEASURED cascade result (1.0 = all stages green);
         # an unvalidated success claims nothing (score=None + marker) so the
         # ledger distinguishes "tested good" from "never tested".

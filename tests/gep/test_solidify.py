@@ -251,6 +251,31 @@ def test_hypothesis_rejection_records_untracked_new_file(git_ws: Path) -> None:
     assert not (git_ws / "notes.md").exists()
 
 
+def _write_oversized_tracked_readme(git_ws: Path) -> None:
+    (git_ws / "README.md").write_text("TRACKED_HEAD_" + ("n" * 3000) + "\n", encoding="utf-8")
+
+
+def test_hypothesis_rejection_keeps_untracked_when_tracked_diff_fills_budget(git_ws: Path) -> None:
+    """DEBUG #57: a 2000-char failure scene still shows notes.md when tracked diff is huge."""
+    _write_oversized_tracked_readme(git_ws)
+    (git_ws / "notes.md").write_text("untracked-notes-marker\n", encoding="utf-8")
+    write_state_for_solidify(_last_run())
+    result = solidify()
+    assert result["ok"] is False
+    assert result["error"] == "hypothesis_missing"
+    from evolver.gep.episode_record import load_episode, record_round
+
+    stored = record_round(event_id=str(result["event_id"]))
+    body = load_episode(stored["id"])
+    assert body is not None
+    diff = str(body["diff"])
+    assert "TRACKED_HEAD_" in diff
+    assert "diff --git a/notes.md b/notes.md" in diff
+    assert "untracked-notes-marker" in diff
+    assert len(diff) <= 2000
+    assert not (git_ws / "notes.md").exists()
+
+
 def test_success_diff_snapshot_includes_untracked_new_file(
     git_ws: Path,
     armed_pack: dict[str, Any],
@@ -275,6 +300,36 @@ def test_success_diff_snapshot_includes_untracked_new_file(
     )
     assert "untracked-notes-marker" in str(evt.get("diff_snapshot") or "")
     assert "diff --git a/notes.md" in str(evt.get("diff_snapshot") or "")
+
+
+def test_success_diff_snapshot_keeps_untracked_when_tracked_diff_fills_budget(
+    git_ws: Path,
+    armed_pack: dict[str, Any],
+    declared_hypothesis: dict[str, Any],
+) -> None:
+    """The success event uses the same 2000-char budget and still shows notes.md."""
+    _ = armed_pack, declared_hypothesis
+    set_flag("enable_fitness_cascade", False, persist=False)
+    _write_oversized_tracked_readme(git_ws)
+    (git_ws / "notes.md").write_text("untracked-notes-marker\n", encoding="utf-8")
+    write_state_for_solidify(
+        _last_run(
+            mutation={
+                "id": "mut_untracked_large",
+                "validation": [[sys.executable, "-c", "print(1)"]],
+            }
+        )
+    )
+    result = solidify()
+    assert result["ok"] is True
+    evt = json.loads(
+        (get_gep_assets_dir() / "events.jsonl").read_text(encoding="utf-8").strip().splitlines()[-1]
+    )
+    diff = str(evt.get("diff_snapshot") or "")
+    assert "TRACKED_HEAD_" in diff
+    assert "diff --git a/notes.md" in diff
+    assert "untracked-notes-marker" in diff
+    assert len(diff) <= 2000
 
 
 def test_hypothesis_rejection_leaves_a_recordable_scene(git_ws: Path) -> None:

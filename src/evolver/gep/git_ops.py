@@ -121,6 +121,11 @@ _SNAPSHOT_RUNTIME_HEADS: Final[frozenset[str]] = frozenset(
     }
 )
 _BINARY_SNIFF_BYTES: Final = 8192
+_TRUNCATION_MARK: Final = "\n...[truncated]\n"
+# One short new-file hunk is about 120 characters. 480 keeps that hunk (or
+# the start of a larger one) inside the caller's budget. A quarter cap stops
+# a tiny max_chars from handing the whole snapshot to the supplement.
+_UNTRACKED_TAIL_CHARS: Final = 480
 
 
 def _untracked_snapshot_candidate(rel: str) -> bool:
@@ -187,6 +192,25 @@ def _untracked_diff_text(cwd: Path, *, budget: int) -> str:
     return "".join(chunks)
 
 
+def _clip_diff(text: str, limit: int) -> str:
+    """Clip ``text`` to ``limit`` characters, truncation mark included."""
+    if limit <= 0 or not text:
+        return ""
+    if len(text) <= limit:
+        return text
+    mark = _TRUNCATION_MARK
+    if limit <= len(mark):
+        return text[:limit]
+    return text[: limit - len(mark)] + mark
+
+
+def _untracked_tail_budget(max_chars: int) -> int:
+    """Fixed untracked tail. Never more than a quarter of ``max_chars``."""
+    if max_chars <= 0:
+        return 0
+    return min(_UNTRACKED_TAIL_CHARS, max_chars // 4)
+
+
 def capture_diff_snapshot(
     cwd: Path | str | None = None,
     max_chars: int = 80_000,
@@ -198,20 +222,26 @@ def capture_diff_snapshot(
     its content is appended as a ``diff --git`` new-file hunk. Failure and
     success snapshots share this helper. Noise trees, runtime-state dirs,
     protected paths, and binaries are left out of the untracked supplement.
-    The result is truncated to ``max_chars``.
+
+    The result is at most ``max_chars``. When the tracked diff would leave
+    less than the untracked tail, the tracked prefix is clipped first so the
+    tail stays inside the budget. With nothing eligible to append, that tail
+    goes back to the tracked diff.
     """
     root = Path(cwd) if cwd is not None else Path.cwd()
-    raw = try_run_cmd(["diff", "HEAD"], cwd=root)
-    if len(raw) > max_chars:
-        return raw[:max_chars] + "\n...[truncated]\n"
-    extra = _untracked_diff_text(root, budget=max_chars - len(raw))
-    if extra:
-        if raw and not raw.endswith("\n"):
-            raw += "\n"
-        raw += extra
-    if len(raw) > max_chars:
-        return raw[:max_chars] + "\n...[truncated]\n"
-    return raw
+    if max_chars <= 0:
+        return ""
+    tracked = try_run_cmd(["diff", "HEAD"], cwd=root)
+    tail = _untracked_tail_budget(max_chars)
+    tracked_over_tail = tail and len(tracked) > max_chars - tail
+    tracked_limit = max_chars - tail if tracked_over_tail else max_chars
+    tracked_view = _clip_diff(tracked, tracked_limit)
+    joiner_len = 1 if tracked_view and not tracked_view.endswith("\n") else 0
+    extra = _untracked_diff_text(root, budget=max_chars - len(tracked_view) - joiner_len)
+    if not extra:
+        return _clip_diff(tracked, max_chars)
+    joiner = "\n" if joiner_len else ""
+    return tracked_view + joiner + extra
 
 
 def is_critical_protected_path(rel_path: str) -> bool:
