@@ -410,7 +410,10 @@ Parent。此时 `boot_once` 为空。忽略 `next_action` 再调 `swarm_tick` �
 两次返回都带 `preserve_pending=true`、`abandon_run=false`、`action_required=swarm_solidify`
 （boot/status 在仍要固化时同样带上），看到 `error` 也不要丢掉这条 run。有软缺口时，
 第一次 tick 的 `gate_soft_continue` 已是 false（`ok` 仍为 true，没有 `error`，
-只表示不要再 tick，会话没有失败）。保险丝那次同样为 false。boot/status 的这个旗标仍为 true。
+只表示不要再 tick）。保险丝那次同样为 false。两次 tick 都带
+`session_not_failed=true`：先读它，会话没有失败。`pending_redirect_loop` 在这个
+字段为 true 时不放弃 run，preserve 三元组仍指向 `swarm_solidify`。
+boot/status 的 `gate_soft_continue` 仍为 true，且不带 `session_not_failed`。
 `next_steps` 第一条是调用 `swarm_solidify`。
 要替换这条 run 才传 `supersede_pending=true`。暂停与压缩检查点仍优先，且不消耗这次计数。
 首次准备见 `examples/swarm-quickstart/README.md`。

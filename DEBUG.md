@@ -1171,3 +1171,10 @@
 - **根因**：`apply_soft_gap` 在第一次重定向上把旗标写回 true，缺口目录的 `next_steps` 又明确说可以 `swarm_tick`。preserve 三元组只对会读新字段的宿主有用。保险丝同时带 `error` 和 false，正好打中另外两类宿主。boot / status 的 true 是开局 soft-continue，不该和这次 tick 混成同一个信号。
 - **修复**：有软缺口的 tick 重定向（第一次和保险丝）都把 `gate_soft_continue` 写成 false。第一次仍 `ok=true`、无 `error`、`severity=soft`、`next_action=swarm_solidify`。false 只表示不要再 tick，不是会话失败，软缺口仍在 `warning`。`next_steps` 第一条改为现在调用 `swarm_solidify`，并改写会邀请再 tick 的步骤。boot / status 的旗标保持 true，但待固化时 `next_steps` 同样先指向 `swarm_solidify`。只看 `ok` 的宿主再 tick 仍会碰到保险丝。不写 Parent baseline，不放宽固化门。目录缓存（DEBUG #61）未做假修复。
 - **经验**：**「不要再 tick」要写在第一次重定向上，而且不要靠 `ok=false` + `error` 来表达。** 开局的 soft-continue 旗标保持 true，避免一开机就像会话失败。仍会把任意 `gate_soft_continue=false`（哪怕 `ok=true` 且没有 `error`）当成整段会话失败的宿主，以及完全不看旗标、只因 `ok=true` 再 tick、又把保险丝的 `error` 当放弃的宿主，这次覆盖不到。
+
+### 66. `gate_soft_continue=false` 被当成整段会话失败，保险丝的 `error` 仍压过 preserve 三元组（MCP 易用性，已修）
+
+- **症状**：#65 之后，有软缺口的第一次 `swarm_tick` 是 `ok=true`、没有 `error`、`gate_soft_continue=false`、`next_action=swarm_solidify`。只把这个 false 当成整段会话失败的宿主停在这里，不去 `swarm_solidify`。另一类宿主不看这个旗标，因为 `ok=true` 再 tick，然后把任意 `error` 当放弃，不读 `preserve_pending` / `abandon_run` / `action_required`，在 `pending_redirect_loop` 上丢掉未完成 run。
+- **根因**：`false` 只写在 `gate_soft_continue` 上，旁边没有一个正向的「会话没有失败」布尔。保险丝的 `error` 仍是宿主先看见的失败码，preserve 三元组要等宿主自己回头去读。
+- **修复**：未完成 run 的两次默认 tick 都写 `session_not_failed=true`。先读它，再读 `gate_soft_continue` 和 `error`。true 表示去 `swarm_solidify`，不要结束会话，也不要放弃 run；preserve 三元组仍说明怎么留。`ok`、`error`、`gate_soft_continue` 的值不改。boot / status 不带这个字段（开局 soft-continue 仍是 `gate_soft_continue=true`）。不写 Parent baseline，不放宽固化门。目录缓存（DEBUG #61）未做假修复。
+- **经验**：**「不要再 tick」和「会话失败」必须是两个布尔。** 把 false 放在名字像「继续」的字段上，宿主会把 false 读成整段停。正向的 `session_not_failed=true` 先回答「失败了没有」，preserve 三元组才答「这条 run 留不留」。完全不读 `session_not_failed` 的宿主这次仍覆盖不到。
