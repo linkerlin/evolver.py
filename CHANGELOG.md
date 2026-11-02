@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## Unreleased
 
 ### Fixed
+- **2000 字现场切片留住未跟踪新文件（DEBUG #57 续）**：失败 episode 与成功事件不再对 `capture_diff_snapshot` 的结果做 `[:2000]`。两臂都传入 `max_chars=2000`，截断在 helper 内完成。已跟踪 diff 会占满预算时，先裁跟踪前缀，固定留 480 字（不超过预算的四分之一）给未跟踪新文件块；没有合格未跟踪文件时，这截尾部还给跟踪 diff。返回长度不超过预算。`.venv` / `node_modules` / `__pycache__` / `.git` / 受保护文件 / `memory/`、`.evolver/` 等运行态目录 / 含 NUL 的二进制仍不进入补充。不改固化门，不写 Parent baseline，不开 val 密封。
 - **失败现场 diff 包含未跟踪新文件（DEBUG #57）**：`capture_diff_snapshot` 在 `git diff HEAD` 之后追加未跟踪新文件的 unified diff。失败侧 `_failure_diff` 与成功侧共用这一 helper。依赖树、缓存、运行态目录、受保护路径和含 NUL 的二进制不进入这份补充。不改固化门，不写 Parent baseline，不开 val 密封。
 
 ### Docs

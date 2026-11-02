@@ -6,6 +6,7 @@ import subprocess
 from pathlib import Path
 
 from evolver.gep.git_ops import (
+    _format_new_file_diff,
     capture_diff_snapshot,
     count_file_lines,
     is_constraint_counted_path,
@@ -161,6 +162,73 @@ def test_capture_diff_snapshot_skips_noise_and_binaries(tmp_path: Path) -> None:
         "noise-binary-marker",
     ):
         assert marker not in snap
+
+
+def _stripped_git_diff(repo: Path) -> str:
+    result = subprocess.run(
+        ["git", "diff", "HEAD"],
+        cwd=repo,
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    return result.stdout.strip()
+
+
+def _write_tracked_diff_of_length(repo: Path, target: int) -> str:
+    """Replace README.md so the stripped ``git diff HEAD`` is ``target`` chars."""
+    prefix = "TRACKED_HEAD_"
+    (repo / "README.md").write_text(prefix + "\n", encoding="utf-8")
+    base = _stripped_git_diff(repo)
+    extra = target - len(base)
+    assert extra >= 0, f"diff header {len(base)} already exceeds {target}"
+    (repo / "README.md").write_text(prefix + ("n" * extra) + "\n", encoding="utf-8")
+    raw = _stripped_git_diff(repo)
+    assert len(raw) == target
+    return raw
+
+
+def test_capture_diff_snapshot_keeps_untracked_when_tracked_exceeds_budget(tmp_path: Path) -> None:
+    """A tracked diff longer than max_chars must not eat the untracked tail."""
+    _init_repo(tmp_path)
+    raw = _write_tracked_diff_of_length(tmp_path, 2500)
+    (tmp_path / "notes.md").write_text("untracked-notes-marker\n", encoding="utf-8")
+    assert "untracked-notes-marker" not in raw[:2000]
+    snap = capture_diff_snapshot(tmp_path, max_chars=2000)
+    assert "TRACKED_HEAD_" in snap
+    assert "diff --git a/notes.md b/notes.md" in snap
+    assert "untracked-notes-marker" in snap
+    assert "[truncated]" in snap
+    assert len(snap) <= 2000
+
+
+def test_capture_diff_snapshot_keeps_untracked_when_tracked_nearly_fills_budget(
+    tmp_path: Path,
+) -> None:
+    """A tracked diff that leaves less than one new-file hunk still keeps the hunk."""
+    _init_repo(tmp_path)
+    raw = _write_tracked_diff_of_length(tmp_path, 1900)
+    note = "untracked-notes-marker\n"
+    (tmp_path / "notes.md").write_text(note, encoding="utf-8")
+    hunk = _format_new_file_diff("notes.md", note)
+    assert len(hunk) > 2000 - len(raw)
+    snap = capture_diff_snapshot(tmp_path, max_chars=2000)
+    assert "TRACKED_HEAD_" in snap
+    assert "untracked-notes-marker" in snap
+    assert len(snap) <= 2000
+
+
+def test_capture_diff_snapshot_does_not_reserve_tail_for_noise(tmp_path: Path) -> None:
+    """Dependency noise is not untracked evidence, so the tracked diff keeps the budget."""
+    _init_repo(tmp_path)
+    _write_tracked_diff_of_length(tmp_path, 2500)
+    noise = tmp_path / ".venv" / "lib" / "x.py"
+    noise.parent.mkdir(parents=True)
+    noise.write_text("noise-venv-marker\n", encoding="utf-8")
+    snap = capture_diff_snapshot(tmp_path, max_chars=2000)
+    assert "noise-venv-marker" not in snap
+    assert "TRACKED_HEAD_" in snap
+    assert len(snap) == 2000
 
 
 def test_capture_diff_snapshot_truncates(tmp_path: Path) -> None:
