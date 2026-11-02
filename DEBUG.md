@@ -1224,3 +1224,11 @@
 - **根因**：保险丝写了 `retryable=false`，第一次重定向没写。缺席不是 false。`gate_soft_continue` 不能借来当停 tick 的 false，那个名字在不读旁注的宿主那里就是会话失败。
 - **修复**：未完成 run 的两次默认 tick（有软缺口与无软缺口）都写 `retryable=false`。第一次仍是 `ok=true`、没有 `error`、没有 `loop_fuse`，`gate_soft_continue` 在软缺口上仍然缺席。`session_not_failed=true` 与 preserve 三元组不动。保险丝仍是 `ok=false`。不写 Parent baseline，不放宽固化门。目录缓存（DEBUG #61）未做假修复。
 - **经验**：**停 tick 的严格 false 要写在本来就表示「要不要再试」的字段上。** `gate_soft_continue=false` 和第一次就翻 `ok=false` 都会被另一类宿主读成整段失败。`retryable` 缺席必须当成「未说可以再 tick」，写上 false 才盖住把缺席默认成继续的那一型。只认 `gate_soft_continue` 的宿主这次仍覆盖不到。
+
+### 70. 只读冒烟走到 `swarm_doctor` 后丢掉「去固化」（MCP 易用性，已修）
+
+- **症状**：#69 之后，未完成 run 的 `readonly_smoke.tools` 仍是 `swarm_doctor` 与 `swarm_status`。status 带 `next_action=swarm_solidify`。doctor 在真实 git 仓库、冻结包未装时是 `ok=true`、`soft_continue=true`、`loop_ready=false`，没有 `next_action`，也没有 `pending_solidify`。hint 写软缺口不阻断循环。按冒烟去调 doctor、再服从 `next_action` 的宿主找不到动作；把缺席的动作加上 `soft_continue=true` 读成「循环没被挡住」的宿主会再 tick。doctor 自己不写 Parent baseline，但 `fixes` 里仍有 `evolver doctor --fix`（人执行时可能去量基线）。
+- **根因**：doctor 只摘要开箱检查，不读未完成 run。冒烟清单把两个工具写成等价的只读入口，返回却不等价。
+- **修复**：仅当未完成 run 且 `soft_continue=true`、没有硬 `blockers` 时，doctor 补上 `pending_solidify`、`next_action=swarm_solidify`、`readonly_smoke` 与 preserve 三元组。hint 先写现在调用 `swarm_solidify`，不要 tick，不要在固化前执行 `fixes`，本调用不结算、不写 Parent、不放宽固化门。不写 `gate_soft_continue`（严格 false 会重开 DEBUG #67）。不写 `session_not_failed`（那是 tick 重定向的旗标，不是 doctor 的健康位）。硬阻断（例如不是 git 仓库，`ok=false`）不另给 `next_action`。没有未完成 run 时 doctor 形状不变。不执行 `--fix`。目录缓存（DEBUG #61）未做假修复；工具描述与返回体同一口径，旧会话目录仍可能看不到新句子。
+- **经验**：**冒烟清单里的两个工具必须给出同一个下一步。** 只读不等于可以丢掉 `next_action`。`soft_continue=true` 表示缺口不是硬停，不是再 tick 的许可。
+- **仍在**：只读 `soft_continue`、忽略 `next_action` 的宿主仍可能再 tick。把 `soft_continue` 写成 false 会和 `gate_soft_continue=false` 一样，被不读旁注的宿主当成整段停，所以没有写。`fixes` 仍列出 `evolver doctor --fix`；本工具不执行它。hint 写明固化前不要执行。只认 `gate_soft_continue` 的 tick 重定向（DEBUG #69 余项 1）、把保险丝 `ok=false` 当成整段失败的宿主（余项 2）、以及目录缓存（DEBUG #61）这次都不动。

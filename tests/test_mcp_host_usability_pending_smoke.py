@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import subprocess
 from pathlib import Path
 from typing import Any
 
@@ -183,6 +184,22 @@ def _assert_session_not_failed(payload: dict[str, Any]) -> None:
     assert "session_not_failed" in str(payload.get("note") or "")
 
 
+def _host_smoke_decides_without_next_action(payload: dict[str, Any]) -> str:
+    """What a smoke host does after ``swarm_doctor``.
+
+    ``next_action`` wins. With no action, ``soft_continue`` or ``ok`` true
+    means the loop is not blocked, so the host ticks. An omitted
+    ``gate_soft_continue`` is not a stop. ``session_not_failed`` is ignored:
+    doctor must not need that tick-redirect flag.
+    """
+    action = str(payload.get("next_action") or "")
+    if action:
+        return action
+    if payload.get("soft_continue") is True or payload.get("ok") is True:
+        return "swarm_tick"
+    return "stop"
+
+
 def _host_next_call(payload: dict[str, Any]) -> str:
     """Follow ``next_action``. A soft gap is not a hard stop."""
     if payload.get("severity") == "hard" or payload.get("error") in _SOFT_GAPS:
@@ -324,6 +341,10 @@ class TestTickSchemaIsOnTheLiveList:
         assert doctor.annotations is not None
         assert doctor.annotations.read_only_hint is True
         assert "fix" not in (_schema(doctor).get("properties") or {})
+        description = " ".join((doctor.description or "").split())
+        assert "swarm_solidify" in description
+        assert "Parent baseline" in description
+        assert "session_not_failed" in description
 
 
 class TestPendingBootSmokeHint:
@@ -409,6 +430,83 @@ class TestPendingBootSmokeHint:
         state = boot.get("state")
         assert isinstance(state, dict)
         assert "readonly_smoke" not in state
+
+    def test_pending_doctor_on_a_soft_gap_names_solidify(
+        self, isolated_swarm_env: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """A read-only smoke must steer to solidify, not back into tick.
+
+        ``readonly_smoke`` names ``swarm_doctor`` next to ``swarm_status``.
+        Status already sets ``next_action=swarm_solidify``. Doctor used to
+        return only ``soft_continue`` and a hint that the loop is not blocked,
+        so a host that smokes and then follows ``next_action`` (or ticks when
+        that key is missing and ``soft_continue`` is true) never solidifies.
+        """
+        from evolver.bench.frozen_gate import baseline_path, frozen_pack_path
+        from evolver.swarm import swarm_doctor
+
+        monkeypatch.delenv("EVOLVER_NO_PARENT_GIT", raising=False)
+        subprocess.run(["git", "init"], cwd=isolated_swarm_env, check=True, capture_output=True)
+
+        idle = swarm_doctor()
+        assert idle["ok"] is True
+        assert idle["soft_continue"] is True
+        assert "next_action" not in idle
+        assert "pending_solidify" not in idle
+        assert "preserve_pending" not in idle
+        assert "session_not_failed" not in idle
+        assert "gate_soft_continue" not in idle
+
+        _write_pending("run_doctor_soft")
+        report = swarm_doctor()
+
+        assert report["ok"] is True
+        assert report["soft_continue"] is True
+        assert report["loop_ready"] is False
+        assert report["read_only"] is True
+        assert report["blockers"] == []
+        assert report["pending_solidify"] is True
+        assert report["next_action"] == "swarm_solidify"
+        assert report["readonly_smoke"]["settles_run"] is False
+        assert report["readonly_smoke"]["tools"] == ["swarm_doctor", "swarm_status"]
+        _assert_preserve_pending(report)
+        assert "session_not_failed" not in report
+        assert "gate_soft_continue" not in report
+        assert report.get("error") not in _SOFT_GAPS
+        assert _host_dies_on_soft_continue_false_ignoring_new_flags(report) is False
+        assert _host_smoke_decides_without_next_action(report) == "swarm_solidify"
+        hint = str(report.get("hint") or "")
+        assert hint.startswith("Call swarm_solidify")
+        assert "Do not call swarm_tick" in hint
+        assert "Parent baseline" in hint
+        assert "Do not apply fixes before swarm_solidify" in hint
+        assert "not installed" in hint.lower() or "do not block the loop" in hint.lower()
+        assert not baseline_path().exists()
+        assert not frozen_pack_path().exists()
+        assert report["fixes"]
+
+    def test_pending_doctor_hard_blocker_does_not_invent_solidify(
+        self, isolated_swarm_env: Path
+    ) -> None:
+        """A hard doctor failure stays a hard stop. No solidify action is added.
+
+        The isolated tree is not a git repo, so ``ok`` is false. That must
+        not grow ``next_action``, ``gate_soft_continue``, or
+        ``session_not_failed``.
+        """
+        from evolver.swarm import swarm_doctor
+
+        _write_pending("run_doctor_hard")
+        report = swarm_doctor()
+        assert report["ok"] is False
+        assert report["soft_continue"] is False
+        assert report["read_only"] is True
+        assert "next_action" not in report
+        assert "pending_solidify" not in report
+        assert "session_not_failed" not in report
+        assert "gate_soft_continue" not in report
+        assert _host_smoke_decides_without_next_action(report) == "stop"
+        _ = isolated_swarm_env
 
     def test_instrument_names_the_read_only_alternative_only_while_pending(self) -> None:
         from evolver.swarm import build_instrument_prompt

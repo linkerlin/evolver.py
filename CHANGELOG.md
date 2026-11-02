@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## Unreleased
 
 ### Fixed
+- **MCP 宿主可用性：未完成 run 的软缺口 doctor 指向固化**：`readonly_smoke` 点名的 `swarm_doctor` 在 `soft_continue=true` 且有未完成 run 时带 `next_action=swarm_solidify`、`pending_solidify` 与 preserve 三元组。`hint` 先写现在固化，软缺口仍是建议。不写 `gate_soft_continue`，不写 `session_not_failed`，不结算这条 run，不写 Parent baseline，不执行 `--fix`。没有未完成 run，或 doctor 本身是硬阻断（`ok=false`）时，不另给这个动作。
 - **MCP 宿主可用性：未完成 run 的第一次 tick 重定向也写 `retryable=false`**：同一条未完成 run 的两次默认 `swarm_tick` 都带 `retryable=false`。缺席不再被读成「可以再 tick」。第一次仍是 `ok=true`、没有 `error`、`gate_soft_continue` 仍缺席（缺席不是 false，不把严格 false 当成整段会话失败）。保险丝仍是 `ok=false` 与 `loop_fuse=pending_redirect_loop`。不写 Parent baseline，不放宽固化门。
 - **2000 字现场切片留住未跟踪新文件（DEBUG #57 续）**：失败 episode 与成功事件不再对 `capture_diff_snapshot` 的结果做 `[:2000]`。两臂都传入 `max_chars=2000`，截断在 helper 内完成。已跟踪 diff 会占满预算时，先裁跟踪前缀，固定留 480 字（不超过预算的四分之一）给未跟踪新文件块；没有合格未跟踪文件时，这截尾部还给跟踪 diff。返回长度不超过预算。`.venv` / `node_modules` / `__pycache__` / `.git` / 受保护文件 / `memory/`、`.evolver/` 等运行态目录 / 含 NUL 的二进制仍不进入补充。不改固化门，不写 Parent baseline，不开 val 密封。
 - **失败现场 diff 包含未跟踪新文件（DEBUG #57）**：`capture_diff_snapshot` 在 `git diff HEAD` 之后追加未跟踪新文件的 unified diff。失败侧 `_failure_diff` 与成功侧共用这一 helper。依赖树、缓存、运行态目录、受保护路径和含 NUL 的二进制不进入这份补充。不改固化门，不写 Parent baseline，不开 val 密封。

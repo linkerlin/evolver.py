@@ -649,7 +649,12 @@ def build_server() -> Any:
         return swarm_status()
 
     def tool_swarm_doctor() -> dict[str, Any]:
-        """Read-only. Open-box summary (same checks as evolver doctor, never --fix)."""
+        """Read-only. Open-box summary (same checks as evolver doctor, never --fix).
+
+        While a run is unfinished and the report is soft-continue, next_action
+        is swarm_solidify. This call does not settle the run or write a Parent
+        baseline. gate_soft_continue and session_not_failed stay absent.
+        """
         from evolver.swarm import swarm_doctor
 
         return swarm_doctor()

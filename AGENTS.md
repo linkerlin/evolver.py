@@ -402,7 +402,9 @@ boot 自动 ack 本 agent 的 `swarm.hello`。安装或拉代码后须重启 MCP
 已暂停时 `next_action=await_supervisor_resume`。有待固化 run 时 `next_action` 仍是
 `swarm_solidify`（`hint` 写明先固化；软缺口留在 `warning`，不盖掉这句），并带
 `readonly_smoke`：只读冒烟用 `swarm_doctor` / `swarm_status`，不结算、不放宽门、不写
-Parent。此时 `boot_once` 为空。忽略 `next_action` 再调 `swarm_tick` 时默认不启新周期。
+Parent。软缺口（`soft_continue=true`）下 `swarm_doctor` 同样给出
+`next_action=swarm_solidify` 与 preserve 三元组，不写 `gate_soft_continue`、不写
+`session_not_failed`；硬阻断的 doctor 仍是 `ok=false`，不另给这个动作。此时 `boot_once` 为空。忽略 `next_action` 再调 `swarm_tick` 时默认不启新周期。
 第一次 `ok=true`、`severity=soft`、`cycle_started=false`、`progress=false`、
 `redirect_count=1`，`next_action` 仍是 `swarm_solidify`，不改 `last_run`。
 同一条 run 再 tick 返回 `ok=false`、`loop_fuse=pending_redirect_loop`、
