@@ -448,6 +448,19 @@ def build_server() -> Any:
                 )
             ),
         ] = False,
+        supersede_pending: Annotated[
+            bool,
+            Field(
+                description=(
+                    "Default false. While a run is unfinished, swarm_tick does "
+                    "not start a cycle: ok stays true, severity=soft, "
+                    "cycle_started=false, next_action=swarm_solidify, and "
+                    "last_run stays. true starts a new cycle and replaces that "
+                    "run. Does not weaken the solidify gate or write a Parent "
+                    "baseline. Checkpoint and pause still refuse the cycle."
+                )
+            ),
+        ] = False,
     ) -> dict[str, Any]:
         """Core loop. Run one evolution cycle; returns the GEP prompt to execute.
 
@@ -457,6 +470,11 @@ def build_server() -> Any:
         text. The full prompt stays at dispatch_prompt_artifact and
         evolver://dispatch/last. include_prompt=false only clears
         dispatch_prompt.
+
+        If a run is unfinished, the default call does not start a cycle
+        (cycle_started=false, next_action=swarm_solidify, ok=true, severity=soft).
+        Pass supersede_pending=true to replace that run. This does not weaken
+        the solidify gate and does not write a Parent baseline.
         """
         from evolver.swarm import swarm_tick
 
@@ -465,6 +483,7 @@ def build_server() -> Any:
             include_prompt=include_prompt,
             prompt_mode=prompt_mode,
             checklist_only=checklist_only,
+            supersede_pending=supersede_pending,
         )
 
     def tool_swarm_distill(response_text: str, dry_run: bool = False) -> dict[str, Any]:

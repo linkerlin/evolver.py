@@ -448,7 +448,9 @@ class TestTick:
     ) -> None:
         first = await swarm_tick()
         assert first["ok"] is True
-        second = await swarm_tick()
+        # The first tick leaves the run unfinished. A second tick replaces it
+        # only when the host says so.
+        second = await swarm_tick(supersede_pending=True)
         state_file = isolated_swarm_env / "evolution" / "swarm_state.json"
         data = json.loads(state_file.read_text(encoding="utf-8"))
         assert data["ticks"] == 2

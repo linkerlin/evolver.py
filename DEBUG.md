@@ -1143,3 +1143,10 @@
 - **根因**：(1) 服务端 `tools/list`（进程内 `list_tools()` 与 stdio JSON-RPC 的 `inputSchema`）已经包含 `prompt_mode` 枚举 `full|short`、`checklist_only`，以及带 `readOnlyHint` 的 `swarm_doctor`。与 DEBUG #16/#17 同型：stdio 进程在 spawn 时载入，已开会话的工具目录可以继续显示旧 schema，调用却打到新进程。不是注册遗漏，修 schema 形状并不能让旧会话的目录变新。(2) `swarm_status` 先写开口 `hint` 再 `apply_soft_gap`（已有 hint 就保留）；`swarm_boot` 先前不写 hint，软缺口因此把 hint 设成缺口说明，与 `next_action` 打架。
 - **修复**：不改 `next_action`、不放宽固化门。待固化且最终动作仍是 `swarm_solidify` 时，boot 在套软缺口之前写上开口 hint，并加顶层 `pending_solidify` 与 `readonly_smoke`（`swarm_doctor` / `swarm_status`，`settles_run=false`）。`prompt_mode` 与 `checklist_only` 的 JSON Schema 补上 `description`；工具描述经 `inspect.cleandoc` 去掉嵌套 def 的缩进。缓存本身留在仓外。
 - **经验**：**目录与调用分属两层**。调用能吃新参数，只证明进程是新的；目录缺字段要先对同一进程打 `tools/list`。证明服务端齐全之后，剩下的是宿主会话缓存，不要再改注册表假装修好。软缺口的 `hint` 不得覆盖已经决定的 `next_action`。
+
+### 62. 忽略 `next_action` 的 `swarm_tick` 覆盖未完成 run（MCP 易用性，已修）
+
+- **症状**：`pending_solidify` / `next_action=swarm_solidify` 时，宿主不看 `next_action`，直接 `swarm_tick`。周期照跑，`write_state_for_solidify` 用新的 `last_run` 换掉还没固化的那条。#14 只加了 hint 与 `readonly_smoke`，故意没有硬拒绝。
+- **根因**：仪器和 boot 从 2026-09-05 起就写「先固化，否则 tick 会覆盖」，但 `swarm_tick` 本身不读 `pending_solidify`。保护停在提示词上。
+- **修复**：默认返回软重定向（`ok=true`，`severity=soft`，`cycle_started=false`，`next_action=swarm_solidify`，不写周期、不改 `last_run`）。软缺口仍附 `warning`，不盖 hint，也不写进硬 `error`。显式 `supersede_pending=true` 才启动新周期并替换。压缩检查点与暂停仍优先。不放宽固化门，不写 Parent baseline。
+- **经验**：**会覆盖状态的入口不能只靠提示词**。软重定向保持 `ok=true`，宿主按 `next_action` 走；硬 `error` 会被当成门禁失败。故意换 run 必须是显式参数，默认路径不丢未完成 run。

@@ -121,7 +121,7 @@ class TestShortTickLog:
         # Without the OpenClaw bridge the engine prints BUILT_PROMPT + the
         # gene preview. Short mode drops that blob too.
         monkeypatch.setenv("EVOLVE_BRIDGE", "false")
-        plain = await swarm_tick(prompt_mode="short")
+        plain = await swarm_tick(prompt_mode="short", supersede_pending=True)
         plain_log = str(plain.get("engine_log") or "")
         assert plain["prompt_mode"] == "short"
         assert not _gep_embedded(plain_log)
@@ -149,7 +149,9 @@ class TestShortTickLog:
         assert quiet["dispatch_prompt"] is None
         assert _gep_embedded(str(quiet.get("engine_log") or ""))
 
-        quiet_short = await swarm_tick(include_prompt=False, prompt_mode="short")
+        quiet_short = await swarm_tick(
+            include_prompt=False, prompt_mode="short", supersede_pending=True
+        )
         assert quiet_short["dispatch_prompt"] is None
         assert quiet_short["prompt_mode"] == "short"
         assert not _gep_embedded(str(quiet_short.get("engine_log") or ""))
