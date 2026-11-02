@@ -114,6 +114,26 @@ def _host_ends_session_on_soft_continue_false(payload: dict[str, Any]) -> bool:
     return payload.get("gate_soft_continue") is False
 
 
+def _host_solidifies_only_if_error_is_the_fuse(payload: dict[str, Any]) -> bool:
+    """Solidify only when ``error`` is the old fuse code.
+
+    ``loop_fuse``, ``redirect_reason``, and ``next_action`` are ignored.
+    The fuse no longer sets ``error``, so this host misses it.
+    """
+    return payload.get("error") == "pending_redirect_loop"
+
+
+def _host_solidifies_when_it_reads_the_fuse(payload: dict[str, Any]) -> bool:
+    """Solidify from ``loop_fuse`` or the fuse ``redirect_reason``.
+
+    A bare ``pending_redirect_loop`` is not a ``next_action``. ``error`` is
+    not consulted. The first redirect has neither fuse field.
+    """
+    if payload.get("loop_fuse") == "pending_redirect_loop":
+        return True
+    return payload.get("redirect_reason") == "pending_redirect_loop"
+
+
 def _host_abandons_error_before_preserve_triad(payload: dict[str, Any]) -> bool:
     """Any ``error`` drops the run. The preserve triad is not read by itself.
 
@@ -196,18 +216,42 @@ def _assert_stop_is_not_failure(payload: dict[str, Any], *, closed: bool, gap: b
     assert _host_abandons_on_any_error(payload) is False
     assert _host_abandons_error_before_preserve_triad(payload) is False
     note = str(payload.get("note") or "")
+    assert payload["dispatch_reason"] == "pending_solidify"
+    assert payload["next_action"] == "swarm_solidify"
+    assert payload["next_action"] != "pending_redirect_loop"
     if closed:
         assert payload["ok"] is False
         assert payload["loop_fuse"] == "pending_redirect_loop"
+        assert payload["redirect_reason"] == "pending_redirect_loop"
         assert payload["retryable"] is False
+        assert "error" not in payload
         assert "loop_fuse" in note
+        assert "redirect_reason=pending_redirect_loop" in note
         assert "pending_redirect_loop" in note
+        assert _host_solidifies_only_if_error_is_the_fuse(payload) is False
+        assert _host_solidifies_when_it_reads_the_fuse(payload) is True
     else:
         assert payload["ok"] is True
         assert "loop_fuse" not in payload
+        assert payload["redirect_reason"] == "pending_solidify"
+        assert _host_solidifies_only_if_error_is_the_fuse(payload) is False
+        assert _host_solidifies_when_it_reads_the_fuse(payload) is False
     if gap:
         assert "gate_soft_continue is omitted" in note
         assert "not a failed session" in note.lower()
+
+
+def test_standing_instructions_name_the_fuse_not_a_bare_code() -> None:
+    """Connect-time text names ``loop_fuse``, not a bare peer of ``next_action``."""
+    from evolver.mcp_server import standing_instructions
+
+    text = standing_instructions()
+    assert len(text) < 1200
+    assert "loop_fuse=pending_redirect_loop" in text
+    assert " or pending_redirect_loop" not in text
+    assert "error=pending_redirect_loop" not in text
+    assert "next_action=pending_redirect_loop" not in text
+    assert "next_action=swarm_solidify or loop_fuse=pending_redirect_loop" in text
 
 
 class TestTickSchemaIsOnTheLiveList:
@@ -230,6 +274,9 @@ class TestTickSchemaIsOnTheLiveList:
         assert "true" in supersede
         assert "pending_redirect_loop" in supersede
         assert "loop_fuse" in supersede
+        assert "redirect_reason=pending_redirect_loop" in supersede
+        assert "error=pending_redirect_loop" not in supersede
+        assert "next_action=pending_redirect_loop" not in supersede
         assert "preserve_pending" in supersede
         assert "abandon_run" in supersede
         assert "omitted" in supersede
@@ -294,6 +341,10 @@ class TestPendingBootSmokeHint:
         assert status.get("gate_soft_continue") is True
         assert "session_not_failed" not in boot
         assert "session_not_failed" not in status
+        assert "loop_fuse" not in boot
+        assert "loop_fuse" not in status
+        assert boot.get("redirect_reason") != "pending_redirect_loop"
+        assert status.get("redirect_reason") != "pending_redirect_loop"
         assert boot.get("error") not in _SOFT_GAPS
         _assert_solidify_step_first(boot)
         _assert_solidify_step_first(status)
@@ -346,8 +397,10 @@ class TestPendingBootSmokeHint:
         assert "preserve_pending=true" in pending
         assert "abandon_run=false" in pending
         assert "loop_fuse=pending_redirect_loop" in pending
+        assert "redirect_reason=pending_redirect_loop" in pending
         assert "gate_soft_continue is omitted" in pending
         assert "error=pending_redirect_loop" not in pending
+        assert "next_action=pending_redirect_loop" not in pending
         assert "session_not_failed=true" in pending
         assert "swarm_solidify" in pending
         assert "await_supervisor_resume" not in pending
@@ -705,6 +758,9 @@ def test_wire_tools_list_publishes_prompt_mode(tmp_path: Path) -> None:
     assert "cycle_started" in tick["supersede_pending"]["description"]
     assert "pending_redirect_loop" in tick["supersede_pending"]["description"]
     assert "loop_fuse" in tick["supersede_pending"]["description"]
+    assert "redirect_reason=pending_redirect_loop" in tick["supersede_pending"]["description"]
+    assert "error=pending_redirect_loop" not in tick["supersede_pending"]["description"]
+    assert "next_action=pending_redirect_loop" not in tick["supersede_pending"]["description"]
     assert "preserve_pending" in tick["supersede_pending"]["description"]
     assert "abandon_run" in tick["supersede_pending"]["description"]
     assert "omitted" in tick["supersede_pending"]["description"]

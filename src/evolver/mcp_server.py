@@ -316,8 +316,8 @@ def standing_instructions() -> str:
         "  swarm_hypothesis → swarm_solidify → swarm_feedback (score or 0)\n"
         "PROPOSAL REQUIRED or proposal_required=true: swarm_propose that edit, "
         "no free edit.\n"
-        "next_action=swarm_solidify or pending_redirect_loop: call "
-        "swarm_solidify. session_not_failed=true: not failed. "
+        "next_action=swarm_solidify or loop_fuse=pending_redirect_loop: solidify. "
+        "session_not_failed=true: not failed. "
         "Do not tick or abandon. Soft gap: severity=soft.\n"
         "Grok Bot: /workspace root; src=/workspace/evolver-research/evolver.py; "
         "restart mcp after pull.\n"
@@ -460,9 +460,12 @@ def build_server() -> Any:
                     "tick_again=false, next_action=swarm_solidify, and last_run "
                     "stays. A repeat on that same run returns ok=false, "
                     "severity=soft, retryable=false, "
-                    "loop_fuse=pending_redirect_loop, and no error field. "
-                    "It still does not start a cycle. The fuse is not a gate "
-                    "failure and not an abandon signal. Both returns set "
+                    "loop_fuse=pending_redirect_loop, "
+                    "redirect_reason=pending_redirect_loop, and no error field. "
+                    "next_action stays swarm_solidify. The fuse code is not an "
+                    "error and not a next_action value. It still does not start "
+                    "a cycle. dispatch_reason stays pending_solidify. The fuse "
+                    "is not a gate failure and not an abandon signal. Both returns set "
                     "session_not_failed=true, preserve_pending=true, "
                     "abandon_run=false, and action_required=swarm_solidify. "
                     "A soft gap stays in warning. gate_soft_continue is omitted "
@@ -488,9 +491,13 @@ def build_server() -> Any:
         If a run is unfinished, the first default call does not start a cycle
         (cycle_started=false, next_action=swarm_solidify, ok=true, severity=soft,
         progress=false, tick_again=false). A repeat on that run returns ok=false
-        and loop_fuse=pending_redirect_loop with no error field (severity=soft,
-        retryable=false) and still does not start a cycle. That is not a gate
-        failure and not an abandon signal. Both returns set
+        and loop_fuse=pending_redirect_loop with redirect_reason the same code
+        and no error field (severity=soft, retryable=false). next_action stays
+        swarm_solidify. The fuse code is not an error and not a next_action
+        value. It still does not start a cycle. dispatch_reason stays
+        pending_solidify. The first redirect keeps
+        redirect_reason=pending_solidify and sets no loop_fuse. That is not a
+        gate failure and not an abandon signal. Both returns set
         session_not_failed=true, preserve_pending=true, abandon_run=false, and
         action_required=swarm_solidify. Read session_not_failed before other
         flags. True means the session is not failed: do not drop the unfinished

@@ -1185,3 +1185,14 @@
 - **根因**：`gate_soft_continue=true` 的原义是「软缺口，会话继续」；`error` 是硬停字段（`apply_soft_gap` 写明软缺口不得进 `error`）。#17–#19 把「不要再 tick」写进这两个失败形字段，再请宿主先读新旗标。不读新旗标的宿主按原义处理。
 - **修复**：未完成 run 的 tick 重定向（第一次和保险丝）在软缺口上删掉 `gate_soft_continue`，不写成 false，也不留 true。缺键不是 true，只按 true 循环的宿主不再 tick；缺键不是 false，只把严格 false 当会话失败的宿主不会结束会话，哪怕它不读 `session_not_failed`。`tick_again=false` 仍表示不要再 tick。保险丝码从 `error` 挪到 `loop_fuse=pending_redirect_loop`，`error` 字段不出现，`ok` 仍为 false。只看 `ok` 的宿主会停；只因 `error` 放弃的宿主不会丢掉 run。`session_not_failed` 与 preserve 三元组仍在。boot / status 的 `gate_soft_continue` 仍为 true，且不带 `session_not_failed`。不写 Parent baseline，不放宽固化门。目录缓存（DEBUG #61）未做假修复。
 - **经验**：**停 tick 不能借用失败字段。** `false` 写在名字像「继续」的旗标上，不读旁注的宿主会把 false 读成整段停。`error` 是硬停槽，保险丝码放进去就会被当成放弃。缺键同时躲开「只在 true 时 tick」和「只在 false 时判死」。仍把缺键当成「继续 tick」的宿主，以及把 `ok=false` 本身当成整段失败的宿主，这次覆盖不到。
+
+### 68. 常驻说明把裸码当成 `next_action`，保险丝的 `redirect_reason` 仍写「待固化」（MCP 易用性，已修）
+
+- **症状**：#67 之后，保险丝码在 `loop_fuse=pending_redirect_loop`，`error` 字段不出现，`next_action` 仍是 `swarm_solidify`。连上时的常驻 instructions 仍写 `next_action=swarm_solidify or pending_redirect_loop`。只匹配 `error == pending_redirect_loop` 的宿主不再看见这个码，会跳过 `swarm_solidify`。把裸 `pending_redirect_loop` 当成 `next_action` 并列值的宿主也对不上 #20 的信封。保险丝返回的 `redirect_reason` 仍是 `pending_solidify`，机器读者没有一个非 `error` 的原因字段与保险丝码对齐。
+- **根因**：#20 把码从 `error` 挪到 `loop_fuse`，常驻那一句和 `redirect_reason` 留在旧形状上。裸码没有字段名，读起来像另一个 `next_action`。
+- **修复**：常驻 instructions 改成 `loop_fuse=pending_redirect_loop`，不写 `error=pending_redirect_loop`，也不把裸码当成 `next_action`，长度仍小于 1200。保险丝（无软缺口的早返回，以及有软缺口的返回）把 `redirect_reason` 写成 `pending_redirect_loop`。`dispatch_reason` 仍是 `pending_solidify`。`loop_fuse`、`ok=false`、`error` 缺席、`session_not_failed=true`、preserve 三元组、`tick_again=false` 不动。有软缺口时仍不写 `gate_soft_continue`。第一次重定向的 `redirect_reason` 仍是 `pending_solidify`，没有 `loop_fuse`。`next_action` 仍是 `swarm_solidify`。不写 Parent baseline，不放宽固化门。目录缓存（DEBUG #61）未做假修复。
+- **经验**：**字段名要和码一起出现。** 裸码会被读成 `next_action`。`error` 不能再写回这个码，否则「任意 error 即放弃」的宿主又会丢掉 run。非失败的原因字段是保险丝上的 `redirect_reason`。
+- **仍在的宿主摩擦**（#20 的 1、2、4，这次没有关）：
+  1. 把缺席的 `gate_soft_continue` 当成「继续 tick」（只在严格 false 时才停），并且不看 `tick_again` / `next_action` / `ok` 的宿主，仍可能再 tick。保险丝上 `ok=false` 仍能停住只看 `ok` 的宿主。
+  2. 把 `ok=false` 本身当成整段会话失败、且不读 `session_not_failed` 与 `loop_fuse` 的宿主，仍会在第二次 tick 上停掉会话。`ok=false` 留着，是因为只看 `ok` 的宿主靠它停止空转。
+  4. 宿主 `tools/list` 缓存滞后（DEBUG #61）没有做假修复。安全信号在返回体上。
