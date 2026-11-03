@@ -804,8 +804,11 @@ def _attach_unfinished_run_to_doctor(report: dict[str, Any]) -> dict[str, Any]:
 
     ``gate_soft_continue`` stays absent: a strict false is session death for
     hosts that do not read ``session_not_failed``. That flag stays absent too.
-    It belongs on the tick redirect, not on a doctor health bit. This does not
-    run ``--fix`` and does not write a Parent baseline.
+    It belongs on the tick redirect, not on a doctor health bit.
+    ``tick_again`` is false on this envelope only. Absent is not false, so a
+    host that stops only on strict false would tick again. ``soft_continue``
+    stays true: that bit means the gap is not a hard stop. This does not run
+    ``--fix`` and does not write a Parent baseline.
     """
     if not _pending_solidify_state():
         return report
@@ -814,6 +817,7 @@ def _attach_unfinished_run_to_doctor(report: dict[str, Any]) -> dict[str, Any]:
     out = dict(report)
     out["pending_solidify"] = True
     out["next_action"] = "swarm_solidify"
+    out["tick_again"] = False
     out["readonly_smoke"] = _readonly_smoke_block()
     _stamp_preserve_pending(out)
     run_id = str(_pending_solidify_meta().get("run_id") or "").strip()
@@ -821,9 +825,11 @@ def _attach_unfinished_run_to_doctor(report: dict[str, Any]) -> dict[str, Any]:
     lead = (
         f"Call swarm_solidify now for {who}. "
         "Do not call swarm_tick. "
+        "tick_again=false means do not call swarm_tick. "
         "This doctor call does not settle the run, does not write a Parent "
         "baseline, and does not relax the solidify gate. "
         "Soft gaps stay advisory. Do not apply fixes before swarm_solidify. "
+        "fixes may list `evolver doctor --fix`; this tool does not execute it. "
     )
     out["hint"] = lead + str(out.get("hint") or "")
     return out
@@ -836,7 +842,8 @@ def swarm_doctor() -> dict[str, Any]:
     ``pack_absent`` / ``unmeasured`` stay soft warnings. ``fixes`` are command
     hints for the host to show a person; this function never runs them.
     A soft-continue report with an unfinished run also sets
-    ``next_action=swarm_solidify``. A hard blocker does not.
+    ``next_action=swarm_solidify`` and ``tick_again=false``. ``soft_continue``
+    stays true. A hard blocker does not gain either field.
     """
     from evolver.ops.open_box import SOFT_GAP_ERRORS, doctor
 
