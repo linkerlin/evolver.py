@@ -794,12 +794,49 @@ def swarm_status() -> dict[str, Any]:
     return _surface_bound_paths(_attach_host_session(body), bound)
 
 
+def _attach_unfinished_run_to_doctor(report: dict[str, Any]) -> dict[str, Any]:
+    """Steer a soft doctor smoke at solidify while a run is unfinished.
+
+    ``readonly_smoke`` names this tool next to ``swarm_status``. Status already
+    sets ``next_action``. A soft-continue doctor that omits it looks like
+    "the loop is not blocked", so the host ticks again. Hard blockers keep
+    ``ok`` false and do not gain that action.
+
+    ``gate_soft_continue`` stays absent: a strict false is session death for
+    hosts that do not read ``session_not_failed``. That flag stays absent too.
+    It belongs on the tick redirect, not on a doctor health bit. This does not
+    run ``--fix`` and does not write a Parent baseline.
+    """
+    if not _pending_solidify_state():
+        return report
+    if report.get("soft_continue") is not True or report.get("blockers"):
+        return report
+    out = dict(report)
+    out["pending_solidify"] = True
+    out["next_action"] = "swarm_solidify"
+    out["readonly_smoke"] = _readonly_smoke_block()
+    _stamp_preserve_pending(out)
+    run_id = str(_pending_solidify_meta().get("run_id") or "").strip()
+    who = f"run_id={run_id}" if run_id else "the unfinished run"
+    lead = (
+        f"Call swarm_solidify now for {who}. "
+        "Do not call swarm_tick. "
+        "This doctor call does not settle the run, does not write a Parent "
+        "baseline, and does not relax the solidify gate. "
+        "Soft gaps stay advisory. Do not apply fixes before swarm_solidify. "
+    )
+    out["hint"] = lead + str(out.get("hint") or "")
+    return out
+
+
 def swarm_doctor() -> dict[str, Any]:
     """Read-only open-box summary. Does not install a pack or write a baseline.
 
     Same checks as ``evolver doctor`` without ``--fix``. ``no_baseline`` /
     ``pack_absent`` / ``unmeasured`` stay soft warnings. ``fixes`` are command
     hints for the host to show a person; this function never runs them.
+    A soft-continue report with an unfinished run also sets
+    ``next_action=swarm_solidify``. A hard blocker does not.
     """
     from evolver.ops.open_box import SOFT_GAP_ERRORS, doctor
 
@@ -849,7 +886,7 @@ def swarm_doctor() -> dict[str, Any]:
                 "severity": severity,
             }
         )
-    return {
+    body = {
         "ok": bool(report.get("ok")),
         "soft_continue": bool(report.get("soft_continue")),
         "loop_ready": bool(report.get("loop_ready")),
@@ -865,6 +902,7 @@ def swarm_doctor() -> dict[str, Any]:
         "repo_root": report.get("repo_root"),
         "workspace_id": report.get("workspace_id"),
     }
+    return _attach_unfinished_run_to_doctor(body)
 
 
 def _working_snapshot() -> dict[str, Any]:
