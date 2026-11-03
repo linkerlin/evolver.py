@@ -368,6 +368,13 @@ class TestTickSchemaIsOnTheLiveList:
         assert "session_not_failed" in description
         assert "tick_again=false" in description
 
+        boot_desc = " ".join((tools["swarm_boot"].description or "").split())
+        status_desc = " ".join((tools["swarm_status"].description or "").split())
+        assert "tick_again=false" in boot_desc
+        assert "gate_soft_continue" in boot_desc
+        assert "tick_again=false" in status_desc
+        assert "gate_soft_continue" in status_desc
+
 
 class TestPendingBootSmokeHint:
     def test_pending_boot_keeps_solidify_and_names_a_read_only_smoke(
@@ -406,12 +413,25 @@ class TestPendingBootSmokeHint:
         assert status["readonly_smoke"]["tools"] == smoke["tools"]
         _assert_preserve_pending(boot)
         _assert_preserve_pending(status)
-        # Session start stays soft-continue. The tick redirect is what stops
-        # another tick. The step list already names swarm_solidify.
+        # Soft gap stays gate_soft_continue=true. tick_again=false stops a
+        # host that only halts on strict false. A host that loops only while
+        # gate_soft_continue is true still ticks; do not flip that flag.
+        state = boot["state"]
+        assert isinstance(state, dict)
+        assert boot["tick_again"] is False
+        assert status["tick_again"] is False
+        assert state["tick_again"] is False
+        assert _host_ticks_unless_tick_again_is_false(boot) is False
+        assert _host_ticks_unless_tick_again_is_false(status) is False
+        assert _host_ticks_unless_tick_again_is_false(state) is False
+        assert _host_ticks_only_on_gate_soft_continue(boot) is True
+        assert _host_ticks_only_on_gate_soft_continue(status) is True
         assert boot.get("gate_soft_continue") is True
         assert status.get("gate_soft_continue") is True
+        assert state.get("gate_soft_continue") is True
         assert "session_not_failed" not in boot
         assert "session_not_failed" not in status
+        assert "session_not_failed" not in state
         assert "loop_fuse" not in boot
         assert "loop_fuse" not in status
         assert boot.get("redirect_reason") != "pending_redirect_loop"
@@ -433,6 +453,7 @@ class TestPendingBootSmokeHint:
         assert "readonly_smoke" not in boot
         assert boot.get("severity") == "soft"
         assert boot.get("gate_soft_continue") is True
+        assert "tick_again" not in boot
         assert "preserve_pending" not in boot
         assert "abandon_run" not in boot
         assert "session_not_failed" not in boot
@@ -449,9 +470,11 @@ class TestPendingBootSmokeHint:
         boot = swarm_boot("checkpoint-host")
         assert boot["next_action"] == "call_swarm_checkpoint_working"
         assert "readonly_smoke" not in boot
+        assert "tick_again" not in boot
         state = boot.get("state")
         assert isinstance(state, dict)
         assert "readonly_smoke" not in state
+        assert "tick_again" not in state
 
     def test_pending_doctor_on_a_soft_gap_names_solidify(
         self, isolated_swarm_env: Path, monkeypatch: pytest.MonkeyPatch

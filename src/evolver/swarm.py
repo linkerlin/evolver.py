@@ -651,6 +651,9 @@ def _attach_host_session(status: dict[str, Any]) -> dict[str, Any]:
 
     A missing claim is the whole signal. Soft gaps (no pack / no baseline) are
     attached only after boot, and they stay ``severity=soft`` — not an ``error``.
+    An unfinished run on that soft gap keeps ``next_action=swarm_solidify``,
+    ``gate_soft_continue`` true, and sets ``tick_again`` false. Absent is not
+    false, so a host that stops only on strict false would tick again.
     """
     claim = _session_claim
     if not claim:
@@ -687,6 +690,10 @@ def _attach_host_session(status: dict[str, Any]) -> dict[str, Any]:
     surfaced["next_action"] = action
     if steer_solidify:
         _prefer_solidify_steps(surfaced, hold_tick=False, run_id=pending_run)
+        # Keep gate_soft_continue true. Write tick_again false so a host that
+        # stops only on strict false does not tick again after this status.
+        if surfaced.get("gate_soft_continue") is True:
+            surfaced["tick_again"] = False
     return surfaced
 
 
@@ -805,10 +812,11 @@ def _attach_unfinished_run_to_doctor(report: dict[str, Any]) -> dict[str, Any]:
     ``gate_soft_continue`` stays absent: a strict false is session death for
     hosts that do not read ``session_not_failed``. That flag stays absent too.
     It belongs on the tick redirect, not on a doctor health bit.
-    ``tick_again`` is false on this envelope only. Absent is not false, so a
-    host that stops only on strict false would tick again. ``soft_continue``
-    stays true: that bit means the gap is not a hard stop. This does not run
-    ``--fix`` and does not write a Parent baseline.
+    ``tick_again`` is false here. Absent is not false, so a host that stops
+    only on strict false would tick again. ``soft_continue`` stays true: that
+    bit means the gap is not a hard stop. Unfinished soft-gap boot and status
+    set the same ``tick_again`` false and keep ``gate_soft_continue`` true.
+    This does not run ``--fix`` and does not write a Parent baseline.
     """
     if not _pending_solidify_state():
         return report
@@ -1052,7 +1060,8 @@ def _prefer_solidify_steps(
     not false, so a host that ends the session on strict false stays up
     even when it ignores ``session_not_failed``. ``tick_again`` stays false.
     ``ok`` and ``error`` are left alone. Boot and status keep the flag that
-    ``apply_soft_gap`` set.
+    ``apply_soft_gap`` set, and those unfinished soft-gap envelopes also set
+    ``tick_again`` false.
     """
     rid = str(run_id if run_id is not None else payload.get("run_id") or "").strip()
     who = f"run_id={rid}" if rid else "this unfinished run"
@@ -1201,9 +1210,9 @@ def _pending_tick_redirect(gap: str | None) -> dict[str, Any]:
     is not false, so a host that treats strict false as session death stays
     up even if it ignores ``session_not_failed``. ``tick_again`` is false.
     The first call keeps ``ok`` true and sets no ``error``.
-    The gap itself stays in ``warning``. Elsewhere, including boot and
-    status, a soft gap still sets ``gate_soft_continue`` true, and
-    ``session_not_failed`` stays absent.
+    The gap itself stays in ``warning``. An unfinished soft-gap boot or
+    status keeps ``gate_soft_continue`` true and sets ``tick_again`` false.
+    ``session_not_failed`` stays absent there.
     ``supersede_pending=true`` is the explicit replace. No Parent baseline
     is written.
     """
@@ -1538,7 +1547,9 @@ def swarm_boot(
     instrument prompt's first-action branch (round-57: it was unconditionally
     ``swarm_tick`` while the prompt said "solidify first" when pending —
     hosts reading the structured field got the wrong first action; the
-    round-4 fix only covered the prose).
+    round-4 fix only covered the prose). An unfinished soft gap keeps
+    ``gate_soft_continue`` true and sets ``tick_again`` false beside
+    ``next_action=swarm_solidify``.
     """
     from evolver.gep.paths import ensure_workspace_meta
 
@@ -1593,6 +1604,7 @@ def swarm_boot(
         embedded.pop("preserve_pending", None)
         embedded.pop("abandon_run", None)
         embedded.pop("action_required", None)
+        embedded.pop("tick_again", None)
     gap = _gate_gap(state.get("bench_pack_gate"))
     if gap is not None and str(payload.get("next_action") or "") != "await_supervisor_resume":
         from evolver.ops.open_box import apply_soft_gap
@@ -1621,6 +1633,10 @@ def swarm_boot(
             hold_tick=False,
             run_id=_pending_solidify_meta()["run_id"],
         )
+        # Status already set tick_again on the nested copy. The top-level
+        # boot envelope is a separate dict. Keep gate_soft_continue true.
+        if payload.get("gate_soft_continue") is True:
+            payload["tick_again"] = False
     bound = describe_bound_paths(bind)
     if isinstance(payload.get("state"), dict):
         payload["state"]["bound_paths"] = bound

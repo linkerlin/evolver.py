@@ -421,6 +421,9 @@ def build_server() -> Any:
         project binds only an existing directory. bound_paths states repo_root
         (code root) and workspace_root. A difference, or a label that is not a
         directory, is a soft warning; the loop still continues.
+        An unfinished run on a soft gap keeps next_action=swarm_solidify,
+        gate_soft_continue=true, and tick_again=false. This call does not
+        settle the run or write a Parent baseline.
         """
         from evolver.swarm import swarm_boot
 
@@ -643,7 +646,12 @@ def build_server() -> Any:
         )
 
     def tool_swarm_status() -> dict[str, Any]:
-        """Read-only. Lightweight engine status for swarm agents (no cycle side effects)."""
+        """Read-only. Lightweight engine status for swarm agents (no cycle side effects).
+
+        After boot, an unfinished run on a soft gap keeps next_action=swarm_solidify,
+        gate_soft_continue=true, and tick_again=false. This call does not settle
+        the run or write a Parent baseline.
+        """
         from evolver.swarm import swarm_status
 
         return swarm_status()
