@@ -477,6 +477,10 @@ class TestTick:
         assert result.get("error") not in ("pack_absent", "no_baseline", "unmeasured")
         assert result.get("next_steps")
         assert result.get("warnings")
+        # No unfinished run yet: the catalog command stays a current step.
+        assert any(
+            str(item).strip() == "evolver doctor --fix" for item in result.get("commands") or []
+        )
 
     async def test_fresh_tick_carries_no_proposal_mandate(self, isolated_swarm_env: Path) -> None:
         """Charter step 1: the field exists on every dispatched tick; a novel

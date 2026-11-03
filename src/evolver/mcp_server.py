@@ -510,9 +510,13 @@ def build_server() -> Any:
         run, call swarm_solidify. A soft gap stays in warning.
         gate_soft_continue is omitted on the first soft-gap redirect and on the
         fuse: omitted is not false, so do not tick and do not treat the session
-        as failed. The first redirect keeps ok true and sets no error. Pass
-        supersede_pending=true to replace that run. This does not weaken
-        the solidify gate and does not write a Parent baseline.
+        as failed. The first redirect keeps ok true and sets no error.
+        This steer does not list evolver doctor --fix as the current step
+        in commands or next_steps. The command stays listed when no run is
+        unfinished.
+        This call does not execute it. Pass supersede_pending=true to replace
+        that run. This does not weaken the solidify gate and does not write
+        a Parent baseline.
         """
         from evolver.swarm import swarm_tick
 

@@ -405,9 +405,10 @@ boot 自动 ack 本 agent 的 `swarm.hello`。安装或拉代码后须重启 MCP
 Parent。软缺口（`soft_continue=true`）下 `swarm_doctor` 同样给出
 `next_action=swarm_solidify`、`tick_again=false` 与 preserve 三元组，不写
 `gate_soft_continue`、不写 `session_not_failed`；`soft_continue` 仍为 true。
-这条引导上 `fixes` 不把 `evolver doctor --fix` 列为当前步骤；boot/status 的
-`commands` 与 `next_steps` 同样不把它当成现在要执行的修复。没有未完成 run，
-或固化之后，列出这条命令仍然合适。本工具仍不执行它。
+这条引导上 `fixes` 不把 `evolver doctor --fix` 列为当前步骤；boot/status，以及
+第一次未完成 run 的 tick 与保险丝，其 `commands` 与 `next_steps` 同样不把它当成
+现在要执行的修复。没有未完成 run，或固化之后，列出这条命令仍然合适。本工具仍不执行它。
+tick / 保险丝上的 `gate_soft_continue` 仍缺席，不写成 false。
 硬阻断的 doctor 仍是 `ok=false`，不另给这个动作，也不写 `tick_again`。
 此时 `boot_once` 为空。忽略 `next_action` 再调 `swarm_tick` 时默认不启新周期。
 第一次 `ok=true`、`severity=soft`、`cycle_started=false`、`progress=false`、
