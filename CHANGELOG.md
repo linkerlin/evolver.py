@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## Unreleased
 
 ### Fixed
+- **MCP e2e 客户端跳过 `notifications/tools/list_changed`**：stdio 握手后这条通知没有 `id`。e2e 的 `recv` 原先把下一行当成响应，随后的 `tools/call` 与 `prompts/get` 在 `["result"]` 上 `KeyError`。现在读到带 `id` 的帧才返回，并按请求 id 配对。协议测试里的客户端本来就会跳过通知。
 - **MCP 工具目录：`tools.listChanged` 改为 true，并在 initialized 后发 `notifications/tools/list_changed`**：stdio `tools/list` 本来就在同一页（无 `nextCursor`）列出只读 `swarm_doctor`。握手原先广告 `listChanged: false`，把目录当成不变的宿主会留着加工具之前的缓存：调用打到新进程，目录仍缺 `swarm_doctor`。现在广告列表可变，并在 `notifications/initialized` 之后发一次 `notifications/tools/list_changed`。不注册不存在的工具。仍忽略该通知的宿主要新开一次会话。
 - **MCP 宿主可用性：软缺口 tick 与保险丝不再用 `gate_soft_continue=true` 邀请再 tick**：第一次未完成 run 的 `swarm_tick` 与 `loop_fuse=pending_redirect_loop` 去掉这个键，不写成 false。同时写 `soft_gap.advisory=true`、`soft_gap.tick=false`。只在旗标为 true 时再 tick 的宿主停住；只把严格 false 当成整段失败的宿主不结束会话。boot / status 仍写 `gate_soft_continue=true`。`tick_again=false`、`retryable=false`、保险丝的 `ok=false`、`session_not_failed` 与 preserve 三元组不动。doctor 仍不写 `gate_soft_continue`，也不写 `soft_gap`。不结算这条 run，不写 Parent baseline，不放宽固化门。
 - **MCP 宿主可用性：软固化引导不再把 freeze / baseline 当当前步骤**：未完成 run 的 boot / status / doctor / 第一次 tick / 保险丝，从 `commands` 或 `fixes` 去掉精确的 `evolver bench freeze` 与 `evolver bench baseline`，`next_steps` 里点名它们的句子改成先 `swarm_solidify`。没有未完成 run 时这两条仍在。不执行它们，不写 Parent baseline，不放宽固化门。
