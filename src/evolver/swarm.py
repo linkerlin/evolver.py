@@ -393,6 +393,7 @@ experience 仍写入 ~/.evolver/workspaces/<id>/，不自动提交。补齐基�
 - 要看状态、不跑周期：`swarm_status`。资源 `evolver://status` 是同一份。
   本进程还没 `swarm_boot` 时，status 的 `next_action` 是 `swarm_boot`。
 - 要看开箱就绪、不改状态：`swarm_doctor`（只读，等同 `evolver doctor` 摘要，不执行 --fix）。
+  有未完成 run 且为 soft-continue 时，`fixes` 不把 `evolver doctor --fix` 当当前步骤。
 - 要看最近周期：`tool_cycle_timeline`，或资源 `evolver://events/recent`。
   投影陈旧时再 `tool_rebuild_views`。
 - 多节点：`tool_mailbox_poll` / `tool_mailbox_send`。
@@ -405,6 +406,9 @@ experience 仍写入 ~/.evolver/workspaces/<id>/，不自动提交。补齐基�
 - `bench_pack.reason=pack_absent`：**可继续**。建议人按
   `examples/swarm-quickstart/README.md`「开箱 / 首次准备」执行
   `evolver setup` / `evolver doctor --fix` / `evolver bench freeze`。
+  有未完成 run 时，这条命令不是当前步骤：先 `swarm_solidify`。
+  此时 `swarm_doctor` 的 `fixes` 与 boot/status 的 `commands` 不列出
+  `evolver doctor --fix`。没有未完成 run，或固化之后，列出它仍然合适。
   soft-accept 可发布但会警告；装包仍强烈推荐。
 - `reason=no_baseline`：**可继续**。建议在另一上下文写好 val 沙箱后执行
   `evolver bench baseline`（或 doctor --fix 在沙箱齐时测量）。基线不由候选
@@ -681,6 +685,7 @@ def _attach_host_session(status: dict[str, Any]) -> dict[str, Any]:
     if gap is None:
         if steer_solidify:
             _prefer_solidify_steps(status, hold_tick=False, run_id=pending_run)
+            _defer_doctor_fix_on_steer(status)
         return status
     from evolver.ops.open_box import apply_soft_gap
 
@@ -694,6 +699,7 @@ def _attach_host_session(status: dict[str, Any]) -> dict[str, Any]:
         # stops only on strict false does not tick again after this status.
         if surfaced.get("gate_soft_continue") is True:
             surfaced["tick_again"] = False
+        _defer_doctor_fix_on_steer(surfaced)
     return surfaced
 
 
@@ -801,6 +807,55 @@ def swarm_status() -> dict[str, Any]:
     return _surface_bound_paths(_attach_host_session(body), bound)
 
 
+_DOCTOR_FIX_COMMAND: Final = "evolver doctor --fix"
+_DOCTOR_FIX_NOT_CURRENT: Final = (
+    "Current action is swarm_solidify "
+    "(next_action, preserve_pending, action_required). "
+    "Do not run evolver doctor --fix before solidify. "
+    "That command is appropriate after this run is solidified, "
+    "or when no run is unfinished."
+)
+
+
+def _commands_without_current_doctor_fix(items: list[Any] | None) -> list[str]:
+    """Drop the exact ``evolver doctor --fix`` command. Other commands stay."""
+    kept: list[str] = []
+    for item in items or []:
+        text = str(item).strip()
+        if not text or text == _DOCTOR_FIX_COMMAND:
+            continue
+        if text not in kept:
+            kept.append(text)
+    return kept
+
+
+def _steps_without_current_doctor_fix(items: list[Any] | None) -> list[str]:
+    """Replace a step that tells the host to run ``evolver doctor --fix`` now."""
+    kept: list[str] = []
+    for item in items or []:
+        text = str(item).strip()
+        if not text:
+            continue
+        if text != _DOCTOR_FIX_NOT_CURRENT and _DOCTOR_FIX_COMMAND in text:
+            text = _DOCTOR_FIX_NOT_CURRENT
+        if text not in kept:
+            kept.append(text)
+    return kept
+
+
+def _defer_doctor_fix_on_steer(payload: dict[str, Any]) -> None:
+    """Stop offering ``evolver doctor --fix`` as the current solidify-steer step.
+
+    ``commands`` loses the exact command. A ``next_steps`` entry that names it
+    is replaced with a solidify steer. Tick and fuse envelopes do not call
+    this. Doctor ``fixes`` use :func:`_commands_without_current_doctor_fix`.
+    """
+    if "commands" in payload:
+        payload["commands"] = _commands_without_current_doctor_fix(payload.get("commands"))
+    if "next_steps" in payload:
+        payload["next_steps"] = _steps_without_current_doctor_fix(payload.get("next_steps"))
+
+
 def _attach_unfinished_run_to_doctor(report: dict[str, Any]) -> dict[str, Any]:
     """Steer a soft doctor smoke at solidify while a run is unfinished.
 
@@ -816,7 +871,9 @@ def _attach_unfinished_run_to_doctor(report: dict[str, Any]) -> dict[str, Any]:
     only on strict false would tick again. ``soft_continue`` stays true: that
     bit means the gap is not a hard stop. Unfinished soft-gap boot and status
     set the same ``tick_again`` false and keep ``gate_soft_continue`` true.
-    This does not run ``--fix`` and does not write a Parent baseline.
+    ``fixes`` does not list ``evolver doctor --fix`` as a current step. That
+    command stays listed when no run is unfinished. This does not run
+    ``--fix`` and does not write a Parent baseline.
     """
     if not _pending_solidify_state():
         return report
@@ -837,9 +894,14 @@ def _attach_unfinished_run_to_doctor(report: dict[str, Any]) -> dict[str, Any]:
         "This doctor call does not settle the run, does not write a Parent "
         "baseline, and does not relax the solidify gate. "
         "Soft gaps stay advisory. Do not apply fixes before swarm_solidify. "
-        "fixes may list `evolver doctor --fix`; this tool does not execute it. "
+        "fixes does not list `evolver doctor --fix` as a current step. "
+        "Do not run evolver doctor --fix before solidify. "
+        "This tool does not execute it. "
+        "That command is appropriate after this run is solidified, "
+        "or when no run is unfinished. "
     )
     out["hint"] = lead + str(out.get("hint") or "")
+    out["fixes"] = _commands_without_current_doctor_fix(out.get("fixes"))
     return out
 
 
@@ -851,7 +913,9 @@ def swarm_doctor() -> dict[str, Any]:
     hints for the host to show a person; this function never runs them.
     A soft-continue report with an unfinished run also sets
     ``next_action=swarm_solidify`` and ``tick_again=false``. ``soft_continue``
-    stays true. A hard blocker does not gain either field.
+    stays true. On that steer, ``fixes`` does not list ``evolver doctor --fix``
+    as a current step. The command stays listed when no run is unfinished.
+    A hard blocker does not gain either field.
     """
     from evolver.ops.open_box import SOFT_GAP_ERRORS, doctor
 
@@ -1637,6 +1701,7 @@ def swarm_boot(
         # boot envelope is a separate dict. Keep gate_soft_continue true.
         if payload.get("gate_soft_continue") is True:
             payload["tick_again"] = False
+        _defer_doctor_fix_on_steer(payload)
     bound = describe_bound_paths(bind)
     if isinstance(payload.get("state"), dict):
         payload["state"]["bound_paths"] = bound

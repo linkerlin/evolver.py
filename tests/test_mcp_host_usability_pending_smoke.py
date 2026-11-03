@@ -232,6 +232,26 @@ def _host_next_call(payload: dict[str, Any]) -> str:
     return "stop"
 
 
+def _checklist_runs_doctor_fix_now(payload: dict[str, Any]) -> bool:
+    """True when a list offers ``evolver doctor --fix`` as the current step.
+
+    Exact entries in ``fixes`` or ``commands`` count. A next step that names
+    the command counts unless it says not to run it before solidify.
+    """
+    for key in ("fixes", "commands"):
+        for item in payload.get(key) or []:
+            if str(item).strip() == "evolver doctor --fix":
+                return True
+    for step in payload.get("next_steps") or []:
+        text = str(step)
+        if "evolver doctor --fix" not in text:
+            continue
+        if "do not run evolver doctor --fix before solidify" in text.lower():
+            continue
+        return True
+    return False
+
+
 def _steps_invite_another_tick(payload: dict[str, Any]) -> bool:
     """True when a next step tells the host to call ``swarm_tick``."""
     for step in payload.get("next_steps") or []:
@@ -367,6 +387,7 @@ class TestTickSchemaIsOnTheLiveList:
         assert "Parent baseline" in description
         assert "session_not_failed" in description
         assert "tick_again=false" in description
+        assert "does not list evolver doctor --fix as a current step" in description
 
         boot_desc = " ".join((tools["swarm_boot"].description or "").split())
         status_desc = " ".join((tools["swarm_status"].description or "").split())
@@ -374,6 +395,8 @@ class TestTickSchemaIsOnTheLiveList:
         assert "gate_soft_continue" in boot_desc
         assert "tick_again=false" in status_desc
         assert "gate_soft_continue" in status_desc
+        for text in (boot_desc, status_desc):
+            assert "does not list evolver doctor --fix as a current step" in text
 
 
 class TestPendingBootSmokeHint:
@@ -441,6 +464,10 @@ class TestPendingBootSmokeHint:
         _assert_solidify_step_first(status)
         assert _host_next_call(boot) == "swarm_solidify"
         assert _host_next_call(status) == "swarm_solidify"
+        # Command lists are the checklist. doctor --fix is not the current step.
+        assert _checklist_runs_doctor_fix_now(boot) is False
+        assert _checklist_runs_doctor_fix_now(status) is False
+        assert _checklist_runs_doctor_fix_now(state) is False
 
     def test_soft_boot_without_a_pending_run_does_not_grow_a_smoke_block(
         self, isolated_swarm_env: Path
@@ -460,6 +487,8 @@ class TestPendingBootSmokeHint:
         assert _steps_invite_another_tick(boot) is True
         hint = str(boot.get("hint") or "")
         assert "recommended" in hint or "Soft-accept" in hint or "soft-continue" in hint
+        # No unfinished run: doctor --fix stays a listed setup command.
+        assert _checklist_runs_doctor_fix_now(boot) is True
 
     def test_checkpoint_outranks_the_smoke_block(self, isolated_swarm_env: Path) -> None:
         from evolver.gep.compact_gate import request_checkpoint
@@ -506,6 +535,7 @@ class TestPendingBootSmokeHint:
         assert "session_not_failed" not in idle
         assert "gate_soft_continue" not in idle
         assert "tick_again" not in idle
+        assert _checklist_runs_doctor_fix_now(idle) is True
 
         _write_pending("run_doctor_soft")
         report = swarm_doctor()
@@ -536,12 +566,14 @@ class TestPendingBootSmokeHint:
         assert "tick_again=false" in hint
         assert "Parent baseline" in hint
         assert "Do not apply fixes before swarm_solidify" in hint
-        assert "evolver doctor --fix" in hint
+        assert "does not list `evolver doctor --fix` as a current step" in hint
+        assert "do not run evolver doctor --fix before solidify" in hint.lower()
         assert "does not execute" in hint
         assert "not installed" in hint.lower() or "do not block the loop" in hint.lower()
         assert not baseline_path().exists()
         assert not frozen_pack_path().exists()
-        assert any("evolver doctor --fix" in item for item in report["fixes"])
+        assert _checklist_runs_doctor_fix_now(report) is False
+        assert report["action_required"] == "swarm_solidify"
 
     def test_pending_doctor_hard_blocker_does_not_invent_solidify(
         self, isolated_swarm_env: Path
@@ -574,6 +606,7 @@ class TestPendingBootSmokeHint:
             {"agent_name": "a", "workspace_root": "/ws", "pending_solidify": True}
         )
         assert "先调用 `swarm_solidify`" in pending
+        assert "不把 `evolver doctor --fix` 当当前步骤" in pending
         assert "只读冒烟" in pending
         assert "swarm_doctor" in pending
         assert "cycle_started=false" in pending
@@ -652,6 +685,10 @@ class TestPendingTickRedirect:
         assert "not installed" not in hint.lower()
         assert result.get("gap") in _SOFT_GAPS
         assert any("cycle_started=false" in str(item) for item in result.get("warnings") or [])
+        # Tick and fuse envelopes stay as they were: this command may still
+        # be listed there. Doctor, boot, and status are the lists this change
+        # stops treating as the current step.
+        assert _checklist_runs_doctor_fix_now(result) is True
         assert not (isolated_swarm_env / "evolution" / "swarm_state.json").exists()
 
     async def test_ready_gate_redirect_stays_soft(

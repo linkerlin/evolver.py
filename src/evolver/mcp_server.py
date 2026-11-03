@@ -422,8 +422,9 @@ def build_server() -> Any:
         (code root) and workspace_root. A difference, or a label that is not a
         directory, is a soft warning; the loop still continues.
         An unfinished run on a soft gap keeps next_action=swarm_solidify,
-        gate_soft_continue=true, and tick_again=false. This call does not
-        settle the run or write a Parent baseline.
+        gate_soft_continue=true, and tick_again=false. This steer does not
+        list evolver doctor --fix as a current step in commands or next_steps.
+        This call does not settle the run or write a Parent baseline.
         """
         from evolver.swarm import swarm_boot
 
@@ -649,8 +650,9 @@ def build_server() -> Any:
         """Read-only. Lightweight engine status for swarm agents (no cycle side effects).
 
         After boot, an unfinished run on a soft gap keeps next_action=swarm_solidify,
-        gate_soft_continue=true, and tick_again=false. This call does not settle
-        the run or write a Parent baseline.
+        gate_soft_continue=true, and tick_again=false. This steer does not
+        list evolver doctor --fix as a current step in commands or next_steps.
+        This call does not settle the run or write a Parent baseline.
         """
         from evolver.swarm import swarm_status
 
@@ -661,6 +663,8 @@ def build_server() -> Any:
 
         While a run is unfinished and the report is soft-continue, next_action
         is swarm_solidify and tick_again=false. soft_continue stays true.
+        fixes does not list evolver doctor --fix as a current step.
+        That command stays listed when no run is unfinished, and after solidify.
         This call does not settle the run, write a Parent baseline, or execute
         evolver doctor --fix. gate_soft_continue and session_not_failed stay absent.
         """

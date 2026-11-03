@@ -1248,3 +1248,11 @@
 - **修复**：仅当未完成 run、软缺口已经挂上（`gate_soft_continue` 仍为 true）、`next_action=swarm_solidify` 时，boot 顶层与 status 写 `tick_again=false`。不写 `session_not_failed`。preserve 三元组不动。没有未完成 run 的 soft-continue 不写 `tick_again`。压缩检查点盖过固化时，boot 顶层与嵌套 status 副本都不留这个键。doctor、第一次 tick 与保险丝的 `tick_again=false` 不动。不结算，不写 Parent baseline，不放宽固化门，不执行 `evolver doctor --fix`。目录缓存（DEBUG #61）未做假修复。
 - **经验**：**同一个「不要再 tick」要写在宿主已经认识的字段上，包括只读开机回执。** boot / status 不能借 `gate_soft_continue=false` 来停。
 - **仍在**：只看 `gate_soft_continue=true`、完全不看 `tick_again` / `next_action` 的宿主，boot 或 status 之后仍可能再 tick。只读 `soft_continue=true`、完全不看 `tick_again` 的 doctor 冒烟（DEBUG #71 余项）仍可能再 tick。把保险丝 `ok=false` 当成整段失败、且不读 `session_not_failed` 与 `loop_fuse` 的宿主（DEBUG #68 余项 2）仍会停掉会话；`ok` 留着 false，是只看 `ok` 的宿主靠它停止空转。`fixes` 仍列出 `evolver doctor --fix`；本工具不执行它。目录缓存（DEBUG #61）没有做假修复。
+
+### 73. 软缺口固化引导把 `evolver doctor --fix` 列成当前步骤（MCP 易用性，已修）
+
+- **症状**：#72 之后，未完成 run 的软缺口 `swarm_doctor` / `swarm_boot` / `swarm_status` 已经指向 `swarm_solidify`，并带 preserve 三元组与 `tick_again=false`。doctor 的 hint 写明固化前不要跑 `evolver doctor --fix`，本工具不执行它。`fixes` 仍把这条命令列在最前。boot / status 的 `commands` 与 `next_steps` 同样把它写成建议现在执行。只读清单、不读 hint 的宿主会去跑 `doctor --fix`，而不是 `swarm_solidify`。
+- **根因**：`fixes` / `commands` 来自开箱目录，软缺口一律附上 `evolver doctor --fix`。固化引导只加了 `next_action`，没有从这份清单里拿掉当前不该跑的那条。
+- **修复**：仅当未完成 run 且 soft-continue、没有硬 `blockers` 时，doctor 的 `fixes` 去掉精确的 `evolver doctor --fix`。boot / status 在 `next_action=swarm_solidify` 时，`commands` 去掉同一条，`next_steps` 里点名它的句子改成先 `swarm_solidify`。`soft_continue` 仍为 true。boot / status 的 `gate_soft_continue` 仍为 true。不写 `session_not_failed`。没有未完成 run 时清单不变。硬阻断不改这份清单，也不另给 `next_action`。第一次 tick 与保险丝的 `commands` 不动。不结算，不写 Parent baseline，不放宽固化门，不执行 `--fix`。目录缓存（DEBUG #61）未做假修复。
+- **经验**：**当前步骤只能有一份清单。** `next_action` 指向固化时，`fixes` 不能再把另一条命令放在可执行清单的前面。
+- **仍在**：只读 `soft_continue=true` 或 `gate_soft_continue=true`、完全不看 `tick_again` / `next_action` / `fixes` 的宿主，冒烟或开机之后仍可能再 tick。没有把这些旗标写成 false（会重开 DEBUG #67）。`fixes` / `commands` 里仍可能有 `evolver bench freeze` 与 `evolver bench baseline`；它们不是这次要拿掉的那条，也不是 MCP 工具会执行的命令。第一次 tick 与保险丝的 `commands` 仍可能列出 `evolver doctor --fix`。把保险丝 `ok=false` 当成整段失败、且不读 `session_not_failed` 与 `loop_fuse` 的宿主（DEBUG #68 余项 2）仍会停掉会话。目录缓存（DEBUG #61）没有做假修复。
