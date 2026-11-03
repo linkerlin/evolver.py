@@ -422,7 +422,7 @@ Parent。软缺口（`soft_continue=true`）下 `swarm_doctor` 同样给出
 没有 `error`；`tick_again=false` 与 `retryable=false` 都表示不要再 tick，第一次也写 `retryable=false`，缺席不再当成可以再 tick）。两次 tick 都带
 `session_not_failed=true`：先读它，会话没有失败。`loop_fuse` 不在 `error` 里，
 preserve 三元组仍指向 `swarm_solidify`。
-boot/status 的 `gate_soft_continue` 仍为 true，且不带 `session_not_failed`。
+boot/status 的 `gate_soft_continue` 仍为 true，且不带 `session_not_failed`。未完成 run 的软缺口 boot/status 同时写 `tick_again=false`（只看 `gate_soft_continue=true` 的宿主仍可能再 tick）。
 `next_steps` 第一条是调用 `swarm_solidify`。
 要替换这条 run 才传 `supersede_pending=true`。暂停与压缩检查点仍优先，且不消耗这次计数。
 首次准备见 `examples/swarm-quickstart/README.md`。

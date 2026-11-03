@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## Unreleased
 
 ### Fixed
+- **MCP 宿主可用性：未完成 run 的软缺口 boot/status 写 `tick_again=false`**：`swarm_boot` 与 `swarm_status` 在未完成 run 且软缺口、`next_action=swarm_solidify` 时带 `tick_again=false`。`gate_soft_continue` 仍为 true，不写 `session_not_failed`。preserve 三元组不动。没有未完成 run 的 soft-continue，以及压缩检查点盖过固化时，不写 `tick_again`。doctor、第一次 tick 与保险丝本来的 `tick_again=false` 不动。不结算这条 run，不写 Parent baseline，不放宽固化门。
 - **MCP 宿主可用性：未完成 run 的软缺口 doctor 写 `tick_again=false`**：只在 `soft_continue=true` 且有未完成 run、没有硬阻断时，`swarm_doctor` 带 `tick_again=false`。缺席不再被读成「可以再 tick」。`soft_continue` 仍为 true，不写 `gate_soft_continue`，不写 `session_not_failed`。`next_action` 仍是 `swarm_solidify`，preserve 三元组不动。hint 写明 `fixes` 里的 `evolver doctor --fix` 本工具不执行。没有未完成 run，或 doctor 是硬阻断时，不写 `tick_again`。第一次 tick 与保险丝本来就有 `tick_again=false`，这次不改。不结算这条 run，不写 Parent baseline，不放宽固化门，不执行 `--fix`。
 - **MCP 宿主可用性：未完成 run 的软缺口 doctor 指向固化**：`readonly_smoke` 点名的 `swarm_doctor` 在 `soft_continue=true` 且有未完成 run 时带 `next_action=swarm_solidify`、`pending_solidify` 与 preserve 三元组。`hint` 先写现在固化，软缺口仍是建议。不写 `gate_soft_continue`，不写 `session_not_failed`，不结算这条 run，不写 Parent baseline，不执行 `--fix`。没有未完成 run，或 doctor 本身是硬阻断（`ok=false`）时，不另给这个动作。
 - **MCP 宿主可用性：未完成 run 的第一次 tick 重定向也写 `retryable=false`**：同一条未完成 run 的两次默认 `swarm_tick` 都带 `retryable=false`。缺席不再被读成「可以再 tick」。第一次仍是 `ok=true`、没有 `error`、`gate_soft_continue` 仍缺席（缺席不是 false，不把严格 false 当成整段会话失败）。保险丝仍是 `ok=false` 与 `loop_fuse=pending_redirect_loop`。不写 Parent baseline，不放宽固化门。

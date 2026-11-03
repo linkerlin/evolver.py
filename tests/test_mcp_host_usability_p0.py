@@ -106,6 +106,7 @@ class TestColdSwarmStatus:
         assert boot.get("error") not in _SOFT_GAPS
         assert boot.get("severity") == "soft"
         assert boot.get("gap") == "pack_absent"
+        assert "tick_again" not in boot
 
         status = swarm_status()
         assert status["session_claimed"] is True
@@ -115,6 +116,7 @@ class TestColdSwarmStatus:
         assert status.get("gap") == "pack_absent"
         assert status.get("severity") == "soft"
         assert status.get("gate_soft_continue") is True
+        assert "tick_again" not in status
         assert status.get("warnings")
         assert status.get("error") not in _SOFT_GAPS
         assert status["ok"] is True
