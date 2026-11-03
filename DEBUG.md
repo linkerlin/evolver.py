@@ -1265,3 +1265,11 @@
 - **修复**：第一次未完成 run 的 tick 与保险丝在 `next_action=swarm_solidify` 时，`commands` 去掉精确的 `evolver doctor --fix`，`next_steps` 里点名它的句子改成先 `swarm_solidify`。`gate_soft_continue` 仍缺席，不写成 false。`tick_again=false` 不动。保险丝的 `ok` 仍为 false。没有未完成 run 的 tick 仍列出这条命令。不结算，不写 Parent baseline，不放宽固化门，不执行 `--fix`。目录缓存（DEBUG #61）未做假修复。
 - **经验**：**当前步骤的清单要盖住宿主下一步会读的每一份信封。** 开机回执拿掉一条命令之后，重定向信封若仍列出它，宿主会从 tick 的返回里把它捡回来。
 - **仍在**：只看 `soft_continue=true` 或把缺席的 `gate_soft_continue` 当成继续、完全不看 `tick_again` / `next_action` / `commands` 的宿主，仍可能再 tick。没有把这些旗标写成 false（会重开 DEBUG #67）。`commands` 里仍可能有 `evolver bench freeze` 与 `evolver bench baseline`。把保险丝 `ok=false` 当成整段失败、且不读 `session_not_failed` 与 `loop_fuse` 的宿主（DEBUG #68 余项 2）仍会停掉会话；`ok` 留着 false。目录缓存（DEBUG #61）没有做假修复。
+
+### 75. 只认 `gate_soft_continue` 的宿主在 tick 与保险丝上看不到软缺口（MCP 易用性，已修）
+
+- **症状**：#67 之后，未完成 run 的软缺口 boot / status 写 `gate_soft_continue=true`。同一条 run 的第一次 `swarm_tick` 与 `loop_fuse=pending_redirect_loop` 把这个键删掉。只在键为 true 时才认出 soft-continue 的宿主，在这两份信封上错过软缺口，尽管 `warning` 里仍是建议、`tick_again=false` 已经表示不要再 tick。doctor 仍不写这个键。
+- **根因**：`apply_soft_gap` 把旗标写成 true。`_prefer_solidify_steps(hold_tick=True)` 再 `pop` 掉，用来同时躲开「只在 true 时 tick」和「只在 false 时判死」。boot / status 没有这次 pop。缺键对只认这个键的宿主等于「没有软缺口」。
+- **修复**：软缺口上的第一次 tick 与保险丝保留 true，并在 `hold_tick` 上再写一次 true，不写 false。停 tick 仍看 `tick_again=false`、`retryable=false`、`next_action=swarm_solidify`，保险丝的 `ok` 仍为 false。`session_not_failed` 与 preserve 三元组不动。没有软缺口的重定向不写这个键。doctor 仍不写。`commands` 里 `evolver doctor --fix` 的延后不动。不结算，不写 Parent baseline，不放宽固化门，不执行 `--fix`。目录缓存（DEBUG #61）未做假修复。
+- **经验**：**软缺口旗标的原义是「缺口是建议」，停 tick 要写在 `tick_again` 上。** 把 true 从 tick 信封拿掉，只认这个键的宿主就和 boot 对不上。写成 false 会重开 DEBUG #67。
+- **仍在**：只看 `gate_soft_continue=true`、完全不看 `tick_again` / `next_action` / `ok` / `retryable` 的宿主，第一次 tick 与保险丝之后仍可能再 tick。没有把这个旗标写成 false。doctor 仍不写 `gate_soft_continue`，只读 `soft_continue=true` 的冒烟余项仍在。把保险丝 `ok=false` 当成整段失败、且不读 `session_not_failed` 与 `loop_fuse` 的宿主（DEBUG #68 余项 2）仍会停掉会话；`ok` 留着 false。`commands` 里仍可能有 `evolver bench freeze` 与 `evolver bench baseline`。目录缓存（DEBUG #61）没有做假修复。

@@ -408,7 +408,7 @@ Parent。软缺口（`soft_continue=true`）下 `swarm_doctor` 同样给出
 这条引导上 `fixes` 不把 `evolver doctor --fix` 列为当前步骤；boot/status，以及
 第一次未完成 run 的 tick 与保险丝，其 `commands` 与 `next_steps` 同样不把它当成
 现在要执行的修复。没有未完成 run，或固化之后，列出这条命令仍然合适。本工具仍不执行它。
-tick / 保险丝上的 `gate_soft_continue` 仍缺席，不写成 false。
+有软缺口时，第一次 tick 与保险丝写 `gate_soft_continue=true`，不写成 false。
 硬阻断的 doctor 仍是 `ok=false`，不另给这个动作，也不写 `tick_again`。
 此时 `boot_once` 为空。忽略 `next_action` 再调 `swarm_tick` 时默认不启新周期。
 第一次 `ok=true`、`severity=soft`、`cycle_started=false`、`progress=false`、
@@ -422,8 +422,8 @@ tick / 保险丝上的 `gate_soft_continue` 仍缺席，不写成 false。
 不把裸码当成 `next_action`。软缺口留在 `warning`。两次返回都带
 `preserve_pending=true`、`abandon_run=false`、
 `action_required=swarm_solidify`（boot/status 在仍要固化时同样带上）。有软缺口时，
-第一次 tick 与保险丝都不带 `gate_soft_continue`（缺席不是 false；`ok` 第一次仍为 true，
-没有 `error`；`tick_again=false` 与 `retryable=false` 都表示不要再 tick，第一次也写 `retryable=false`，缺席不再当成可以再 tick）。两次 tick 都带
+有软缺口时，第一次 tick 与保险丝都写 `gate_soft_continue=true`（true 不是 false，也不是再 tick 的许可；`ok` 第一次仍为 true，
+没有 `error`；`tick_again=false` 与 `retryable=false` 都表示不要再 tick，第一次也写 `retryable=false`）。两次 tick 都带
 `session_not_failed=true`：先读它，会话没有失败。`loop_fuse` 不在 `error` 里，
 preserve 三元组仍指向 `swarm_solidify`。
 boot/status 的 `gate_soft_continue` 仍为 true，且不带 `session_not_failed`。未完成 run 的软缺口 boot/status 同时写 `tick_again=false`（只看 `gate_soft_continue=true` 的宿主仍可能再 tick）。

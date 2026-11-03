@@ -304,18 +304,19 @@ def _assert_preserve_pending(payload: dict[str, Any]) -> None:
 def _assert_stop_is_not_failure(payload: dict[str, Any], *, closed: bool, gap: bool) -> None:
     """Stop-tick signals stay off the fail and abandon fields.
 
-    ``gate_soft_continue`` is omitted, so a host that dies on strict false
-    stays up, and a host that loops only while the flag is true does not tick.
+    A soft gap writes ``gate_soft_continue=true`` and never false, so a host
+    that dies on strict false stays up. A host that loops only while the flag
+    is true sees the same advisory bit as boot and status. Stop-tick stays on
+    ``tick_again`` and ``retryable``. Without a soft gap the key stays absent.
     The fuse code lives in ``loop_fuse``. ``error`` is absent, so a host that
     abandons on any error keeps the run. ``ok`` is still false on the fuse.
     """
-    assert "gate_soft_continue" not in payload
+    assert payload.get("gate_soft_continue") is not False
     assert "error" not in payload
     assert payload.get("tick_again") is False
     assert _host_ticks_unless_tick_again_is_false(payload) is False
     assert payload.get("retryable") is False
     assert "retryable=false" in str(payload.get("note") or "")
-    assert _host_ticks_only_on_gate_soft_continue(payload) is False
     assert _host_ticks_unless_retryable_is_false(payload) is False
     if not closed:
         assert _host_dies_on_nonretryable_failed_ok(payload) is False
@@ -345,8 +346,14 @@ def _assert_stop_is_not_failure(payload: dict[str, Any], *, closed: bool, gap: b
         assert _host_solidifies_only_if_error_is_the_fuse(payload) is False
         assert _host_solidifies_when_it_reads_the_fuse(payload) is False
     if gap:
-        assert "gate_soft_continue is omitted" in note
+        assert payload.get("gate_soft_continue") is True
+        assert _host_ticks_only_on_gate_soft_continue(payload) is True
+        assert "gate_soft_continue=true" in note
         assert "not a failed session" in note.lower()
+        assert "not a license to tick" in note
+    else:
+        assert "gate_soft_continue" not in payload
+        assert _host_ticks_only_on_gate_soft_continue(payload) is False
 
 
 def test_standing_instructions_name_the_fuse_not_a_bare_code() -> None:
@@ -387,7 +394,8 @@ class TestTickSchemaIsOnTheLiveList:
         assert "next_action=pending_redirect_loop" not in supersede
         assert "preserve_pending" in supersede
         assert "abandon_run" in supersede
-        assert "omitted" in supersede
+        assert "gate_soft_continue=true" in supersede
+        assert "never writes gate_soft_continue=false" in supersede
         assert "session_not_failed" in supersede
         assert props["supersede_pending"].get("default") is False
         mode = props["prompt_mode"]
@@ -641,7 +649,8 @@ class TestPendingBootSmokeHint:
         assert "abandon_run=false" in pending
         assert "loop_fuse=pending_redirect_loop" in pending
         assert "redirect_reason=pending_redirect_loop" in pending
-        assert "gate_soft_continue is omitted" in pending
+        assert "gate_soft_continue=true" in pending
+        assert "gate_soft_continue is omitted" not in pending
         assert "error=pending_redirect_loop" not in pending
         assert "next_action=pending_redirect_loop" not in pending
         assert "session_not_failed=true" in pending
@@ -711,10 +720,9 @@ class TestPendingTickRedirect:
         assert result.get("gap") in _SOFT_GAPS
         assert any("cycle_started=false" in str(item) for item in result.get("warnings") or [])
         # Soft-gap solidify steer: doctor --fix is not the current step.
-        # Other catalog commands stay. The flag stays omitted, not false.
+        # Other catalog commands stay. The flag is true, never false.
         _assert_doctor_fix_deferred(result)
-        assert result.get("gate_soft_continue") is not False
-        assert "gate_soft_continue" not in result
+        assert result.get("gate_soft_continue") is True
         assert result.get("soft_continue") is not False
         assert not (isolated_swarm_env / "evolution" / "swarm_state.json").exists()
 
@@ -810,8 +818,7 @@ class TestPendingTickRedirect:
         assert first.get("error") is None
         assert first["redirect_count"] == 1
         _assert_doctor_fix_deferred(first)
-        assert "gate_soft_continue" not in first
-        assert first.get("gate_soft_continue") is not False
+        assert first.get("gate_soft_continue") is True
         assert first["progress"] is False
         assert first["tick_again"] is False
         assert first["tick_closed"] is False
@@ -846,8 +853,7 @@ class TestPendingTickRedirect:
             _assert_solidify_step_first(closed)
             assert _host_next_call(closed) == "swarm_solidify"
             _assert_doctor_fix_deferred(closed)
-            assert "gate_soft_continue" not in closed
-            assert closed.get("gate_soft_continue") is not False
+            assert closed.get("gate_soft_continue") is True
             assert closed.get("soft_continue") is not False
             assert closed["ok"] is False
             note = str(closed.get("note") or "")
@@ -1021,7 +1027,8 @@ def test_wire_tools_list_publishes_prompt_mode(tmp_path: Path) -> None:
     assert "next_action=pending_redirect_loop" not in tick["supersede_pending"]["description"]
     assert "preserve_pending" in tick["supersede_pending"]["description"]
     assert "abandon_run" in tick["supersede_pending"]["description"]
-    assert "omitted" in tick["supersede_pending"]["description"]
+    assert "gate_soft_continue=true" in tick["supersede_pending"]["description"]
+    assert "never writes gate_soft_continue=false" in tick["supersede_pending"]["description"]
     assert "session_not_failed" in tick["supersede_pending"]["description"]
     assert tick["supersede_pending"]["default"] is False
     assert tools["swarm_doctor"]["annotations"]["readOnlyHint"] is True
