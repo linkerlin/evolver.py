@@ -1232,3 +1232,11 @@
 - **修复**：仅当未完成 run 且 `soft_continue=true`、没有硬 `blockers` 时，doctor 补上 `pending_solidify`、`next_action=swarm_solidify`、`readonly_smoke` 与 preserve 三元组。hint 先写现在调用 `swarm_solidify`，不要 tick，不要在固化前执行 `fixes`，本调用不结算、不写 Parent、不放宽固化门。不写 `gate_soft_continue`（严格 false 会重开 DEBUG #67）。不写 `session_not_failed`（那是 tick 重定向的旗标，不是 doctor 的健康位）。硬阻断（例如不是 git 仓库，`ok=false`）不另给 `next_action`。没有未完成 run 时 doctor 形状不变。不执行 `--fix`。目录缓存（DEBUG #61）未做假修复；工具描述与返回体同一口径，旧会话目录仍可能看不到新句子。
 - **经验**：**冒烟清单里的两个工具必须给出同一个下一步。** 只读不等于可以丢掉 `next_action`。`soft_continue=true` 表示缺口不是硬停，不是再 tick 的许可。
 - **仍在**：只读 `soft_continue`、忽略 `next_action` 的宿主仍可能再 tick。把 `soft_continue` 写成 false 会和 `gate_soft_continue=false` 一样，被不读旁注的宿主当成整段停，所以没有写。`fixes` 仍列出 `evolver doctor --fix`；本工具不执行它。hint 写明固化前不要执行。只认 `gate_soft_continue` 的 tick 重定向（DEBUG #69 余项 1）、把保险丝 `ok=false` 当成整段失败的宿主（余项 2）、以及目录缓存（DEBUG #61）这次都不动。
+
+### 71. 软缺口 doctor 不写 `tick_again`，缺席被当成再 tick（MCP 易用性，已修）
+
+- **症状**：#70 之后，未完成 run 的软缺口 `swarm_doctor` 已有 `next_action=swarm_solidify` 与 preserve 三元组，`soft_continue` 仍为 true，没有 `tick_again`。只在 `tick_again` 严格为 false 时才停、把缺席当成再 tick、同时不看 `next_action` 的宿主，只读冒烟之后仍会 tick。第一次未完成 run 的 tick 重定向和保险丝已经写了 `tick_again=false`。`fixes` 仍列出 `evolver doctor --fix`。
+- **根因**：停 tick 的严格 false 写在 tick 信封上。doctor 的固化导向信封没写这个键。缺席不是 false。`soft_continue=true` 的原义是缺口不是硬停，不能改成 false 来停 tick。
+- **修复**：仅当未完成 run 且 `soft_continue=true`、没有硬 `blockers` 时，doctor 写 `tick_again=false`。`soft_continue` 仍为 true。不写 `gate_soft_continue`，不写 `session_not_failed`。hint 写明 `tick_again=false`，并写明 `fixes` 里的 `evolver doctor --fix` 本工具不执行、固化前不要跑。没有未完成 run，或硬阻断（`ok=false`），不写 `tick_again`。第一次 tick 与保险丝的 `tick_again=false` 不动。不结算，不写 Parent baseline，不放宽固化门，不执行 `--fix`。目录缓存（DEBUG #61）未做假修复。
+- **经验**：**同一个「不要再 tick」要写在宿主已经认识的字段上。** doctor 不能借 `soft_continue=false` 来停，也不能借 `gate_soft_continue=false`。
+- **仍在**：只读 `soft_continue=true`、完全不看 `tick_again` / `next_action` / `ok` / `retryable` 的宿主，冒烟之后仍可能再 tick。把缺席的 `gate_soft_continue` 当成继续、且不看 `tick_again` 的 tick 重定向（DEBUG #68 余项 1）仍可能再 tick。把保险丝 `ok=false` 当成整段失败、且不读 `session_not_failed` 与 `loop_fuse` 的宿主（余项 2）仍会停掉会话；`ok` 留着 false，是只看 `ok` 的宿主靠它停止空转。`fixes` 仍列出 `evolver doctor --fix`；本工具不执行它。目录缓存（DEBUG #61）没有做假修复。

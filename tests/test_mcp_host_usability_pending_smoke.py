@@ -184,6 +184,26 @@ def _assert_session_not_failed(payload: dict[str, Any]) -> None:
     assert "session_not_failed" in str(payload.get("note") or "")
 
 
+def _host_ticks_unless_tick_again_is_false(payload: dict[str, Any]) -> bool:
+    """Keep ticking unless ``tick_again`` is strict false.
+
+    ``next_action``, ``ok``, ``retryable``, and ``soft_continue`` are ignored.
+    An omitted ``tick_again`` counts as continue. ``soft_continue=true`` is
+    not rewritten, and ``gate_soft_continue`` is not consulted.
+    """
+    return payload.get("tick_again") is not False
+
+
+def _host_ticks_only_on_soft_continue(payload: dict[str, Any]) -> bool:
+    """Tick while ``soft_continue`` is true.
+
+    ``tick_again``, ``next_action``, ``ok``, and ``retryable`` are ignored.
+    This host is the residual that a false ``soft_continue`` would stop, and
+    that false is not allowed on a soft gap.
+    """
+    return payload.get("soft_continue") is True
+
+
 def _host_smoke_decides_without_next_action(payload: dict[str, Any]) -> str:
     """What a smoke host does after ``swarm_doctor``.
 
@@ -250,6 +270,7 @@ def _assert_stop_is_not_failure(payload: dict[str, Any], *, closed: bool, gap: b
     assert "gate_soft_continue" not in payload
     assert "error" not in payload
     assert payload.get("tick_again") is False
+    assert _host_ticks_unless_tick_again_is_false(payload) is False
     assert payload.get("retryable") is False
     assert "retryable=false" in str(payload.get("note") or "")
     assert _host_ticks_only_on_gate_soft_continue(payload) is False
@@ -345,6 +366,7 @@ class TestTickSchemaIsOnTheLiveList:
         assert "swarm_solidify" in description
         assert "Parent baseline" in description
         assert "session_not_failed" in description
+        assert "tick_again=false" in description
 
 
 class TestPendingBootSmokeHint:
@@ -441,6 +463,10 @@ class TestPendingBootSmokeHint:
         return only ``soft_continue`` and a hint that the loop is not blocked,
         so a host that smokes and then follows ``next_action`` (or ticks when
         that key is missing and ``soft_continue`` is true) never solidifies.
+        A host that ignores ``next_action`` and stops only on strict
+        ``tick_again=false`` still ticks while that key is omitted.
+        ``soft_continue`` stays true. The first tick redirect and the fuse
+        already set ``tick_again`` false.
         """
         from evolver.bench.frozen_gate import baseline_path, frozen_pack_path
         from evolver.swarm import swarm_doctor
@@ -456,6 +482,7 @@ class TestPendingBootSmokeHint:
         assert "preserve_pending" not in idle
         assert "session_not_failed" not in idle
         assert "gate_soft_continue" not in idle
+        assert "tick_again" not in idle
 
         _write_pending("run_doctor_soft")
         report = swarm_doctor()
@@ -467,6 +494,7 @@ class TestPendingBootSmokeHint:
         assert report["blockers"] == []
         assert report["pending_solidify"] is True
         assert report["next_action"] == "swarm_solidify"
+        assert report["tick_again"] is False
         assert report["readonly_smoke"]["settles_run"] is False
         assert report["readonly_smoke"]["tools"] == ["swarm_doctor", "swarm_status"]
         _assert_preserve_pending(report)
@@ -475,15 +503,22 @@ class TestPendingBootSmokeHint:
         assert report.get("error") not in _SOFT_GAPS
         assert _host_dies_on_soft_continue_false_ignoring_new_flags(report) is False
         assert _host_smoke_decides_without_next_action(report) == "swarm_solidify"
+        assert _host_ticks_unless_tick_again_is_false(report) is False
+        # soft_continue stays the soft-gap bit. Hosts that ignore tick_again
+        # and only read it still tick. Do not flip it to false.
+        assert _host_ticks_only_on_soft_continue(report) is True
         hint = str(report.get("hint") or "")
         assert hint.startswith("Call swarm_solidify")
         assert "Do not call swarm_tick" in hint
+        assert "tick_again=false" in hint
         assert "Parent baseline" in hint
         assert "Do not apply fixes before swarm_solidify" in hint
+        assert "evolver doctor --fix" in hint
+        assert "does not execute" in hint
         assert "not installed" in hint.lower() or "do not block the loop" in hint.lower()
         assert not baseline_path().exists()
         assert not frozen_pack_path().exists()
-        assert report["fixes"]
+        assert any("evolver doctor --fix" in item for item in report["fixes"])
 
     def test_pending_doctor_hard_blocker_does_not_invent_solidify(
         self, isolated_swarm_env: Path
@@ -491,8 +526,8 @@ class TestPendingBootSmokeHint:
         """A hard doctor failure stays a hard stop. No solidify action is added.
 
         The isolated tree is not a git repo, so ``ok`` is false. That must
-        not grow ``next_action``, ``gate_soft_continue``, or
-        ``session_not_failed``.
+        not grow ``next_action``, ``gate_soft_continue``,
+        ``session_not_failed``, or ``tick_again``.
         """
         from evolver.swarm import swarm_doctor
 
@@ -505,6 +540,7 @@ class TestPendingBootSmokeHint:
         assert "pending_solidify" not in report
         assert "session_not_failed" not in report
         assert "gate_soft_continue" not in report
+        assert "tick_again" not in report
         assert _host_smoke_decides_without_next_action(report) == "stop"
         _ = isolated_swarm_env
 

@@ -652,8 +652,9 @@ def build_server() -> Any:
         """Read-only. Open-box summary (same checks as evolver doctor, never --fix).
 
         While a run is unfinished and the report is soft-continue, next_action
-        is swarm_solidify. This call does not settle the run or write a Parent
-        baseline. gate_soft_continue and session_not_failed stay absent.
+        is swarm_solidify and tick_again=false. soft_continue stays true.
+        This call does not settle the run, write a Parent baseline, or execute
+        evolver doctor --fix. gate_soft_continue and session_not_failed stay absent.
         """
         from evolver.swarm import swarm_doctor
 
