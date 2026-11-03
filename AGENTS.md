@@ -395,20 +395,24 @@ prompt 的宿主）。`boot_once` 只登记会话（`swarm_hook_event` session_s
 instrument 增加「核心循环工具 / Core Loop Tools」。soft-accept 的 T0 为 minimal
 （`t0_probe.py`）；成功结算后 `pending_solidify` 为 false（`last_run` 与
 `last_solidify` 的 run id 一致）。`swarm_boot` / `swarm_status` 带 `source_revision`，
-boot 自动 ack 本 agent 的 `swarm.hello`。安装或拉代码后须重启 MCP；若宿主目录仍只列出
+boot 自动 ack 本 agent 的 `swarm.hello`。安装或拉代码后须重启 MCP。握手广告 `tools.listChanged=true`，并在
+`notifications/initialized` 之后发 `notifications/tools/list_changed`。stdio
+`tools/list` 同一页（无 `nextCursor`）已含只读 `swarm_doctor`。若宿主目录仍只列出
 `swarm_tick` 的 `agent_name` 与 `include_prompt`，或搜不到 `swarm_doctor`，那是客户端
-对 `tools/list` 的缓存（现网 schema 已含 `prompt_mode`/`checklist_only` 与只读
-`swarm_doctor`），新开宿主会话才会重读。
+没重读这份清单（旧会话把 `listChanged: false` 当成目录永不变）。新开宿主会话才会重读。
+服务端不另造一个假工具。
 已暂停时 `next_action=await_supervisor_resume`。有待固化 run 时 `next_action` 仍是
 `swarm_solidify`（`hint` 写明先固化；软缺口留在 `warning`，不盖掉这句），并带
 `readonly_smoke`：只读冒烟用 `swarm_doctor` / `swarm_status`，不结算、不放宽门、不写
 Parent。软缺口（`soft_continue=true`）下 `swarm_doctor` 同样给出
 `next_action=swarm_solidify`、`tick_again=false` 与 preserve 三元组，不写
 `gate_soft_continue`、不写 `session_not_failed`；`soft_continue` 仍为 true。
-这条引导上 `fixes` 不把 `evolver doctor --fix` 列为当前步骤；boot/status，以及
-第一次未完成 run 的 tick 与保险丝，其 `commands` 与 `next_steps` 同样不把它当成
-现在要执行的修复。没有未完成 run，或固化之后，列出这条命令仍然合适。本工具仍不执行它。
-有软缺口时，第一次 tick 与保险丝写 `gate_soft_continue=true`，不写成 false。
+这条引导上 `fixes` 不把 `evolver doctor --fix`、`evolver bench freeze` 或
+`evolver bench baseline` 列为当前步骤；boot/status，以及第一次未完成 run 的 tick
+与保险丝，其 `commands` 与 `next_steps` 同样不把这三条当成现在要执行的修复。
+没有未完成 run，或固化之后，列出它们仍然合适。本工具仍不执行它们，也不写 Parent baseline。
+有软缺口时，boot/status 仍写 `gate_soft_continue=true`。第一次 tick 与保险丝不写这个键
+（缺席，不写成 false），并写 `soft_gap.advisory=true`、`soft_gap.tick=false`。
 硬阻断的 doctor 仍是 `ok=false`，不另给这个动作，也不写 `tick_again`。
 此时 `boot_once` 为空。忽略 `next_action` 再调 `swarm_tick` 时默认不启新周期。
 第一次 `ok=true`、`severity=soft`、`cycle_started=false`、`progress=false`、
@@ -421,8 +425,7 @@ Parent。软缺口（`soft_continue=true`）下 `swarm_doctor` 同样给出
 没有 `loop_fuse`。常驻 instructions 写 `loop_fuse=pending_redirect_loop`，
 不把裸码当成 `next_action`。软缺口留在 `warning`。两次返回都带
 `preserve_pending=true`、`abandon_run=false`、
-`action_required=swarm_solidify`（boot/status 在仍要固化时同样带上）。有软缺口时，
-有软缺口时，第一次 tick 与保险丝都写 `gate_soft_continue=true`（true 不是 false，也不是再 tick 的许可；`ok` 第一次仍为 true，
+`action_required=swarm_solidify`（boot/status 在仍要固化时同样带上）。有软缺口时，第一次 tick 与保险丝不写 `gate_soft_continue`（缺席不是 false，也不是再 tick 的许可；`soft_gap.advisory=true`，`soft_gap.tick=false`；`ok` 第一次仍为 true，
 没有 `error`；`tick_again=false` 与 `retryable=false` 都表示不要再 tick，第一次也写 `retryable=false`）。两次 tick 都带
 `session_not_failed=true`：先读它，会话没有失败。`loop_fuse` 不在 `error` 里，
 preserve 三元组仍指向 `swarm_solidify`。

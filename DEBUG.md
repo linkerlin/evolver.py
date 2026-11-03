@@ -63,6 +63,10 @@
 | 58 | 外部 MCP 评审 P1 四项全属实并修：solidify/propose 未取实例锁、journal 裸句柄、instructions 漏新工具、测试名实不符 + 版本硬编码 | swarm/mcp/tests | 评估会话 | 未发版 |
 | 69 | 未完成 run 的第一次 tick 重定向不写 `retryable`，缺席被当成再 tick | mcp/swarm | MCP 易用性 | 未发版 |
 | 74 | 未完成 run 的第一次 tick 与保险丝仍把 `evolver doctor --fix` 列成当前步骤 | mcp/swarm | MCP 易用性 | 未发版 |
+| 76 | 宿主目录缺 `swarm_doctor`：握手广告 `listChanged: false` | mcp | MCP 易用性 | 未发版 |
+| 77 | 只认 `gate_soft_continue=true` 的宿主在 tick 与保险丝上再 tick | mcp/swarm | MCP 易用性 | 未发版 |
+| 78 | 软固化引导仍列出 `bench freeze` / `bench baseline` | mcp/swarm | MCP 易用性 | 未发版 |
+| 79 | 相同长度改写若 mtime 被还原，水印快跳过当成未改 | material | 水印 | 未发版 |
 
 ## 条目
 
@@ -1273,3 +1277,33 @@
 - **修复**：软缺口上的第一次 tick 与保险丝保留 true，并在 `hold_tick` 上再写一次 true，不写 false。停 tick 仍看 `tick_again=false`、`retryable=false`、`next_action=swarm_solidify`，保险丝的 `ok` 仍为 false。`session_not_failed` 与 preserve 三元组不动。没有软缺口的重定向不写这个键。doctor 仍不写。`commands` 里 `evolver doctor --fix` 的延后不动。不结算，不写 Parent baseline，不放宽固化门，不执行 `--fix`。目录缓存（DEBUG #61）未做假修复。
 - **经验**：**软缺口旗标的原义是「缺口是建议」，停 tick 要写在 `tick_again` 上。** 把 true 从 tick 信封拿掉，只认这个键的宿主就和 boot 对不上。写成 false 会重开 DEBUG #67。
 - **仍在**：只看 `gate_soft_continue=true`、完全不看 `tick_again` / `next_action` / `ok` / `retryable` 的宿主，第一次 tick 与保险丝之后仍可能再 tick。没有把这个旗标写成 false。doctor 仍不写 `gate_soft_continue`，只读 `soft_continue=true` 的冒烟余项仍在。把保险丝 `ok=false` 当成整段失败、且不读 `session_not_failed` 与 `loop_fuse` 的宿主（DEBUG #68 余项 2）仍会停掉会话；`ok` 留着 false。`commands` 里仍可能有 `evolver bench freeze` 与 `evolver bench baseline`。目录缓存（DEBUG #61）没有做假修复。
+
+### 76. 宿主目录缺 `swarm_doctor`：`listChanged` 广告成 false（MCP 易用性，已修）
+
+- **症状**：stdio `tools/list` 能列出只读 `swarm_doctor`（29 个工具里的一个，无 `nextCursor`，带 `cursor` 再要一页也仍在），宿主目录（GetDynamicTools / 旧会话）却经常没有它。`swarm_tick(prompt_mode=short)` 调用行为正确，展示的参数仍只有 `agent_name` 与 `include_prompt`。
+- **根因**：注册没有漏。`MCPServer` 的握手用默认 `NotificationOptions()`，`tools.listChanged` 为 false。把「列表不变」当成可以跨重启留目录的宿主，不会重读已经换过的 `tools/list`。调用打到新进程，目录留在旧进程的快照上。不是分页把工具切掉（整页约 25KB，doctor 在中部）。
+- **修复**：初始化广告 `tools.listChanged=true`（prompts / resources 一并标可变）。`notifications/initialized` 之后发一次 `notifications/tools/list_changed`。不另注册一个假 `swarm_doctor`。测试钉住：能力位、通知、同一页且 cursor 不丢这个名字。
+- **经验**：**目录与调用分属两层，但「列表永不变」是服务端自己说的。** 先对同一进程打 `tools/list`。齐全之后，若握手仍写 `listChanged: false`，宿主缓存不是纯属仓外。仍忽略通知的宿主要新开一次会话。
+- **仍在**：不听 `notifications/tools/list_changed`、也不在新会话重读 `tools/list` 的宿主，目录仍旧。没有为它造工具。
+
+### 77. 只认 `gate_soft_continue=true` 的宿主在 tick 与保险丝上再 tick（MCP 易用性，已修）
+
+- **症状**：#75 之后，未完成 run 的软缺口第一次 `swarm_tick` 与 `loop_fuse=pending_redirect_loop` 写 `gate_soft_continue=true`。只看这个键为 true、不看 `tick_again` / `next_action` / `ok` / `retryable` 的宿主会再 tick。写成 false 会重开 DEBUG #67。
+- **根因**：停 tick 的字段这些宿主不读。true 的原义在它们那里就是「继续」。boot / status 仍需要这个 true，软缺口才看得见。
+- **修复**：仅 tick 与保险丝去掉这个键，不写成 false。同时写 `soft_gap`（`present` / `advisory` 为 true，`tick` 为 false，`code` 为缺口码）。boot / status 仍是 `gate_soft_continue=true`，且不带 `soft_gap`。doctor 仍不写这两个。`tick_again=false`、`retryable=false`、保险丝 `ok=false`、`session_not_failed` 与 preserve 三元组不动。不结算，不写 Parent baseline，不放宽固化门。
+- **经验**：**「看见软缺口」和「不要再 tick」不要挤在同一个布尔上。** boot / status 留 true。tick 信封用缺席挡住只认 true 的宿主，用 `soft_gap` 留下建议位，用严格 false 以外的字段停 tick。
+- **仍在**：把缺席的 `gate_soft_continue` 当成继续、且不看 `tick_again` / `soft_gap.tick` / `next_action` 的宿主，仍可能再 tick。没有写成 false。boot / status 上只看 true 的宿主仍可能再 tick。doctor 上只读 `soft_continue=true` 的冒烟余项仍在。把保险丝 `ok=false` 当成整段失败、且不读 `session_not_failed` 与 `loop_fuse` 的宿主（DEBUG #68 余项 2）仍会停掉会话。
+
+### 78. 软固化引导仍列出 `evolver bench freeze` / `evolver bench baseline`（MCP 易用性，已修）
+
+- **症状**：#73 / #74 拿掉 `evolver doctor --fix` 之后，未完成 run 的 boot / status / doctor / 第一次 tick / 保险丝的 `commands` 或 `fixes` 仍列出 `evolver bench freeze` 与 `evolver bench baseline`。只读清单的宿主会去装包或写 Parent，而不是 `swarm_solidify`。
+- **根因**：开箱目录把这两条和 `--fix` 放在一起。剥离只匹配了 `--fix` 那一条。
+- **修复**：同一条固化引导上，精确的 freeze 与 baseline 也从 `commands` / `fixes` 去掉，`next_steps` 里点名它们的句子改成先 `swarm_solidify`。没有未完成 run 时清单不变。硬阻断不改这份清单。不执行这些命令，不写 Parent baseline，不放宽固化门。
+- **经验**：**当前步骤的清单里，不该现在跑的安装命令要一起拿掉。** 只删 `--fix` 时，旁边的 freeze / baseline 会变成新的当前步骤。
+
+### 79. 同长度改写若 mtime 被还原，水印当成没改过（已修）
+
+- **症状**：`test_identical_rewrite_is_noop` 在写后会把 mtime 还原成创建时戳的文件系统上得到 `mode=skipped`，而不是 `rewrite_noop`。同长度、内容已变、mtime 被还原成水印里那一记时，快跳过会把新字节当成未改动。
+- **根因**：快跳过只比 `mtime_ns` 与 `size`。相同字节的重写若 mtime 没留下变化，就走不到全文哈希备忘。同长度的真改写也会被这道比较吞掉。GitHub CI 的 ext4 会在写入时推进 mtime，所以这条测试在那边是绿的。
+- **修复**：快跳过同时要求 `full_hash` 与水印一致。大小与 mtime 没变但字节变了，走全量重扫。相同字节且 mtime 已经不同，仍是 `rewrite_noop`，不追加记录。测试在重写之后再 touch，避免「写入把 touch 撤掉」让用例没走到备忘路径。
+- **经验**：**mtime 不是内容。** 快跳过可以省读盘，但不能在哈希已经算出来之后还只信时间戳。

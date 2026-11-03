@@ -56,13 +56,30 @@ class TestWatermarkIngest:
     def test_identical_rewrite_is_noop(self, log_file: Path) -> None:
         content = log_file.read_text(encoding="utf-8")
         ingest_file(log_file)
-        # Rewrite identical bytes (mtime changes → not the fast-skip path).
-        _touch(log_file)
+        # Rewrite identical bytes. Touch after the write: some filesystems
+        # restore the previous mtime on write, which would collapse this into
+        # the fast-skip. The content memo is what proves the noop.
         log_file.write_text(content, encoding="utf-8")
+        _touch(log_file)
         summary = ingest_file(log_file)
         assert summary["mode"] == "rewrite_noop"
         assert summary["added"] == 0
         assert len(read_records()) == 3
+
+    def test_same_size_change_with_restored_mtime_reingests(self, log_file: Path) -> None:
+        ingest_file(log_file)
+        original = log_file.read_bytes()
+        stamped = log_file.stat().st_mtime_ns
+        mutated = b"Z" + original[1:]
+        assert len(mutated) == len(original)
+        assert mutated != original
+        log_file.write_bytes(mutated)
+        os.utime(log_file, ns=(stamped, stamped))
+        summary = ingest_file(log_file)
+        assert summary["mode"] == "full"
+        assert summary["added"] > 0
+        texts = [r["text"] for r in read_records()]
+        assert any(text.startswith("Z") for text in texts)
 
     def test_changed_rewrite_reingests(self, log_file: Path) -> None:
         ingest_file(log_file)

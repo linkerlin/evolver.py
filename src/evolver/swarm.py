@@ -303,10 +303,11 @@ experience 仍写入 ~/.evolver/workspaces/<id>/，不自动提交。补齐基�
    `action_required=swarm_solidify`。   `session_not_failed=true` 表示会话没有失败，
    先读它再读别的旗标。`tick_again=false` 与 `retryable=false` 都表示不要再 tick
    （第一次重定向也写 `retryable=false`，`ok` 仍为 true）。
-   有软缺口时第一次 tick 与保险丝都写 `gate_soft_continue=true`
-   （`ok` 第一次仍为 true，没有 `error`）：true 不是 false，
-   不是失败的会话，也不是再 tick 的许可，软缺口仍在 `warning`。
-   停 tick 看 `tick_again=false`。再 tick 才是 `ok=false`、
+   boot 与 status 的 `gate_soft_continue=true` 仍在。第一次 tick 与保险丝不写这个键
+   （缺席，不写成 false），并写 `soft_gap.advisory=true`、`soft_gap.tick=false`
+   （`ok` 第一次仍为 true，没有 `error`）：缺席不是失败的会话，
+   也不是再 tick 的许可，软缺口仍在 `warning` 与 `soft_gap`。
+   停 tick 看 `tick_again=false` 与 `soft_gap.tick=false`。再 tick 才是 `ok=false`、
    `loop_fuse=pending_redirect_loop`、`redirect_reason=pending_redirect_loop`、
    没有 `error` 字段、`next_action` 仍是 `swarm_solidify`（保险丝码不是
    `next_action`）、`severity=soft`、`retryable=false`：这不是门禁失败，也不放弃
@@ -358,7 +359,8 @@ experience 仍写入 ~/.evolver/workspaces/<id>/，不自动提交。补齐基�
   调用 `swarm_solidify`。`next_action` 仍是 `swarm_solidify`。没有 `error` 字段。
   不是固化门失败，也不是整段会话失败。先读 `session_not_failed`，再读
   `preserve_pending=true`、`abandon_run=false`，不要放弃这条 run。有软缺口时
-  第一次 tick 与保险丝的 `gate_soft_continue=true`，true 不是再 tick 的许可。
+  第一次 tick 与保险丝不写 `gate_soft_continue`（缺席，不写成 false），
+  `soft_gap.tick=false` 不是再 tick 的许可。
 
 `retryable=true` 的拒绝是稳态，回到步骤 1。
 
@@ -409,8 +411,9 @@ experience 仍写入 ~/.evolver/workspaces/<id>/，不自动提交。补齐基�
   `evolver setup` / `evolver doctor --fix` / `evolver bench freeze`。
   有未完成 run 时，这条命令不是当前步骤：先 `swarm_solidify`。
   此时 `swarm_doctor` 的 `fixes`、boot/status 的 `commands`，以及第一次
-  tick 与保险丝的 `commands` 和 `next_steps`，都不把 `evolver doctor --fix`
-  当当前步骤。没有未完成 run，或固化之后，列出它仍然合适。
+  tick 与保险丝的 `commands` 和 `next_steps`，都不把 `evolver doctor --fix`、
+  `evolver bench freeze` 或 `evolver bench baseline` 当当前步骤。没有未完成 run，
+  或固化之后，列出它们仍然合适。
   soft-accept 可发布但会警告；装包仍强烈推荐。
 - `reason=no_baseline`：**可继续**。建议在另一上下文写好 val 沙箱后执行
   `evolver bench baseline`（或 doctor --fix 在沙箱齐时测量）。基线不由候选
@@ -810,6 +813,15 @@ def swarm_status() -> dict[str, Any]:
 
 
 _DOCTOR_FIX_COMMAND: Final = "evolver doctor --fix"
+_BENCH_FREEZE_COMMAND: Final = "evolver bench freeze"
+_BENCH_BASELINE_COMMAND: Final = "evolver bench baseline"
+_STEER_COMMANDS_NOT_CURRENT: Final = frozenset(
+    {
+        _DOCTOR_FIX_COMMAND,
+        _BENCH_FREEZE_COMMAND,
+        _BENCH_BASELINE_COMMAND,
+    }
+)
 _DOCTOR_FIX_NOT_CURRENT: Final = (
     "Current action is swarm_solidify "
     "(next_action, preserve_pending, action_required). "
@@ -817,14 +829,26 @@ _DOCTOR_FIX_NOT_CURRENT: Final = (
     "That command is appropriate after this run is solidified, "
     "or when no run is unfinished."
 )
+_BENCH_NOT_CURRENT: Final = (
+    "Current action is swarm_solidify "
+    "(next_action, preserve_pending, action_required). "
+    "Do not run evolver bench freeze or evolver bench baseline before solidify. "
+    "This steer does not settle the run and does not write a Parent baseline. "
+    "Those commands are appropriate after this run is solidified, "
+    "or when no run is unfinished."
+)
 
 
 def _commands_without_current_doctor_fix(items: list[Any] | None) -> list[str]:
-    """Drop the exact ``evolver doctor --fix`` command. Other commands stay."""
+    """Drop setup commands that are not the current solidify step.
+
+    Exact ``evolver doctor --fix``, ``evolver bench freeze``, and
+    ``evolver bench baseline`` leave the list. Other commands stay.
+    """
     kept: list[str] = []
     for item in items or []:
         text = str(item).strip()
-        if not text or text == _DOCTOR_FIX_COMMAND:
+        if not text or text in _STEER_COMMANDS_NOT_CURRENT:
             continue
         if text not in kept:
             kept.append(text)
@@ -832,14 +856,18 @@ def _commands_without_current_doctor_fix(items: list[Any] | None) -> list[str]:
 
 
 def _steps_without_current_doctor_fix(items: list[Any] | None) -> list[str]:
-    """Replace a step that tells the host to run ``evolver doctor --fix`` now."""
+    """Replace a step that tells the host to run setup commands now."""
     kept: list[str] = []
     for item in items or []:
         text = str(item).strip()
         if not text:
             continue
-        if text != _DOCTOR_FIX_NOT_CURRENT and _DOCTOR_FIX_COMMAND in text:
-            text = _DOCTOR_FIX_NOT_CURRENT
+        if text not in (_DOCTOR_FIX_NOT_CURRENT, _BENCH_NOT_CURRENT):
+            mentions_bench = _BENCH_FREEZE_COMMAND in text or _BENCH_BASELINE_COMMAND in text
+            if _DOCTOR_FIX_COMMAND in text:
+                text = _DOCTOR_FIX_NOT_CURRENT
+            elif mentions_bench:
+                text = _BENCH_NOT_CURRENT
         if text not in kept:
             kept.append(text)
     return kept
@@ -875,9 +903,10 @@ def _attach_unfinished_run_to_doctor(report: dict[str, Any]) -> dict[str, Any]:
     only on strict false would tick again. ``soft_continue`` stays true: that
     bit means the gap is not a hard stop. Unfinished soft-gap boot and status
     set the same ``tick_again`` false and keep ``gate_soft_continue`` true.
-    ``fixes`` does not list ``evolver doctor --fix`` as a current step. That
-    command stays listed when no run is unfinished. This does not run
-    ``--fix`` and does not write a Parent baseline.
+    ``fixes`` does not list ``evolver doctor --fix``, ``evolver bench freeze``,
+    or ``evolver bench baseline`` as a current step. Those commands stay
+    listed when no run is unfinished. This does not run ``--fix``, does not
+    freeze a pack, and does not write a Parent baseline.
     """
     if not _pending_solidify_state():
         return report
@@ -898,10 +927,12 @@ def _attach_unfinished_run_to_doctor(report: dict[str, Any]) -> dict[str, Any]:
         "This doctor call does not settle the run, does not write a Parent "
         "baseline, and does not relax the solidify gate. "
         "Soft gaps stay advisory. Do not apply fixes before swarm_solidify. "
-        "fixes does not list `evolver doctor --fix` as a current step. "
+        "fixes does not list `evolver doctor --fix`, `evolver bench freeze`, "
+        "or `evolver bench baseline` as a current step. "
         "Do not run evolver doctor --fix before solidify. "
-        "This tool does not execute it. "
-        "That command is appropriate after this run is solidified, "
+        "Do not run evolver bench freeze or evolver bench baseline before solidify. "
+        "This tool does not execute them. "
+        "Those commands are appropriate after this run is solidified, "
         "or when no run is unfinished. "
     )
     out["hint"] = lead + str(out.get("hint") or "")
@@ -917,8 +948,9 @@ def swarm_doctor() -> dict[str, Any]:
     hints for the host to show a person; this function never runs them.
     A soft-continue report with an unfinished run also sets
     ``next_action=swarm_solidify`` and ``tick_again=false``. ``soft_continue``
-    stays true. On that steer, ``fixes`` does not list ``evolver doctor --fix``
-    as a current step. The command stays listed when no run is unfinished.
+    stays true. On that steer, ``fixes`` does not list ``evolver doctor --fix``,
+    ``evolver bench freeze``, or ``evolver bench baseline`` as a current step.
+    Those commands stay listed when no run is unfinished.
     A hard blocker does not gain either field.
     """
     from evolver.ops.open_box import SOFT_GAP_ERRORS, doctor
@@ -1103,8 +1135,8 @@ def _stamp_preserve_pending(payload: dict[str, Any]) -> None:
 def _stamp_session_not_failed(payload: dict[str, Any]) -> None:
     """The unfinished-run tick redirect is not a failed session.
 
-    A soft-gap redirect keeps ``gate_soft_continue`` true. ``loop_fuse=
-    pending_redirect_loop`` is the tick fuse and is not an ``error``.
+    A soft-gap redirect omits ``gate_soft_continue`` and sets ``soft_gap``.
+    ``loop_fuse=pending_redirect_loop`` is the tick fuse and is not an ``error``.
     Hosts read ``session_not_failed`` before either signal. True means call
     ``swarm_solidify`` and keep the run. The preserve triad still says how.
     Absent on boot, status, and a real cycle: this flag is not a general
@@ -1122,13 +1154,14 @@ def _prefer_solidify_steps(
     """Name ``swarm_solidify`` as the next call while a run is unfinished.
 
     ``hold_tick`` is only the pending tick redirect that already carries a
-    soft gap. ``apply_soft_gap`` sets ``gate_soft_continue`` true. This keeps
-    that true on the first redirect and on the fuse, the same advisory bit
-    boot and status already show. True is not a license to tick:
-    ``tick_again`` stays false. This never writes false. Strict false is
-    session death for a host that ignores ``session_not_failed``. ``ok`` and
-    ``error`` are left alone. Boot and status keep the same true and also
-    set ``tick_again`` false. Doctor still omits the key.
+    soft gap. ``apply_soft_gap`` sets ``gate_soft_continue`` true. This drops
+    that key on the first redirect and on the fuse. Absent is not true, so a
+    host that ticks only while the flag is true stops. Absent is not false, so
+    a host that dies on strict false stays up. ``soft_gap.advisory`` stays true
+    and ``soft_gap.tick`` is false. ``tick_again`` stays false. This never
+    writes false. Boot and status keep the true bit and also set
+    ``tick_again`` false. Doctor still omits the key and does not set
+    ``soft_gap``.
     """
     rid = str(run_id if run_id is not None else payload.get("run_id") or "").strip()
     who = f"run_id={rid}" if rid else "this unfinished run"
@@ -1141,8 +1174,9 @@ def _prefer_solidify_steps(
     if hold_tick and not closed:
         lead += (
             " session_not_failed=true. "
-            "gate_soft_continue=true. "
-            "True is the soft gap, not a license to tick, and not a failed session. "
+            "gate_soft_continue is absent, not false. "
+            "soft_gap.advisory=true. soft_gap.tick=false. "
+            "Absent is not a license to tick, and not a failed session. "
             "tick_again=false means do not tick. "
             "ok is still true and there is no error. "
             "retryable=false means do not tick."
@@ -1150,8 +1184,9 @@ def _prefer_solidify_steps(
     elif hold_tick and closed:
         lead += (
             " session_not_failed=true. "
-            "gate_soft_continue=true. "
-            "True is the soft gap, not a license to tick, and not a failed session. "
+            "gate_soft_continue is absent, not false. "
+            "soft_gap.advisory=true. soft_gap.tick=false. "
+            "Absent is not a license to tick, and not a failed session. "
             "tick_again=false means do not tick. "
             "loop_fuse=pending_redirect_loop is not an error field. "
             "redirect_reason=pending_redirect_loop is that fuse, not a next_action. "
@@ -1182,12 +1217,22 @@ def _prefer_solidify_steps(
     payload["next_steps"] = rewritten
     if not hold_tick:
         return
-    # Keep the true apply_soft_gap wrote. Never assign false (DEBUG #67).
-    payload["gate_soft_continue"] = True
+    # Drop the true apply_soft_gap wrote. Never assign false (DEBUG #67).
+    payload.pop("gate_soft_continue", None)
+    gap_code = str(payload.get("gap") or payload.get("gate_gap") or "").strip()
+    soft_gap: dict[str, Any] = {
+        "present": True,
+        "advisory": True,
+        "tick": False,
+    }
+    if gap_code:
+        soft_gap["code"] = gap_code
+    payload["soft_gap"] = soft_gap
     if closed:
         steer = (
             "session_not_failed=true. "
-            "gate_soft_continue=true: do not call swarm_tick. "
+            "gate_soft_continue is absent, not false. "
+            "soft_gap.advisory=true. soft_gap.tick=false: do not call swarm_tick. "
             "Call swarm_solidify. loop_fuse=pending_redirect_loop is not a failed session. "
             "redirect_reason=pending_redirect_loop is that fuse, not a next_action. "
             "There is no error field."
@@ -1195,7 +1240,8 @@ def _prefer_solidify_steps(
     else:
         steer = (
             "session_not_failed=true. "
-            "gate_soft_continue=true: do not call swarm_tick. "
+            "gate_soft_continue is absent, not false. "
+            "soft_gap.advisory=true. soft_gap.tick=false: do not call swarm_tick. "
             "Call swarm_solidify. ok is true and there is no error. "
             "The session is not failed. The soft gap stays advisory."
         )
@@ -1217,10 +1263,10 @@ def _pending_redirect_note(count: int, closed: bool, *, gap: bool) -> str:
     soft_flag = ""
     if gap:
         soft_flag = (
-            "gate_soft_continue=true. "
-            "True is not false, so this is not a failed session. "
-            "True is the soft gap, not a license to tick. "
-            "The soft gap stays in warning. "
+            "gate_soft_continue is absent, not false. "
+            "Absent is not a failed session. "
+            "soft_gap.advisory=true. soft_gap.tick=false is not a license to tick. "
+            "The soft gap stays in warning and soft_gap. "
         )
     if not closed:
         return (
@@ -1273,22 +1319,24 @@ def _pending_tick_redirect(gap: str | None) -> dict[str, Any]:
     means do not tick. The first call still keeps ``ok`` true. Read
     ``session_not_failed`` before other flags. True means the session is
     not failed: call ``swarm_solidify`` and keep the run.
-    When a soft gap is present, ``gate_soft_continue`` stays true on the
-    first redirect and on the fuse, the same bit ``apply_soft_gap`` writes
-    for boot and status. True is not a license to tick. This path never
-    writes false: a host that treats strict false as session death stays
-    up even if it ignores ``session_not_failed``. ``tick_again`` is false.
+    When a soft gap is present, the first redirect and the fuse omit
+    ``gate_soft_continue`` and set ``soft_gap`` (``advisory`` true, ``tick``
+    false). Boot and status keep the true bit. This path never writes false:
+    a host that treats strict false as session death stays up even if it
+    ignores ``session_not_failed``. A host that ticks only while the flag is
+    true stops. ``tick_again`` is false.
     The first call keeps ``ok`` true and sets no ``error``.
     The gap itself stays in ``warning``. An unfinished soft-gap boot or
     status keeps ``gate_soft_continue`` true and sets ``tick_again`` false.
     ``session_not_failed`` stays absent there. Doctor still omits the key.
     ``supersede_pending=true`` is the explicit replace. No Parent baseline
     is written.
-    On a soft gap, ``commands`` drops the exact ``evolver doctor --fix``
-    and a ``next_steps`` entry that names that command is rewritten so the
-    current step is ``swarm_solidify``. ``gate_soft_continue`` stays true
-    and is never false. ``tick_again`` stays false. This does not execute
-    ``--fix``.
+    On a soft gap, ``commands`` drops ``evolver doctor --fix``,
+    ``evolver bench freeze``, and ``evolver bench baseline``. A ``next_steps``
+    entry that names one of those commands is rewritten so the current step
+    is ``swarm_solidify``. ``gate_soft_continue`` is omitted and is never
+    false. ``soft_gap.tick`` is false. ``tick_again`` stays false. This does
+    not execute ``--fix`` and does not write a Parent baseline.
     """
     meta = _pending_solidify_meta()
     count = _bump_pending_redirect(str(meta.get("run_id") or ""))
@@ -1385,14 +1433,14 @@ def _pending_tick_redirect(gap: str | None) -> dict[str, Any]:
             "next_action stays swarm_solidify. "
             "The fuse is not an error and not a next_action. "
             "preserve_pending=true, abandon_run=false. Not a gate failure. "
-            "gate_soft_continue=true. tick_again=false means do not tick again. "
+            "gate_soft_continue is absent, not false. "
+            "soft_gap.tick=false means do not tick again. "
             "The soft gap stays advisory."
         )
         if loop_warn not in warnings:
             warnings.append(loop_warn)
     surfaced["warnings"] = warnings
-    # Keep gate_soft_continue true. ok and error stay as set above.
-    # True is the soft gap, not a failed session, and not a license to tick.
+    # Omit gate_soft_continue. Never write false. soft_gap keeps the advisory.
     _prefer_solidify_steps(surfaced, hold_tick=True)
     _defer_doctor_fix_on_steer(surfaced)
     return surfaced
@@ -1448,8 +1496,10 @@ def _opening_action(state: dict[str, Any]) -> tuple[str, str]:
             "存在待固化 run——先调用 `swarm_solidify` 完成固化，再回到步骤 1。"
             "此时直接 `swarm_tick` 不启新周期（`cycle_started=false`，`progress=false`）。"
             "两次 tick 返回都带 `session_not_failed=true`：会话没有失败。"
-            "有软缺口时这次 tick 与保险丝的 `gate_soft_continue=true`"
-            "（`ok` 第一次仍为 true，没有 `error`）：true 不是 false，不是失败的会话，"
+            "boot 与 status 的 `gate_soft_continue=true` 仍在。"
+            "有软缺口时这次 tick 与保险丝不写这个键（缺席，不写成 false），"
+            "并写 `soft_gap.advisory=true`、`soft_gap.tick=false`"
+            "（`ok` 第一次仍为 true，没有 `error`）：缺席不是失败的会话，"
             "也不是再 tick 的许可。`tick_again=false` 表示不要再 tick。"
             "同一条 run 再 tick 得到 `loop_fuse=pending_redirect_loop`"
             "与 `redirect_reason=pending_redirect_loop`"
@@ -1821,12 +1871,14 @@ async def swarm_tick(
     ``abandon_run`` false, and ``retryable`` false. An omitted ``retryable``
     is not permission to tick again. The first call still keeps ``ok`` true.
     Read ``session_not_failed`` before other flags.
-    A soft gap keeps ``gate_soft_continue`` true on the first redirect and
-    on the fuse, and never writes false. True is not a license to tick.
+    A soft gap omits ``gate_soft_continue`` on the first redirect and
+    on the fuse, and never writes false. ``soft_gap.advisory`` is true and
+    ``soft_gap.tick`` is false. Boot and status keep the true bit.
     The first call keeps ``ok`` true and sets no ``error``.
-    This steer does not list ``evolver doctor --fix`` as the current step
-    in ``commands`` or ``next_steps``. The command stays listed when no
-    run is unfinished. This call does not execute it.
+    This steer does not list ``evolver doctor --fix``, ``evolver bench freeze``,
+    or ``evolver bench baseline`` as the current step in ``commands`` or
+    ``next_steps``. Those commands stay listed when no run is unfinished.
+    This call does not execute them and does not write a Parent baseline.
     Neither call starts a cycle or replaces ``last_run``.
     ``supersede_pending=True`` is the explicit replace. Checkpoint and pause
     still outrank that flag and do not consume the redirect count.

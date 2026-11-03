@@ -54,6 +54,7 @@ class _McpClient:
         )
         self._id = 0
         self.init_result: dict = {}
+        self.notifications: list[dict] = []
 
     def request(self, method: str, params: dict | None = None) -> dict:
         self._id += 1
@@ -67,9 +68,15 @@ class _McpClient:
 
     def recv(self) -> dict:
         assert self.proc.stdout is not None
-        line = self.proc.stdout.readline()
-        assert line, "server closed the stream (crashed?)"
-        return json.loads(line)  # stdout must contain ONLY JSON-RPC frames
+        while True:
+            line = self.proc.stdout.readline()
+            assert line, "server closed the stream (crashed?)"
+            msg = json.loads(line)  # stdout must contain ONLY JSON-RPC frames
+            # Server-initiated notifications (tools/list_changed) are not replies.
+            if "id" not in msg and str(msg.get("method") or "").startswith("notifications/"):
+                self.notifications.append(msg)
+                continue
+            return msg
 
     def call_tool(self, name: str, args: dict) -> dict:
         result = self.request("tools/call", {"name": name, "arguments": args})["result"]
@@ -124,6 +131,32 @@ class TestProtocol:
         assert "next_action=pending_redirect_loop" not in instructions
         assert len(instructions) < 1200
         assert "swarm_hook_event" not in instructions
+
+    def test_tools_list_publishes_doctor_and_asks_hosts_to_refresh(
+        self, client: _McpClient
+    ) -> None:
+        """The stdio frame is the catalog. Hosts must not treat it as immutable.
+
+        ``swarm_doctor`` is in this one page (no ``nextCursor``). A cursor
+        argument does not drop it. ``tools.listChanged`` is true, and
+        ``notifications/initialized`` is answered with
+        ``notifications/tools/list_changed``. A host catalog that still omits
+        the tool after that notification is a client cache, not a missing
+        registration. This test does not invent a second tool entry.
+        """
+        tools_cap = client.init_result["result"]["capabilities"]["tools"]
+        assert tools_cap["listChanged"] is True
+        listed = client.request("tools/list")["result"]
+        assert listed.get("nextCursor") in (None, "")
+        names = [tool["name"] for tool in listed["tools"]]
+        assert names.count("swarm_doctor") == 1
+        doctor = next(tool for tool in listed["tools"] if tool["name"] == "swarm_doctor")
+        assert doctor["annotations"]["readOnlyHint"] is True
+        paged = client.request("tools/list", {"cursor": "1"})["result"]
+        assert paged.get("nextCursor") in (None, "")
+        assert [tool["name"] for tool in paged["tools"]].count("swarm_doctor") == 1
+        methods = {note.get("method") for note in client.notifications}
+        assert "notifications/tools/list_changed" in methods
 
     def test_tools_list_is_the_closed_surface(self, client: _McpClient) -> None:
         from tests.mcp_surface import MCP_PROMPT_NAMES, MCP_RESOURCE_URIS, MCP_TOOL_NAMES

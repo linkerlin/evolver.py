@@ -85,6 +85,7 @@ class _McpClient:
             env=env,
         )
         self._id = 0
+        self.notifications: list[dict[str, Any]] = []
         self.init_result: dict[str, Any] = {}
         self.init_result = self.request(
             "initialize",
@@ -103,15 +104,31 @@ class _McpClient:
         self.proc.stdin.flush()
 
     def recv(self) -> dict[str, Any]:
+        """Read the next JSON-RPC response, skipping server notifications.
+
+        ``notifications/initialized`` is answered with
+        ``notifications/tools/list_changed``. That frame has no ``id``.
+        Treating it as the reply desynchronizes every later ``tools/call``
+        and ``prompts/get`` (they see a notification and KeyError on
+        ``result``).
+        """
         assert self.proc.stdout is not None
-        line = self.proc.stdout.readline()
-        assert line, "server closed the stream (crashed?)"
-        return json.loads(line)
+        while True:
+            line = self.proc.stdout.readline()
+            assert line, "server closed the stream (crashed?)"
+            msg = json.loads(line)
+            if "id" not in msg and str(msg.get("method") or "").startswith("notifications/"):
+                self.notifications.append(msg)
+                continue
+            return msg
 
     def request(self, method: str, params: dict[str, Any] | None = None) -> dict[str, Any]:
         self._id += 1
-        self.send({"jsonrpc": "2.0", "id": self._id, "method": method, "params": params or {}})
-        return self.recv()
+        expected = self._id
+        self.send({"jsonrpc": "2.0", "id": expected, "method": method, "params": params or {}})
+        msg = self.recv()
+        assert msg.get("id") == expected, msg
+        return msg
 
     def call(self, name: str, args: dict[str, Any] | None = None) -> Any:
         result = self.request("tools/call", {"name": name, "arguments": args or {}})["result"]
@@ -267,6 +284,28 @@ def _run_precompact_hook(ws: Path) -> dict[str, Any]:
 
 
 class TestFullSurfaceE2E:
+    def test_00_list_changed_does_not_desync_the_next_response(self, client: _McpClient) -> None:
+        """The post-initialize catalog notification is not a JSON-RPC result.
+
+        Handshake advertises ``tools.listChanged``. The server then emits
+        ``notifications/tools/list_changed``. The next ``tools/list`` and
+        ``prompts/get`` must still pair on ``id`` and carry ``result``.
+        """
+        tools = client.request("tools/list")
+        assert "result" in tools
+        assert tools["id"] == client._id
+        names = [tool["name"] for tool in tools["result"]["tools"]]
+        assert names.count("swarm_doctor") == 1
+        prompt = client.request(
+            "prompts/get",
+            {"name": "evolver_swarm", "arguments": {"agent_name": "e2e-notify"}},
+        )
+        assert "result" in prompt
+        assert prompt["id"] == client._id
+        assert "EVOLVER SWARM" in prompt["result"]["messages"][0]["content"]["text"]
+        methods = {note.get("method") for note in client.notifications}
+        assert "notifications/tools/list_changed" in methods
+
     def test_01_boot_status_and_resources(self, client: _McpClient, e2e_ws: Path) -> None:
         assert "EVOLVER SWARM" in client.init_result["result"]["instructions"]
 
