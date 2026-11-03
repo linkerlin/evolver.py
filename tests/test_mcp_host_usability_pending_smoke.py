@@ -233,25 +233,52 @@ def _host_next_call(payload: dict[str, Any]) -> str:
 
 
 def _assert_doctor_fix_deferred(payload: dict[str, Any]) -> None:
-    """Soft solidify steer: exact ``evolver doctor --fix`` is not current.
+    """Soft solidify steer: setup commands are not the current step.
 
-    Other catalog commands stay. The preserve triad still names solidify.
+    ``evolver doctor --fix``, ``evolver bench freeze``, and
+    ``evolver bench baseline`` stay off ``commands`` and ``fixes``.
+    The preserve triad still names solidify.
     """
     assert _checklist_runs_doctor_fix_now(payload) is False
+    assert _checklist_runs_bench_setup_now(payload) is False
     commands = [str(item).strip() for item in payload.get("commands") or []]
+    fixes = [str(item).strip() for item in payload.get("fixes") or []]
     assert "evolver doctor --fix" not in commands
+    assert "evolver bench freeze" not in commands
+    assert "evolver bench baseline" not in commands
+    assert "evolver bench freeze" not in fixes
+    assert "evolver bench baseline" not in fixes
     gap = payload.get("gap")
-    if gap == "pack_absent":
-        assert "evolver bench freeze" in commands
-    if gap == "no_baseline":
-        assert "evolver bench freeze" in commands
-        assert "evolver bench baseline" in commands
-    if gap in ("pack_absent", "no_baseline"):
+    if gap in ("pack_absent", "no_baseline", "unmeasured"):
         steps = [str(step).lower() for step in payload.get("next_steps") or []]
-        assert any("do not run evolver doctor --fix before solidify" in step for step in steps)
+        assert any("before solidify" in step for step in steps)
+        assert not any(
+            "evolver bench freeze" in step and "do not run" not in step for step in steps
+        )
+        assert not any(
+            "evolver bench baseline" in step and "do not run" not in step for step in steps
+        )
     assert payload.get("action_required") == "swarm_solidify"
     assert payload.get("preserve_pending") is True
     assert payload.get("abandon_run") is False
+
+
+def _checklist_runs_bench_setup_now(payload: dict[str, Any]) -> bool:
+    """True when a list offers freeze or baseline as the current step."""
+    for key in ("fixes", "commands"):
+        for item in payload.get(key) or []:
+            text = str(item).strip()
+            if text in ("evolver bench freeze", "evolver bench baseline"):
+                return True
+    for step in payload.get("next_steps") or []:
+        text = str(step)
+        lowered = text.lower()
+        if "evolver bench freeze" not in text and "evolver bench baseline" not in text:
+            continue
+        if "do not run" in lowered and "before solidify" in lowered:
+            continue
+        return True
+    return False
 
 
 def _checklist_runs_doctor_fix_now(payload: dict[str, Any]) -> bool:
@@ -304,10 +331,12 @@ def _assert_preserve_pending(payload: dict[str, Any]) -> None:
 def _assert_stop_is_not_failure(payload: dict[str, Any], *, closed: bool, gap: bool) -> None:
     """Stop-tick signals stay off the fail and abandon fields.
 
-    A soft gap writes ``gate_soft_continue=true`` and never false, so a host
+    A soft gap omits ``gate_soft_continue`` and never writes false, so a host
     that dies on strict false stays up. A host that loops only while the flag
-    is true sees the same advisory bit as boot and status. Stop-tick stays on
-    ``tick_again`` and ``retryable``. Without a soft gap the key stays absent.
+    is true does not tick. ``soft_gap.advisory`` stays true and
+    ``soft_gap.tick`` is false. Boot and status keep the true bit. Stop-tick
+    stays on ``tick_again``, ``retryable``, and ``soft_gap.tick``. Without a
+    soft gap the key stays absent and ``soft_gap`` is absent.
     The fuse code lives in ``loop_fuse``. ``error`` is absent, so a host that
     abandons on any error keeps the run. ``ok`` is still false on the fuse.
     """
@@ -346,13 +375,20 @@ def _assert_stop_is_not_failure(payload: dict[str, Any], *, closed: bool, gap: b
         assert _host_solidifies_only_if_error_is_the_fuse(payload) is False
         assert _host_solidifies_when_it_reads_the_fuse(payload) is False
     if gap:
-        assert payload.get("gate_soft_continue") is True
-        assert _host_ticks_only_on_gate_soft_continue(payload) is True
-        assert "gate_soft_continue=true" in note
+        assert "gate_soft_continue" not in payload
+        assert payload.get("gate_soft_continue") is not False
+        assert _host_ticks_only_on_gate_soft_continue(payload) is False
+        soft_gap = payload["soft_gap"]
+        assert soft_gap["present"] is True
+        assert soft_gap["advisory"] is True
+        assert soft_gap["tick"] is False
+        assert soft_gap["code"] == payload.get("gap")
+        assert "soft_gap.tick=false" in note
         assert "not a failed session" in note.lower()
         assert "not a license to tick" in note
     else:
         assert "gate_soft_continue" not in payload
+        assert "soft_gap" not in payload
         assert _host_ticks_only_on_gate_soft_continue(payload) is False
 
 
@@ -408,7 +444,10 @@ class TestTickSchemaIsOnTheLiveList:
         assert "prompt_mode=short" in description
         assert "\n        " not in description
         joined = " ".join(description.split())
-        assert "does not list evolver doctor --fix as the current step" in joined
+        assert "does not list evolver doctor --fix" in joined
+        assert "evolver bench freeze" in joined
+        assert "evolver bench baseline" in joined
+        assert "as the current step" in joined
 
         doctor = tools["swarm_doctor"]
         assert doctor.annotations is not None
@@ -419,7 +458,9 @@ class TestTickSchemaIsOnTheLiveList:
         assert "Parent baseline" in description
         assert "session_not_failed" in description
         assert "tick_again=false" in description
-        assert "does not list evolver doctor --fix as a current step" in description
+        assert "does not list evolver doctor --fix" in description
+        assert "evolver bench baseline" in description
+        assert "as a current step" in description
 
         boot_desc = " ".join((tools["swarm_boot"].description or "").split())
         status_desc = " ".join((tools["swarm_status"].description or "").split())
@@ -428,7 +469,9 @@ class TestTickSchemaIsOnTheLiveList:
         assert "tick_again=false" in status_desc
         assert "gate_soft_continue" in status_desc
         for text in (boot_desc, status_desc):
-            assert "does not list evolver doctor --fix as a current step" in text
+            assert "does not list evolver doctor --fix" in text
+            assert "evolver bench freeze" in text
+            assert "as a current step" in text
 
 
 class TestPendingBootSmokeHint:
@@ -500,6 +543,11 @@ class TestPendingBootSmokeHint:
         assert _checklist_runs_doctor_fix_now(boot) is False
         assert _checklist_runs_doctor_fix_now(status) is False
         assert _checklist_runs_doctor_fix_now(state) is False
+        assert _checklist_runs_bench_setup_now(boot) is False
+        assert _checklist_runs_bench_setup_now(status) is False
+        assert _checklist_runs_bench_setup_now(state) is False
+        assert "soft_gap" not in boot
+        assert "soft_gap" not in status
 
     def test_soft_boot_without_a_pending_run_does_not_grow_a_smoke_block(
         self, isolated_swarm_env: Path
@@ -519,8 +567,9 @@ class TestPendingBootSmokeHint:
         assert _steps_invite_another_tick(boot) is True
         hint = str(boot.get("hint") or "")
         assert "recommended" in hint or "Soft-accept" in hint or "soft-continue" in hint
-        # No unfinished run: doctor --fix stays a listed setup command.
+        # No unfinished run: doctor --fix and bench setup stay listed.
         assert _checklist_runs_doctor_fix_now(boot) is True
+        assert "evolver bench freeze" in boot.get("commands") or []
 
     def test_checkpoint_outranks_the_smoke_block(self, isolated_swarm_env: Path) -> None:
         from evolver.gep.compact_gate import request_checkpoint
@@ -568,6 +617,7 @@ class TestPendingBootSmokeHint:
         assert "gate_soft_continue" not in idle
         assert "tick_again" not in idle
         assert _checklist_runs_doctor_fix_now(idle) is True
+        assert "evolver bench freeze" in idle["fixes"]
 
         _write_pending("run_doctor_soft")
         report = swarm_doctor()
@@ -585,6 +635,7 @@ class TestPendingBootSmokeHint:
         _assert_preserve_pending(report)
         assert "session_not_failed" not in report
         assert "gate_soft_continue" not in report
+        assert "soft_gap" not in report
         assert report.get("error") not in _SOFT_GAPS
         assert _host_dies_on_soft_continue_false_ignoring_new_flags(report) is False
         assert _host_smoke_decides_without_next_action(report) == "swarm_solidify"
@@ -598,8 +649,15 @@ class TestPendingBootSmokeHint:
         assert "tick_again=false" in hint
         assert "Parent baseline" in hint
         assert "Do not apply fixes before swarm_solidify" in hint
-        assert "does not list `evolver doctor --fix` as a current step" in hint
+        assert "does not list `evolver doctor --fix`" in hint
+        assert "`evolver bench freeze`" in hint
+        assert "`evolver bench baseline`" in hint
+        assert "as a current step" in hint
         assert "do not run evolver doctor --fix before solidify" in hint.lower()
+        assert (
+            "do not run evolver bench freeze or evolver bench baseline before solidify"
+            in hint.lower()
+        )
         assert "does not execute" in hint
         assert "not installed" in hint.lower() or "do not block the loop" in hint.lower()
         assert not baseline_path().exists()
@@ -650,7 +708,8 @@ class TestPendingBootSmokeHint:
         assert "loop_fuse=pending_redirect_loop" in pending
         assert "redirect_reason=pending_redirect_loop" in pending
         assert "gate_soft_continue=true" in pending
-        assert "gate_soft_continue is omitted" not in pending
+        assert "soft_gap.tick=false" in pending
+        assert "不写这个键" in pending
         assert "error=pending_redirect_loop" not in pending
         assert "next_action=pending_redirect_loop" not in pending
         assert "session_not_failed=true" in pending
@@ -719,10 +778,11 @@ class TestPendingTickRedirect:
         assert "not installed" not in hint.lower()
         assert result.get("gap") in _SOFT_GAPS
         assert any("cycle_started=false" in str(item) for item in result.get("warnings") or [])
-        # Soft-gap solidify steer: doctor --fix is not the current step.
-        # Other catalog commands stay. The flag is true, never false.
+        # Soft-gap solidify steer: setup commands are not the current step.
+        # The continue flag is absent, never false. soft_gap says do not tick.
         _assert_doctor_fix_deferred(result)
-        assert result.get("gate_soft_continue") is True
+        assert "gate_soft_continue" not in result
+        assert result["soft_gap"]["tick"] is False
         assert result.get("soft_continue") is not False
         assert not (isolated_swarm_env / "evolution" / "swarm_state.json").exists()
 
@@ -818,7 +878,8 @@ class TestPendingTickRedirect:
         assert first.get("error") is None
         assert first["redirect_count"] == 1
         _assert_doctor_fix_deferred(first)
-        assert first.get("gate_soft_continue") is True
+        assert "gate_soft_continue" not in first
+        assert first["soft_gap"]["advisory"] is True
         assert first["progress"] is False
         assert first["tick_again"] is False
         assert first["tick_closed"] is False
@@ -853,7 +914,8 @@ class TestPendingTickRedirect:
             _assert_solidify_step_first(closed)
             assert _host_next_call(closed) == "swarm_solidify"
             _assert_doctor_fix_deferred(closed)
-            assert closed.get("gate_soft_continue") is True
+            assert "gate_soft_continue" not in closed
+            assert closed["soft_gap"]["tick"] is False
             assert closed.get("soft_continue") is not False
             assert closed["ok"] is False
             note = str(closed.get("note") or "")

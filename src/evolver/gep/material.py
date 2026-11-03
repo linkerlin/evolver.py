@@ -5,7 +5,7 @@ Concept harvest from Node v2 ``material/{store,sources,sampling}.js``
 logs, llm traces, tool events) enter ONE pipeline here instead of being
 re-scanned wholesale every cycle:
 
-- **Watermark dedup** per source file: ``(mtime_ns, size)`` fast-skip;
+- **Watermark dedup** per source file: ``(mtime_ns, size, full_hash)`` fast-skip;
   grew-with-identical-head ⇒ append-only delta from the old size (aligned
   to the next newline); otherwise full rescan with a bounded full-content
   memo catching rewrite/rename/truncate no-ops.
@@ -176,14 +176,21 @@ def ingest_file(path: Path | str, *, kind: str = "session_log") -> dict[str, Any
     wm = watermarks.get(source_key)
 
     data = src.read_bytes()
+    full_hash = hashlib.sha256(data).hexdigest()
+    recent = list(wm.get("recent_full_hashes", [])) if wm else []
 
-    # Fast-skip: mtime+size unchanged.
-    if wm is not None and wm.get("size") == stat.st_size and wm.get("mtime_ns") == stat.st_mtime_ns:
+    # Fast-skip only when the bytes match too. A same-size rewrite that
+    # preserves mtime (some filesystems restore the previous stamp on write)
+    # must not be treated as unchanged.
+    if (
+        wm is not None
+        and wm.get("size") == stat.st_size
+        and wm.get("mtime_ns") == stat.st_mtime_ns
+        and wm.get("full_hash") == full_hash
+    ):
         return summary
 
     # Rewrite no-op: identical full content seen recently.
-    full_hash = hashlib.sha256(data).hexdigest()
-    recent = list(wm.get("recent_full_hashes", [])) if wm else []
     if full_hash in recent:
         watermarks[source_key] = {
             **(wm or {}),

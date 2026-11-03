@@ -334,6 +334,46 @@ def standing_instructions() -> str:
     )
 
 
+def _enable_tool_catalog_refresh(server: Any) -> None:
+    """Tell hosts the tool list can change, and ping them once they initialize.
+
+    ``tools.listChanged`` defaults to false. A host that treats that as
+    "catalog is immutable" keeps a session cache from before ``swarm_doctor``
+    existed: calls hit the new process, ``tools/list`` on that process already
+    includes the tool, and the host catalog still omits it. Advertising
+    ``listChanged`` and sending ``notifications/tools/list_changed`` after
+    ``notifications/initialized`` is the server-side refresh. This does not
+    register a tool the server does not implement.
+    """
+    low = server._lowlevel_server
+    original = low.create_initialization_options
+
+    def create_initialization_options(*args: Any, **kwargs: Any) -> Any:
+        from mcp.server.lowlevel.server import NotificationOptions
+
+        if not args and kwargs.get("notification_options") is None:
+            kwargs["notification_options"] = NotificationOptions(
+                prompts_changed=True,
+                resources_changed=True,
+                tools_changed=True,
+            )
+        return original(*args, **kwargs)
+
+    low.create_initialization_options = create_initialization_options
+
+    async def _on_initialized(ctx: Any, params: Any) -> None:
+        _ = params
+        await ctx.session.send_tool_list_changed()
+
+    from mcp_types import NotificationParams
+
+    low.add_notification_handler(
+        "notifications/initialized",
+        NotificationParams,
+        _on_initialized,
+    )
+
+
 def build_server() -> Any:
     """Construct the MCP server instance (stdio transport via ``run``)."""
     from mcp.server.mcpserver import MCPServer
@@ -423,7 +463,8 @@ def build_server() -> Any:
         directory, is a soft warning; the loop still continues.
         An unfinished run on a soft gap keeps next_action=swarm_solidify,
         gate_soft_continue=true, and tick_again=false. This steer does not
-        list evolver doctor --fix as a current step in commands or next_steps.
+        list evolver doctor --fix, evolver bench freeze, or evolver bench
+        baseline as a current step in commands or next_steps.
         This call does not settle the run or write a Parent baseline.
         """
         from evolver.swarm import swarm_boot
@@ -473,12 +514,13 @@ def build_server() -> Any:
                     "is not a gate failure and not an abandon signal. Both returns set "
                     "session_not_failed=true, preserve_pending=true, "
                     "abandon_run=false, and action_required=swarm_solidify. "
-                    "A soft gap stays in warning. gate_soft_continue=true "
-                    "on those redirects: true is not false and not a license to "
-                    "tick, so do not treat the session as failed. This path never "
-                    "writes gate_soft_continue=false. tick_again=false means do "
+                    "A soft gap stays in warning. Boot and status keep "
+                    "gate_soft_continue=true. The first redirect and the fuse omit "
+                    "that key and set soft_gap.advisory=true with soft_gap.tick=false. "
+                    "Absent is not false. This path never writes "
+                    "gate_soft_continue=false. tick_again=false means do "
                     "not tick. The first redirect keeps ok true and sets no error. "
-                    "true starts a new cycle "
+                    "supersede_pending=true starts a new cycle "
                     "and replaces that run. Does not weaken the solidify gate "
                     "or write a Parent baseline. Checkpoint and pause still "
                     "refuse the cycle."
@@ -510,14 +552,15 @@ def build_server() -> Any:
         action_required=swarm_solidify. Read session_not_failed before other
         flags. True means the session is not failed: do not drop the unfinished
         run, call swarm_solidify. A soft gap stays in warning.
-        On a soft gap, gate_soft_continue=true on the first redirect and on the
-        fuse. True is the soft gap, not a license to tick, and it is not false,
-        so do not treat the session as failed. This path never writes
-        gate_soft_continue=false. tick_again=false means do not tick.
+        On a soft gap, boot and status keep gate_soft_continue=true. The first
+        redirect and the fuse omit that key and set soft_gap.advisory=true with
+        soft_gap.tick=false. Absent is not false, so do not treat the session
+        as failed. This path never writes gate_soft_continue=false.
+        tick_again=false means do not tick.
         The first redirect keeps ok true and sets no error.
-        This steer does not list evolver doctor --fix as the current step
-        in commands or next_steps. The command stays listed when no run is
-        unfinished.
+        This steer does not list evolver doctor --fix, evolver bench freeze,
+        or evolver bench baseline as the current step in commands or next_steps.
+        Those commands stay listed when no run is unfinished.
         This call does not execute it. Pass supersede_pending=true to replace
         that run. This does not weaken the solidify gate and does not write
         a Parent baseline.
@@ -659,7 +702,8 @@ def build_server() -> Any:
 
         After boot, an unfinished run on a soft gap keeps next_action=swarm_solidify,
         gate_soft_continue=true, and tick_again=false. This steer does not
-        list evolver doctor --fix as a current step in commands or next_steps.
+        list evolver doctor --fix, evolver bench freeze, or evolver bench
+        baseline as a current step in commands or next_steps.
         This call does not settle the run or write a Parent baseline.
         """
         from evolver.swarm import swarm_status
@@ -671,8 +715,9 @@ def build_server() -> Any:
 
         While a run is unfinished and the report is soft-continue, next_action
         is swarm_solidify and tick_again=false. soft_continue stays true.
-        fixes does not list evolver doctor --fix as a current step.
-        That command stays listed when no run is unfinished, and after solidify.
+        fixes does not list evolver doctor --fix, evolver bench freeze, or
+        evolver bench baseline as a current step.
+        Those commands stay listed when no run is unfinished, and after solidify.
         This call does not settle the run, write a Parent baseline, or execute
         evolver doctor --fix. gate_soft_continue and session_not_failed stay absent.
         """
@@ -958,6 +1003,7 @@ def build_server() -> Any:
         )(fn)
 
     server.prompt(name="evolver_swarm", title="Evolver Swarm Takeover")(prompt_evolver_swarm)
+    _enable_tool_catalog_refresh(server)
 
     return server
 
