@@ -62,6 +62,7 @@
 | 57 | 失败现场 diff 看不见未跟踪文件：MCP 验证脚本新建 notes.md 走拒绝后 episode diff 为空，成功侧同 helper 同盲区（未修，待单独一轮） | solidify/episode | 评估会话 | 未发版 |
 | 58 | 外部 MCP 评审 P1 四项全属实并修：solidify/propose 未取实例锁、journal 裸句柄、instructions 漏新工具、测试名实不符 + 版本硬编码 | swarm/mcp/tests | 评估会话 | 未发版 |
 | 69 | 未完成 run 的第一次 tick 重定向不写 `retryable`，缺席被当成再 tick | mcp/swarm | MCP 易用性 | 未发版 |
+| 74 | 未完成 run 的第一次 tick 与保险丝仍把 `evolver doctor --fix` 列成当前步骤 | mcp/swarm | MCP 易用性 | 未发版 |
 
 ## 条目
 
@@ -1256,3 +1257,11 @@
 - **修复**：仅当未完成 run 且 soft-continue、没有硬 `blockers` 时，doctor 的 `fixes` 去掉精确的 `evolver doctor --fix`。boot / status 在 `next_action=swarm_solidify` 时，`commands` 去掉同一条，`next_steps` 里点名它的句子改成先 `swarm_solidify`。`soft_continue` 仍为 true。boot / status 的 `gate_soft_continue` 仍为 true。不写 `session_not_failed`。没有未完成 run 时清单不变。硬阻断不改这份清单，也不另给 `next_action`。第一次 tick 与保险丝的 `commands` 不动。不结算，不写 Parent baseline，不放宽固化门，不执行 `--fix`。目录缓存（DEBUG #61）未做假修复。
 - **经验**：**当前步骤只能有一份清单。** `next_action` 指向固化时，`fixes` 不能再把另一条命令放在可执行清单的前面。
 - **仍在**：只读 `soft_continue=true` 或 `gate_soft_continue=true`、完全不看 `tick_again` / `next_action` / `fixes` 的宿主，冒烟或开机之后仍可能再 tick。没有把这些旗标写成 false（会重开 DEBUG #67）。`fixes` / `commands` 里仍可能有 `evolver bench freeze` 与 `evolver bench baseline`；它们不是这次要拿掉的那条，也不是 MCP 工具会执行的命令。第一次 tick 与保险丝的 `commands` 仍可能列出 `evolver doctor --fix`。把保险丝 `ok=false` 当成整段失败、且不读 `session_not_failed` 与 `loop_fuse` 的宿主（DEBUG #68 余项 2）仍会停掉会话。目录缓存（DEBUG #61）没有做假修复。
+
+### 74. 第一次 tick 与保险丝把 `evolver doctor --fix` 列成当前步骤（MCP 易用性，已修）
+
+- **症状**：#73 之后，未完成 run 的软缺口 `swarm_doctor` / `swarm_boot` / `swarm_status` 已经从当前步骤拿掉精确的 `evolver doctor --fix`。第一次未完成 run 的 `swarm_tick`，以及同一条 run 再 tick 的 `loop_fuse=pending_redirect_loop`，`commands` 仍列出这条命令，`next_steps` 仍把它写成建议现在执行。只读清单的宿主会去跑 `doctor --fix`，而不是 `swarm_solidify`。
+- **根因**：tick 重定向经 `apply_soft_gap` 挂上开箱目录。#73 的剥离只接在 doctor、boot、status，没有接到 `_pending_tick_redirect`。
+- **修复**：第一次未完成 run 的 tick 与保险丝在 `next_action=swarm_solidify` 时，`commands` 去掉精确的 `evolver doctor --fix`，`next_steps` 里点名它的句子改成先 `swarm_solidify`。`gate_soft_continue` 仍缺席，不写成 false。`tick_again=false` 不动。保险丝的 `ok` 仍为 false。没有未完成 run 的 tick 仍列出这条命令。不结算，不写 Parent baseline，不放宽固化门，不执行 `--fix`。目录缓存（DEBUG #61）未做假修复。
+- **经验**：**当前步骤的清单要盖住宿主下一步会读的每一份信封。** 开机回执拿掉一条命令之后，重定向信封若仍列出它，宿主会从 tick 的返回里把它捡回来。
+- **仍在**：只看 `soft_continue=true` 或把缺席的 `gate_soft_continue` 当成继续、完全不看 `tick_again` / `next_action` / `commands` 的宿主，仍可能再 tick。没有把这些旗标写成 false（会重开 DEBUG #67）。`commands` 里仍可能有 `evolver bench freeze` 与 `evolver bench baseline`。把保险丝 `ok=false` 当成整段失败、且不读 `session_not_failed` 与 `loop_fuse` 的宿主（DEBUG #68 余项 2）仍会停掉会话；`ok` 留着 false。目录缓存（DEBUG #61）没有做假修复。

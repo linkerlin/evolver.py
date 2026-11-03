@@ -407,8 +407,9 @@ experience 仍写入 ~/.evolver/workspaces/<id>/，不自动提交。补齐基�
   `examples/swarm-quickstart/README.md`「开箱 / 首次准备」执行
   `evolver setup` / `evolver doctor --fix` / `evolver bench freeze`。
   有未完成 run 时，这条命令不是当前步骤：先 `swarm_solidify`。
-  此时 `swarm_doctor` 的 `fixes` 与 boot/status 的 `commands` 不列出
-  `evolver doctor --fix`。没有未完成 run，或固化之后，列出它仍然合适。
+  此时 `swarm_doctor` 的 `fixes`、boot/status 的 `commands`，以及第一次
+  tick 与保险丝的 `commands` 和 `next_steps`，都不把 `evolver doctor --fix`
+  当当前步骤。没有未完成 run，或固化之后，列出它仍然合适。
   soft-accept 可发布但会警告；装包仍强烈推荐。
 - `reason=no_baseline`：**可继续**。建议在另一上下文写好 val 沙箱后执行
   `evolver bench baseline`（或 doctor --fix 在沙箱齐时测量）。基线不由候选
@@ -847,8 +848,10 @@ def _defer_doctor_fix_on_steer(payload: dict[str, Any]) -> None:
     """Stop offering ``evolver doctor --fix`` as the current solidify-steer step.
 
     ``commands`` loses the exact command. A ``next_steps`` entry that names it
-    is replaced with a solidify steer. Tick and fuse envelopes do not call
-    this. Doctor ``fixes`` use :func:`_commands_without_current_doctor_fix`.
+    is replaced with a solidify steer. Boot, status, the first unfinished-run
+    tick, and the loop fuse call this while ``next_action`` is
+    ``swarm_solidify``. A tick with no unfinished run does not. Doctor
+    ``fixes`` use :func:`_commands_without_current_doctor_fix`.
     """
     if "commands" in payload:
         payload["commands"] = _commands_without_current_doctor_fix(payload.get("commands"))
@@ -1279,6 +1282,10 @@ def _pending_tick_redirect(gap: str | None) -> dict[str, Any]:
     ``session_not_failed`` stays absent there.
     ``supersede_pending=true`` is the explicit replace. No Parent baseline
     is written.
+    On a soft gap, ``commands`` drops the exact ``evolver doctor --fix``
+    and a ``next_steps`` entry that names that command is rewritten so the
+    current step is ``swarm_solidify``. ``gate_soft_continue`` stays omitted.
+    ``tick_again`` stays false. This does not execute ``--fix``.
     """
     meta = _pending_solidify_meta()
     count = _bump_pending_redirect(str(meta.get("run_id") or ""))
@@ -1329,6 +1336,7 @@ def _pending_tick_redirect(gap: str | None) -> dict[str, Any]:
         ]
     if gap is None:
         _prefer_solidify_steps(payload, hold_tick=False)
+        _defer_doctor_fix_on_steer(payload)
         return payload
     from evolver.ops.open_box import apply_soft_gap
 
@@ -1383,6 +1391,7 @@ def _pending_tick_redirect(gap: str | None) -> dict[str, Any]:
     # Drop gate_soft_continue. ok and error stay as set above: the missing
     # flag only withdraws another tick, and it is not a failed session.
     _prefer_solidify_steps(surfaced, hold_tick=True)
+    _defer_doctor_fix_on_steer(surfaced)
     return surfaced
 
 
@@ -1811,6 +1820,9 @@ async def swarm_tick(
     Read ``session_not_failed`` before other flags.
     A soft gap omits ``gate_soft_continue`` on the first redirect and on
     the fuse. The first call keeps ``ok`` true and sets no ``error``.
+    This steer does not list ``evolver doctor --fix`` as the current step
+    in ``commands`` or ``next_steps``. The command stays listed when no
+    run is unfinished. This call does not execute it.
     Neither call starts a cycle or replaces ``last_run``.
     ``supersede_pending=True`` is the explicit replace. Checkpoint and pause
     still outrank that flag and do not consume the redirect count.
