@@ -473,10 +473,12 @@ def build_server() -> Any:
                     "is not a gate failure and not an abandon signal. Both returns set "
                     "session_not_failed=true, preserve_pending=true, "
                     "abandon_run=false, and action_required=swarm_solidify. "
-                    "A soft gap stays in warning. gate_soft_continue is omitted "
-                    "on those redirects: omitted is not false, so do not tick "
-                    "and do not treat the session as failed. The first redirect "
-                    "keeps ok true and sets no error. true starts a new cycle "
+                    "A soft gap stays in warning. gate_soft_continue=true "
+                    "on those redirects: true is not false and not a license to "
+                    "tick, so do not treat the session as failed. This path never "
+                    "writes gate_soft_continue=false. tick_again=false means do "
+                    "not tick. The first redirect keeps ok true and sets no error. "
+                    "true starts a new cycle "
                     "and replaces that run. Does not weaken the solidify gate "
                     "or write a Parent baseline. Checkpoint and pause still "
                     "refuse the cycle."
@@ -508,9 +510,11 @@ def build_server() -> Any:
         action_required=swarm_solidify. Read session_not_failed before other
         flags. True means the session is not failed: do not drop the unfinished
         run, call swarm_solidify. A soft gap stays in warning.
-        gate_soft_continue is omitted on the first soft-gap redirect and on the
-        fuse: omitted is not false, so do not tick and do not treat the session
-        as failed. The first redirect keeps ok true and sets no error.
+        On a soft gap, gate_soft_continue=true on the first redirect and on the
+        fuse. True is the soft gap, not a license to tick, and it is not false,
+        so do not treat the session as failed. This path never writes
+        gate_soft_continue=false. tick_again=false means do not tick.
+        The first redirect keeps ok true and sets no error.
         This steer does not list evolver doctor --fix as the current step
         in commands or next_steps. The command stays listed when no run is
         unfinished.
