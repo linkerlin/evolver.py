@@ -13,6 +13,7 @@ from evolver.gep.asset_store import (
     upsert_gene,
 )
 from evolver.gep.content_hash import compute_asset_id, verify_asset_id
+from evolver.gep.hub_health import endpoint_sticky, record_outcome
 
 
 async def search_assets(
@@ -25,17 +26,21 @@ async def search_assets(
     hub = get_hub_url()
     if not hub:
         return {"ok": False, "error": "no_hub_url", "assets": []}
+    if endpoint_sticky():
+        return {"ok": False, "error": "hub_endpoint_missing", "assets": []}
     payload: dict[str, Any] = {"query": query, "limit": limit}
     if asset_type:
         payload["type"] = asset_type
     try:
         result = await _http_post(f"{hub}/v1/a2a/search", payload)
-        assets = result.get("assets", [])
-        if not isinstance(assets, list):
-            assets = []
-        return {"ok": True, "assets": assets, "hub_response": result}
     except Exception as exc:
+        record_outcome(ok=False, error_text=str(exc))
         return {"ok": False, "error": str(exc), "assets": []}
+    record_outcome(ok=True)
+    assets = result.get("assets", [])
+    if not isinstance(assets, list):
+        assets = []
+    return {"ok": True, "assets": assets, "hub_response": result}
 
 
 async def download_asset(asset_id: str) -> dict[str, Any]:
@@ -43,17 +48,22 @@ async def download_asset(asset_id: str) -> dict[str, Any]:
     hub = get_hub_url()
     if not hub:
         return {"ok": False, "error": "no_hub_url", "asset": None}
+    if endpoint_sticky():
+        return {"ok": False, "error": "hub_endpoint_missing", "asset": None}
     try:
         result = await _http_post(f"{hub}/v1/a2a/assets", {"asset_id": asset_id})
-        asset = result.get("asset")
-        if not isinstance(asset, dict):
-            return {"ok": False, "error": "invalid_asset_format", "asset": None}
-        # Verify integrity if asset_id is a sha256:
-        if asset_id.startswith("sha256:") and not verify_asset_id(asset, asset_id):
-            return {"ok": False, "error": "asset_hash_mismatch", "asset": None}
-        return {"ok": True, "asset": asset, "hub_response": result}
     except Exception as exc:
+        record_outcome(ok=False, error_text=str(exc))
         return {"ok": False, "error": str(exc), "asset": None}
+    # Endpoint proven alive; parse/hash failures below are data problems.
+    record_outcome(ok=True)
+    asset = result.get("asset")
+    if not isinstance(asset, dict):
+        return {"ok": False, "error": "invalid_asset_format", "asset": None}
+    # Verify integrity if asset_id is a sha256:
+    if asset_id.startswith("sha256:") and not verify_asset_id(asset, asset_id):
+        return {"ok": False, "error": "asset_hash_mismatch", "asset": None}
+    return {"ok": True, "asset": asset, "hub_response": result}
 
 
 def install_gene(asset: dict[str, Any]) -> dict[str, Any]:
