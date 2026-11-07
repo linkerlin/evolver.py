@@ -104,6 +104,31 @@ def reset_reprobe(state: dict[str, Any]) -> dict[str, Any]:
     return state
 
 
+def record_outcome(*, ok: bool, error_text: str = "") -> dict[str, Any]:
+    """Feed the shared sticky counter from ANY Hub consumer (round-120).
+
+    Until now only the pipeline hub phase's fetch wrote the counter — the
+    ATP family (round-46) only read it. With sparse host-driven ticks days
+    apart, the 3-probe threshold took three real ticks to converge and
+    post_cycle's pickup burned the dead endpoint every cycle in between.
+    Same honesty semantics as hub_phase: 404 counts, success resets, any
+    other failure class resets (it says nothing about the endpoint's
+    existence). Fresh state is loaded per observation so concurrent
+    consumers never clobber each other's counts.
+    """
+    state = load_state()
+    if ok:
+        state = reset_reprobe(reset_404(state))
+    elif "404" in error_text:
+        state = note_404(state)
+        if int(state.get("consecutive_404", 0)) >= HUB_404_STICKY_THRESHOLD:
+            note_reprobe_failed(state)
+    else:
+        state = reset_reprobe(reset_404(state))
+    save_state(state)
+    return state
+
+
 __all__ = [
     "HUB_404_REPROBE_FLOOR_S",
     "HUB_404_REPROBE_S",
@@ -112,6 +137,7 @@ __all__ = [
     "load_state",
     "note_404",
     "note_reprobe_failed",
+    "record_outcome",
     "reset_404",
     "reset_reprobe",
     "save_state",

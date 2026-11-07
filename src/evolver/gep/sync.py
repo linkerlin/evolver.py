@@ -13,6 +13,7 @@ import httpx
 
 from evolver.gep.a2a_protocol import consume_hub_events, fetch_tasks, get_hub_url
 from evolver.gep.fetch import download_asset, install_capsule, install_gene
+from evolver.gep.hub_health import endpoint_sticky, record_outcome
 from evolver.gep.node_identity import (
     build_identity_hub_headers,
     resolve_identity_tuple,
@@ -216,7 +217,28 @@ async def sync_all(
         }
 
     # Default path: tasks + hub events (pre-existing behaviour).
+    # gene hub_sticky_shared_write: manual sync is a Hub consumer too —
+    # honor the shared sticky preflight instead of burning the dead
+    # endpoint's latency, and feed record_outcome so its 404s count like
+    # every other consumer's.
+    if endpoint_sticky():
+        return {
+            "ok": True,
+            "installed": [],
+            "errors": [
+                "tasks: hub_endpoint_missing (sticky 404 skip)",
+                "events: hub_endpoint_missing (sticky 404 skip)",
+            ],
+            "count": 0,
+            "identity": {
+                "node_id": identity.get("node_id"),
+                "has_secret": bool(identity.get("secret")),
+                "version": identity.get("version"),
+            },
+            "dry_run": dry_run,
+        }
     tasks_result = await fetch_tasks(limit=20)
+    record_outcome(ok=bool(tasks_result.get("ok")), error_text=str(tasks_result.get("error") or ""))
     if tasks_result.get("ok"):
         for task in tasks_result.get("tasks", []):
             if dry_run:
@@ -239,6 +261,9 @@ async def sync_all(
         errors.append(f"tasks: {tasks_result.get('error')}")
 
     events_result = await consume_hub_events(max_events=50)
+    record_outcome(
+        ok=bool(events_result.get("ok")), error_text=str(events_result.get("error") or "")
+    )
     if events_result.get("ok"):
         for evt in events_result.get("events", []):
             directive = evt.get("directive") or evt.get("body", "")

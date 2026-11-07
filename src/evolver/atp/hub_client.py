@@ -15,6 +15,7 @@ import httpx
 
 from evolver.config import HTTP_TRANSPORT_TIMEOUT_MS, resolve_hub_url
 from evolver.gep.a2a_protocol import build_hub_headers, get_node_id
+from evolver.gep.hub_health import record_outcome
 
 logger = logging.getLogger(__name__)
 
@@ -36,9 +37,9 @@ def _endpoint_missing() -> dict[str, Any]:
 
     The ATP task pickup burned 1.3-1.6s per cycle against the dead endpoint
     even after the pipeline hub phase got its sticky skip (round-45) — every
-    hub_client consumer now shares one health check. The sticky counter is
-    fed by the hub phase's fetch; pickup runs in the same cycle, so the
-    third 404 protects it immediately.
+    hub_client consumer now shares one health check. Round-120: the counter
+    itself is fed by every consumer via record_outcome — this call's own
+    404 counts toward it, so one cycle converges even with sparse ticks.
     """
     from evolver.gep.hub_health import endpoint_sticky
 
@@ -69,14 +70,17 @@ async def _post(
             async with httpx.AsyncClient(http2=True, timeout=timeout_ms / 1000.0) as client:
                 resp = await client.post(url, json=payload, headers=h)
                 resp.raise_for_status()
+                record_outcome(ok=True)
                 return {"ok": True, "data": resp.json()}
         except httpx.HTTPStatusError as exc:
+            record_outcome(ok=False, error_text=str(exc))
             if exc.response.status_code >= 500:
                 last_exc = exc
                 await asyncio.sleep(_BACKOFF_BASE_S * (2**attempt))
                 continue
             return {"ok": False, "error": str(exc), "status": exc.response.status_code}
         except Exception as exc:
+            record_outcome(ok=False, error_text=str(exc))
             last_exc = exc
             await asyncio.sleep(_BACKOFF_BASE_S * (2**attempt))
     return {"ok": False, "error": str(last_exc) if last_exc else "max_retries"}
@@ -101,14 +105,17 @@ async def _get(
             async with httpx.AsyncClient(http2=True, timeout=timeout_ms / 1000.0) as client:
                 resp = await client.get(url, params=params, headers=h)
                 resp.raise_for_status()
+                record_outcome(ok=True)
                 return {"ok": True, "data": resp.json()}
         except httpx.HTTPStatusError as exc:
+            record_outcome(ok=False, error_text=str(exc))
             if exc.response.status_code >= 500:
                 last_exc = exc
                 await asyncio.sleep(_BACKOFF_BASE_S * (2**attempt))
                 continue
             return {"ok": False, "error": str(exc), "status": exc.response.status_code}
         except Exception as exc:
+            record_outcome(ok=False, error_text=str(exc))
             last_exc = exc
             await asyncio.sleep(_BACKOFF_BASE_S * (2**attempt))
     return {"ok": False, "error": str(last_exc) if last_exc else "max_retries"}

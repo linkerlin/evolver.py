@@ -14,10 +14,7 @@ from evolver.gep.hub_health import (
     HUB_404_REPROBE_S,
     HUB_404_STICKY_THRESHOLD,
     load_state,
-    note_404,
-    note_reprobe_failed,
-    reset_404,
-    reset_reprobe,
+    record_outcome,
     save_state,
 )
 
@@ -80,16 +77,11 @@ async def hub_phase(ctx: dict[str, Any]) -> dict[str, Any]:
 
     if not result.get("ok"):
         error_text = str(result.get("error") or "")
-        if "404" in error_text:
-            save_state(note_404(state))
-        else:
-            # A different failure class (network/DNS) says nothing about the
-            # endpoint's existence — reset honestly rather than accumulate.
-            save_state(reset_reprobe(reset_404(state)))
-        # Round-65: a fetch that ran while sticky (a TTL re-probe) failed —
-        # halve the next wait. Full resets below clear this too.
-        if int(state.get("consecutive_404", 0)) >= HUB_404_STICKY_THRESHOLD and "404" in error_text:
-            save_state(note_reprobe_failed(state))
+        # Shared write path (round-120): 404 counts, other failure classes
+        # reset honestly, threshold crossing starts re-probe halving — the
+        # exact semantics previously inlined here, now fed by every Hub
+        # consumer (ATP family included) via hub_health.record_outcome.
+        record_outcome(ok=False, error_text=error_text)
         ctx["hub_hit"] = {"reason": "offline", "error": result.get("error")}
         ctx["active_task"] = None
         ctx["hub_lessons"] = []
@@ -97,7 +89,7 @@ async def hub_phase(ctx: dict[str, Any]) -> dict[str, Any]:
         ctx["last_hub_fetch_ms"] = int(time.time() * 1000)
         return ctx
 
-    save_state(reset_reprobe(reset_404(state)))
+    record_outcome(ok=True)
     _apply_hub_payload(ctx, result)
     tasks = result.get("tasks", [])
     if tasks:
