@@ -20,16 +20,16 @@ from evolver.gep.self_report import SelfReport
 
 
 def test_is_autopoiesis_enabled(monkeypatch):
-    monkeypatch.delenv("EVOLVER_AUTOPOIESIS", raising=False)
+    monkeypatch.delenv("EVOLVER_CONFIG", raising=False)
     assert is_autopoiesis_enabled() is True
-    monkeypatch.setenv("EVOLVER_AUTOPOIESIS", "0")
+    monkeypatch.setenv("EVOLVER_CONFIG", '{"autopoiesis":false}')
     assert is_autopoiesis_enabled() is False
 
 
 def test_is_autopoiesis_write_enabled(monkeypatch):
-    monkeypatch.delenv("EVOLVER_AUTOPOIESIS_WRITE", raising=False)
+    monkeypatch.delenv("EVOLVER_CONFIG", raising=False)
     assert is_autopoiesis_write_enabled() is True
-    monkeypatch.setenv("EVOLVER_AUTOPOIESIS_WRITE", "0")
+    monkeypatch.setenv("EVOLVER_CONFIG", '{"autopoiesis_write":false}')
     assert is_autopoiesis_write_enabled() is False
 
 
@@ -88,8 +88,10 @@ def test_apply_homeostasis_mutates_ctx():
 
 
 def test_record_and_read_tick(monkeypatch, tmp_path):
+    import json
+
     log_path = tmp_path / "autopoiesis.jsonl"
-    monkeypatch.setenv("EVOLVER_AUTOPOIESIS_LOG_PATH", str(log_path))
+    monkeypatch.setenv("EVOLVER_CONFIG", json.dumps({"autopoiesis_log_path": str(log_path)}))
     viability = compute_viability({"genes": [{"id": "g1"}], "signals": [{"k": 1}]})
     response = homeostasis_response(viability)
     event = record_autopoiesis_tick(
@@ -105,16 +107,25 @@ def test_record_and_read_tick(monkeypatch, tmp_path):
 
 
 def test_run_autopoiesis_tick_disabled(monkeypatch):
-    monkeypatch.setenv("EVOLVER_AUTOPOIESIS", "0")
+    monkeypatch.setenv("EVOLVER_CONFIG", '{"autopoiesis":false}')
     ctx = {"genes": [], "signals": []}
     out = run_autopoiesis_tick(ctx)
     assert "autopoiesis" not in out
 
 
 def test_run_autopoiesis_tick_no_write(temp_workspace, monkeypatch):
-    monkeypatch.setenv("EVOLVER_AUTOPOIESIS", "1")
-    monkeypatch.setenv("EVOLVER_AUTOPOIESIS_WRITE", "0")
-    monkeypatch.setenv("EVOLVER_AUTOPOIESIS_LOG_PATH", str(temp_workspace / "apo.jsonl"))
+    import json
+
+    monkeypatch.setenv(
+        "EVOLVER_CONFIG",
+        json.dumps(
+            {
+                "autopoiesis": True,
+                "autopoiesis_write": False,
+                "autopoiesis_log_path": str(temp_workspace / "apo.jsonl"),
+            }
+        ),
+    )
     ctx = {
         "run_id": "r99",
         "genes": [{"id": "g1"}],
@@ -136,10 +147,19 @@ def test_run_autopoiesis_tick_no_write(temp_workspace, monkeypatch):
 
 @pytest.mark.asyncio
 async def test_autopoiesis_phase(temp_workspace, monkeypatch):
+    import json
+
     from evolver.evolve.pipeline.autopoiesis import autopoiesis_phase
 
-    monkeypatch.setenv("EVOLVER_AUTOPOIESIS_LOG_PATH", str(temp_workspace / "apo.jsonl"))
-    monkeypatch.setenv("EVOLVER_AUTOPOIESIS_WRITE", "0")
+    monkeypatch.setenv(
+        "EVOLVER_CONFIG",
+        json.dumps(
+            {
+                "autopoiesis_log_path": str(temp_workspace / "apo.jsonl"),
+                "autopoiesis_write": False,
+            }
+        ),
+    )
     ctx = {"genes": [{"id": "g1"}], "signals": [{"k": 1}], "hub_hit": {"reason": "idle_skip"}}
     out = await autopoiesis_phase(ctx)
     assert out.get("autopoiesis") is not None

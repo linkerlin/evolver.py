@@ -11,7 +11,7 @@ Surfaces:
 
 - state machine ``running``/``paused`` — ``_run_single_cycle`` (CLI, daemon,
   and ``swarm_tick``) refuses to run a new cycle while paused;
-- tripwire — ``EVOLVER_SUPERVISION_AUTO_PAUSE_STREAK`` consecutive degraded
+- tripwire — ``SUPERVISION_AUTO_PAUSE_STREAK`` consecutive degraded
   feedback reports flip the state to ``paused`` (fuse for an absent human);
 - vetoes — substring patterns (gene id, run id, subject); checked at tick
   post-selection (prompt withheld) and again at the solidify gate;

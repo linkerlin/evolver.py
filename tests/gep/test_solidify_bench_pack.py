@@ -1,9 +1,11 @@
 """Tests for the frozen bench-pack gate inside solidify (charter 配对会话 §5.2).
 
-Only a strict improvement publishes: a drop, a flat score, an unmeasured
-split, an absent pack and a damaged gate all reject (rollback +
-``bench_pack_rejected`` failure event). This supersedes round-79, where flat
-or up passed and gate trouble degraded to inactive.
+Only a strict improvement publishes: a drop, a flat score and a damaged gate
+reject honestly (``ok=False, outcome=draft_preserved`` — the patch stays in
+the worktree, backed up to ``rejected_stashes/<run_id>``) while an unmeasured
+split and an absent pack keep soft-continuing as first-run usability gaps.
+This supersedes both round-79 (flat/up passed) and the 2026-10-31 soft-default
+UX (drop/flat/regression soft-accepted).
 
 Every round here also records a hypothesis — §5.3 refuses any candidate that
 has not stated one. The T0 acceptance hook is mocked to ``None`` (its own
@@ -184,10 +186,8 @@ class TestGatePass:
 
 
 class TestGateReject:
-    def test_drop_rejects_with_failure_event(
-        self, git_ws: Path, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
-        """Drop now soft-accepts under soft-default UX (2026-10-31)."""
+    def test_drop_rejects_as_draft(self, git_ws: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+        """支柱一 (v1.114.0): drop is an honest draft rejection, never an accept."""
         _ = git_ws
         monkeypatch.setattr(
             gate_mod,
@@ -197,23 +197,26 @@ class TestGateReject:
                     "score": 0.6,
                     "baseline": 1.0,
                     "verdict": "reject",
-                    "reason": "drop",  # Must set reason for soft-accept
+                    "reason": "drop",
                 }
             ),
         )
         write_state_for_solidify(_last_run())
         result = solidify(skip_validation=True)
-        # Soft-default UX: drop now soft-accepts
-        assert result["ok"] is True
-        assert result.get("soft_accept") is True
-        assert result["bench_pack"]["score"] == 0.6
-        assert result["bench_pack"]["soft_accept"] is True
-        assert result["bench_pack"]["reason"] == "drop"
+        assert result["ok"] is False
+        assert result["outcome"] == "draft_preserved"
+        assert result["error"] == "bench_pack_rejected"
+        assert result["details"]["bench_pack"]["score"] == 0.6
+        assert result["details"]["bench_pack"]["reason"] == "drop"
+        fix = result.get("actionable_fix") or []
+        assert len(fix) == 3
+        assert any("drop" in line for line in fix)
 
-    def test_drop_rolls_back_working_tree(
+    def test_drop_preserves_working_tree(
         self, git_ws: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        """Drop soft-accepts so worktree NOT rolled back (2026-10-31)."""
+        """支柱一: a missed bar is a draft — the patch stays in place, only a
+        rejected_stashes backup runs (nothing deleted)."""
         monkeypatch.setattr(
             gate_mod,
             "gate_verdict",
@@ -222,23 +225,23 @@ class TestGateReject:
                     "score": 0.6,
                     "baseline": 1.0,
                     "verdict": "reject",
-                    "reason": "drop",  # Must set reason for soft-accept
+                    "reason": "drop",
                 }
             ),
         )
         patched = _uncommitted_change(git_ws)
         write_state_for_solidify(_last_run())
         result = solidify(skip_validation=True)
-        # Soft-default UX: no rollback on soft-accept
-        assert result["ok"] is True
-        # Worktree should remain with changes (no rollback)
-        # _uncommitted_change leaves "patched v2\n" uncommitted
+        assert result["ok"] is False
+        assert result["outcome"] == "draft_preserved"
+        # _uncommitted_change leaves "patched v2\n" uncommitted — still there.
         assert patched.read_text(encoding="utf-8") == "patched v2\n"
+        assert result.get("rejected_stash")
 
     def test_failure_event_carries_pack_evidence(
         self, git_ws: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        """Drop soft-accepts so event is success (2026-10-31)."""
+        """The rejection event keeps the pack evidence for the repair loop."""
         _ = git_ws
         monkeypatch.setattr(
             gate_mod,
@@ -248,17 +251,16 @@ class TestGateReject:
                     "score": 0.6,
                     "baseline": 1.0,
                     "verdict": "reject",
-                    "reason": "drop",  # Must set reason for soft-accept
+                    "reason": "drop",
                 }
             ),
         )
         write_state_for_solidify(_last_run())
         solidify(skip_validation=True)
         events = read_all_events()
-        # Soft-default UX: drop soft-accepts so event is success
         assert len(events) == 1
         ev = events[0]
-        assert ev["outcome"]["status"] == "success"  # soft-accept
-        # Score may be None in skip_validation mode
-        assert ev["bench_pack"]["verdict"] == "soft_accept"
+        assert ev["outcome"]["status"] == "failed"
+        assert ev["bench_pack"]["verdict"] == "reject"
         assert ev["bench_pack"]["score"] == 0.6
+        assert ev["bench_pack"]["digest"] == "abc123"

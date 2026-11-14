@@ -151,7 +151,7 @@ def test_write_cycle_progress_unwritable_returns_false(tmp_path: Path) -> None:
 
 
 def test_spawn_windows_default_skip(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.delenv("EVOLVER_SUICIDE_WINDOWS", raising=False)
+    monkeypatch.delenv("EVOLVER_CONFIG", raising=False)
     result = spawn_replacement_process(
         reason="unit-test",
         args=["--loop"],
@@ -163,7 +163,7 @@ def test_spawn_windows_default_skip(monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 def test_spawn_windows_explicit_opt_out(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setenv("EVOLVER_SUICIDE_WINDOWS", "false")
+    monkeypatch.setenv("EVOLVER_CONFIG", '{"suicide_windows":false}')
     result = spawn_replacement_process(
         reason="unit-test",
         args=["--loop"],
@@ -177,7 +177,7 @@ def test_spawn_windows_explicit_opt_out(monkeypatch: pytest.MonkeyPatch) -> None
 def test_spawn_windows_opt_in_reaches_spawn_error(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    monkeypatch.setenv("EVOLVER_SUICIDE_WINDOWS", "true")
+    monkeypatch.setenv("EVOLVER_CONFIG", '{"suicide_windows":true}')
     # File-as-directory makes open/mkdir fail on every platform.
     blocker = tmp_path / "not-a-dir"
     blocker.write_text("x", encoding="utf-8")
@@ -193,7 +193,7 @@ def test_spawn_windows_opt_in_reaches_spawn_error(
 
 
 def test_spawn_linux_skips_windows_gate(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.delenv("EVOLVER_SUICIDE_WINDOWS", raising=False)
+    monkeypatch.delenv("EVOLVER_CONFIG", raising=False)
     blocker = tmp_path / "not-a-dir"
     blocker.write_text("x", encoding="utf-8")
     result = spawn_replacement_process(
@@ -207,7 +207,7 @@ def test_spawn_linux_skips_windows_gate(tmp_path: Path, monkeypatch: pytest.Monk
 
 
 def test_spawn_darwin_skips_windows_gate(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.delenv("EVOLVER_SUICIDE_WINDOWS", raising=False)
+    monkeypatch.delenv("EVOLVER_CONFIG", raising=False)
     blocker = tmp_path / "not-a-dir"
     blocker.write_text("x", encoding="utf-8")
     result = spawn_replacement_process(

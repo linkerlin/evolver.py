@@ -6,9 +6,9 @@ Equivalent to evolver/src/gep/solidify.js (obfuscated).
 from __future__ import annotations
 
 import contextlib
-import difflib
 import json
 import logging
+import os
 import re
 import secrets
 import shutil
@@ -21,14 +21,15 @@ from typing import Any, Final
 from evolver.config import (
     ACCEPTANCE_SHADOW,
     FITNESS_CASCADE_COMMANDS,
-    FITNESS_GATE_ENFORCE,
     VALIDATION_TIMEOUT_MS,
+)
+from evolver.config import (
+    FITNESS_CASCADE_COMMANDS as _CONFIG_FITNESS_CASCADE_COMMANDS,
 )
 from evolver.gep.acceptance.solidify_hook import gate_or_none
 from evolver.gep.anchor import run_anchor_suite, touches_verifier_surface
 from evolver.gep.asset_store import (
     append_event_jsonl,
-    get_last_event_id,
     read_json_if_exists,
 )
 from evolver.gep.cognition import post_solidify_hooks, record_solidify_failure
@@ -83,7 +84,7 @@ def _timing_block(validation_result: dict[str, Any]) -> dict[str, Any]:
             float(validation_result.get("finished_at", 0))
             - float(validation_result.get("started_at", 0))
         )
-    return {
+    block: dict[str, Any] = {
         "total_ms": total_ms,
         "stages": [
             {
@@ -94,6 +95,11 @@ def _timing_block(validation_result: dict[str, Any]) -> dict[str, Any]:
             for r in validation_result.get("results", [])
         ],
     }
+    if validation_result.get("tier"):
+        block["tier"] = validation_result["tier"]
+    if validation_result.get("scope"):
+        block["scope"] = validation_result["scope"]
+    return block
 
 
 def _failure_event(
@@ -227,6 +233,33 @@ def _read_solidify_state() -> dict[str, Any] | None:
     legacy = get_workspace_root() / "memory" / "evolution" / "evolution_solidify_state.json"
     path = resolve_legacy_read_path(primary, [legacy])
     return read_json_if_exists(path)
+
+
+def _mark_run_settled(run_id: str, error: str) -> None:
+    """Record a judged failure as a finished settle (``last_solidify``).
+
+    回放即裁决: a failure with an event is a closed round — the failure
+    episode is already written at the cycle boundary, so the pending run is
+    consumed and the loop moves on instead of wedging on pending_solidify
+    (the wedge the ``pending_redirect_loop`` fuse used to paper over).
+    Idempotent: a retry of the same run then answers ``already_solidified``.
+    """
+    if not run_id:
+        return
+    try:
+        state = _read_solidify_state() or {}
+        state["last_solidify"] = {
+            "run_id": run_id,
+            "timestamp": time.strftime("%Y-%m-%dT%H:%M:%S", time.gmtime()),
+            "outcome": "failed",
+            "error": error,
+        }
+        path = get_solidify_state_path()
+        tmp = path.with_name(f"{path.name}.{os.getpid()}.tmp")
+        tmp.write_text(json.dumps(state, indent=2) + "\n", encoding="utf-8")
+        tmp.replace(path)
+    except Exception:
+        logger.warning("[solidify] failed-settle bookkeeping skipped", exc_info=True)
 
 
 def classify_failure_mode(
@@ -546,55 +579,6 @@ def _wiki_record_outcome(
     )
 
 
-def _reject_no_improvement(
-    last_run: dict[str, Any],
-    mutation: dict[str, Any],
-    cwd: Path,
-    fitness_verdict: dict[str, Any],
-) -> dict[str, Any]:
-    """S26.3 enforcement branch of the strict-improvement fitness gate:
-    rollback the mutation and land a failed EvolutionEvent (same hygiene as
-    the acceptance-gate rejection path)."""
-    diff_snapshot = _failure_diff(cwd)
-    failed_blast = _compute_blast_radius()
-    snapshot_rejected_worktree(
-        cwd,
-        run_id=str(last_run.get("run_id") or ""),
-        disposable_untracked=_disposable_untracked(cwd),
-        reason="fitness_gate_no_improvement",
-    )
-    rollback_tracked(cwd=cwd, include_untracked=False)
-    rollback_new_untracked_files(_disposable_untracked(cwd), cwd=cwd)
-    record_solidify_failure(last_run, error="fitness_gate_no_improvement")
-    _wiki_rejection("fitness_gate_no_improvement", last_run, score=fitness_verdict.get("score"))
-    _append_failure_event(
-        last_run,
-        cwd,
-        blast_radius=failed_blast,
-        error="fitness_gate_no_improvement",
-        diff_snapshot=diff_snapshot,
-    )
-    event = _failure_event(
-        last_run,
-        mutation,
-        failed_blast,
-        {
-            "status": "failed",
-            "score": fitness_verdict["score"],
-            "error": "fitness_gate_no_improvement",
-        },
-        fitness_gate=fitness_verdict,
-        diff_snapshot=diff_snapshot,
-    )
-    append_event_jsonl(event)
-    return {
-        "ok": False,
-        "error": "fitness_gate_no_improvement",
-        "event_id": _remember_failure_scene(event, fitness_verdict=fitness_verdict),
-        "details": {"fitness_gate": fitness_verdict, "blast_radius": failed_blast},
-    }
-
-
 def _apply_acceptance_gate(
     gate_result: Any,
     last_run: dict[str, Any],
@@ -731,29 +715,115 @@ def _seal_rejection(
     }
 
 
+#: Workbench-draft fix guidance is capped at exactly three human lines
+#: (演进方案.md 支柱一: 3 行人话修复指引).
+ACTIONABLE_FIX_MAX_LINES: Final = 3
+
+
+def _workbench_preserved_line(run_id: str) -> str:
+    return (
+        "Your patch is preserved in place (backup: rejected_stashes/"
+        f"{run_id or '<run_id>'}) — nothing was deleted."
+    )
+
+
+def _first_error_location(stderr: str) -> str:
+    """``file.py:12`` from the first locatable error frame, else ``""``.
+
+    Understands both ``path.py:12`` (ruff/mypy style) and Python tracebacks
+    (``File "...", line 12``). Windows drive letters survive."""
+    match = re.search(r"((?:[A-Za-z]:[\\/])?[A-Za-z0-9_\-./\\]+\.\w+):(\d+)", stderr)
+    if match:
+        return f"{match.group(1)}:{match.group(2)}"
+    tb = re.search(r'File "(.+)", line (\d+)', stderr)
+    if tb:
+        return f"{tb.group(1)}:{tb.group(2)}"
+    return ""
+
+
+def _actionable_fix_from_validation(
+    validation_result: dict[str, Any],
+    run_id: str,
+) -> list[str]:
+    """Exactly three human fix lines, each with file:line precision when the
+    failing stage's stderr names a location (pytest/ruff/mypy all do)."""
+    lines: list[str] = []
+    first_detail = ""
+    for result in validation_result.get("results", []):
+        if not isinstance(result, dict) or result.get("ok"):
+            continue
+        cmd = str(result.get("command") or "validation").strip()
+        stderr = str(result.get("stderr") or "") or str(result.get("stdout") or "")
+        where = _first_error_location(stderr)
+        location = f" (first at {where})" if where else ""
+        first_line = next((ln.strip() for ln in stderr.splitlines() if ln.strip()), "")
+        if not first_detail and first_line:
+            first_detail = first_line[:120]
+        lines.append(f"`{cmd}` failed{location}. Fix that first error.")
+        if len(lines) >= ACTIONABLE_FIX_MAX_LINES - 1:
+            break
+    if len(lines) < ACTIONABLE_FIX_MAX_LINES - 1 and first_detail:
+        lines.append(f"First error says: {first_detail}")
+    # Exactly three lines, always: pad when the failing stage printed nothing
+    # usable (round-121 review: silent failures used to yield two lines).
+    while len(lines) < ACTIONABLE_FIX_MAX_LINES - 1:
+        lines.append("Re-run the failing command locally to see its full error output.")
+    lines.append(_workbench_preserved_line(run_id))
+    return lines[:ACTIONABLE_FIX_MAX_LINES]
+
+
+def _actionable_fix_from_verdict(verdict: dict[str, Any], run_id: str) -> list[str]:
+    """Three human fix lines for a fitness-gate miss (drop/flat/regression)."""
+    reason = str(verdict.get("reason") or "no_improvement").strip()
+    score = verdict.get("score")
+    bar = verdict.get("baseline")
+    measured = score is not None and bar is not None
+    bar_text = f" (score {score} vs baseline {bar})" if measured else ""
+    return [
+        f"Fitness gate: {reason}{bar_text} — the change did not strictly beat the Parent.",
+        "Improve or revert the change locally; the patch was not discarded.",
+        _workbench_preserved_line(run_id),
+    ]
+
+
+def _retract_this_runs_distilled_assets(run_id: str) -> None:
+    """支柱一 vault freeze: a draft_preserved settle retracts the distilled
+    assets the host staged for this run (round-121 review — swarm_distill
+    installs before the gates judge; never best-effort silent)."""
+    try:
+        from evolver.gep.asset_store import retract_distilled_assets
+
+        retract_distilled_assets(run_id)
+    except Exception:
+        logger.warning("[solidify] distilled-asset retraction failed", exc_info=True)
+
+
 def _bench_pack_rejection(
     last_run: dict[str, Any],
     cwd: Path,
     verdict: dict[str, Any],
     validation_result: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
-    """Roll back and build the rejection for a Candidate that missed the bar.
+    """Build the workbench-draft rejection for a Candidate that missed the bar.
 
-    Shared by every non-accept outcome (drop, flat, unmeasured, a damaged
-    gate, an absent pack) — one code path so none of them can quietly differ
-    in whether it rolls back or records a failure.
+    算子即基因 v1.114.0 (支柱一): a non-improvement is a *draft*, not a crime —
+    the patch stays in the worktree (backed up to ``rejected_stashes/<run_id>``
+    first), the return is an honest ``ok=False`` with a 3-line fix, and the
+    vault sees strictly zero new positive assets. Shared by every non-accept
+    fitness outcome (drop, flat, regression, a damaged gate) so none of them
+    can quietly differ in what happens to the working tree.
     """
+    run_id = str(last_run.get("run_id") or "")
     diff_snapshot = _failure_diff(cwd)
     failed_blast = _compute_blast_radius()
-    snapshot_rejected_worktree(
+    stash_info = snapshot_rejected_worktree(
         cwd,
-        run_id=str(last_run.get("run_id") or ""),
+        run_id=run_id,
         disposable_untracked=_disposable_untracked(cwd),
         reason="fitness_gate_no_improvement",
     )
-    rollback_tracked(cwd=cwd, include_untracked=False)
-    rollback_new_untracked_files(_disposable_untracked(cwd), cwd=cwd)
     reason = str(verdict.get("reason") or "unknown")
+    _retract_this_runs_distilled_assets(run_id)
     record_solidify_failure(last_run, error="bench_pack_rejected", score=verdict.get("score"))
     _wiki_rejection("bench_pack_rejected", last_run, score=verdict.get("score"))
     failure = _failure_event(
@@ -777,11 +847,14 @@ def _bench_pack_rejection(
     _maybe_open_diagnostic_entry(failure, validation_result)
     return {
         "ok": False,
+        "outcome": "draft_preserved",
         "error": "bench_pack_rejected",
         "event_id": _remember_failure_scene(failure, validation_result=validation_result),
-        # A failed fitness bar is not a crash: the mutation is rolled back and
-        # the loop continues with repair bias (structured field mirrors prose —
-        # round-57 lesson; the swarm wrapper only fills absent keys).
+        "actionable_fix": _actionable_fix_from_verdict(verdict, run_id),
+        "rejected_stash": stash_info,
+        # A missed fitness bar is not a crash: the patch stays in the worktree
+        # and the loop continues with repair bias (structured field mirrors
+        # prose — round-57 lesson; the swarm wrapper only fills absent keys).
         "failure_mode": {"mode": "soft", "reasonClass": "bench_pack", "retryable": True},
         "next_action": "swarm_tick",
         "details": {"bench_pack": verdict},
@@ -795,16 +868,18 @@ def _apply_bench_pack_gate(
     validation_result: dict[str, Any] | None = None,
     declaration: dict[str, Any] | None = None,
 ) -> tuple[dict[str, Any] | None, dict[str, Any] | None]:
-    """Charter 配对会话 + Soft-default UX (2026-10-31): frozen val pack decides.
+    """Charter 配对会话 + 双轨门 (v1.114.0): frozen val pack decides.
 
     ONLY a strict improvement over the Parent publishes as a full Accept.
 
-    Soft-default UX: drop/flat/regression/no_baseline/pack_absent/unmeasured all
-    soft-accept with warnings + next_steps. This lets hosts complete the loop and
-    write experience. Soft-accept does NOT write a Parent baseline and does NOT
-    open sealed val. Returns ``(rejection, verdict)``.
+    双轨拆分 (算子即基因 v1.114.0): 适应度裁决 (drop/flat/regression) 与验证
+    失败是诚实拒绝 -- 返回 ok=False / draft_preserved, 补丁原位保留 (备份
+    rejected_stashes/<run_id>) 并附 3 行 actionable_fix, 不进金库、不写 Parent.
+    仅首轮环境缺口 (no_baseline/pack_absent/unmeasured) soft-accept with
+    warnings + next_steps, 让宿主走完循环并写入经验; soft-accept 同样不写
+    Parent、不解 val 密封. Returns ``(rejection, verdict)``.
 
-    Only hard blocks (secrets, protected state) trigger rejection + rollback.
+    Only hard blocks (secrets, protected state, val_seal) trigger rejection + rollback.
     """
     try:
         from evolver.bench.frozen_gate import (
@@ -924,6 +999,20 @@ def _append_failure_event(
     return event
 
 
+# Engine-owned state dirs must not pollute the novelty fingerprint (their
+# JSONL contents embed the capsules we compare against), nor be swallowed
+# by rollbacks in workspaces that do not gitignore them (E2E calibration:
+# stash --include-untracked ate events.jsonl).
+_FINGERPRINT_EXCLUDED_DIRS: tuple[str, ...] = (
+    ".evolver",
+    ".evolver_settings",
+    ".evomap",
+    ".pytest_cache",
+    "logs",
+    "memory",
+)
+
+
 def _is_runtime_state(rel: str) -> bool:
     """True for engine runtime-state paths (memory/, .evolver/, .config/...).
 
@@ -999,62 +1088,12 @@ def get_fitness_cascade_commands() -> list[dict[str, Any]]:
 
 
 def _lineage_fields() -> dict[str, Any]:
-    """Sprint 22.6 (GEPA ancestry): link each event to its predecessor."""
-    if not is_enabled("enable_lineage_lessons"):
-        return {}
-    parent = get_last_event_id()
-    return {"parent_event_id": parent} if parent else {}
-
-
-def _normalize_change_text(text: str) -> str:
-    """Reduce a diff or raw file content to its changed-content tokens:
-    keep ``+``/``-`` payload lines from diffs, else the raw lines; drop
-    hunk headers/metadata so a diff and its bare content compare alike."""
-    lines: list[str] = []
-    for line in text.splitlines():
-        stripped = line.strip()
-        if not stripped:
-            continue
-        if stripped.startswith(("@@", "diff --git", "index ", "--- ", "+++ ", "new file")):
-            continue
-        if line[:1] in ("+", "-"):
-            lines.append(stripped[1:].strip())
-        else:
-            lines.append(stripped)
-    return "".join(lines).casefold()
-
-
-def _diff_similarity(a: str, b: str, *, cap: int = 4_000) -> float:
-    """Change-text similarity for the novelty gate (Sprint 23.1).
-
-    # ponytail: SequenceMatcher ratio on capped normalized change text —
-    # swap for embeddings if near-duplicate paraphrases ever slip past.
-    """
-    na = _normalize_change_text(a)[:cap]
-    nb = _normalize_change_text(b)[:cap]
-    if not na or not nb:
-        return 0.0
-    return difflib.SequenceMatcher(None, na, nb, autojunk=False).ratio()
-
-
-NOVELTY_SIMILARITY_THRESHOLD: float = 0.95  # ShinkaEvolve eta (soak round 3:
-# reversal diffs score ~0.89 vs their original — 0.9 false-positived undos)
-
-# Engine-owned state dirs must not pollute the novelty fingerprint (their
-# JSONL contents embed the capsules we compare against), nor be swallowed
-# by rollbacks in workspaces that do not gitignore them (E2E calibration:
-# stash --include-untracked ate events.jsonl).
-_FINGERPRINT_EXCLUDED_DIRS: tuple[str, ...] = (
-    ".evolver",
-    ".evolver_settings",
-    ".evomap",
-    ".pytest_cache",
-    "logs",
-    "memory",
-)
-# Below this many normalized change-text chars, containment matching is too
-# trigger-happy to trust (any small capsule would match any large mutation).
-_CONTAINMENT_MIN_CHARS: int = 40
+    """Sprint 22.6 (GEPA ancestry) slot — always empty since the round-121
+    P0-4 dead-flag sweep:
+    the enable_lineage_lessons dead flag was removed (default-off, no
+    schedule), so events carry no parent_event_id until a scheduled feature
+    fills this slot."""
+    return {}
 
 
 def _is_disposable_path(rel: str) -> bool:
@@ -1139,41 +1178,6 @@ def _novelty_fingerprint(cwd: Path) -> tuple[str, str]:
         full_parts.append(raw)
         added_parts.append("".join(ln.strip() for ln in raw.splitlines() if ln.strip()).casefold())
     return "\n".join(full_parts), "".join(added_parts)
-
-
-def _novelty_duplicate_diff(cwd: Path) -> bool:
-    """True when the working-tree mutation near-duplicates a recent capsule
-    OR a recent event's diff snapshot (soak round-1: solidify never creates
-    capsules — distill does — so a capsule-only corpus left the gate blind)."""
-    try:
-        from evolver.gep.asset_store import load_capsules, read_all_events
-
-        _full, add_current = _novelty_fingerprint(cwd)
-        if not add_current.strip():
-            return False
-        priors_added: list[str] = [
-            _added_from_diff(str(c.get("diff") or "")) for c in load_capsules()[-20:]
-        ]
-        events = read_all_events()[-20:]
-        priors_added += [_added_from_diff(str(e.get("diff_snapshot") or "")) for e in events]
-        # Rejected-mutation added-sets (soak round 3: re-attempting a just-
-        # rejected mutation is the live duplicate case under auto-commit).
-        priors_added += [str(e.get("novelty_added") or "") for e in events]
-        for add_prior in priors_added:
-            if not add_prior:
-                continue
-            # ponytail: added-set containment + ratio; swap for embedding
-            # containment if paraphrased duplicates ever slip past.
-            if len(add_prior) >= _CONTAINMENT_MIN_CHARS and add_prior in add_current:
-                return True
-            if (
-                difflib.SequenceMatcher(None, add_current, add_prior, autojunk=False).ratio()
-                >= NOVELTY_SIMILARITY_THRESHOLD
-            ):
-                return True
-    except Exception:
-        return False
-    return False
 
 
 def _validate_related_commands(raw_commands: Any) -> tuple[bool, list[list[str]], str]:
@@ -1359,16 +1363,13 @@ def _handle_cascade_validation_failure(
     validation_report: dict[str, Any] | None,
     eval_meta: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
-    """Soft-default UX (2026-10-31): validation failures soft-continue with warnings.
+    """Workbench-draft split (算子即基因 v1.114.0, 支柱一): validation failure
+    is an honest ``ok=False, outcome="draft_preserved"``.
 
-    Only hard-block for secrets or protected state paths. Everything else:
-    - Returns ok=True with severity="soft"
-    - Populates warnings with validation failures
-    - Does NOT rollback worktree
-    - Still writes experience (handled by caller continuing to success path)
-
-    Sprint 22.2 graded failure behavior (score, event, memory-graph) preserved
-    for backwards compatibility and repair-loop signals.
+    The patch stays in place (backed up to ``rejected_stashes/<run_id>`` first
+    so nothing can be lost), the caller must NOT proceed to the vault path,
+    and the return carries a 3-line human ``actionable_fix`` with file:line
+    precision. Only hard blocks (secrets, protected state) roll the tree back.
     """
     score = _cascade_score(validation_result["results"])
 
@@ -1423,6 +1424,7 @@ def _handle_cascade_validation_failure(
             details["validation_report"] = validation_report
         return {
             "ok": False,
+            "outcome": "hard_veto_rolled_back",
             "error": "hard_block_validation",
             "block_reason": block_reason,
             "event_id": event_id,
@@ -1433,20 +1435,28 @@ def _handle_cascade_validation_failure(
             "details": details,
         }
 
-    # Soft-continue path: capture failure details but don't rollback
-    # Build warnings from validation failures
+    # Draft-preserved path (支柱一): capture failure details, keep the patch.
     warnings: list[str] = []
     for i, result in enumerate(validation_result.get("results", [])):
         if not result.get("ok"):
             cmd = result.get("command", f"stage_{i}")
             stderr = result.get("stderr", "")
-            warnings.append(f"Validation failed: {cmd} (soft-continue)")
+            warnings.append(f"Validation failed: {cmd}")
             if stderr:
                 # Truncate stderr for warning
                 stderr_brief = stderr[:200] + "..." if len(stderr) > 200 else stderr
                 warnings.append(f"  {stderr_brief}")
 
-    # Still record event for repair-loop signals and history
+    # Record the failure honestly: failure-side event, repair-loop signal,
+    # variant archive — but strictly zero positive vault assets.
+    run_id = str(last_run.get("run_id") or "")
+    stash_info = snapshot_rejected_worktree(
+        cwd,
+        run_id=run_id,
+        disposable_untracked=_disposable_untracked(cwd),
+        reason="draft_preserved_validation",
+    )
+    _retract_this_runs_distilled_assets(run_id)
     diff_snapshot = _failure_diff(cwd)
     failed_blast = _compute_blast_radius()
     failed_fp, failed_added = _novelty_fingerprint(cwd)
@@ -1455,7 +1465,7 @@ def _handle_cascade_validation_failure(
         last_run,
         mutation,
         failed_blast,
-        {"status": "soft_failed", "score": score, "error": "validation_failed_soft"},
+        {"status": "failed", "score": score, "error": "validation_failed"},
         validation_result=validation_result,
         eval_meta=eval_meta,
         novelty_fingerprint=failed_fp[:4000],
@@ -1463,30 +1473,30 @@ def _handle_cascade_validation_failure(
         diff_snapshot=diff_snapshot,
     )
     append_event_jsonl(event)
+    record_solidify_failure(last_run, error="validation_failed", score=score)
+    _wiki_rejection("validation_failed", last_run, score=score)
+    _maybe_record_variant(event, validation_result)
+    event_id = _remember_failure_scene(event, validation_result=validation_result)
 
-    # Note: NOT calling record_solidify_failure or _wiki_rejection for soft failures
-    # The caller will continue to success path and write experience
-
-    # Return ok=True with soft severity and warnings
-    # The caller should continue to persist Gene/Episode/events
     details = dict(validation_result)
     details["score"] = score
+    details["stash"] = stash_info
+    details["rejected_stash"] = stash_info
     if validation_report is not None:
         details["validation_report"] = validation_report
 
     return {
-        "ok": True,  # Soft-continue!
-        "severity": "soft",
-        "warnings": warnings,
-        "validation_soft_failed": True,
+        "ok": False,
+        "outcome": "draft_preserved",
+        "error": "validation_failed",
+        "event_id": event_id,
         "score": score,
+        "warnings": warnings,
+        "actionable_fix": _actionable_fix_from_validation(validation_result, run_id),
+        "validation_timing": event.get("validation_timing"),
+        "stash": stash_info,
+        "rejected_stash": stash_info,
         "details": details,
-        "event_id": event.get("id"),
-        "next_steps": [
-            "Review validation warnings above",
-            "Validation failures are soft-continue under permanent soft-default policy",
-            "Experience has been written to state_root for this cycle",
-        ],
     }
 
 
@@ -1731,9 +1741,17 @@ def solidify(
         validation_scope=validation_scope,
         related_commands=related_commands,
     )
+    run_id_str = str(pending_run.get("run_id") or "")
+    if isinstance(result, dict) and result.get("ok") is not True:
+        err_now = str(result.get("error") or "")
+        if run_id_str and err_now not in _PROCESS_STATES:
+            _retract_this_runs_distilled_assets(run_id_str)
+        if result.get("event_id"):
+            # 回放即裁决: a judged failure is still a settle — the round closed
+            # with its failure episode, so consume the pending run.
+            _mark_run_settled(run_id_str, err_now)
     # U-5: Hypothesis shares fate with commit — only consume on solidify.ok == True;
     # preserve on failure so the host does not need to re-declare on retry.
-    run_id_str = str(pending_run.get("run_id") or "")
     try:
         from evolver.gep.hypothesis import consume_hypothesis, preserve_hypothesis_on_failure
 
@@ -1852,7 +1870,14 @@ def _solidify_cycle(
     # gate's soak sample with a run that validated no mutation.
     last_solidify = state.get("last_solidify") or {}
     run_id_str = str(last_run.get("run_id") or "")
-    if run_id_str and last_solidify.get("run_id") == run_id_str:
+    # Round-121 review: a FAILED settle is retryable — the host fixes the
+    # tree and re-runs solidify on the same pending run. Only a landed
+    # (successful) run is guarded against double-settling.
+    if (
+        run_id_str
+        and last_solidify.get("run_id") == run_id_str
+        and last_solidify.get("outcome") != "failed"
+    ):
         return {
             "ok": False,
             "error": "already_solidified",
@@ -1933,7 +1958,17 @@ def _solidify_cycle(
     mutation = _annotate_mutation_lineage(
         last_run, mutation_override or last_run.get("mutation", {})
     )
-    # U-7 validation_scope ("related" | "cascade" | "skip")
+    resolved_tier = ""
+    resolved_scope_label = scope_mode or "default"
+    changed_for_plan: list[str] = []
+    if not no_git_repo:
+        changed_for_plan = [
+            f
+            for f in dict.fromkeys(git_list_changed_files(cwd) + _disposable_untracked(cwd))
+            if f and not _is_runtime_state(f)
+        ]
+
+    # U-7 + P1-3 validation_scope ("auto" | "lightning" | "related" | "cascade" | "skip")
     if scope_mode == "related" and not skip_validation:
         raw_rel = (
             related_commands
@@ -1959,9 +1994,36 @@ def _solidify_cycle(
             }
         cascade_mode = is_enabled("enable_fitness_cascade")
         validation_commands: list[Any] = normalized_rel
+        resolved_scope_label = "related"
     elif scope_mode == "cascade" and not skip_validation:
         cascade_mode = True
         validation_commands = get_fitness_cascade_commands()
+        resolved_tier = "L2"
+        resolved_scope_label = "cascade"
+    elif (
+        not skip_validation
+        and not no_git_repo
+        and (
+            scope_mode in ("auto", "lightning")
+            or (
+                scope_mode == ""
+                and is_enabled("enable_fitness_cascade")
+                and FITNESS_CASCADE_COMMANDS is _CONFIG_FITNESS_CASCADE_COMMANDS
+            )
+        )
+    ):
+        from evolver.gep.import_graph import select_validation_plan
+
+        plan = select_validation_plan(cwd, changed_for_plan)
+        cascade_mode = True
+        if plan.tier == "L2":
+            resolved_tier = "L2"
+            resolved_scope_label = "cascade"
+            validation_commands = get_fitness_cascade_commands()
+        else:
+            resolved_tier = "L0"
+            resolved_scope_label = "lightning"
+            validation_commands = plan.commands
     else:
         # Sprint 22.2 (enable_fitness_cascade): the validation set is engine-owned
         # (config FITNESS_CASCADE_COMMANDS). mutation.validation comes from
@@ -1969,49 +2031,10 @@ def _solidify_cycle(
         cascade_mode = is_enabled("enable_fitness_cascade") and not skip_validation
         if cascade_mode:
             validation_commands = get_fitness_cascade_commands()
+            resolved_tier = "L2"
+            resolved_scope_label = "cascade"
         else:
             validation_commands = mutation.get("validation") or []
-
-    # Sprint 23.1 (enable_novelty_gate, ShinkaEvolve rejection sampling):
-    # reject near-duplicate mutations BEFORE paying for the expensive cascade.
-    # It also precedes the hypothesis gate: "this mutation is not new" is the
-    # cheaper veto, so it settles first and the host is not asked to justify a
-    # change the engine has already refused.
-    if cascade_mode and is_enabled("enable_novelty_gate") and _novelty_duplicate_diff(cwd):
-        diff_snapshot = _failure_diff(cwd)
-        failed_blast = _compute_blast_radius()
-        rejected_fp, rejected_added = _novelty_fingerprint(cwd)
-        snapshot_rejected_worktree(
-            cwd,
-            run_id=str(last_run.get("run_id") or ""),
-            disposable_untracked=_disposable_untracked(cwd),
-            reason="novelty_duplicate",
-        )
-        rollback_tracked(cwd=cwd, include_untracked=False)
-        rollback_new_untracked_files(_disposable_untracked(cwd), cwd=cwd)
-        _wiki_rejection(
-            "novelty_duplicate",
-            last_run,
-            score=0.0,
-            extra={"fingerprint": rejected_fp[:200]},
-        )
-        novelty_event = _failure_event(
-            last_run,
-            mutation,
-            failed_blast,
-            {"status": "failed", "score": 0.0, "error": "novelty_duplicate"},
-            novelty_fingerprint=rejected_fp[:4000],
-            novelty_added=rejected_added[:4000],
-            diff_snapshot=diff_snapshot,
-        )
-        append_event_jsonl(novelty_event)
-        record_solidify_failure(last_run, error="novelty_duplicate", score=0.0)
-        return {
-            "ok": False,
-            "error": "novelty_duplicate",
-            "event_id": _remember_failure_scene(novelty_event),
-            "details": {"blast_radius": failed_blast},
-        }
 
     # 配对会话 §5.3 — one Candidate validates one primary hypothesis. Checked
     # BEFORE the val gate (and before paying for the cascade): no record, no
@@ -2045,8 +2068,6 @@ def _solidify_cycle(
 
     validation_result: dict[str, Any] | None = None
     validation_report: dict[str, Any] | None = None
-    validation_soft_warnings: list[str] = []
-    validation_soft_failed = False
     # RSI P0-1 (anchor evaluation): a mutation touching the verification
     # machinery must survive the out-of-tree frozen contracts. In-repo tests
     # are mutable by the very mutation they judge — without the anchor, a
@@ -2062,6 +2083,10 @@ def _solidify_cycle(
             validation_result = _run_validations(
                 validation_commands, eval_cwd, cascade=cascade_mode
             )
+            if resolved_tier:
+                validation_result["tier"] = resolved_tier
+            if resolved_scope_label:
+                validation_result["scope"] = resolved_scope_label
             try:
                 validation_report = build_validation_report(
                     gene_id=last_run.get("selected_gene_id"),
@@ -2074,7 +2099,10 @@ def _solidify_cycle(
                 validation_report = None
             if not validation_result["ok"]:
                 if cascade_mode:
-                    failure_result = _handle_cascade_validation_failure(
+                    # 支柱一: a red validation is a workbench draft
+                    # (ok=False, outcome=draft_preserved) or a hard block —
+                    # either way the vault path stays unreachable.
+                    return _handle_cascade_validation_failure(
                         last_run=last_run,
                         mutation=mutation,
                         cwd=cwd,
@@ -2082,78 +2110,65 @@ def _solidify_cycle(
                         validation_report=validation_report,
                         eval_meta=eval_meta,
                     )
-                    # Soft-default UX: check if this is a soft-continue or hard block
-                    if (
-                        failure_result.get("ok") is True
-                        and failure_result.get("severity") == "soft"
-                    ):
-                        # Soft-continue: capture warnings and proceed to success path
-                        # The success path will incorporate these warnings
-                        validation_soft_warnings = failure_result.get("warnings", [])
-                        validation_soft_failed = True
-                        # BUG FIX: do NOT fall through into legacy hard-fail rollback path
-                        # Skip the rest of this validation failure block
-                    else:
-                        # Hard block: return failure immediately
-                        return failure_result
+                # Legacy non-cascade path: same draft contract, minus cascade
+                # extras. Blast radius and diff must be captured BEFORE any
+                # state change (Sprint 23 lesson — after rollback the tree is
+                # clean).
+                failed_blast = _compute_blast_radius()
+                diff_snapshot = _failure_diff(cwd)
+                changed_now = [
+                    f
+                    for f in git_list_changed_files(cwd) + _disposable_untracked(cwd)
+                    if f and not _is_runtime_state(f)
+                ]
+                env_blockers = _classify_env_blockers(validation_result, changed_now)
+                is_hard_block, block_reason = _is_hard_block_mutation(mutation, cwd)
+                stash_info = snapshot_rejected_worktree(
+                    cwd,
+                    run_id=str(last_run.get("run_id") or ""),
+                    disposable_untracked=_disposable_untracked(cwd),
+                    reason="hard_block_validation" if is_hard_block else "validation_failed",
+                )
+                if is_hard_block:
+                    rollback_tracked(cwd=cwd, include_untracked=False)
+                    rollback_new_untracked_files(_disposable_untracked(cwd), cwd=cwd)
+                err_tag = "hard_block_validation" if is_hard_block else "validation_failed"
+                record_solidify_failure(last_run, error=err_tag)
+                failed_event = _append_failure_event(
+                    last_run,
+                    cwd,
+                    blast_radius=failed_blast,
+                    error=err_tag,
+                    validation_result=validation_result,
+                    eval_meta=eval_meta,
+                    diff_snapshot=diff_snapshot,
+                )
+                details: dict[str, Any] = dict(validation_result)
+                details["stash"] = stash_info
+                details["env_blockers"] = env_blockers
+                details["env_blocker_only"] = bool(env_blockers)
+                if validation_report is not None:
+                    details["validation_report"] = validation_report
+                legacy_result: dict[str, Any] = {
+                    "ok": False,
+                    "outcome": "hard_veto_rolled_back" if is_hard_block else "draft_preserved",
+                    "error": err_tag,
+                    "stash": stash_info,
+                    "env_blockers": env_blockers,
+                    "env_blocker_only": bool(env_blockers),
+                    "details": details,
+                }
+                if is_hard_block:
+                    legacy_result["block_reason"] = block_reason
                 else:
-                    # Legacy non-cascade path: always hard-fail with rollback
-                    pass
-
-                # Legacy hard-fail path: only execute if we did NOT soft-continue
-                if not validation_soft_failed:
-                    # Blast radius and diff must be captured BEFORE the rollback
-                    # (Sprint 23 lesson — after rollback the tree is clean).
-                    failed_blast = _compute_blast_radius()
-                    diff_snapshot = _failure_diff(cwd)
-                    changed_now = [
-                        f
-                        for f in git_list_changed_files(cwd) + _disposable_untracked(cwd)
-                        if f and not _is_runtime_state(f)
-                    ]
-                    env_blockers = _classify_env_blockers(validation_result, changed_now)
-                    stash_info = snapshot_rejected_worktree(
-                        cwd,
-                        run_id=str(last_run.get("run_id") or ""),
-                        disposable_untracked=git_list_untracked_files(cwd),
-                        reason="validation_failed",
+                    legacy_result["actionable_fix"] = _actionable_fix_from_validation(
+                        validation_result, str(last_run.get("run_id") or "")
                     )
-                    rollback_tracked()
-                    # cwd must be explicit here too (Sprint 23 lesson, applied to
-                    # the legacy path in round-13): without it the deletion runs
-                    # from the process cwd — under a cascade that is the real
-                    # repo, and the workspace-relative untracked list then names
-                    # its own runtime state file there (DEBUG #20).
-                    rollback_new_untracked_files(git_list_untracked_files(cwd), cwd=cwd)
-                    record_solidify_failure(last_run, error="validation_failed")
-                    failed_event = _append_failure_event(
-                        last_run,
-                        cwd,
-                        blast_radius=failed_blast,
-                        error="validation_failed",
-                        validation_result=validation_result,
-                        eval_meta=eval_meta,
-                        diff_snapshot=diff_snapshot,
+                if failed_event is not None:
+                    legacy_result["event_id"] = _remember_failure_scene(
+                        failed_event, validation_result=validation_result
                     )
-                    details: dict[str, Any] = dict(validation_result)
-                    details["stash"] = stash_info
-                    details["env_blockers"] = env_blockers
-                    details["env_blocker_only"] = bool(env_blockers)
-                    if validation_report is not None:
-                        details["validation_report"] = validation_report
-                    legacy_result: dict[str, Any] = {
-                        "ok": False,
-                        "error": "validation_failed",
-                        "stash": stash_info,
-                        "env_blockers": env_blockers,
-                        "env_blocker_only": bool(env_blockers),
-                        "details": details,
-                    }
-                    if failed_event is not None:
-                        legacy_result["event_id"] = _remember_failure_scene(
-                            failed_event, validation_result=validation_result
-                        )
-                    return legacy_result
+                return legacy_result
 
         # RSI P0-1: anchor contracts for verifier-surface mutations.
         anchor_touched = touches_verifier_surface(
@@ -2199,7 +2214,9 @@ def _solidify_cycle(
 
         # Self-Harness A1: empirical acceptance gate. S26.5 runs it in the
         # isolated eval tree when the flag is on (fallback = live cwd).
-        gate_result = gate_or_none(last_run, eval_cwd)
+        # P1-3: L0 lightning validation targets impacted tests only (<3s budget);
+        # running the full-repo T0 suite inline would defeat L0 leaf isolation.
+        gate_result = None if resolved_tier == "L0" else gate_or_none(last_run, eval_cwd)
     if (
         rejected := _apply_acceptance_gate(
             gate_result, last_run, cwd, validation_result=validation_result
@@ -2220,21 +2237,17 @@ def _solidify_cycle(
     blast_radius = _compute_blast_radius()
     diff_snapshot = capture_diff_snapshot(cwd, max_chars=_STORED_DIFF_CHARS)
 
-    # S26.3 strict-improvement gate (wikiskill R_val > R_best): compare the
-    # measured score against the fitness ledger. Shadow period: verdict is
-    # recorded on the event; enforcement via EVOLVER_FITNESS_GATE_ENFORCE=1.
+    # S26.3 fitness ledger: record the measured verdict on the event, never
+    # reject on it (round-121 review: _cascade_score saturates at 1.0 — it is
+    # a validation floor, not a fitness measure; rejecting on it would lock
+    # out every all-green round after the first). The frozen val pack gate is
+    # the fitness ruler; it rejects non-improvements on its own verdict.
     outcome_score: float | None = (
         _cascade_score(validation_result["results"]) if validation_result else None
     )
     fitness_verdict = record_measurement(
         outcome_score, source=f"solidify:{last_run.get('run_id') or 'unknown'}"
     )
-    if (
-        fitness_verdict is not None
-        and fitness_verdict["verdict"] == "no_improvement"
-        and FITNESS_GATE_ENFORCE
-    ):
-        return _reject_no_improvement(last_run, mutation, cwd, fitness_verdict)
 
     # Build execution trace from validation results
     trace: list[dict[str, Any]] = []
@@ -2354,12 +2367,14 @@ def _solidify_cycle(
         "timestamp": event["timestamp"],
         "outcome": "success",
     }
-    tmp = get_solidify_state_path().with_suffix(".tmp")
+    state_path = get_solidify_state_path()
+    tmp = state_path.with_name(f"{state_path.name}.{os.getpid()}.tmp")
     tmp.write_text(json.dumps(state, indent=2) + "\n", encoding="utf-8")
-    tmp.replace(get_solidify_state_path())
+    tmp.replace(state_path)
 
     result: dict[str, Any] = {
         "ok": True,
+        "outcome": "promoted",
         "event_id": event["id"],
         "blast_radius": blast_radius,
         # Charter: the host's primary_score sources from the cascade-or-gate
@@ -2368,16 +2383,14 @@ def _solidify_cycle(
         "score": outcome_score,
     }
 
-    # Soft-default UX: add validation soft warnings if present
-    all_warnings = list(validation_soft_warnings) + list(no_git_warnings)
-    if validation_soft_failed or no_git_repo:
+    # Soft-default UX: no-git warnings stay soft-continue (infra condition,
+    # not a Candidate verdict).
+    all_warnings = list(no_git_warnings)
+    if no_git_repo:
         result["severity"] = "soft"
         if all_warnings:
             result["warnings"] = all_warnings
-        if validation_soft_failed:
-            result["validation_soft_failed"] = True
-        if no_git_repo:
-            result["no_git_repo"] = True
+        result["no_git_repo"] = True
         result["next_steps"] = [
             "Review warnings above",
             "Soft-continue under permanent soft-default policy",
@@ -2431,6 +2444,24 @@ def _solidify_cycle(
                 result["hint"] = bench_pack_verdict["hint"]
     if proposal_report is not None:
         result["proposal"] = proposal_report
+    if resolved_tier:
+        result["validation_tier"] = resolved_tier
+    if validation_result is not None:
+        if validation_result.get("duration_ms") is not None:
+            result["validation_duration_ms"] = validation_result["duration_ms"]
+        if event.get("validation_timing") is not None:
+            result["validation_timing"] = event["validation_timing"]
+    if resolved_tier == "L0" and changed_for_plan:
+        with contextlib.suppress(Exception):
+            from evolver.gep.import_graph import spawn_l1_guardian_background
+
+            target_gid = landed_head or gene_id
+            spawn_l1_guardian_background(
+                cwd,
+                changed_for_plan,
+                gene_id=target_gid,
+                run_id=run_id_str,
+            )
     return result
 
 

@@ -17,15 +17,15 @@ from evolver.gep.execution_trace import (
 
 class TestGetTraceLevel:
     def test_default(self, monkeypatch):
-        monkeypatch.delenv("EVOLVER_TRACE_LEVEL", raising=False)
+        monkeypatch.delenv("EVOLVER_CONFIG", raising=False)
         assert get_trace_level() == "minimal"
 
     def test_env(self, monkeypatch):
-        monkeypatch.setenv("EVOLVER_TRACE_LEVEL", "full")
+        monkeypatch.setenv("EVOLVER_CONFIG", '{"trace_level":"full"}')
         assert get_trace_level() == "full"
 
     def test_invalid(self, monkeypatch):
-        monkeypatch.setenv("EVOLVER_TRACE_LEVEL", "weird")
+        monkeypatch.setenv("EVOLVER_CONFIG", '{"trace_level":"weird"}')
         assert get_trace_level() == "minimal"
 
 
@@ -78,18 +78,18 @@ class TestClassifyBlastLevel:
 
 class TestBuildExecutionTrace:
     def test_none(self, monkeypatch):
-        monkeypatch.setenv("EVOLVER_TRACE_LEVEL", "none")
+        monkeypatch.setenv("EVOLVER_CONFIG", '{"trace_level":"none"}')
         assert build_execution_trace(["cmd"], ["out"]) == []
 
     def test_minimal(self, monkeypatch):
-        monkeypatch.setenv("EVOLVER_TRACE_LEVEL", "minimal")
+        monkeypatch.setenv("EVOLVER_CONFIG", '{"trace_level":"minimal"}')
         trace = build_execution_trace(["pytest"], ["passed"])
         assert len(trace) == 1
         assert trace[0]["tool"] == "pytest"
         assert "output_preview" not in trace[0]
 
     def test_full(self, monkeypatch):
-        monkeypatch.setenv("EVOLVER_TRACE_LEVEL", "full")
+        monkeypatch.setenv("EVOLVER_CONFIG", '{"trace_level":"full"}')
         trace = build_execution_trace(["pytest"], ["ERROR: failed\n"])
         assert len(trace) == 1
         assert "output_preview" in trace[0]

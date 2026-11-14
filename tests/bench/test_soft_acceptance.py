@@ -1,7 +1,9 @@
-"""Tests for soft acceptance outcomes (Task 3: drop/flat/regression/unmeasured).
+"""Tests for soft acceptance outcomes (算子即基因 v1.114.0, 支柱一).
 
-Covers soft-default UX (2026-10-31): all former hard acceptance failures now
-soft-accept with warnings, experience written, no Parent baseline invented.
+Fitness verdicts (drop/flat/regression) are NO LONGER soft-accepted — they
+return ``ok=False, outcome=draft_preserved`` and never reach the vault. Only
+first-run environment gaps (no_baseline / pack_absent / unmeasured) keep
+soft-continuing, and soft-accept never invents a Parent baseline.
 """
 
 from __future__ import annotations
@@ -10,7 +12,7 @@ from evolver.bench.frozen_gate import enrich_soft_accept, is_usability_soft_reas
 
 
 class TestSoftAcceptanceReasons:
-    """Test that all specified reasons are recognized as soft-accept eligible."""
+    """Only environment gaps are soft; fitness verdicts are honest rejects."""
 
     def test_no_baseline_is_soft(self) -> None:
         assert is_usability_soft_reason("no_baseline")
@@ -21,17 +23,17 @@ class TestSoftAcceptanceReasons:
     def test_unmeasured_is_soft(self) -> None:
         assert is_usability_soft_reason("unmeasured")
 
-    def test_drop_is_soft(self) -> None:
-        """Drop (score below baseline) is now soft-accept."""
-        assert is_usability_soft_reason("drop")
+    def test_drop_is_not_soft(self) -> None:
+        """Drop (score below baseline) is an honest reject since v1.114.0."""
+        assert not is_usability_soft_reason("drop")
 
-    def test_flat_is_soft(self) -> None:
-        """Flat (score equal to baseline) is now soft-accept."""
-        assert is_usability_soft_reason("flat")
+    def test_flat_is_not_soft(self) -> None:
+        """Flat (score equal to baseline) is an honest reject since v1.114.0."""
+        assert not is_usability_soft_reason("flat")
 
-    def test_regression_is_soft(self) -> None:
-        """Regression (worse than baseline) is now soft-accept."""
-        assert is_usability_soft_reason("regression")
+    def test_regression_is_not_soft(self) -> None:
+        """Regression (worse than baseline) is an honest reject since v1.114.0."""
+        assert not is_usability_soft_reason("regression")
 
     def test_non_soft_reasons(self) -> None:
         """Non-soft reasons remain hard blocks."""
@@ -42,52 +44,7 @@ class TestSoftAcceptanceReasons:
 
 
 class TestEnrichSoftAccept:
-    """Test soft-accept enrichment for all soft reasons."""
-
-    def test_drop_enriched(self) -> None:
-        """Drop verdict becomes soft-accept with warnings."""
-        verdict = {
-            "verdict": "reject",
-            "reason": "drop",
-            "accept": False,
-            "score": 0.5,
-            "baseline": 0.7,
-        }
-        enriched = enrich_soft_accept(verdict)
-        assert enriched["accept"] is True
-        assert enriched["soft_accept"] is True
-        assert enriched["verdict"] == "soft_accept"
-        assert enriched["soft_reason"] == "drop"
-        assert "warnings" in enriched
-        assert len(enriched["warnings"]) > 0
-
-    def test_flat_enriched(self) -> None:
-        """Flat verdict becomes soft-accept with warnings."""
-        verdict = {
-            "verdict": "reject",
-            "reason": "flat",
-            "accept": False,
-            "score": 0.7,
-            "baseline": 0.7,
-        }
-        enriched = enrich_soft_accept(verdict)
-        assert enriched["accept"] is True
-        assert enriched["soft_accept"] is True
-        assert enriched["soft_reason"] == "flat"
-
-    def test_regression_enriched(self) -> None:
-        """Regression verdict becomes soft-accept with warnings."""
-        verdict = {
-            "verdict": "reject",
-            "reason": "regression",
-            "accept": False,
-            "score": 0.6,
-            "baseline": 0.8,
-        }
-        enriched = enrich_soft_accept(verdict)
-        assert enriched["accept"] is True
-        assert enriched["soft_accept"] is True
-        assert enriched["soft_reason"] == "regression"
+    """Soft-accept enrichment only fires for the remaining usability gaps."""
 
     def test_unmeasured_enriched(self) -> None:
         """Unmeasured verdict becomes soft-accept with warnings."""
@@ -125,23 +82,38 @@ class TestEnrichSoftAccept:
         assert enriched["soft_accept"] is True
         assert enriched["soft_reason"] == "pack_absent"
 
+    def test_drop_enrichment_is_refused(self) -> None:
+        """A drop verdict passed straight in is never minted into an accept:
+        ``enrich_soft_accept`` returns it unchanged with accept=False."""
+        verdict = {
+            "verdict": "reject",
+            "reason": "drop",
+            "accept": False,
+            "score": 0.5,
+            "baseline": 0.7,
+        }
+        enriched = enrich_soft_accept(verdict)
+        assert enriched["accept"] is False
+        assert "soft_accept" not in enriched
+        assert enriched["verdict"] == "reject"
+
     def test_enriched_has_next_steps(self) -> None:
         """Enriched verdicts include next_steps."""
-        verdict = {"verdict": "reject", "reason": "drop", "accept": False}
+        verdict = {"verdict": "reject", "reason": "no_baseline", "accept": False}
         enriched = enrich_soft_accept(verdict)
         assert "next_steps" in enriched
         assert isinstance(enriched["next_steps"], list)
 
     def test_enriched_has_commands(self) -> None:
         """Enriched verdicts include commands."""
-        verdict = {"verdict": "reject", "reason": "drop", "accept": False}
+        verdict = {"verdict": "reject", "reason": "no_baseline", "accept": False}
         enriched = enrich_soft_accept(verdict)
         assert "commands" in enriched
         assert isinstance(enriched["commands"], list)
 
     def test_no_parent_baseline_written(self) -> None:
         """Soft-accept warns that no Parent baseline is written."""
-        verdict = {"verdict": "reject", "reason": "drop", "accept": False}
+        verdict = {"verdict": "reject", "reason": "no_baseline", "accept": False}
         enriched = enrich_soft_accept(verdict)
         assert "warnings" in enriched
         warning_text = " ".join(enriched["warnings"]).lower()

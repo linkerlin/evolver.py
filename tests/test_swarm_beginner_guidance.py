@@ -1,101 +1,57 @@
-"""Tests for beginner guidance in swarm instrument/boot."""
+"""Tests for zero-jargon beginner-friendly 3-tool FSM instrument prompt."""
 
 from __future__ import annotations
 
 
-def test_instrument_includes_core_loop_tools_for_beginners() -> None:
-    """Instrument prompt includes Core Loop Tools section for low tick counts."""
+def test_instrument_presents_three_tool_fsm_for_beginners() -> None:
+    """Instrument prompt clearly presents evolve_begin / run_lens / evolve_settle."""
     from evolver.swarm import build_instrument_prompt
 
     state = {
         "agent_name": "test",
         "workspace_root": "/test",
-        "genes": 0,
-        "capsules": 0,
+        "fsm_state": "IDLE",
         "pending_solidify": False,
-        "bench_pack_gate": {"armed": False},
         "supervision": {"state": "running"},
-        "hitl": {"mode": "off", "pending": 0},
-        "tick_count": 2,  # Low tick count
     }
-
     prompt = build_instrument_prompt(state)
-
-    # Should include beginner guidance
-    assert "核心循环工具" in prompt or "Core Loop Tools" in prompt
-    assert "swarm_tick" in prompt
-    assert "swarm_distill" in prompt
-    assert "swarm_hypothesis" in prompt
-    assert "swarm_solidify" in prompt
-    assert "swarm_feedback" in prompt
+    assert "evolve_begin" in prompt
+    assert "run_lens" in prompt
+    assert "evolve_settle" in prompt
+    assert "draft_preserved" in prompt
+    assert "actionable_fix" in prompt
 
 
-def test_instrument_no_beginner_guidance_for_experienced() -> None:
-    """Instrument prompt does not include beginner section after 5+ ticks."""
+def test_instrument_free_of_legacy_six_step_jargon() -> None:
+    """Instrument prompt never exposes legacy 6-step tools or internal redirect flags."""
     from evolver.swarm import build_instrument_prompt
 
-    state = {
-        "agent_name": "test",
-        "workspace_root": "/test",
-        "genes": 5,
-        "capsules": 3,
-        "pending_solidify": False,
-        "bench_pack_gate": {"armed": True},
-        "supervision": {"state": "running"},
-        "hitl": {"mode": "off", "pending": 0},
-        "tick_count": 10,  # High tick count
-    }
-
-    prompt = build_instrument_prompt(state)
-
-    # Should NOT include beginner guidance section
-    # (though tools will still be mentioned in循环 section)
-    beginner_section_count = prompt.count("核心循环工具（新手必读")
-    assert beginner_section_count == 0
+    prompt = build_instrument_prompt({"agent_name": "test", "workspace_root": "/test"})
+    for banned in (
+        "swarm_boot",
+        "swarm_tick",
+        "swarm_distill",
+        "swarm_hypothesis",
+        "swarm_solidify",
+        "swarm_feedback",
+        "gate_soft_continue",
+        "pending_redirect_loop",
+        "loop_fuse",
+    ):
+        assert banned not in prompt
 
 
-def test_instrument_always_includes_core_tools_in_loop_section() -> None:
-    """Even without beginner guidance, loop section mentions tools."""
+def test_instrument_reflects_active_run_state() -> None:
+    """When FSM is ACTIVE_RUN, prompt directs host to run_lens / evolve_settle."""
     from evolver.swarm import build_instrument_prompt
 
-    state = {
-        "agent_name": "test",
-        "workspace_root": "/test",
-        "genes": 10,
-        "capsules": 5,
-        "pending_solidify": False,
-        "bench_pack_gate": {"armed": True},
-        "supervision": {"state": "running"},
-        "hitl": {"mode": "off", "pending": 0},
-        "tick_count": 20,
-    }
-
-    prompt = build_instrument_prompt(state)
-
-    # Core tools still mentioned in循环 section regardless of tick count
-    assert "swarm_tick" in prompt
-    assert "swarm_solidify" in prompt
-    assert "循环" in prompt or "loop" in prompt.lower()
-
-
-def test_beginner_guidance_mentions_soft_accept() -> None:
-    """Beginner guidance mentions soft-accept for first-time setup."""
-    from evolver.swarm import build_instrument_prompt
-
-    state = {
-        "agent_name": "test",
-        "workspace_root": "/test",
-        "genes": 0,
-        "capsules": 0,
-        "pending_solidify": False,
-        "bench_pack_gate": {"armed": False},
-        "supervision": {"state": "running"},
-        "hitl": {"mode": "off", "pending": 0},
-        "tick_count": 0,  # First tick
-    }
-
-    prompt = build_instrument_prompt(state)
-
-    # Should mention soft-accept in beginner section
-    assert "soft-accept" in prompt or "soft_accept" in prompt
-    assert "no_baseline" in prompt or "pack_absent" in prompt
+    prompt = build_instrument_prompt(
+        {
+            "agent_name": "test",
+            "workspace_root": "/test",
+            "fsm_state": "ACTIVE_RUN",
+            "pending_solidify": True,
+        }
+    )
+    assert "ACTIVE_RUN" in prompt
+    assert "下一步：`evolve_settle`" in prompt

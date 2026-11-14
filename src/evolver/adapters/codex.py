@@ -110,14 +110,14 @@ def build_agents_md_section() -> str:
     return f"""{SECTION_MARKER}
 ## Evolution Memory (Evolver)
 
-This project uses evolver for self-evolution. Hooks automatically:
+This project uses `evolver` for zero-touch self-evolution. Hooks automatically:
 1. Inject recent evolution memory at session start
 2. Detect evolution signals during file edits
 3. Record outcomes at session end
 
-For substantive tasks, call `gep_recall` before work and `gep_record_outcome` after.
-Signals: log_error, perf_bottleneck, user_feature_request, capability_gap,
-deployment_issue, test_failure."""
+When driving self-evolution via MCP, follow the 3-tool atomic cycle:
+`evolve_begin` (lock hypothesis) -> `run_lens` / edit code -> `evolve_settle` (lightning check).
+CLI dashboard: `evolver status` | Autopilot daemon: `evolver up`."""
 
 
 def install(
@@ -125,6 +125,7 @@ def install(
     config_root: Path,
     evolver_root: Path,
     force: bool = False,
+    inject_docs: bool = True,
 ) -> dict[str, Any]:
     codex_dir = config_root / ".codex"
     hooks_json_path = codex_dir / "hooks.json"
@@ -154,19 +155,21 @@ def install(
     if toml_changed:
         print("[codex] Enabled codex_hooks in config.toml")
 
-    from evolver.adapters.hook_adapter import append_section_to_file
+    files = [str(hooks_json_path), str(codex_dir / "config.toml")] + [str(c) for c in copied]
+    if inject_docs:
+        from evolver.adapters.hook_adapter import append_section_to_file
 
-    injected = append_section_to_file(agents_md_path, SECTION_MARKER, build_agents_md_section())
-    if injected:
-        print(f"[codex] Injected evolution section into {agents_md_path}")
+        injected = append_section_to_file(agents_md_path, SECTION_MARKER, build_agents_md_section())
+        if injected:
+            print(f"[codex] Injected evolution section into {agents_md_path}")
+        files.insert(2, str(agents_md_path))
 
     print("[codex] Installation complete.")
 
     return {
         "ok": True,
         "platform": "codex",
-        "files": [str(hooks_json_path), str(codex_dir / "config.toml"), str(agents_md_path)]
-        + [str(c) for c in copied],
+        "files": files,
     }
 
 
@@ -202,6 +205,7 @@ def uninstall(
                                 and (
                                     "evolver-session" in h["command"]
                                     or "evolver-signal" in h["command"]
+                                    or "evolver.adapters.scripts." in h["command"]
                                 )
                             )
                         ]

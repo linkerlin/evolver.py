@@ -12,13 +12,13 @@ from typing import Any
 
 from evolver.gep.paths import get_evolution_dir
 
-INNOVATION_LOG_PATH_ENV = "EVOLVER_INNOVATION_LOG_PATH"
-
 
 def _innovation_log_path() -> Path:
-    env = __import__("os").environ.get(INNOVATION_LOG_PATH_ENV)
-    if env:
-        return Path(env)
+    from evolver.config import get_config
+
+    override = get_config().innovation_log_path.strip()
+    if override:
+        return Path(override)
     return get_evolution_dir() / "innovation_log.jsonl"
 
 

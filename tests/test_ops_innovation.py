@@ -21,7 +21,10 @@ from evolver.ops.innovation import (
 @pytest.fixture
 def isolated_innovation_log(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     log_path = tmp_path / "innovation_log.jsonl"
-    monkeypatch.setenv("EVOLVER_INNOVATION_LOG_PATH", str(log_path))
+    monkeypatch.setenv(
+        "EVOLVER_CONFIG",
+        json.dumps({"innovation_log_path": str(log_path), "quiet_legacy_warning": True}),
+    )
     return log_path
 
 

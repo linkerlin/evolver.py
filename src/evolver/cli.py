@@ -10,7 +10,7 @@ import os
 import sys
 from collections.abc import Sequence
 from pathlib import Path
-from typing import Any
+from typing import Any, NoReturn
 
 
 def _load_dotenv() -> None:
@@ -58,6 +58,11 @@ SOAK_ROUTED_COMMANDS: frozenset[str | None] = frozenset(
         "start",
         "restart",
         "mcp",
+        # Round-121: the three zero-touch verbs must see the same routed
+        # runtime as the loop they wrap.
+        "up",
+        "auto",
+        "_bootstrap-baseline",
         "solidify",
         "self-report",
         "review",
@@ -91,11 +96,72 @@ SOAK_ROUTED_COMMANDS: frozenset[str | None] = frozenset(
 )
 
 
-def _build_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(
+class _RootParser(argparse.ArgumentParser):
+    """Root help leads with the three zero-threshold verbs (支柱零).
+
+    ``hide_expert_listing=True`` keeps the 60+ expert subcommands out of the
+    main help screen (they remain fully functional at the top level and via
+    ``evolver internal <cmd>``); the ``internal`` shim re-renders the plain
+    full listing for discoverability.
+
+    Class default is False on purpose: argparse instantiates subparsers from
+    ``type(self)``, so subcommand help must NOT inherit the root's opt-in stub
+    — ``evolver proxy --help`` still prints the proxy flags.
+    """
+
+    hide_expert_listing = False
+
+    def format_help(self) -> str:
+        if not self.hide_expert_listing:
+            return super().format_help()
+        return (
+            "evolver — zero-touch self-evolution autopilot (算子即基因 v1.114.0)\n"
+            "\n"
+            "三个动词，开箱即用:\n"
+            "  init      一键零配置开箱 (自动配置 IDE MCP + 后台基线自举)\n"
+            "  up        一键自动驾驶守护 (别名 auto; 无进展自动休眠)\n"
+            "  status    纯人话健康与收益面板\n"
+            "\n"
+            "其余专家子命令: evolver internal <cmd> --help (旧顶层写法仍兼容)\n"
+        )
+
+    def error(self, message: str) -> NoReturn:
+        if not self.hide_expert_listing:
+            super().error(message)
+        import difflib
+        import re
+
+        m = re.search(r"invalid choice:\s*'([^']+)'", message)
+        if m:
+            bad = m.group(1)
+            primary = ["init", "up", "auto", "status", "internal"]
+            all_cmds = list(primary)
+            for action in self._actions:
+                if isinstance(action, argparse._SubParsersAction):
+                    for choice in action.choices:
+                        if not choice.startswith("_") and choice not in all_cmds:
+                            all_cmds.append(choice)
+            matches = difflib.get_close_matches(bad, all_cmds, n=2, cutoff=0.5)
+            hint = (
+                f" Did you mean: `evolver {matches[0]}`?"
+                if matches
+                else " Try `evolver init`, `evolver up`, or `evolver status`."
+            )
+            self.exit(
+                2,
+                f"evolver: unknown command '{bad}'.{hint}\n"
+                "Run `evolver --help` for quickstart or "
+                "`evolver internal --help` for expert commands.\n",
+            )
+        self.exit(2, f"evolver: error: {message}\nRun `evolver --help` for usage.\n")
+
+
+def _build_parser(hide_expert_listing: bool = True) -> argparse.ArgumentParser:
+    parser = _RootParser(
         prog="evolver",
         description="GEP-powered self-evolution engine for AI agents.",
     )
+    parser.hide_expert_listing = hide_expert_listing
     parser.add_argument("--version", action="store_true", help="Show version and exit")
     parser.add_argument("--verbose", "-v", action="store_true", help="Verbose logging")
     parser.add_argument("--loop", action="store_true", help="Run as a background daemon")
@@ -109,10 +175,36 @@ def _build_parser() -> argparse.ArgumentParser:
 
     sub = parser.add_subparsers(dest="command")
     sub.add_parser("run", help="Run one evolution cycle (default)")
+    up_p = sub.add_parser(
+        "up",
+        aliases=["auto"],
+        help="One-touch autopilot daemon: sliding session + no-progress dormancy",
+    )
+    up_p.add_argument("--project", default=None, help="Target project directory (default: cwd)")
+    up_p.add_argument("--interval-ms", type=int, default=None, help="Base cycle interval")
+    up_p.add_argument(
+        "--once",
+        action="store_true",
+        help="Run a single autopilot cycle and exit cleanly",
+    )
+    # add_help=False: `evolver internal --help` must reach the full expert
+    # listing (round-121 review — the shim's own -h swallowed it), not an
+    # empty usage stub.
+    internal_p = sub.add_parser(
+        "internal",
+        add_help=False,
+        help="Run an expert/ops command: evolver internal <cmd> --help (see --help)",
+    )
+    internal_p.add_argument("internal_args", nargs=argparse.REMAINDER)
     sub.add_parser("start", help="Start the evolver daemon loop")
     sub.add_parser("stop", help="Stop the evolver daemon loop")
     sub.add_parser("restart", help="Restart the evolver daemon loop")
-    sub.add_parser("status", help="Show daemon status")
+    status_p = sub.add_parser(
+        "status",
+        help="Plain-language health & benefit panel (zero jargon)",
+    )
+    status_p.add_argument("--project", default=None, help="Target project directory")
+    status_p.add_argument("--json", action="store_true", help="Output raw JSON")
     log_p = sub.add_parser("log", help="Tail the evolver log")
     log_p.add_argument("--lines", type=int, default=20, help="Number of lines to show")
     sub.add_parser("check", help="Check daemon health")
@@ -138,9 +230,9 @@ def _build_parser() -> argparse.ArgumentParser:
     )
     solidify_p.add_argument(
         "--validation-scope",
-        choices=["related", "cascade", "skip"],
+        choices=["auto", "lightning", "related", "cascade", "skip"],
         default=None,
-        help="U-7: Validation scope (related | cascade | skip)",
+        help="Validation scope (auto | lightning | related | cascade | skip)",
     )
     solidify_p.add_argument(
         "--related-cmd",
@@ -394,6 +486,33 @@ def _build_parser() -> argparse.ArgumentParser:
         default=None,
         help="U-1: Explicit git repository root for the MCP server",
     )
+    init_p = sub.add_parser(
+        "init",
+        help="One-touch zero-config bootstrap: git + MCP + baseline, zero interaction",
+    )
+    init_p.add_argument("--project", default=None, help="Target project directory (default: cwd)")
+    init_p.add_argument(
+        "--yes",
+        action="store_true",
+        help="In a non-git directory, safely git init + .gitignore without asking",
+    )
+    init_p.add_argument(
+        "--host",
+        action="append",
+        default=None,
+        help="Configure only specific IDE host(s): claude-code, cursor, codex, opencode, zcode",
+    )
+    init_p.add_argument(
+        "--no-hosts",
+        action="store_true",
+        help="Skip IDE MCP/hook configuration (bootstrap workspace + baseline only)",
+    )
+    init_p.add_argument("--json", action="store_true", help="Output raw JSON")
+    bootstrap_p = sub.add_parser(
+        "_bootstrap-baseline",
+        help=argparse.SUPPRESS,  # internal: background child of `evolver init`
+    )
+    bootstrap_p.add_argument("--project", default=None, help="Target project directory")
     setup_p = sub.add_parser(
         "setup",
         help="Open-box first-run: diagnose + safely auto-fill freeze pack (doctor --fix)",
@@ -701,6 +820,11 @@ def _build_parser() -> argparse.ArgumentParser:
         help="JSON file holding the Parent library payload",
     )
     lib_establish.add_argument("--json", action="store_true", help="Output raw JSON")
+    lib_establish.add_argument(
+        "--allow-move",
+        action="store_true",
+        help="Human decision: move the Parent pointer to different content",
+    )
     episode_p = sub.add_parser(
         "episode",
         help="Episode records (经验即证据: the runtime-held record of one self-improvement round)",
@@ -932,7 +1056,9 @@ def main(argv: Sequence[str] | None = None) -> int:
         return 0
 
     if args.verbose:
-        os.environ["EVOLVER_VERBOSE"] = "true"
+        from evolver.config import set_runtime_config_override
+
+        set_runtime_config_override(verbose=True)
 
     is_loop = args.loop or args.mad_dog or getattr(args, "solo", False)
     command = args.command
@@ -960,6 +1086,16 @@ def main(argv: Sequence[str] | None = None) -> int:
         if is_loop:
             return asyncio.run(_cmd_loop(args))
         return asyncio.run(_cmd_run(args))
+
+    if command in ("up", "auto"):
+        return asyncio.run(_cmd_up(args))
+
+    if command == "internal":
+        rest = list(args.internal_args or [])
+        if not rest or rest in (["-h"], ["--help"]):
+            _build_parser(hide_expert_listing=False).print_help()
+            return 0
+        return main(rest)
 
     if command == "start":
         return _cmd_start(args)
@@ -1039,6 +1175,12 @@ def main(argv: Sequence[str] | None = None) -> int:
 
     if command == "setup":
         return _cmd_setup(args)
+
+    if command == "init":
+        return _cmd_init(args)
+
+    if command == "_bootstrap-baseline":
+        return _cmd_bootstrap_baseline(args)
 
     if command == "doctor":
         return _cmd_doctor(args)
@@ -1153,14 +1295,71 @@ def _cmd_restart(_args: argparse.Namespace) -> int:
     return 0
 
 
-def _cmd_status(_args: argparse.Namespace) -> int:
-    from evolver.ops.lifecycle import status
+def _cmd_status(args: argparse.Namespace) -> int:
+    """支柱零 (P0-2): plain-language health & benefit panel, zero jargon."""
+    from evolver.ops.status_human import human_status, render_human
 
-    result = status()
-    data = result.__dict__.copy()
-    data["processes"] = [p.__dict__ for p in result.processes]
-    print(json.dumps(data, default=str, indent=2))
+    report = human_status(project=getattr(args, "project", None))
+    if getattr(args, "json", False):
+        print(json.dumps(report, ensure_ascii=False, indent=2))
+    else:
+        print(render_human(report))
     return 0
+
+
+async def _cmd_up(args: argparse.Namespace) -> int:
+    """支柱零 (P0-2): one-touch autopilot daemon (sliding session + dormancy)."""
+    import signal
+
+    from evolver.evolve.runner import request_shutdown, run_loop
+    from evolver.evolve.runner import run as run_cycle
+    from evolver.gep.paths import get_repo_root
+
+    project_arg = getattr(args, "project", None)
+    prev_repo_env = os.environ.get("EVOLVER_REPO_ROOT")
+    if project_arg:
+        resolved = Path(project_arg).expanduser().resolve()
+        root = get_repo_root(cwd=resolved, _quiet=True) or resolved
+        os.environ["EVOLVER_REPO_ROOT"] = str(root)
+    else:
+        root = get_repo_root(_quiet=True) or Path.cwd().resolve()
+
+    try:
+        if getattr(args, "once", False):
+            from evolver.ops.autopilot import SessionSlider
+
+            slider = SessionSlider()
+            slider.ensure()
+            await run_cycle()
+            slider.after_cycle()
+            return 0
+
+        print(
+            f"Evolver 自动驾驶已启动 (项目: {root})\n"
+            "  • 无进展连续 3 轮将自动休眠，新提交或新信号立即唤醒\n"
+            "  • 另开终端运行 `evolver status` 可查看收益面板；按 Ctrl+C 安全停止",
+            flush=True,
+        )
+        loop = asyncio.get_running_loop()
+        for sig in (signal.SIGINT, signal.SIGTERM):
+            with contextlib.suppress(NotImplementedError, RuntimeError, ValueError):
+                loop.add_signal_handler(sig, request_shutdown)
+        try:
+            await run_loop(
+                interval_ms=getattr(args, "interval_ms", None),
+                autopilot=True,
+            )
+        finally:
+            for sig in (signal.SIGINT, signal.SIGTERM):
+                with contextlib.suppress(NotImplementedError, RuntimeError, ValueError):
+                    loop.remove_signal_handler(sig)
+        return 0
+    finally:
+        if project_arg:
+            if prev_repo_env is None:
+                os.environ.pop("EVOLVER_REPO_ROOT", None)
+            else:
+                os.environ["EVOLVER_REPO_ROOT"] = prev_repo_env
 
 
 def _cmd_log(args: argparse.Namespace) -> int:
@@ -1308,9 +1507,9 @@ def _print_doctor_report(report: dict[str, Any]) -> None:
         print("Host round:", auto.get("host_round"))
     elif report.get("soft_continue") or report.get("ok"):
         print(
-            "Soft-continue: swarm_boot / swarm_tick allowed with warnings. "
+            "Soft-continue: evolve_begin / evolver up allowed with warnings. "
             "Recommended (not required):",
-            report.get("setup_path") or "evolver setup / evolver doctor --fix",
+            report.get("setup_path") or "evolver init / evolver doctor --fix",
         )
         print("MCP path:", auto.get("when_ready"))
         print("Host round:", auto.get("host_round"))
@@ -1348,6 +1547,31 @@ def _cmd_doctor(args: argparse.Namespace) -> int:
         _print_doctor_report(report)
     # Soft-continue (pack/baseline gaps) is exit 0; hard blockers stay 2.
     return 0 if report.get("ok") or report.get("soft_continue") or report.get("loop_ready") else 2
+
+
+def _cmd_init(args: argparse.Namespace) -> int:
+    """支柱零 (v1.114.0): one-touch zero-config bootstrap."""
+    from evolver.ops.init_bootstrap import bootstrap, render_init_human
+
+    report = bootstrap(
+        project=getattr(args, "project", None),
+        yes=bool(getattr(args, "yes", False)),
+        configure_hosts=not bool(getattr(args, "no_hosts", False)),
+        hosts_filter=getattr(args, "host", None),
+    )
+    if getattr(args, "json", False):
+        print(json.dumps(report, ensure_ascii=False, indent=2))
+    else:
+        print(render_init_human(report))
+    return 0 if report.get("ok") else 2
+
+
+def _cmd_bootstrap_baseline(args: argparse.Namespace) -> int:
+    """Internal background child: Project Native Baseline + Library + Anchor."""
+    from evolver.ops.init_bootstrap import bootstrap_baseline_now
+
+    report = bootstrap_baseline_now(project=getattr(args, "project", None))
+    return 0 if report.get("ok") else 1
 
 
 def _cmd_migrate_state(args: argparse.Namespace) -> int:
@@ -1702,6 +1926,7 @@ def _load_episode_index() -> list[dict[str, Any]]:
 def _cmd_meta_report(args: argparse.Namespace) -> int:
     """Improvement-mechanism telemetry (RSI P0-2): the effective-L5 panel."""
     from evolver.gep.asset_store import load_genes, read_all_events
+    from evolver.gep.blackbox import load_blackbox_telemetry
     from evolver.gep.episode_record import load_inspect_calls
     from evolver.gep.gene_lifecycle import load_lifecycle, status_map
     from evolver.ops.meta_report import build_meta_report, load_feedback_events, load_session_runs
@@ -1716,6 +1941,7 @@ def _cmd_meta_report(args: argparse.Namespace) -> int:
         load_session_runs(),
         load_inspect_calls(),
         load_genes(),
+        load_blackbox_telemetry(),
     )
     if args.json:
         print(json.dumps(report, ensure_ascii=False, indent=2))
@@ -2863,7 +3089,9 @@ def _cmd_library(args: argparse.Namespace) -> int:
             )
             return 2
         try:
-            result = library.establish_parent_library(payload)
+            result = library.establish_parent_library(
+                payload, allow_move=bool(getattr(args, "allow_move", False))
+            )
         except library.SnapshotConflictError as exc:
             print(f"library establish-parent failed: {exc}", file=sys.stderr)
             return 1

@@ -16,28 +16,32 @@ SOLO_ENV = "EVOLVER_SOLO"
 
 # Hub-URL envs cleared on activate. resolve_hub_url() also has an explicit
 # solo check so the public-default fallback cannot act as an escape valve.
-_HUB_URL_ENVS: tuple[str, ...] = ("A2A_HUB_URL", "EVOMAP_HUB_URL", "EVOLVER_DEFAULT_HUB_URL")
-
-# Validator + ATP envs forced off at the source.
-_OFF_ENVS: dict[str, str] = {
-    "EVOLVER_VALIDATOR_ENABLED": "0",
-    "EVOLVER_ATP": "off",
-    "EVOLVER_ATP_AUTOBUY": "off",
-}
+_HUB_URL_ENVS: tuple[str, ...] = ("A2A_HUB_URL", "EVOMAP_HUB_URL")
 
 
 def activate() -> None:
     """Activate solo: hard-cut network/validator/ATP. No escape valve."""
+    from evolver.config import merge_env_config, set_runtime_config_override
+
     os.environ[SOLO_ENV] = "1"
     for key in _HUB_URL_ENVS:
         os.environ[key] = ""
-    for key, value in _OFF_ENVS.items():
-        os.environ[key] = value
+    overrides = {
+        "default_hub_url": "",
+        "validator_enabled": False,
+        "atp": "off",
+        "atp_autobuy": "off",
+    }
+    set_runtime_config_override(**overrides)
+    merge_env_config(**overrides)
 
 
 def deactivate() -> None:
     """Clear the solo flag (test helper). Does not restore prior env values."""
+    from evolver.config import clear_runtime_config_overrides
+
     os.environ.pop(SOLO_ENV, None)
+    clear_runtime_config_overrides("default_hub_url", "validator_enabled", "atp", "atp_autobuy")
 
 
 def is_solo_active() -> bool:

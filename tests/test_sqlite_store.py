@@ -62,7 +62,7 @@ class TestAssetStoreRouting:
     def test_sqlite_when_enabled(self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
         monkeypatch.setenv("EVOLUTION_DIR", str(tmp_path / "evolution"))
         monkeypatch.setenv("EVOLVER_HOME", str(tmp_path / ".evolver"))
-        monkeypatch.setenv("EVOLVER_SQLITE_STORE", "1")
+        monkeypatch.setenv("EVOLVER_CONFIG", '{"sqlite_store":true,"quiet_legacy_warning":true}')
         from evolver.gep.asset_store import append_event_jsonl, read_all_events
 
         append_event_jsonl({"id": "x2", "timestamp": "t2"})

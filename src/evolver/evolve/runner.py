@@ -13,7 +13,7 @@ import secrets
 import time
 from typing import Any
 
-from evolver.config import IDLE_FETCH_INTERVAL_MS, MAX_CYCLES_PER_PROCESS
+from evolver.config import IDLE_FETCH_INTERVAL_MS, MAX_CYCLES_PER_PROCESS, get_config
 from evolver.cycle_control import (
     CycleTimeoutError,
     cycle_timeout_enabled,
@@ -28,7 +28,6 @@ from evolver.evolve import guards
 from evolver.evolve.pipeline import (
     autopoiesis_phase,
     collect_phase,
-    diagnosis_phase,
     dispatch_multi_propose_phase,
     dispatch_phase,
     enrich_phase,
@@ -160,7 +159,6 @@ async def _run_single_cycle(*, is_loop: bool = False) -> dict[str, Any]:
 
     ctx = await _timed_phase(ctx, "collect", collect_phase)
     ctx = await _timed_phase(ctx, "signals", signals_phase)
-    ctx = await _timed_phase(ctx, "diagnosis", diagnosis_phase)  # Self-Harness B1
     ctx = await _timed_phase(ctx, "hub", hub_phase)
     ctx = await _timed_phase(ctx, "enrich", enrich_phase)
     ctx = await _timed_phase(ctx, "autopoiesis", autopoiesis_phase)
@@ -243,16 +241,25 @@ async def run() -> None:
     await _run_single_cycle(is_loop=False)
 
 
+def _respawn_args(autopilot: bool) -> list[str]:
+    """Replacement-process argv that preserves the caller's loop mode."""
+    return ["up"] if autopilot else ["--loop"]
+
+
 async def run_loop(
     *,
     interval_ms: int | None = None,
     review_mode: bool = False,
     dry_run: bool = False,
+    autopilot: bool = False,
 ) -> None:
     """Daemon loop: run evolution cycles with configurable interval.
 
     Stops gracefully when :func:`request_shutdown` is called.
     Acquires a single-instance lock to prevent multiple daemons.
+
+    ``autopilot=True`` (``evolver up``) layers the 支柱零 policies on top:
+    an auto-managed sliding session and no-progress dormancy with early wake.
     """
     global _shutdown_requested, _shutdown_event, _loop_review_mode
     interval = (interval_ms or IDLE_FETCH_INTERVAL_MS) / 1000.0
@@ -280,8 +287,23 @@ async def run_loop(
         # Track a pending bridge-mode run to detect staleness (#559).
         pending_bridge_ts: float | None = None
 
+        # 支柱零 policies (``evolver up``): sliding session + dormancy. The
+        # legacy ``--loop`` path keeps its exact rhythm (plain interval).
+        dormancy: Any | None = None
+        slider: Any | None = None
+        if autopilot:
+            from evolver.gep.paths import get_repo_root
+            from evolver.ops.autopilot import Dormancy, SessionSlider
+
+            dormancy = Dormancy(repo=get_repo_root(_quiet=True))
+            slider = SessionSlider()
+            slider.ensure()
+
         while not shutdown.is_set() and not _shutdown_requested:
             cycle_count += 1
+            if slider is not None:
+                slider.after_cycle()
+                slider.ensure()
 
             # Stale bridge-run detection: if the previous cycle dispatched a
             # sessions_spawn(...) in bridge mode and it hasn't completed within
@@ -344,7 +366,7 @@ async def run_loop(
                             error=err,
                             cycle_progress_path=progress_path,
                             progress_fields=progress_fields,
-                            args=["--loop"],
+                            args=_respawn_args(autopilot),
                             log_path=get_logs_dir() / "evolver-daemon.log",
                             spawn_replacement_fn=spawn_replacement_process,
                         )
@@ -354,10 +376,10 @@ async def run_loop(
                         # Non-fatal: wait for the timed-out task before next cycle.
                         await wait_for_timed_out_task(evolve_task)
                         consecutive_errors += 1
-                        if MAX_CYCLES_PER_PROCESS and cycle_count >= MAX_CYCLES_PER_PROCESS:
+                        max_cycles = MAX_CYCLES_PER_PROCESS or get_config().max_cycles_per_process
+                        if max_cycles and cycle_count >= max_cycles:
                             print(
-                                f"[loop] Reached EVOLVER_MAX_CYCLES_PER_PROCESS="
-                                f"{MAX_CYCLES_PER_PROCESS} after timeout."
+                                f"[loop] Reached max_cycles_per_process={max_cycles} after timeout."
                             )
                             break
                         continue
@@ -415,11 +437,12 @@ async def run_loop(
 
             # Sleep until next cycle or shutdown
             # Solo/CI testability: stop after a bounded number of cycles.
-            if MAX_CYCLES_PER_PROCESS and cycle_count >= MAX_CYCLES_PER_PROCESS:
-                print(f"[loop] Reached EVOLVER_MAX_CYCLES_PER_PROCESS={MAX_CYCLES_PER_PROCESS}.")
+            max_cycles = MAX_CYCLES_PER_PROCESS or get_config().max_cycles_per_process
+            if max_cycles and cycle_count >= max_cycles:
+                print(f"[loop] Reached max_cycles_per_process={max_cycles}.")
                 result = spawn_replacement_process(
                     reason="max_cycles_or_rss",
-                    args=["--loop"],
+                    args=_respawn_args(autopilot),
                     log_path=get_logs_dir() / "evolver-daemon.log",
                 )
                 if result.get("spawned"):
@@ -430,8 +453,15 @@ async def run_loop(
                     raise SystemExit(1)
                 # spawn_error / test doubles: exit loop gracefully without killing pytest.
                 break
-            with contextlib.suppress(TimeoutError):
-                await asyncio.wait_for(shutdown.wait(), timeout=interval)
+            if dormancy is not None and slider is not None:
+                slider.after_cycle()  # reads the settle ledger itself
+                slider.ensure()
+                dormancy.observe()
+                with contextlib.suppress(TimeoutError):
+                    await dormancy.wait(shutdown, interval)
+            else:
+                with contextlib.suppress(TimeoutError):
+                    await asyncio.wait_for(shutdown.wait(), timeout=interval)
 
         print("[loop] Graceful shutdown complete.")
 

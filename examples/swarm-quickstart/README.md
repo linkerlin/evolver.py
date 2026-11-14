@@ -1,48 +1,54 @@
 # Swarm Quickstart（蜂群进化快速上手）
 
-> 让宿主 Agent（ZCode / Claude Code / Cursor / …）经 MCP 接管为进化工作节点——引擎负责信号/选择/验证门，宿主负责执行 GEP 变异提示词。本示例用一个脚本走完**整个闭环**，无需 IDE。
+> 让宿主智能体（Agent，如 Claude Code / Cursor / Codex / OpenCode / ZCode）经 MCP 接管为进化执行器——引擎负责信号发现、只读算子诊断、`< 3s` AST 闪电门与经验金库，宿主负责代码编辑。本示例用一个脚本走完**完整两轮闭环**，无需打开 IDE。
 
 ## 前置
 
 ```bash
-uv sync                 # 核心引擎（MCP server 无 fastapi 依赖）
+uv sync                 # 核心引擎（stdio MCP server 无额外 web 依赖）
 ```
 
-## 一分钟体验：脚本驱动完整闭环
+## 一分钟体验：脚本驱动 FSM 三工具完整闭环
 
 ```bash
-# 默认：本地样例执行器（确定性，无需 LLM）
+# 默认：本地确定性修复（无需 LLM API Key，演示 draft_preserved -> L0 闪电全绿晋升）
 uv run python examples/swarm-quickstart/demo_swarm_loop.py
 
-# 进阶：DeepSeek (deepseek-v4-flash) 真实执行 GEP dispatch 提示词
+# 进阶：DeepSeek (deepseek-v4-flash) 根据 GEP dispatch 提示词真实生成修复代码
 DEEPSEEK_API_KEY=sk-... uv run python examples/swarm-quickstart/demo_swarm_loop.py --llm
 ```
 
-上面的巡游只到 solidify 看一眼门。要看**真闭环**（tick → LLM 执行 → distill → 宿主声明假说 → solidify → 真实 episode → 用该 episode 跑有/无记录消融），跑：
+若要进一步体验**带受控消融桥接的端到端实验闭环**（真实 episode 产出后立即经 `--from-episodes` 跑有/无记录双臂对照），可运行：
 
 ```bash
 DEEPSEEK_API_KEY=sk-... uv run python examples/swarm-quickstart/demo_closed_loop_flash.py [--keep]
 ```
 
-该脚本把模型钉死为 `deepseek-flash`（不继承 `DEEPSEEK_MODEL`，报告引用服务端实测 id），除 DeepSeek 外零网络，全部状态进一次性临时工作区。一次运行约 5 次 flash 调用。消融只用 2 道玩具题、结论止于过程指标——演示的是机制能跑通，不支撑任何效果结论（实测曾出现 `no_signal`：玩具题两臂全对，记录只加了 token；这正是机制诚实的一面）。
-
-脚本会在临时 git 工作区里经真实 stdio MCP server 走完：
+`demo_swarm_loop.py` 会在一次性临时 Git 工作区里启动真实 stdio MCP server，完整演示 v1.114.0 **FSM 动态门控三工具协议**：
 
 ```
-swarm_boot ─▶ swarm_status ─▶ swarm_hook_event(信号采集)
-          ─▶ swarm_skills(scan/sync：捆绑技能 → 技能基因)
-          ─▶ swarm_tick(产出 GEP 变异提示词)
-          ─▶ 执行器（本地样例 或 DeepSeek）─▶ swarm_distill(蒸馏入库)
-          ─▶ swarm_solidify(验证门) ─▶ swarm_feedback(评估信号 E)
-          ─▶ supervise pause → tick 拒绝 → resume（HOTL 监督演示）
+IDLE 态：evolve_status ─▶ evolve_begin(空假说预览 discovery_only=true)
+       ─▶ evolve_begin(前置锁定一句人话假说 ─▶ 推 notifications/tools/list_changed 切入 ACTIVE_RUN)
+ACTIVE_RUN 态：evolve_begin 物理隐藏；解锁 run_lens + evolve_settle
+       ─▶ 第一轮故意不完整修改 ─▶ evolve_settle ─▶ ok=false, outcome=draft_preserved（补丁原位保留 + 3 行修复指引，金库 +0）
+       ─▶ 第二轮重入 ACTIVE_RUN ─▶ run_lens(import_impact / ast_hotspot 只读诊断)
+       ─▶ 修复代码 ─▶ evolve_settle(< 3s L0 AST 闪电验证全绿 ─▶ outcome=promoted + 带内 blackbox + episode_id)
+       ─▶ episode_get + tool_cycle_timeline（只读审计回查）
 ```
 
-每一步打印可读转录；结束输出总结表。捆绑技能 `skills/demo-fix-import/`
-演示 SKILL.md → 技能基因的生态桥（project > user > builtin 优先级）。
+每一步均输出清晰转录，结尾打印总结表；捆绑技能 `skills/demo-fix-import/` 同时展示 `SKILL.md` → GEP 技能基因的多根发现生态桥。
 
-## 把你的宿主接入蜂群
+## 一键零配置接入宿主（`evolver init`）
 
-三份可抄配置在 [`mcp-host-configs/`](mcp-host-configs/)：
+在任意 Python 项目根目录运行一条命令，即可全自动探测本机已装 IDE（Claude Code / Cursor / Codex / OpenCode / ZCode），幂等注入 MCP stdio 配置与会话 Hooks，写入 `.git/info/exclude` 保持 `git status` 零污染，并在后台干净子进程（自动剥离 `*_API_KEY`）中完成项目原生基线与 Anchor 首写：
+
+```bash
+uv run evolver init          # 探测宿主、幂等写入 MCP + Hooks、后台无感自举基线（< 3s 返回）
+uv run evolver status        # 纯人话查看就绪灯、守护灯、已晋升修复、节省验证耗时与工作台草稿
+uv run evolver up            # 启动零干预自动驾驶守护（含自适应滑动会话与 3 轮空转休眠）
+```
+
+如需手工查阅宿主配置模板，亦可参考 [`mcp-host-configs/`](mcp-host-configs/)：
 
 | 文件 | 宿主 | 放置位置 |
 |---|---|---|
@@ -50,40 +56,37 @@ swarm_boot ─▶ swarm_status ─▶ swarm_hook_event(信号采集)
 | `claude-code.mcp.json` | Claude Code | 项目根 `.mcp.json` |
 | `cursor-mcp.json` | Cursor | `.cursor/mcp.json` |
 
-连上之后，本条消息已有别的任务就做那件事。没有别的任务时宿主调用 `swarm_boot`，再用一句话说明实际状态。若只调了 `swarm_status` 且本进程还没 boot，`next_action` 是 `swarm_boot`。空的 `tool_asset_search` / `tool_mailbox_poll` / `tool_cycle_timeline` / `swarm_approvals` 返回 `{ok, items, hint}`（`swarm_approvals` 另含 `pending` 与 `recent`）。`swarm_tick` 的 `prompt_mode` 默认 `full`；短载荷须显式 `prompt_mode=short` 或 `checklist_only=true`，此时 `engine_log` 不再内联 GEP 全文。只读 `swarm_doctor` 等同 `evolver doctor`（不执行 `--fix`）。有未完成 run 且 doctor 为 soft-continue 时，它的 `next_action` 也是 `swarm_solidify`，并写 `tick_again=false`（`soft_continue` 仍为 true；不写 `gate_soft_continue` / `session_not_failed`，不结算，不写 Parent，不执行 `evolver doctor --fix`。这条路径的 `fixes`、boot/status 的 `commands` 与 `next_steps`，以及第一次未完成 run 的 tick 与保险丝的 `commands` / `next_steps`，不把 `evolver doctor --fix`、`evolver bench freeze` 或 `evolver bench baseline` 当成当前步骤（tick 上软缺口不写 `gate_soft_continue`，不写成 false，并写 `soft_gap.tick=false`）；没有未完成 run，或固化之后，列出它仍然合适）。宿主工具目录若仍看不到 `prompt_mode` / `checklist_only` 或 `swarm_doctor`，那是客户端没重读 `tools/list`。握手现已广告 `tools.listChanged=true`，并在 initialized 之后发 `notifications/tools/list_changed`。仍忽略的宿主要新开一次会话。服务端不另造假工具。有未完成 run 时 `swarm_boot` 的 `next_action` 仍是 `swarm_solidify`，软缺口同时写 `tick_again=false`（`gate_soft_continue` 仍为 true），`hint` 写明先固化，并带 `readonly_smoke`（`swarm_doctor` / `swarm_status` 不结算、不放宽门）；软缺口留在 `warning`。此时直接 `swarm_tick` 不启新周期（第一次 `cycle_started=false`、`ok=true`、`progress=false`，不改 `last_run`；同一条 run 再 tick 得到 `ok=false`、`loop_fuse=pending_redirect_loop`、`redirect_reason=pending_redirect_loop`，没有 `error` 字段，`next_action` 仍是 `swarm_solidify`（保险丝码不是 `next_action`；`dispatch_reason` 仍是 `pending_solidify`；第一次的 `redirect_reason` 仍是 `pending_solidify`），仍不启周期，不是门禁失败，也不是放弃；两次都带 `preserve_pending=true`、`abandon_run=false`，不要丢掉这条 run。有软缺口时第一次 tick 与保险丝不写 `gate_soft_continue`（缺席不是 false，也不是再 tick 的许可；`soft_gap.advisory=true`，`soft_gap.tick=false`；`ok` 第一次仍为 true，没有 `error`；`tick_again=false` 与 `retryable=false` 都表示不要再 tick，第一次也写 `retryable=false`；两次都带 `session_not_failed=true`，先读它，会话没有失败，`loop_fuse` 不放弃这条 run；`next_steps` 第一条是 `swarm_solidify`）。boot / status 的 `gate_soft_continue` 仍为 true，未完成软缺口同时写 `tick_again=false`，且不带 `session_not_failed`）。要替换才传 `supersede_pending=true`。`boot_once` 只登记会话，不在开机时同步技能。冻结包未装或没有基线时 boot / `swarm_tick` **soft-continue**（带 warnings + next_steps，可进入循环）；Accept/publish 可 soft-accept（不伪造 Parent baseline、不打开 val 密封材料）。已暂停时仍返回 `await_supervisor_resume`。用户说「停」，宿主调用 `swarm_supervise` action=pause；说「继续」，宿主转达 resume。也可以对它说「启动蜂群进化」。返回的 instrument 按步执行 `swarm_tick → 执行 → swarm_distill → swarm_hypothesis → swarm_solidify → swarm_feedback`，直到终止条件。`swarm_hypothesis` 可带 `expected_outcome` 写预计通过的检查，结算时引擎对照实测写 `prediction_delta`；上一轮输出被截断时按问题调用 `episode_inspect` 读回原文；收到压缩信号或连续 4 次固化失败时先调 `swarm_checkpoint_working` 写下 `WORKING_SESSION.md`。`dispatch_prompt` 标 **PROPOSAL REQUIRED** 时改走 `swarm_propose`，不得自由编辑。`next_action=await_human_approval` 停住：`swarm_approvals` 读给人，人决定后才 `swarm_approval_resolve`。
+### FSM 三工具宿主交互规约
 
+连接 MCP 后，服务端通过 `notifications/tools/list_changed` 动态门控工具目录，宿主无需记忆繁琐步骤或布尔旗标：
 
-## 开箱 / Open box（首次准备的一条命令）
+1. **`IDLE` 态（无在途周期）**：仅暴露核心动作 `evolve_begin` 与只读 `evolve_status`（若首次连接尚未运行 `evolver init`，服务端会在后台自动懒自举基线）。
+   - 调用 `evolve_begin()` 不传 `hypothesis`：执行零副作用信号探测（`discovery_only=true`），返回高优信号与推荐算子列表，状态仍停留在 `IDLE`。
+   - 调用 `evolve_begin(hypothesis="...", target_files=[...])`：前置锁定本轮唯一可证伪假说，状态切换为 `ACTIVE_RUN`，并返回 `< 4,000 tokens` 高信噪比 GEP 提示词。
+2. **`ACTIVE_RUN` 态（周期执行中）**：`evolve_begin` 从工具目录物理隐藏，防止重复开局；暴露只读诊断透镜 `run_lens`（内置 `ast_hotspot`、`import_impact`、`trace_locator`、`contract_surface`）与原子结算工具 `evolve_settle`。
+3. **双轨原子结算（`evolve_settle`）**：
+   - 默认运行 **`< 3s` L0 AST 反向依赖闪电验证**（仅针对改动文件的 `ruff` 与反向导入闭包关联的 `pytest` 文件），并在周期边界自动采集带内黑匣子（`blackbox`：前后 AST 增量、透镜调用栈、墙钟耗时），无需配置本地 HTTP 代理即可获得 100% 过程观测覆盖。
+   - **金库严晋升（`ok=true`）**：验证全绿且净增益时自动结算 `episode_record`、同步 `index.sqlite` WAL 读索引并晋升资产，随后推通知切回 `IDLE`。
+   - **工作台保草稿（`ok=false, outcome="draft_preserved"`）**：验证未过或适应度未胜（`drop` / `flat` / `regression`）时，工作区补丁**原位保留不回滚**（同时备份至 `rejected_stashes/<run_id>/`），返回精确到 `file:line` 的恒 3 行 `actionable_fix`，正向基因金库严格 `+0`，并切回 `IDLE` 供宿主按指引继续修复。
+   - **硬阻断回滚**：仅当 diff 含密钥/凭据、触碰 `~/.evolver/` 受保护引擎状态或触发 `val_seal` 密封泄露时，强制拒绝并回滚。
 
-第一次接入时先看缺口，再只自动补**安全**项（冻结包）。Parent 基线仍要人在**另一上下文**写好 val 沙箱后测量——候选对话里不得解 val、不得打开 val 密封材料。
+此外，`episode_get`、`episode_inspect`（按问题与行号窗口只读放大被截断的检查日志）、`tool_asset_search`、`tool_asset_get` 与 `tool_cycle_timeline` 作为只读辅助工具常驻可用。
+
+## 开箱诊断（`evolver setup` / `evolver doctor`）
+
+除一键 `evolver init` 外，专家或 CI 环境亦可使用非破坏式诊断命令核查 Git、冻结任务包、Parent 基线与锁状态：
 
 ```bash
-uv run evolver doctor          # 只诊断：git / freeze pack / Parent baseline / user lock
-uv run evolver doctor --fix     # 安全自动补齐：写入冻结包；若沙箱已齐则尝试 bench baseline
-uv run evolver setup           # 等同 doctor --fix（开箱入口）
+uv run evolver doctor          # 只读诊断：git / freeze pack / Parent baseline / user lock
+uv run evolver doctor --fix    # 安全补齐冻结包；仅当沙箱已齐时测量 bench baseline
+uv run evolver setup           # 等同 doctor --fix
 ```
 
-`doctor` 退出码：`0` = `loop_ready` 或仅可用性缺口 soft-continue；`2` = 硬 blockers（如非 git / user_lock）。`loop_ready` 仍诚实反映 pack/baseline 是否齐。
-
-齐备后自动进化路径（宿主执行变异，引擎管门）：
-
-```
-swarm_boot → swarm_tick → 执行/mutate → swarm_distill → swarm_hypothesis → swarm_solidify → swarm_feedback
-```
-
-CLI 侧也可用 `evolver round --host` 串起 boot→tick→checklist；完整脚本演示见上文 `demo_swarm_loop.py`。
-
-MCP/CLI 在 `not_a_git_repo`、`hypothesis_missing`、`no_baseline` / `pack_absent` / `unmeasured`、`user_lock`、`preflight_abort` 时会附带 `next_steps` 与 `commands`（可直接照做）。可用性缺口（无 baseline / 无包 / 未测量）以及 `drop` / `flat` / `regression` 都是 soft-accept + 警告，不再硬卡住。硬阻断是密钥入仓、改写 `~/.evolver/`、`val_seal`。`gate_error` 与验证面 anchor 失败仍拒绝。`evolver doctor` 的 `loop_ready` 仍诚实反映缺口。成功的 soft-accept 不自动 git commit，经验只写入 `~/.evolver/workspaces/<id>/`，并清掉 `pending_solidify`。前 5 次 tick 的仪器提示含「核心循环工具 / Core Loop Tools」。soft T0 为 minimal（warnings 可能含 `t0_probe=minimal` 或 `t0_skipped_soft`）。
-
-软缺口在 MCP 返回面上用 `severity=soft` + `gap`/`warning`/`gate_soft_continue` 表达，**不**写入硬失败字段 `error`（宿主只看 `error` 时不得停）。危险门禁仍用 `error` + `severity=hard`。
+`doctor` 退出码：`0` 表示 `loop_ready` 或仅首次环境缺口（`no_baseline` / `pack_absent` / `unmeasured`，允许 `soft_continue`）；`2` 表示硬阻断（如非 Git 仓库或 `user_lock` 被占用）。注意：候选进化对话里**不得解 val、不得打开 val 密封材料**（`val_seal` 硬门守护）；运行态数据一律存于源码树外的 `~/.evolver/workspaces/<id>/`，绝不自动执行 `git commit`。
 
 ### Grok Bot 路径约定
 
-在 Grok Bot 上：进化工作区根是 `/workspace`，evolver.py **源码检出**在 `/workspace/evolver-research/evolver.py`。更新源码后请杀掉并重启 `evolver mcp`（例如 `uv --project /workspace/evolver-research/evolver.py run evolver mcp`），否则长驻进程仍加载旧模块；`swarm_status.source_revision` / `code_staleness` 可核对。
-
-**Operator: Grok Bot MCP 环境覆盖（产品演进）**
-
-MCP 进程 cwd 可为 `/workspace`（空闲沙箱），但 mutation 根 / workspace_id 必须指向 evolver.py 产品检出。在 MCP 配置里设：
+在 Grok Bot 环境中：进化工作区根为 `/workspace`，`evolver.py` 源码检出位于 `/workspace/evolver-research/evolver.py`。更新源码后请重启 `evolver mcp` 进程，以确保加载最新模块（可通过 `evolve_status.source_revision` 核对）：
 
 ```json
 {
@@ -96,66 +99,31 @@ MCP 进程 cwd 可为 `/workspace`（空闲沙箱），但 mutation 根 / worksp
       ],
       "env": {
         "EVOLVER_REPO_ROOT": "/workspace/evolver-research/evolver.py",
-        "EVOLVER_QUIET_PARENT_GIT": "1"
+        "EVOLVER_CONFIG": "{\"quiet_parent_git\": true}"
       }
     }
   }
 }
 ```
 
-OMEN16 环境替换为 `EVOLVER_REPO_ROOT=C:\GitHub\evolver.py`（原 PATH）。上述配置保证 `swarm_status.repo_root` 与 `workspace_root` 均指向产品树，运行态在 `~/.evolver/workspaces/<product-id>/`，不污染 `/workspace` 沙箱。
+## 运维手册（人在环上 HOTL / 人在环内 HITL）
 
-## 首次准备
-
-下面三步用来装上真正的外部尺子（冻结包 + Parent 基线）。缺了它们循环仍然开始：boot / tick 是 soft-continue，solidify 是 soft-accept（带 warnings）。优先跑上一节的 `evolver setup` / `doctor --fix`；val 沙箱必须在进化对话之外做。
-
-1. 安装冻结包。
+进化运行期间，操作者随时可通过 CLI 踩刹车、下达方向指令或否决特定基因：
 
 ```bash
-uv run evolver bench freeze
+uv run evolver internal supervise status                     # 监督面板（状态/directives/vetoes）
+uv run evolver internal supervise pause --reason "检查一下"   # 暂停：evolve_begin 拒绝开新周期
+uv run evolver internal supervise direct "优先稳定测试"       # 转向：注入下轮策略选择
+uv run evolver internal supervise veto "gene_xxx"            # 否决：命中即阻断派发与结算
+uv run evolver internal supervise resume                     # 恢复运行
+
+uv run evolver internal hitl list                            # 查看待批高危操作
+uv run evolver internal hitl approve --id hitl_xxx
 ```
-
-包写到 `$EVOLVER_HOME/anchor/bench/charter-pack.tasks.json`（默认在 `~/.evomap/anchor/bench/`）。
-
-2. 在另一个上下文里解 val。不要在写下候选的那场对话里解，题面回到那场对话，密封就失效。打开冻结包，对每条 `split` 为 `val` 的题：
-
-```bash
-uv run evolver bench prompt <task-id> --pack "$EVOLVER_HOME/anchor/bench/charter-pack.tasks.json"
-```
-
-按打印出的提示词，把交付物写进包旁边的 `sandboxes/r1/<task-id>/` 和 `sandboxes/r2/<task-id>/`。两遍都要有。
-
-3. 测量基线。
-
-```bash
-uv run evolver bench baseline
-```
-
-沙箱不全会退出，并列出还缺的题。成功之后 `loop_ready` 才为真；在此之前循环已经可以 soft-continue。回到宿主对话后重新 `swarm_boot`，警告会少一条。
-
-`EVOLVER_SWARM_GATE_HANDOFF=hotl` 只是仪器提示里的人在环上标签，不是「否则不 tick」的开关。默认（`human`）同样 soft-continue。人仍可用「停」和 veto 监督；连续降级反馈仍会自动暂停（`EVOLVER_SUPERVISION_AUTO_PAUSE_STREAK`，默认 3）。这个开关由人设，宿主不得自己改。密钥、改写 `~/.evolver/`、`val_seal` 仍硬拒绝并回滚。
-
-`EVOLVER_SWARM_AUTO_HIJACK=1` 不改这段文字。它强制打开 HITL，并拒绝宿主转达放行。
-
-## 运维手册（人在环上）
-
-进化运行时，人类随时可以踩刹车 / 否决 / 转向：
-
-```bash
-evolver supervise status                     # 监督面板（状态/directives/vetoes）
-evolver supervise pause --reason "检查一下"   # 暂停：tick 拒绝新周期
-evolver supervise direct "优先稳定测试"       # 转向：注入下轮选择
-evolver supervise veto "gene_xxx"            # 否决：命中即扣发提示词/阻断固化
-evolver supervise resume                     # 恢复
-
-evolver hitl list                            # 高危审批（skip_validation）
-evolver hitl approve --id hitl_xxx
-```
-
-安全语义：HITL（人在环内）阻塞单个高危动作，超时 fail-safe 拒绝；HOTL（人在环上）不阻塞运行，靠干预行使权力；连续 3 次降级反馈自动暂停（绊线，`EVOLVER_SUPERVISION_AUTO_PAUSE_STREAK` 可调）。
 
 ## 相关文档
 
-- [README — MCP Swarm Evolution](../../README.md#mcp-swarm-evolution蜂群进化)
-- [examples/ide-hooks/](../ide-hooks/) — 文件钩子（信号自动采集的另一轨）
+- [README — Connecting Your Host Agent](../../README.md)
+- [README.zh — 接入宿主智能体](../../README.zh.md)
+- [examples/ide-hooks/](../ide-hooks/) — IDE 会话钩子（信号自动采集的另一轨）
 - [examples/skill2recipe/](../skill2recipe/) — 技能组合为 GEP Recipe

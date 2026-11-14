@@ -14,7 +14,6 @@ from __future__ import annotations
 
 import json
 import logging
-import os
 import platform
 from pathlib import Path
 from typing import Any
@@ -161,12 +160,9 @@ def gather_all_learning_signals(root: Path | None = None) -> list[dict[str, Any]
 
 
 def is_learning_signals_enabled() -> bool:
-    return os.environ.get("EVOLVER_LEARNING_SIGNALS", "1").lower() not in (
-        "0",
-        "false",
-        "no",
-        "off",
-    )
+    from evolver.config import get_config
+
+    return get_config().learning_signals
 
 
 def learning_signal_to_string(sig: dict[str, Any]) -> str:

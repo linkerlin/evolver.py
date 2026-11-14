@@ -71,14 +71,14 @@ def test_detect_capability_gaps_empty() -> None:
 
 
 def test_consent_env_override(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setenv("EVOLVER_ATP_AUTOBUY", "1")
+    monkeypatch.setenv("EVOLVER_CONFIG", '{"atp_autobuy":"1"}')
     c = auto_buyer.get_consent()
     assert c is not None
     assert c["enabled"] is True
 
 
 def test_consent_ack_file(temp_workspace: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.delenv("EVOLVER_ATP_AUTOBUY", raising=False)
+    monkeypatch.delenv("EVOLVER_CONFIG", raising=False)
     monkeypatch.setattr(auto_buyer, "get_memory_dir", lambda: temp_workspace)
     auto_buyer.set_consent(True)
     c = auto_buyer.get_consent()
@@ -87,7 +87,7 @@ def test_consent_ack_file(temp_workspace: Path, monkeypatch: pytest.MonkeyPatch)
 
 
 def test_effective_cap_cold_start(temp_workspace: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.delenv("EVOLVER_ATP_AUTOBUY", raising=False)
+    monkeypatch.delenv("EVOLVER_CONFIG", raising=False)
     monkeypatch.setattr(auto_buyer, "get_memory_dir", lambda: temp_workspace)
     auto_buyer.set_consent(True)
     cap = auto_buyer._effective_cap()
@@ -96,7 +96,7 @@ def test_effective_cap_cold_start(temp_workspace: Path, monkeypatch: pytest.Monk
 
 @pytest.mark.asyncio
 async def test_consider_order_disabled(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.delenv("EVOLVER_ATP_AUTOBUY", raising=False)
+    monkeypatch.delenv("EVOLVER_CONFIG", raising=False)
     monkeypatch.setattr(auto_buyer, "get_memory_dir", lambda: Path("/tmp/nonexistent"))
     result = await auto_buyer.consider_order(["debugging"])
     assert result["ok"] is False
@@ -107,7 +107,7 @@ async def test_consider_order_disabled(monkeypatch: pytest.MonkeyPatch) -> None:
 async def test_consider_order_success(
     temp_workspace: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    monkeypatch.setenv("EVOLVER_ATP_AUTOBUY", "1")
+    monkeypatch.setenv("EVOLVER_CONFIG", '{"atp_autobuy":"1"}')
     monkeypatch.setattr(auto_buyer, "get_memory_dir", lambda: temp_workspace)
     mock_place = AsyncMock(return_value={"ok": True, "data": {"order_id": "ord_1"}})
     monkeypatch.setattr(auto_buyer, "place_order", mock_place)
@@ -123,7 +123,7 @@ async def test_consider_order_success(
 async def test_consider_order_dedup_24h(
     temp_workspace: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    monkeypatch.setenv("EVOLVER_ATP_AUTOBUY", "1")
+    monkeypatch.setenv("EVOLVER_CONFIG", '{"atp_autobuy":"1"}')
     monkeypatch.setattr(auto_buyer, "get_memory_dir", lambda: temp_workspace)
     mock_place = AsyncMock(return_value={"ok": True, "data": {"order_id": "ord_1"}})
     monkeypatch.setattr(auto_buyer, "place_order", mock_place)
@@ -140,7 +140,7 @@ async def test_consider_order_dedup_24h(
 async def test_run_tick_places_orders(
     temp_workspace: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    monkeypatch.setenv("EVOLVER_ATP_AUTOBUY", "1")
+    monkeypatch.setenv("EVOLVER_CONFIG", '{"atp_autobuy":"1"}')
     monkeypatch.setattr(auto_buyer, "get_memory_dir", lambda: temp_workspace)
     mock_place = AsyncMock(return_value={"ok": True, "data": {"order_id": "ord_tick"}})
     monkeypatch.setattr(auto_buyer, "place_order", mock_place)
@@ -153,7 +153,7 @@ async def test_run_tick_places_orders(
 
 @pytest.mark.asyncio
 async def test_run_tick_no_gaps(temp_workspace: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setenv("EVOLVER_ATP_AUTOBUY", "1")
+    monkeypatch.setenv("EVOLVER_CONFIG", '{"atp_autobuy":"1"}')
     monkeypatch.setattr(auto_buyer, "get_memory_dir", lambda: temp_workspace)
     result = await auto_buyer.run_tick(["everything is fine"])
     assert result["ok"] is True
@@ -324,5 +324,5 @@ def test_classify_non_tty(monkeypatch: pytest.MonkeyPatch) -> None:
 
 def test_classify_env_set(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr("sys.stdin.isatty", lambda: True)
-    monkeypatch.setenv("EVOLVER_ATP_AUTOBUY", "1")
+    monkeypatch.setenv("EVOLVER_CONFIG", '{"atp_autobuy":"1"}')
     assert cli_autobuy_prompt.classify() == "env_set"

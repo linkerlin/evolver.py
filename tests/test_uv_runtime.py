@@ -155,7 +155,7 @@ class TestSpawnUsesUvRuntime:
                 captured.append(list(cmd))
                 self.pid = 4242
 
-        monkeypatch.setenv("EVOLVER_SUICIDE_WINDOWS", "true")
+        monkeypatch.setenv("EVOLVER_CONFIG", '{"suicide_windows":true,"quiet_legacy_warning":true}')
         monkeypatch.setenv("EVOLVER_LAUNCHER", "uv")
         monkeypatch.setattr(ur, "which_uv", lambda: "/opt/uv")
         monkeypatch.setattr(ur, "find_project_root", lambda start=None: tmp_path)

@@ -1,10 +1,23 @@
-"""MCP stdio protocol E2E — real subprocess, real JSON-RPC framing.
+"""MCP stdio protocol E2E — real subprocess, real JSON-RPC framing (算子即基因 P1-1).
 
-Locks in the contract the swarm depends on: initialize instructions carry the
-swarm directive, tools/prompts/resources are discoverable, tool calls return
-structured JSON, engine stdout never leaks into the protocol stream (stdio
-MCP owns stdout), and invalid enum arguments get structured error feedback
-instead of crashing the server.
+Verifies the dynamic FSM 3-tool atomic MCP protocol end-to-end:
+- Connect-time instructions present the concise 3-tool FSM protocol (zero legacy
+  6-step swarm_* ceremony or whack-a-mole redirect flags);
+- ``IDLE`` ``tools/list`` exposes ``evolve_begin`` + ``evolve_status`` and hides
+  ``run_lens`` + ``evolve_settle``;
+- Calling ``run_lens`` or ``evolve_settle`` in ``IDLE`` returns structured
+  ``error="fsm_state_mismatch"`` (``isError=True``);
+- ``evolve_begin()`` with empty hypothesis and ``auto_discover=True`` previews
+  signals & candidate operators while staying in ``IDLE``;
+- ``evolve_begin(hypothesis="...")`` locks the hypothesis, transitions to
+  ``ACTIVE_RUN``, emits ``notifications/tools/list_changed``, hides
+  ``evolve_begin``, and exposes ``run_lens`` + ``evolve_settle``;
+- Calling ``evolve_begin`` while ``ACTIVE_RUN`` is blocked with
+  ``error="fsm_state_mismatch"``;
+- ``run_lens`` executes read-only AST/impact diagnostics and records into the
+  active cycle blackbox;
+- ``evolve_settle(summary="...")`` validates, settles blackbox + episode_record,
+  emits ``notifications/tools/list_changed``, and returns ``tools/list`` to ``IDLE``.
 """
 
 from __future__ import annotations
@@ -14,12 +27,36 @@ import os
 import subprocess
 import sys
 from pathlib import Path
+from typing import Any
 
 import pytest
 
 from evolver import __version__
+from tests.mcp_surface import (
+    MCP_ACTIVE_TOOL_NAMES,
+    MCP_IDLE_TOOL_NAMES,
+    MCP_PROMPT_NAMES,
+    MCP_RESOURCE_URIS,
+)
 
-REPO_ROOT = Path(__file__).resolve().parent.parent
+
+def _init_git_repo(repo: Path) -> None:
+    subprocess.run(["git", "init", "-q"], cwd=repo, check=True)
+    subprocess.run(["git", "config", "user.email", "mcp@evolver.local"], cwd=repo, check=True)
+    subprocess.run(["git", "config", "user.name", "MCP Test"], cwd=repo, check=True)
+    (repo / "service.py").write_text(
+        "def clamp(x: int) -> int:\n    return max(0, x)\n", encoding="utf-8"
+    )
+    (repo / "test_service.py").write_text(
+        "from service import clamp\n\ndef test_clamp() -> None:\n    assert clamp(-3) == 0\n",
+        encoding="utf-8",
+    )
+    subprocess.run(["git", "add", "."], cwd=repo, check=True)
+    subprocess.run(
+        ["git", "-c", "commit.gpgsign=false", "commit", "-q", "-m", "init"],
+        cwd=repo,
+        check=True,
+    )
 
 
 def _server_env(tmp_path: Path) -> dict[str, str]:
@@ -28,8 +65,9 @@ def _server_env(tmp_path: Path) -> dict[str, str]:
         {
             "EVOLVER_REPO_ROOT": str(tmp_path),
             "OPENCLAW_WORKSPACE": str(tmp_path),
-            "GEP_ASSETS_DIR": str(tmp_path / "gep"),
-            "EVOLUTION_DIR": str(tmp_path / "evolution"),
+            "GEP_ASSETS_DIR": str(tmp_path / ".state" / "gep"),
+            "EVOLUTION_DIR": str(tmp_path / ".state" / "evolution"),
+            "EVOLVER_STATE_ROOT": str(tmp_path / ".state"),
             "A2A_HUB_URL": "http://127.0.0.1:9",
             "EVOLVE_LOAD_MAX": "999",
             "EVOLVER_HOME": str(tmp_path / ".evomap"),
@@ -53,37 +91,34 @@ class _McpClient:
             env=_server_env(tmp_path),
         )
         self._id = 0
-        self.init_result: dict = {}
-        self.notifications: list[dict] = []
+        self.init_result: dict[str, Any] = {}
+        self.notifications: list[dict[str, Any]] = []
 
-    def request(self, method: str, params: dict | None = None) -> dict:
+    def request(self, method: str, params: dict[str, Any] | None = None) -> dict[str, Any]:
         self._id += 1
         self.send({"jsonrpc": "2.0", "id": self._id, "method": method, "params": params or {}})
         return self.recv()
 
-    def send(self, msg: dict) -> None:
+    def send(self, msg: dict[str, Any]) -> None:
         assert self.proc.stdin is not None
         self.proc.stdin.write(json.dumps(msg) + "\n")
         self.proc.stdin.flush()
 
-    def recv(self) -> dict:
+    def recv(self) -> dict[str, Any]:
         assert self.proc.stdout is not None
         while True:
             line = self.proc.stdout.readline()
             assert line, "server closed the stream (crashed?)"
             msg = json.loads(line)  # stdout must contain ONLY JSON-RPC frames
-            # Server-initiated notifications (tools/list_changed) are not replies.
             if "id" not in msg and str(msg.get("method") or "").startswith("notifications/"):
                 self.notifications.append(msg)
                 continue
             return msg
 
-    def call_tool(self, name: str, args: dict) -> dict:
+    def call_tool(self, name: str, args: dict[str, Any]) -> dict[str, Any]:
         result = self.request("tools/call", {"name": name, "arguments": args})["result"]
         structured = result.get("structuredContent")
         if structured is not None:
-            # SDK wraps non-dict returns as {"result": ...} (spec requires
-            # a top-level object).
             if isinstance(structured, dict) and set(structured) == {"result"}:
                 return structured["result"]
             return structured
@@ -100,7 +135,10 @@ class _McpClient:
 
 @pytest.fixture
 def client(tmp_path: Path) -> _McpClient:
-    c = _McpClient(tmp_path)
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    _init_git_repo(repo)
+    c = _McpClient(repo)
     c.init_result = c.request(
         "initialize",
         {
@@ -115,83 +153,147 @@ def client(tmp_path: Path) -> _McpClient:
     c.close()
 
 
-class TestProtocol:
-    def test_instructions_carry_swarm_directive(self, client: _McpClient) -> None:
+class TestFsmThreeToolProtocol:
+    def test_instructions_carry_concise_fsm_directive(self, client: _McpClient) -> None:
         instructions = client.init_result["result"]["instructions"]
         assert "EVOLVER SWARM" in instructions
-        assert "swarm_boot" in instructions
-        assert "actual state" in instructions
-        assert "await_human" in instructions
-        assert "await_human_approval" in instructions
-        assert "swarm_propose" in instructions
-        assert "never retry" in instructions
-        assert "loop_fuse=pending_redirect_loop" in instructions
-        assert " or pending_redirect_loop" not in instructions
-        assert "error=pending_redirect_loop" not in instructions
-        assert "next_action=pending_redirect_loop" not in instructions
-        assert len(instructions) < 1200
-        assert "swarm_hook_event" not in instructions
+        assert "evolve_begin" in instructions
+        assert "run_lens" in instructions
+        assert "evolve_settle" in instructions
+        assert len(instructions) < 900
+        for legacy in (
+            "swarm_boot",
+            "swarm_tick",
+            "swarm_distill",
+            "swarm_solidify",
+            "loop_fuse",
+            "gate_soft_continue",
+            "pending_redirect_loop",
+        ):
+            assert legacy not in instructions
 
-    def test_tools_list_publishes_doctor_and_asks_hosts_to_refresh(
-        self, client: _McpClient
-    ) -> None:
-        """The stdio frame is the catalog. Hosts must not treat it as immutable.
-
-        ``swarm_doctor`` is in this one page (no ``nextCursor``). A cursor
-        argument does not drop it. ``tools.listChanged`` is true, and
-        ``notifications/initialized`` is answered with
-        ``notifications/tools/list_changed``. A host catalog that still omits
-        the tool after that notification is a client cache, not a missing
-        registration. This test does not invent a second tool entry.
-        """
+    def test_idle_surface_and_annotations(self, client: _McpClient) -> None:
         tools_cap = client.init_result["result"]["capabilities"]["tools"]
         assert tools_cap["listChanged"] is True
+
         listed = client.request("tools/list")["result"]
         assert listed.get("nextCursor") in (None, "")
-        names = [tool["name"] for tool in listed["tools"]]
-        assert names.count("swarm_doctor") == 1
-        doctor = next(tool for tool in listed["tools"] if tool["name"] == "swarm_doctor")
-        assert doctor["annotations"]["readOnlyHint"] is True
-        paged = client.request("tools/list", {"cursor": "1"})["result"]
-        assert paged.get("nextCursor") in (None, "")
-        assert [tool["name"] for tool in paged["tools"]].count("swarm_doctor") == 1
-        methods = {note.get("method") for note in client.notifications}
-        assert "notifications/tools/list_changed" in methods
+        tools_by_name = {t["name"]: t for t in listed["tools"]}
+        assert set(tools_by_name) == set(MCP_IDLE_TOOL_NAMES)
+        assert "run_lens" not in tools_by_name
+        assert "evolve_settle" not in tools_by_name
+        assert tools_by_name["evolve_status"]["annotations"]["readOnlyHint"] is True
 
-    def test_tools_list_is_the_closed_surface(self, client: _McpClient) -> None:
-        from tests.mcp_surface import MCP_PROMPT_NAMES, MCP_RESOURCE_URIS, MCP_TOOL_NAMES
-
-        tools = client.request("tools/list")["result"]["tools"]
-        assert {t["name"] for t in tools} == set(MCP_TOOL_NAMES)
         prompts = client.request("prompts/list")["result"]["prompts"]
         assert {p["name"] for p in prompts} == set(MCP_PROMPT_NAMES)
         resources = client.request("resources/list")["result"]["resources"]
         assert {r["uri"] for r in resources} == set(MCP_RESOURCE_URIS)
 
-    def test_read_only_annotations_present(self, client: _McpClient) -> None:
-        tools = {t["name"]: t for t in client.request("tools/list")["result"]["tools"]}
-        assert tools["swarm_status"]["annotations"]["readOnlyHint"] is True
-        assert tools["swarm_doctor"]["annotations"]["readOnlyHint"] is True
-        assert "fix" not in (tools["swarm_doctor"]["inputSchema"].get("properties") or {})
-        assert tools["swarm_solidify"]["annotations"]["destructiveHint"] is True
+        methods = {note.get("method") for note in client.notifications}
+        assert "notifications/tools/list_changed" in methods
 
-    def test_prompt_renders_takeover_protocol(self, client: _McpClient) -> None:
-        prompts = {p["name"] for p in client.request("prompts/list")["result"]["prompts"]}
-        assert "evolver_swarm" in prompts
+    def test_idle_blocks_active_only_tools(self, client: _McpClient) -> None:
+        res_lens = client.request("tools/call", {"name": "run_lens", "arguments": {}})["result"]
+        assert res_lens.get("isError") is True
+        body_lens = json.loads(res_lens["content"][0]["text"])
+        assert body_lens["ok"] is False
+        assert body_lens["error"] == "fsm_state_mismatch"
+        assert body_lens["fsm_state"] == "IDLE"
+
+        res_settle = client.request("tools/call", {"name": "evolve_settle", "arguments": {}})[
+            "result"
+        ]
+        assert res_settle.get("isError") is True
+        body_settle = json.loads(res_settle["content"][0]["text"])
+        assert body_settle["error"] == "fsm_state_mismatch"
+
+    def test_full_fsm_begin_lens_settle_lifecycle_with_list_changed(
+        self, client: _McpClient, tmp_path: Path
+    ) -> None:
+        repo = tmp_path / "repo"
+
+        # 0. Cold status and zero-side-effect signal/operator discovery
+        status0 = client.call_tool("evolve_status", {})
+        assert status0["ok"] is True
+        assert status0["fsm_state"] == "IDLE"
+        assert status0["next_action"] == "evolve_begin"
+
+        preview = client.call_tool("evolve_begin", {"hypothesis": "", "auto_discover": True})
+        assert preview["ok"] is True
+        assert preview["discovery_only"] is True
+        assert preview["fsm_state"] == "IDLE"
+
+        empty_err = client.call_tool("evolve_begin", {"hypothesis": "", "auto_discover": False})
+        assert empty_err["ok"] is False
+        assert empty_err["error"] == "empty_hypothesis"
+
+        # 1. Start atomic run -> transitions IDLE -> ACTIVE_RUN + emits list_changed
+        notes_before_begin = len(client.notifications)
+        began = client.call_tool(
+            "evolve_begin",
+            {
+                "hypothesis": "Extend clamp helper in service.py to upper-bound values at 100.",
+                "target_files": ["service.py"],
+            },
+        )
+        assert began["ok"] is True
+        assert began["fsm_state"] == "ACTIVE_RUN"
+        assert began["run_id"]
+        assert len(client.notifications) > notes_before_begin
+
+        # 2. Verify ACTIVE_RUN catalog hides evolve_begin & exposes run_lens/evolve_settle
+        active_tools = {t["name"]: t for t in client.request("tools/list")["result"]["tools"]}
+        assert set(active_tools) == set(MCP_ACTIVE_TOOL_NAMES)
+        assert "evolve_begin" not in active_tools
+        assert active_tools["run_lens"]["annotations"]["readOnlyHint"] is True
+        assert active_tools["evolve_settle"]["annotations"]["destructiveHint"] is True
+
+        # 3. Duplicate evolve_begin while ACTIVE_RUN is hard-blocked
+        dup = client.request(
+            "tools/call",
+            {"name": "evolve_begin", "arguments": {"hypothesis": "duplicate attempt"}},
+        )["result"]
+        assert dup.get("isError") is True
+        assert json.loads(dup["content"][0]["text"])["error"] == "fsm_state_mismatch"
+
+        # 4. Run lenses in ACTIVE_RUN -> recorded into active blackbox
+        lens_res = client.call_tool("run_lens", {"name": "import_impact", "target": "service.py"})
+        assert lens_res["ok"] is True
+        assert "test_service.py" in lens_res["impacted_tests"]
+
+        status_active = client.call_tool("evolve_status", {})
+        assert status_active["fsm_state"] == "ACTIVE_RUN"
+        assert status_active["active_blackbox"]["lens_calls_count"] == 1
+
+        # 5. Apply edit in workspace and settle
+        (repo / "service.py").write_text(
+            "def clamp(x: int, hi: int = 100) -> int:\n    return min(hi, max(0, x))\n",
+            encoding="utf-8",
+        )
+        notes_before_settle = len(client.notifications)
+        settled = client.call_tool(
+            "evolve_settle",
+            {"summary": "Added optional hi upper bound to clamp()"},
+        )
+        assert settled["fsm_state"] == "IDLE"
+        assert settled["blackbox"]["lens_calls_count"] == 1
+        assert settled["episode_id"].startswith("sha256:")
+        assert len(client.notifications) > notes_before_settle
+
+        # 6. Catalog automatically reverted to IDLE
+        idle_again = {t["name"] for t in client.request("tools/list")["result"]["tools"]}
+        assert idle_again == set(MCP_IDLE_TOOL_NAMES)
+
+        # Episode record is readable via episode_get and carries blackbox telemetry
+        ep = client.call_tool("episode_get", {"episode_id": settled["episode_id"]})
+        assert ep["gates"]["blackbox"]["lens_calls_count"] == 1
+
+    def test_prompt_resources_and_invalid_enum_handling(self, client: _McpClient) -> None:
         got = client.request(
             "prompts/get", {"name": "evolver_swarm", "arguments": {"agent_name": "e2e"}}
         )
         text = got["result"]["messages"][0]["content"]["text"]
-        assert "EVOLVER SWARM" in text and "e2e" in text
-
-    def test_resources_discoverable_and_readable(self, client: _McpClient) -> None:
-        resources = {r["uri"]: r for r in client.request("resources/list")["result"]["resources"]}
-        assert {
-            "evolver://status",
-            "evolver://instrument-prompt",
-            "evolver://dispatch/last",
-            "evolver://events/recent",
-        } <= set(resources)
+        assert "EVOLVER SWARM" in text and "e2e" in text and "evolve_begin" in text
 
         status_text = client.request("resources/read", {"uri": "evolver://status"})["result"][
             "contents"
@@ -199,60 +301,5 @@ class TestProtocol:
         status = json.loads(status_text)
         assert status["ok"] is True and status["version"] == __version__
 
-        prompt_text = client.request("resources/read", {"uri": "evolver://instrument-prompt"})[
-            "result"
-        ]["contents"][0]["text"]
-        assert "EVOLVER SWARM" in prompt_text
-
-    def test_tool_call_round_trip(self, client: _McpClient, tmp_path: Path) -> None:
-        status = client.call_tool("swarm_status", {})
-        assert status["ok"] is True
-        assert status["next_action"] == "swarm_boot"
-        assert "swarm_boot" in status["hint"]
         empty = client.call_tool("tool_asset_search", {"query": "zzz_no_such_asset"})
         assert empty["ok"] is True and empty["items"] == [] and empty["hint"]
-
-        hook = client.call_tool(
-            "swarm_hook_event",
-            {"event": "signal_detect", "payload": {"content": "request timeout detected"}},
-        )
-        assert "perf_bottleneck" in hook["detected_signals"]
-        pending = json.loads((tmp_path / "gep" / "pending_signals.json").read_text())
-        assert "perf_bottleneck" in pending["signals"]
-
-    def test_precompact_event_gates_until_checkpoint(
-        self, client: _McpClient, tmp_path: Path
-    ) -> None:
-        hook = client.call_tool("swarm_hook_event", {"event": "precompact"})
-        assert hook["next_action"] == "call_swarm_checkpoint_working"
-        assert (tmp_path / "evolution" / "compact_checkpoint.requested").is_file()
-
-        refused = client.call_tool("swarm_distill", {"response_text": "x"})
-        assert refused["error"] == "checkpoint_required"
-
-        saved = client.call_tool("swarm_checkpoint_working", {"content": "ruled out: A"})
-        assert saved["ok"] is True
-        assert not (tmp_path / "evolution" / "compact_checkpoint.requested").exists()
-
-    def test_invalid_enum_gets_structured_feedback(self, client: _McpClient) -> None:
-        res = client.request(
-            "tools/call", {"name": "swarm_hook_event", "arguments": {"event": "bogus"}}
-        )
-        text = res["result"]["content"][0]["text"]
-        body = json.loads(text)
-        assert body["ok"] is False
-        assert body["error"] == "invalid_arguments"
-        assert body["tool"] == "swarm_hook_event"
-        assert body["message"]
-        assert body["next_steps"]
-        assert res["result"].get("isError") is True
-        # The server must still be alive afterwards.
-        assert client.call_tool("swarm_status", {})["ok"] is True
-
-    def test_supervise_pause_resume_over_wire(self, client: _McpClient) -> None:
-        paused = client.call_tool("swarm_supervise", {"action": "pause", "reason": "e2e"})
-        assert paused["state"] == "paused"
-        status = client.call_tool("swarm_status", {})
-        assert status["supervision"]["state"] == "paused"
-        resumed = client.call_tool("swarm_supervise", {"action": "resume"})
-        assert resumed["state"] == "running"

@@ -38,7 +38,9 @@ PRIOR_BUNDLED_SEED_MARKER_IDS: frozenset[str] = frozenset(
 
 
 def _sqlite_enabled() -> bool:
-    return os.environ.get("EVOLVER_SQLITE_STORE", "").lower() in ("1", "true", "yes", "on")
+    from evolver.config import get_config
+
+    return get_config().sqlite_store
 
 
 def _safe_json_loads(raw: str) -> dict[str, Any] | None:
@@ -382,7 +384,7 @@ def load_genes(*, seed: bool = True) -> list[dict[str, Any]]:
     if not genes:
         seed_data = read_json_if_exists(genes_seed_path()) or {}
         genes = list(seed_data.get("genes", []))
-    return genes
+    return _apply_vault_freeze(genes, genes_path().with_suffix(".jsonl"))
 
 
 def load_genes_read_only() -> list[dict[str, Any]]:
@@ -403,9 +405,10 @@ def upsert_gene(gene: dict[str, Any]) -> None:
 def load_capsules() -> list[dict[str, Any]]:
     base = read_json_if_exists(capsules_path()) or {}
     capsules = list(base.get("capsules", []))
-    return _merge_json_jsonl(
+    merged = _merge_json_jsonl(
         capsules, capsules_path().with_suffix(".jsonl"), type_name="Capsule", verify=True
     )
+    return _apply_vault_freeze(merged, capsules_path().with_suffix(".jsonl"))
 
 
 def load_capsules_read_only() -> list[dict[str, Any]]:
@@ -422,6 +425,57 @@ def append_capsule(capsule: dict[str, Any]) -> None:
 
 def upsert_capsule(capsule: dict[str, Any]) -> None:
     append_capsule(capsule)
+
+
+def _retracted_run_ids(overlay_path: Path) -> set[str]:
+    ids: set[str] = set()
+    for row in read_jsonl_all(overlay_path):
+        if isinstance(row, dict) and row.get("retracted_run_id"):
+            ids.add(str(row["retracted_run_id"]))
+    return ids
+
+
+def _apply_vault_freeze(items: list[dict[str, Any]], overlay_path: Path) -> list[dict[str, Any]]:
+    """Drop distilled rows whose run was retracted, and tombstone rows."""
+    retracted = _retracted_run_ids(overlay_path)
+    out: list[dict[str, Any]] = []
+    for item in items:
+        if not isinstance(item, dict):
+            continue
+        gid = str(item.get("id") or "")
+        if gid.startswith("__retracted_by_run:"):
+            continue
+        rid = str(item.get("distilled_run_id") or "")
+        if rid and rid in retracted:
+            continue
+        out.append(item)
+    return out
+
+
+def retract_distilled_assets(run_id: str) -> int:
+    """Tombstone the genes/capsules distilled by *run_id* (vault freeze).
+
+    支柱一 (round-121 review pin): ``swarm_distill`` installs assets before
+    the gates judge the round — so a draft_preserved settle must retract
+    that run's distilled assets or the vault silently absorbs unvalidated
+    work. Overlay semantics make a tombstone row suffice."""
+    if not run_id:
+        return 0
+    retracted = 0
+    targets = (
+        (genes_path().with_suffix(".jsonl"), "Gene"),
+        (capsules_path().with_suffix(".jsonl"), "Capsule"),
+    )
+    with with_file_lock(target_path=genes_path()):
+        for target, kind in targets:
+            marker = {
+                "type": kind,
+                "id": f"__retracted_by_run:{run_id}",
+                "retracted_run_id": run_id,
+            }
+            append_jsonl(target, marker)
+            retracted += 1
+    return retracted
 
 
 # --- Events ---

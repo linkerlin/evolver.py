@@ -229,7 +229,7 @@ def test_swarm_propose_tool(ws: Path) -> None:
     assert res["ok"] is True
     assert res["action"] == "patch"
     assert res["files_changed"] == ["src/mod.py"]
-    assert res["next_action"] == "swarm_solidify"
+    assert res["next_action"] == "evolve_settle"
     assert (ws / "src" / "mod.py").read_text(encoding="utf-8").startswith("TIMEOUT = 60")
 
     # Subsequent propose with now-outdated anchor gets rejected

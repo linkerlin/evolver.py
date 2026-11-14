@@ -675,17 +675,11 @@ class LifecycleManager:
         """Return the force-update retry cooldown (ms).
 
         Prevents the Hub from re-triggering force-updates on every heartbeat.
-        Configurable via ``EVOLVER_FORCE_UPDATE_RETRY_COOLDOWN_MS`` (default 5 min).
+        Configurable via ``EvolverConfig.force_update_retry_cooldown_ms`` (default 5 min).
         """
-        raw = os.environ.get("EVOLVER_FORCE_UPDATE_RETRY_COOLDOWN_MS")
-        if raw:
-            try:
-                n = int(raw)
-                if n > 0:
-                    return n
-            except ValueError:
-                pass
-        return 5 * 60 * 1000  # 5 min default
+        from evolver.config import get_config
+
+        return get_config().force_update_retry_cooldown_ms
 
     def _maybe_trigger_force_update_from_heartbeat(self, directive: dict[str, Any]) -> bool:
         """Trigger a force-update from a heartbeat response, respecting cooldown.
@@ -1004,12 +998,14 @@ class LifecycleManager:
         """Validate that the Hub URL uses HTTPS.
 
         Returns ``{ok: bool, url: str, warnings: list[str]}``.
-        In production (``EVOLVER_ENV=production``), non-HTTPS URLs are rejected.
+        In production (``env_mode=production``), non-HTTPS URLs are rejected.
         In development, a warning is issued but the URL is accepted.
         """
+        from evolver.config import get_config
+
         hub_url = url or resolve_hub_url()
         warnings: list[str] = []
-        is_production = os.environ.get("EVOLVER_ENV", "").lower() == "production"
+        is_production = get_config().env_mode.lower() == "production"
 
         if not hub_url:
             return {"ok": False, "url": "", "warnings": ["hub_url_empty"]}

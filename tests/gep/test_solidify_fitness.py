@@ -150,8 +150,8 @@ class TestCascadeFailurePath:
     def test_failed_event_appended_with_score(
         self, monkeypatch: Any, tmp_path: Path, temp_workspace: Path
     ) -> None:
-        # Soft-default UX (2026-10-31): normal validation failures are now soft-continue.
-        # This test validates soft-continue behavior (no rollback, ok=True, warnings).
+        # v1.114.0 dual-track: validation failures are honest draft-preserving
+        # rejections (no rollback, ok=False, patch kept, event still appended).
         _ = temp_workspace
         order: list[str] = []
         appended: dict[str, Any] = {}
@@ -186,15 +186,15 @@ class TestCascadeFailurePath:
             },
             validation_report=None,
         )
-        # Soft-continue: blast captured but NO rollback
+        # Draft preserved: blast captured but NO rollback
         assert order == ["blast"]
-        # Soft-continue returns ok=True with severity="soft"
-        assert result["ok"] is True
-        assert result["severity"] == "soft"
-        assert "warnings" in result
+        # Honest rejection: ok=False with a 3-line actionable_fix
+        assert result["ok"] is False
+        assert result["outcome"] == "draft_preserved"
+        assert len(result["actionable_fix"]) == 3
         assert result["details"]["score"] == 0.98
         # Event still appended (for repair-loop signals)
-        assert appended["outcome"]["status"] == "soft_failed"
+        assert appended["outcome"]["status"] == "failed"
         assert appended["outcome"]["score"] == 0.98
         assert appended["gene_id"] == "gene-1"
 

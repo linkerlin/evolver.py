@@ -53,10 +53,8 @@ def e2e_env(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     monkeypatch.setenv("EVOLVER_SETTINGS_DIR", str(tmp_path / ".evolver_settings"))
     monkeypatch.setenv("EVOLVER_NO_PARENT_GIT", "1")
     monkeypatch.setenv("EVOLVER_USER_LOCK", str(tmp_path / "user.lock"))
-    monkeypatch.setenv("EVOLVER_PROGRESS_UPDATE_MS", "500")
+    monkeypatch.setenv("EVOLVER_CONFIG", '{"progress_update_ms":500,"quiet_legacy_warning":true}')
     monkeypatch.delenv("EVOMAP_HUB_ALLOW_INSECURE", raising=False)
-    monkeypatch.delenv("EVOLVER_REUSE_ATTRIBUTION", raising=False)
-    monkeypatch.delenv("EVOLVER_OUTCOME_REPORT", raising=False)
     monkeypatch.setenv("A2A_HUB_URL", "https://hub.e2e.test")
     (tmp_path / "memory" / "evolution").mkdir(parents=True)
     (tmp_path / ".evolver" / "gep").mkdir(parents=True)
@@ -125,7 +123,10 @@ class TestE2EReuseAttributionPipeline:
     def test_shadow_outcome_attaches_block_without_source_node_id(
         self, e2e_env: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        monkeypatch.setenv("EVOLVER_REUSE_ATTRIBUTION", "shadow")
+        monkeypatch.setenv(
+            "EVOLVER_CONFIG",
+            '{"progress_update_ms":500,"reuse_attribution":"shadow","quiet_legacy_warning":true}',
+        )
         # Simulate same-cycle attempt + dispatch last_run.
         mg.record_attempt(
             signals=["log_error"],
@@ -175,8 +176,10 @@ class TestE2EReuseAttributionPipeline:
     def test_outcome_report_posts_on_full_pipeline(
         self, e2e_env: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        monkeypatch.setenv("EVOLVER_REUSE_ATTRIBUTION", "shadow")
-        monkeypatch.setenv("EVOLVER_OUTCOME_REPORT", "on")
+        monkeypatch.setenv(
+            "EVOLVER_CONFIG",
+            '{"progress_update_ms":500,"reuse_attribution":"shadow","outcome_report":"on","quiet_legacy_warning":true}',
+        )
         monkeypatch.setenv("A2A_HUB_URL", "https://hub.e2e.test")
         monkeypatch.setenv("A2A_NODE_SECRET", "secret_e2e_token")
         monkeypatch.setattr(
@@ -244,7 +247,10 @@ class TestE2EReuseAttributionPipeline:
     def test_stale_last_run_does_not_attach_attribution(
         self, e2e_env: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        monkeypatch.setenv("EVOLVER_REUSE_ATTRIBUTION", "shadow")
+        monkeypatch.setenv(
+            "EVOLVER_CONFIG",
+            '{"progress_update_ms":500,"reuse_attribution":"shadow","quiet_legacy_warning":true}',
+        )
         mg.record_attempt(signals=["log_error"], selected_gene={"id": "g_stale"})
         action = json.loads(
             (e2e_env / "memory" / "evolution" / "memory_graph_state.json").read_text(
@@ -277,7 +283,9 @@ class TestE2EReuseAttributionPipeline:
     def test_off_mode_skips_attribution_even_on_reuse(
         self, e2e_env: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        monkeypatch.delenv("EVOLVER_REUSE_ATTRIBUTION", raising=False)
+        monkeypatch.setenv(
+            "EVOLVER_CONFIG", '{"progress_update_ms":500,"quiet_legacy_warning":true}'
+        )
         mg.record_attempt(signals=["log_error"], selected_gene={"id": "g_off"})
         action = json.loads(
             (e2e_env / "memory" / "evolution" / "memory_graph_state.json").read_text(
@@ -555,7 +563,9 @@ class TestE2ECycleTimeoutAndProgress:
     async def test_run_writes_solidify_state(
         self, e2e_env: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        monkeypatch.setenv("EVOLVER_PROGRESS_UPDATE_MS", "200")
+        monkeypatch.setenv(
+            "EVOLVER_CONFIG", '{"progress_update_ms":200,"quiet_legacy_warning":true}'
+        )
         await runner.run()
         assert get_solidify_state_path().exists()
 
@@ -563,9 +573,10 @@ class TestE2ECycleTimeoutAndProgress:
     async def test_loop_hard_timeout_continue_path(
         self, e2e_env: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        monkeypatch.setenv("EVOLVER_CYCLE_TIMEOUT_MS", "80")
-        monkeypatch.setenv("EVOLVER_SUICIDE", "0")  # continue, don't respawn
-        monkeypatch.setenv("EVOLVER_PROGRESS_UPDATE_MS", "50")
+        monkeypatch.setenv(
+            "EVOLVER_CONFIG",
+            '{"cycle_timeout_ms":80,"suicide":false,"progress_update_ms":50,"quiet_legacy_warning":true}',
+        )
         # Final is import-time — patch the runner binding, not only the env var.
         monkeypatch.setattr(runner, "MAX_CYCLES_PER_PROCESS", 1)
 
@@ -659,7 +670,10 @@ class TestE2ERunSolidifyMemoryChain:
         self, e2e_env: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         _init_git(e2e_env)
-        monkeypatch.setenv("EVOLVER_REUSE_ATTRIBUTION", "shadow")
+        monkeypatch.setenv(
+            "EVOLVER_CONFIG",
+            '{"progress_update_ms":500,"reuse_attribution":"shadow","quiet_legacy_warning":true}',
+        )
         assert main(["run"]) == 0
         self._arm_bench_gate()
         # 配对会话 §5.3 — the gate refuses a Candidate with no declared

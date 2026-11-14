@@ -1,13 +1,17 @@
-"""Sprint 24.7: MCP server — thin tool surface over existing modules."""
+"""MCP server unit & in-process surface tests (算子即基因 P1-1)."""
 
 from __future__ import annotations
 
+import asyncio
+import json
 from pathlib import Path
 
 import pytest
 
 from evolver import __version__
 from evolver.mcp_server import (
+    ACTIVE_ONLY_TOOLS,
+    IDLE_ONLY_TOOLS,
     asset_get,
     asset_search,
     build_server,
@@ -17,6 +21,14 @@ from evolver.mcp_server import (
     mailbox_poll,
     mailbox_send,
     rebuild_views,
+    visible_tools_for_state,
+)
+from tests.mcp_surface import (
+    MCP_ACTIVE_TOOL_NAMES,
+    MCP_ALL_TOOL_NAMES,
+    MCP_IDLE_TOOL_NAMES,
+    MCP_PROMPT_NAMES,
+    MCP_RESOURCE_URIS,
 )
 
 
@@ -43,7 +55,7 @@ def seeded_store(temp_workspace: Path, monkeypatch: pytest.MonkeyPatch) -> None:
         "type": "Gene",
         "id": "gene_applied_cooldown",
         "category": "optimize",
-        "summary": "Selector penalizes recently-solidified genes so ticks stop re-dispatching",
+        "summary": "Selector penalizes recently-solidified genes so rounds stop re-dispatching",
         "signals_match": ["hub_offline", "selection_inefficiency"],
     }
     upsert_gene(gene)
@@ -61,13 +73,11 @@ class TestAssetTools:
         assert asset_search("zzz_nonexistent") == []
 
     def test_search_multi_word_is_token_and(self, seeded_store: None) -> None:
-        # Whole-string substring used to make "fix import" silently empty.
         hits = asset_search("fix import")
         assert "gene_fix_import" in {h["id"] for h in hits}
         assert asset_search("fix zzz_nonexistent") == []
 
     def test_search_covers_summary_and_signals(self, seeded_store: None) -> None:
-        # summary / signals_match are a Gene's primary text — must be searchable.
         by_summary = asset_search("selector penalizes")
         assert "gene_applied_cooldown" in {h["id"] for h in by_summary}
         by_signal = asset_search("hub_offline")
@@ -99,7 +109,6 @@ class TestMailboxTools:
     def test_inbound_poll_ack_loop(
         self, temp_workspace: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        # Daemon side writes an inbound message; agent side polls + acks.
         monkeypatch.setenv("EVOLVER_REPO_ROOT", str(temp_workspace))
         from evolver.proxy.mailbox.store import MailboxStore
 
@@ -144,17 +153,29 @@ class TestProjectionTools:
         assert timeline[0]["stage"] == "solidified"
 
 
-class TestServerBuild:
-    def test_build_server_registers_the_closed_surface(self) -> None:
-        """Exact tool, prompt, and resource sets. A subset pin let a dropped
-        loop tool stay green."""
-        import asyncio
+class TestFsmServerSurface:
+    def test_visible_tools_partition_idle_vs_active(self) -> None:
+        all_names = sorted(MCP_ALL_TOOL_NAMES)
+        assert set(visible_tools_for_state("IDLE", all_names)) == MCP_IDLE_TOOL_NAMES
+        assert set(visible_tools_for_state("ACTIVE_RUN", all_names)) == MCP_ACTIVE_TOOL_NAMES
+        assert IDLE_ONLY_TOOLS.isdisjoint(ACTIVE_ONLY_TOOLS)
 
-        from tests.mcp_surface import MCP_PROMPT_NAMES, MCP_RESOURCE_URIS, MCP_TOOL_NAMES
+    def test_build_server_switches_catalog_by_pending_state(
+        self, temp_workspace: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        from evolver.gep.solidify import write_state_for_solidify
+
+        monkeypatch.setenv("EVOLVER_REPO_ROOT", str(temp_workspace))
+        monkeypatch.setenv("EVOLUTION_DIR", str(temp_workspace / "evolution"))
 
         server = build_server()
-        tools = asyncio.run(server.list_tools())
-        assert {t.name for t in tools} == MCP_TOOL_NAMES
+        idle_tools = asyncio.run(server.list_tools())
+        assert {t.name for t in idle_tools} == MCP_IDLE_TOOL_NAMES
+
+        write_state_for_solidify({"run_id": "run_active_1", "signals": []})
+        active_tools = asyncio.run(server.list_tools())
+        assert {t.name for t in active_tools} == MCP_ACTIVE_TOOL_NAMES
+
         prompts = asyncio.run(server.list_prompts())
         assert {p.name for p in prompts} == MCP_PROMPT_NAMES
         resources = asyncio.run(server.list_resources())
@@ -163,8 +184,6 @@ class TestServerBuild:
     def test_episode_get_returns_a_recorded_round(
         self, temp_workspace: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        """经验即证据 §5.1c: the thin read side — same discipline as asset_get,
-        over the runtime-held round record."""
         monkeypatch.setenv("EVOLUTION_DIR", str(temp_workspace / "evolution"))
         from evolver.gep import episode_record
 
@@ -192,181 +211,32 @@ class TestServerBuild:
         with pytest.raises(LookupError):
             episode_get("sha256:nope")
 
-    def test_evolver_swarm_prompt_registered_and_rendered(
+    def test_evolver_swarm_prompt_and_resources_readable(
         self, temp_workspace: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        import asyncio
-
         monkeypatch.setenv("EVOLVER_REPO_ROOT", str(temp_workspace))
         server = build_server()
-
-        prompts = asyncio.run(server.list_prompts())
-        assert "evolver_swarm" in {p.name for p in prompts}
 
         result = asyncio.run(server.get_prompt("evolver_swarm"))
         text = result.messages[0].content.text
         assert "EVOLVER SWARM" in text
-        assert "swarm_tick" in text
-
-
-class TestResources:
-    def test_resources_registered_and_readable(
-        self, temp_workspace: Path, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
-        import asyncio
-        import json
-
-        monkeypatch.setenv("EVOLVER_REPO_ROOT", str(temp_workspace))
-        server = build_server()
-
-        from tests.mcp_surface import MCP_RESOURCE_URIS
-
-        uris = {str(r.uri) for r in asyncio.run(server.list_resources())}
-        assert uris == MCP_RESOURCE_URIS
+        assert "evolve_begin" in text
+        assert "evolve_settle" in text
 
         contents = asyncio.run(server.read_resource("evolver://status"))
-        first = next(iter(contents))
-        # In-process model exposes .content (serialized as `text` over the wire).
-        data = json.loads(first.content)
+        data = json.loads(next(iter(contents)).content)
         assert data["ok"] is True
         assert data["version"] == __version__
+        assert data["fsm_state"] == "IDLE"
 
-        prompt_contents = asyncio.run(server.read_resource("evolver://instrument-prompt"))
-        assert "EVOLVER SWARM" in next(iter(prompt_contents)).content
-
-
-class TestInstructions:
-    def test_default_instructions_start_the_loop(self) -> None:
-        server = build_server()
-        text = server.instructions or ""
-        assert "EVOLVER SWARM" in text
-        assert "already asks for something else" in text
-        assert "boot_once" in text
-        assert "停" in text
-        assert "await_human" in text
-        assert "await_supervisor_resume" in text
-        assert "swarm_supervise" in text
-        assert "继续" in text and "action resume" in text
-        assert "actual state" in text
-        assert "start the evolution loop now" not in text
-        assert "has taken you over" not in text
-
-    def test_auto_hijack_does_not_change_instructions(
+    def test_default_instructions_concise_and_hijack_invariant(
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        plain = build_server().instructions
+        plain = build_server().instructions or ""
+        assert "EVOLVER SWARM" in plain
+        assert "evolve_begin" in plain
+        assert "run_lens" in plain
+        assert "evolve_settle" in plain
+        assert len(plain) < 900
         monkeypatch.setattr("evolver.config.SWARM_AUTO_HIJACK", True)
-        hijacked = build_server().instructions or ""
-        assert hijacked == plain
-        assert "TAKEOVER ACTIVE" not in hijacked
-        assert "takes priority" not in hijacked
-
-    def test_instructions_are_a_short_loop(self) -> None:
-        """The standing text is the loop, not a map of every tool.
-
-        A tool map in the connect-time instruction gets followed worse than
-        one imperative. The full protocol stays in ``swarm_boot``.
-        """
-        server = build_server()
-        text = server.instructions or ""
-        assert len(text) < 1200
-        assert "loop_fuse=pending_redirect_loop" in text
-        assert " or pending_redirect_loop" not in text
-        assert "error=pending_redirect_loop" not in text
-        assert "next_action=pending_redirect_loop" not in text
-        assert "swarm_boot" in text
-        assert "THIS message" in text
-        assert "never retry" in text
-        assert "severity=soft" in text
-        assert "Grok Bot" in text
-        assert "/workspace/evolver-research/evolver.py" in text
-        for needle in (
-            "swarm_tick",
-            "swarm_distill",
-            "swarm_hypothesis",
-            "swarm_solidify",
-            "swarm_feedback",
-            "swarm_propose",
-            "PROPOSAL REQUIRED",
-            "await_human_approval",
-            "swarm_approvals",
-            "swarm_approval_resolve",
-        ):
-            assert needle in text, needle
-        for absent in ("swarm_workflow_run", "episode_get", "tool_asset_search", "FIRST ACTION"):
-            assert absent not in text, absent
-
-
-class TestCallToolInProcess:
-    def test_supervise_flow_through_call_tool(
-        self, temp_workspace: Path, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
-        import asyncio
-        import json
-
-        monkeypatch.setenv("EVOLVER_REPO_ROOT", str(temp_workspace))
-        server = build_server()
-
-        paused = asyncio.run(
-            server.call_tool("swarm_supervise", {"action": "pause", "reason": "t"})
-        )
-        data = json.loads(paused.content[0].text)
-        assert data["state"] == "paused"
-
-        resumed = asyncio.run(server.call_tool("swarm_supervise", {"action": "resume"}))
-        data = json.loads(resumed.content[0].text)
-        assert data["state"] == "running"
-
-    def test_hook_event_through_call_tool(
-        self, temp_workspace: Path, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
-        import asyncio
-        import json
-
-        monkeypatch.setenv("EVOLVER_REPO_ROOT", str(temp_workspace))
-        server = build_server()
-        result = asyncio.run(
-            server.call_tool(
-                "swarm_hook_event",
-                {"event": "signal_detect", "payload": {"content": "request timeout"}},
-            )
-        )
-        data = json.loads(result.content[0].text)
-        assert "perf_bottleneck" in data["detected_signals"]
-
-    def test_workflow_tools_full_loop(
-        self, temp_workspace: Path, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
-        import asyncio
-        import json
-
-        monkeypatch.setenv("EVOLVER_REPO_ROOT", str(temp_workspace))
-        monkeypatch.setattr(
-            "evolver.gep.workflow.default_cascade_runner",
-            lambda: {"overall_ok": True, "stages": [], "failed_stages": []},
-        )
-        server = build_server()
-
-        started = asyncio.run(
-            server.call_tool("swarm_workflow_run", {"template": "innovate", "workflow_id": "mcpwf"})
-        )
-        run = json.loads(started.content[0].text)
-        assert run["ok"] is True
-        assert run["status"] == "waiting_agent"
-        assert run["awaiting_agent"]["role"] == "innovator"
-
-        stepped = asyncio.run(
-            server.call_tool(
-                "swarm_workflow_act",
-                {"workflow_id": "mcpwf", "action": "complete", "result": {"ok": True}},
-            )
-        )
-        assert json.loads(stepped.content[0].text)["status"] == "waiting_approval"
-
-        final = asyncio.run(
-            server.call_tool("swarm_workflow_act", {"workflow_id": "mcpwf", "action": "approve"})
-        )
-        assert json.loads(final.content[0].text)["status"] == "done"
-
-        status = asyncio.run(server.call_tool("swarm_workflow_status", {"workflow_id": "mcpwf"}))
-        assert json.loads(status.content[0].text)["status"] == "done"
+        assert (build_server().instructions or "") == plain

@@ -3,9 +3,9 @@
 Equivalent to evolver/src/gep/memoryGraph.js (obfuscated).
 
 Includes memory_graph.jsonl rotation (#519): when the active file exceeds
-``EVOLVER_MEMORY_GRAPH_MAX_SIZE_MB`` (default 100 MB), it is renamed and
-gzip-compressed; at most ``EVOLVER_MEMORY_GRAPH_RETENTION_COUNT`` (default 7)
-archives are kept. Opt out with ``EVOLVER_MEMORY_GRAPH_AUTO_ROTATE=false``.
+``memory_graph_max_size_mb`` (default 100 MB), it is renamed and
+gzip-compressed; at most ``memory_graph_retention_count`` (default 7)
+archives are kept. Opt out with ``memory_graph_auto_rotate=false``.
 """
 
 from __future__ import annotations
@@ -24,7 +24,6 @@ from pathlib import Path
 from typing import Any, cast
 
 from evolver.config import GENE_INERT_BAN_STREAK
-from evolver.gep.feature_flags import is_enabled
 from evolver.gep.paths import get_evolution_dir, get_memory_graph_path, get_solidify_state_path
 
 # --- Rotation (#519) --------------------------------------------------------
@@ -84,40 +83,35 @@ def _state_path() -> Path:
 
 
 def rotation_enabled() -> bool:
-    """Return whether auto-rotation is enabled (env-driven, default true)."""
-    raw = str(os.environ.get("EVOLVER_MEMORY_GRAPH_AUTO_ROTATE", "true")).lower()
-    return raw not in ("false", "0", "no")
+    """Return whether auto-rotation is enabled (config-driven, default true)."""
+    from evolver.config import get_config
+
+    return get_config().memory_graph_auto_rotate
 
 
 def rotation_max_size_bytes() -> int:
     """Max active-file size in bytes before rotation (default 100 MB)."""
-    raw = os.environ.get("EVOLVER_MEMORY_GRAPH_MAX_SIZE_MB")
-    try:
-        mb = float(raw) if raw is not None and raw != "" else float("nan")
-    except (TypeError, ValueError):
-        mb = float("nan")
+    from evolver.config import get_config
+
+    mb = get_config().memory_graph_max_size_mb
     safe = mb if math.isfinite(mb) and mb > 0 else _DEFAULT_MAX_SIZE_MB
     return int(safe * 1024 * 1024)
 
 
 def rotation_retention_count() -> int:
     """How many rotated archives to keep (default 7; 0 deletes all)."""
-    raw = os.environ.get("EVOLVER_MEMORY_GRAPH_RETENTION_COUNT")
-    try:
-        n = float(raw) if raw is not None and raw != "" else float("nan")
-    except (TypeError, ValueError):
-        n = float("nan")
-    if math.isfinite(n) and n >= 0:
+    from evolver.config import get_config
+
+    n = get_config().memory_graph_retention_count
+    if n >= 0:
         return int(n)
     return _DEFAULT_RETENTION
 
 
 def _gzip_max_bytes() -> int:
-    raw = os.environ.get("EVOLVER_ROTATE_GZIP_MAX_MB")
-    try:
-        mb = float(raw) if raw is not None and raw != "" else float("nan")
-    except (TypeError, ValueError):
-        mb = float("nan")
+    from evolver.config import get_config
+
+    mb = get_config().rotate_gzip_max_mb
     safe = mb if math.isfinite(mb) and mb > 0 else _DEFAULT_GZIP_MAX_MB
     return int(safe * 1024 * 1024)
 
@@ -633,43 +627,6 @@ def record_signal_gene_preference(
     return {"signalKey": key, **entry}
 
 
-# Sprint 22.4: probation window (days) for banned genes under enable_niche_topk.
-BAN_PROBATION_DAYS: int = 30
-
-
-def _probation_until(key: str, gene_id: str) -> float | None:
-    """Active probation deadline for *gene_id* on *signal_key*, else None."""
-    state = _read_state()
-    pb = state.get("probation_by_signal") or {}
-    if not isinstance(pb, dict):
-        return None
-    entry = (pb.get(key) or {}).get(gene_id)
-    if isinstance(entry, (int, float)) and entry > time.time():
-        return float(entry)
-    return None
-
-
-def _set_probation(key: str, gene_id: str) -> None:
-    """Persist a 30-day probation for *gene_id* (replaces the permanent ban).
-
-    # ponytail: probation is a bounded second chance, not failure accounting —
-    # a gene whose stats still qualify is re-banned on the next advice call
-    # after its window lapses; swap for failure-count tracking if the
-    # on/off cadence ever measurably hurts.
-    """
-    state = _read_state()
-    pb = state.setdefault("probation_by_signal", {})
-    if not isinstance(pb, dict):
-        pb = {}
-        state["probation_by_signal"] = pb
-    by_key = pb.setdefault(key, {})
-    if not isinstance(by_key, dict):
-        by_key = {}
-        pb[key] = by_key
-    by_key[gene_id] = time.time() + BAN_PROBATION_DAYS * 86400.0
-    _write_state(state)
-
-
 def _count_trailing_inert(
     outcomes: list[dict[str, Any]], signal_key: str, gene_id: str
 ) -> tuple[int, bool]:
@@ -880,42 +837,8 @@ def get_memory_advice(
         if trailing_inert >= GENE_INERT_BAN_STREAK:
             banned.add(gene_id)
 
-    # Sprint 22.4 (enable_niche_topk): 30-day probation instead of permanent
-    # bans — a gene under an active probation stays selectable; fresh bans get
-    # a probation window persisted (re-ban only after the window lapses).
-    if is_enabled("enable_niche_topk"):
-        fresh_bans: set[str] = set()
-        for gid in banned:
-            if _probation_until(key, gid) is not None:
-                continue  # probation running -> allow selection
-            fresh_bans.add(gid)
-            _set_probation(key, gid)
-        banned = fresh_bans
-
     if solidify_preferred and solidify_preferred not in banned:
         preferred = solidify_preferred
-
-    # Sprint 22.4: top-k preferred genes per signal-key niche (MAP-Elites
-    # style elites) for the bandit selector's exploit term.
-    preferred_ids: list[str] = []
-    if is_enabled("enable_niche_topk"):
-        ranked = sorted(
-            (
-                (gid, stats)
-                for gid, stats in gene_stats.items()
-                if gid not in banned and stats["attempts"] > 0
-            ),
-            key=lambda kv: kv[1]["successes"] / kv[1]["attempts"],
-            reverse=True,
-        )
-        preferred_ids = [gid for gid, _ in ranked[:3]]
-        if (
-            solidify_preferred
-            and solidify_preferred not in banned
-            and solidify_preferred not in preferred_ids
-        ):
-            preferred_ids.insert(0, solidify_preferred)
-            preferred_ids = preferred_ids[:3]
 
     explanation_parts = [
         f"signal_key={key}",
@@ -923,8 +846,6 @@ def get_memory_advice(
     ]
     if banned:
         explanation_parts.append(f"banned={','.join(sorted(banned))}")
-    if preferred_ids:
-        explanation_parts.append(f"preferred_top={','.join(preferred_ids)}")
     if solidify_preferred:
         explanation_parts.append(f"solidify_preferred={solidify_preferred}")
     if friction_cats:
@@ -933,7 +854,6 @@ def get_memory_advice(
     return {
         "currentSignalKey": key,
         "preferredGeneId": preferred,
-        "preferredGeneIds": preferred_ids,
         "bannedGeneIds": banned,
         "solidifyPreferredGeneId": solidify_preferred,
         "frictionCategories": sorted(friction_cats),
@@ -956,7 +876,6 @@ with contextlib.suppress(Exception):
 
 
 __all__ = [
-    "BAN_PROBATION_DAYS",
     "check_epoch_boundary",
     "compute_predictive_boost",
     "compute_signal_key",

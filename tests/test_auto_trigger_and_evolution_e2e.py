@@ -47,10 +47,11 @@ def save_genes(genes: list[dict[str, Any]]) -> None:
 
 from evolver.gep.trigger_engine import DailyBudget, rank_signals_by_trigger_value
 from evolver.swarm import (
+    evolve_begin,
+    evolve_settle,
     swarm_hook_event,
+    swarm_hypothesis,
     swarm_propose,
-    swarm_solidify,
-    swarm_tick,
 )
 
 
@@ -213,8 +214,10 @@ class TestAutoTriggerEndToEnd:
         evo_dir = temp_workspace / "memory" / "evolution"
         evo_dir.mkdir(parents=True, exist_ok=True)
         monkeypatch.setenv("EVOLUTION_DIR", str(evo_dir))
-        monkeypatch.setenv("EVOLVER_TRIGGER_MAX_CYCLES_PER_DAY", "2")
-        monkeypatch.setenv("EVOLVER_TRIGGER_PER_PATTERN_CAP", "1")
+        monkeypatch.setenv(
+            "EVOLVER_CONFIG",
+            '{"trigger_max_cycles_per_day":2,"trigger_per_pattern_cap":1}',
+        )
 
         budget = DailyBudget()
         assert budget.max_cycles == 2
@@ -415,10 +418,11 @@ class TestAutoEvolutionRealReliableBeneficialE2E:
         )
 
         # =====================================================================
-        # ROUND 1: Harmful mutation -> Validation Failure -> Atomic Git Rollback
+        # ROUND 1: Harmful mutation -> Validation Failure -> Draft Preserved
         # =====================================================================
-        tick1 = await swarm_tick()
+        tick1 = await evolve_begin(hypothesis="Try constant return value in apply_discount")
         assert tick1["ok"] is True
+        assert tick1["fsm_state"] == "ACTIVE_RUN"
         selected_round1 = tick1["selected_gene"]["id"]
         assert selected_round1 == "gene_risky_opt"
 
@@ -445,13 +449,15 @@ class TestAutoEvolutionRealReliableBeneficialE2E:
                 "expected_checks_to_pass": ["pytest"],
             },
         }
-        sol1 = swarm_solidify(hypothesis=hyp1)
-        # Soft-default: validation failure soft-continues; harmful edit stays.
-        assert sol1["ok"] is True
-        assert sol1.get("severity") == "soft" or sol1.get("validation_soft_failed") is True
+        assert swarm_hypothesis(hyp1)["ok"] is True
+        sol1 = evolve_settle(summary="Try constant return value")
+        # v1.114.0: validation failure is an honest draft-preserving rejection;
+        # the harmful edit stays in place (workbench draft, no rollback).
+        assert sol1["ok"] is False
+        assert sol1.get("outcome") == "draft_preserved"
         assert "return -999.0" in target_file.read_text(encoding="utf-8")
 
-        # Soft success still writes an episode; attribution may be soft/success.
+        # A settled failure still writes an episode (回放即裁决).
         ep_list_1 = episode_record.list_episodes()
         assert len(ep_list_1) >= 1
         ep1_body = episode_record.load_episode(ep_list_1[0]["id"])
@@ -468,7 +474,12 @@ class TestAutoEvolutionRealReliableBeneficialE2E:
                 "content": rich_failure_text,
             },
         )
-        tick2 = await swarm_tick()
+        tick2 = await evolve_begin(
+            hypothesis=(
+                "Clamp rate to [0.0, 1.0] so out-of-range rates "
+                "do not produce negative or inflated prices"
+            )
+        )
         assert tick2["ok"] is True
         selected_round2 = tick2["selected_gene"]["id"]
         assert selected_round2 in ("gene_safe_repair", "gene_risky_opt")
@@ -531,8 +542,9 @@ class TestAutoEvolutionRealReliableBeneficialE2E:
         assert "discount_pkg/calc.py" in prop_res["files_changed"]
         assert target_file.read_text(encoding="utf-8") == beneficial_code
 
-        sol2 = swarm_solidify()
-        assert sol2["ok"] is True, f"Expected solidify to succeed, got: {sol2}"
+        sol2 = evolve_settle(summary="Clamped discount rate to [0.0, 1.0]")
+        assert sol2["ok"] is True, f"Expected evolve_settle to succeed, got: {sol2}"
+        assert sol2["fsm_state"] == "IDLE"
 
         # Verify EpisodeRecord 2 captured 'helped' attribution, matched prediction, and contrast
         ep_list_2 = episode_record.list_episodes()

@@ -117,9 +117,11 @@ def setup(*, copy_lessons: bool = True, copy_existing_state: bool = True) -> dic
 
 def is_test_environment() -> bool:
     """True when executing inside pytest or an isolated test harness."""
+    from evolver.config import get_config
+
     if os.environ.get("PYTEST_CURRENT_TEST"):
         return True
-    if os.environ.get("EVOLVER_TEST_MODE") in {"1", "true", "yes"}:
+    if get_config().test_mode:
         return True
     return os.environ.get("EVOLVER_NO_PARENT_GIT") == "1"
 
@@ -134,9 +136,11 @@ def maybe_route_to_soak(
     演进方案.md §11.4 P1 #4: When evolver is executed in a product git worktree
     and not in a test environment, daemon/swarm/mcp writes must not dirty the
     git tree. Auto-route EVOLUTION_DIR and GEP_ASSETS_DIR to the external soak
-    layout. Bypassable via EVOLVER_SOAK_ALLOW_INSIDE=1.
+    layout. Bypassable via ``soak_allow_inside=true`` in ``EVOLVER_CONFIG``.
     """
-    if os.environ.get("EVOLVER_SOAK_ALLOW_INSIDE") in {"1", "true", "yes"} and not force:
+    from evolver.config import get_config
+
+    if get_config().soak_allow_inside and not force:
         return {"routed": False, "reason": "bypassed_by_env"}
 
     if not force and is_test_environment():
@@ -165,7 +169,7 @@ def maybe_route_to_soak(
     warn_msg = (
         f"[soak] Notice: in-repo runtime detected (inside_repo=True). "
         f"Auto-routed EVOLUTION_DIR and GEP_ASSETS_DIR to {root} "
-        f"(set EVOLVER_SOAK_ALLOW_INSIDE=1 to bypass)."
+        f"(set soak_allow_inside=true in EVOLVER_CONFIG to bypass)."
     )
     logger.warning(warn_msg)
     print(warn_msg, file=sys.stderr)

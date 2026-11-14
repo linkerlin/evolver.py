@@ -62,12 +62,12 @@ class TestSecretLeaks:
 
 class TestRollbackSafety:
     def test_hard_reset_warning(self, monkeypatch):
-        monkeypatch.setenv("EVOLVER_ROLLBACK_MODE", "hard")
+        monkeypatch.setenv("EVOLVER_CONFIG", '{"rollback_mode":"hard"}')
         report = check_policy(changed_files=[], untracked_files=["new_file.py"])
         assert any(v.rule == "rollback_hard_untracked" for v in report.violations)
 
     def test_none_mode_warning(self, monkeypatch):
-        monkeypatch.setenv("EVOLVER_ROLLBACK_MODE", "none")
+        monkeypatch.setenv("EVOLVER_CONFIG", '{"rollback_mode":"none"}')
         report = check_policy(changed_files=[], untracked_files=[])
         assert any(v.rule == "rollback_mode_none" for v in report.violations)
 

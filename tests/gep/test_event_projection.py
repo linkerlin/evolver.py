@@ -6,13 +6,11 @@ from pathlib import Path
 
 import pytest
 
-from evolver.gep import mutation as mutation_mod
 from evolver.gep.event_projection import (
     augment_gene_stats,
     load_projections,
     project_events,
     rebuild_projections,
-    scored_category_window,
 )
 
 
@@ -96,33 +94,6 @@ class TestRebuildRoundTrip:
 
     def test_load_missing_returns_none(self, temp_workspace: Path) -> None:
         assert load_projections() is None
-
-
-class TestOperatorBanditWiring:
-    def test_window_matches_inline_scan(self, temp_workspace: Path) -> None:
-        """Projection path must be byte-equivalent with the historical scan."""
-        from evolver.gep.asset_store import append_event_jsonl
-        from evolver.gep.feature_flags import invalidate_cache
-
-        append_event_jsonl(_evt("r1", category="repair", score=1.0))
-        append_event_jsonl(_evt("r2", category="optimize", score=0.25))
-        append_event_jsonl(_evt("r3", category="repair", score=0.5))
-
-        invalidate_cache()
-        stats = scored_category_window(window=50)
-        assert stats["repair"] == {"attempts": 2.0, "score_sum": 1.5}
-        assert stats["optimize"] == {"attempts": 1.0, "score_sum": 0.25}
-
-        # Flag-gated consumer path returns identical aggregates.
-        from evolver.gep.feature_flags import set_flag
-
-        try:
-            set_flag("enable_event_projection", True)
-            invalidate_cache()
-            assert mutation_mod._category_stats() == stats
-        finally:
-            set_flag("enable_event_projection", False)
-            invalidate_cache()
 
 
 class TestSelfHealingCache:

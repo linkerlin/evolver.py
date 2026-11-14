@@ -20,7 +20,7 @@ def isolated_evolver_env(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
     monkeypatch.setenv("OPENCLAW_WORKSPACE", str(tmp_path))
     monkeypatch.setenv("EVOLVER_USER_LOCK", str(tmp_path / "user.lock"))
     # Keep progress ticker from sleeping 60s in short tests.
-    monkeypatch.setenv("EVOLVER_PROGRESS_UPDATE_MS", "1000")
+    monkeypatch.setenv("EVOLVER_CONFIG", '{"progress_update_ms":1000,"quiet_legacy_warning":true}')
     yield tmp_path
 
 

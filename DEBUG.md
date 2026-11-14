@@ -1307,3 +1307,17 @@
 - **根因**：快跳过只比 `mtime_ns` 与 `size`。相同字节的重写若 mtime 没留下变化，就走不到全文哈希备忘。同长度的真改写也会被这道比较吞掉。GitHub CI 的 ext4 会在写入时推进 mtime，所以这条测试在那边是绿的。
 - **修复**：快跳过同时要求 `full_hash` 与水印一致。大小与 mtime 没变但字节变了，走全量重扫。相同字节且 mtime 已经不同，仍是 `rewrite_noop`，不追加记录。测试在重写之后再 touch，避免「写入把 touch 撤掉」让用例没走到备忘路径。
 - **经验**：**mtime 不是内容。** 快跳过可以省读盘，但不能在哈希已经算出来之后还只信时间戳。
+
+### 80. L0 闪电验证在 1.2s 内跑完，结算总耗时却被 `gate_or_none` 全仓 T0 重跑拖到数分钟（P1-3，已修）
+
+- **症状**：`solidify.py` 接入 `gep/import_graph.py` 后，L0 闪电门（改动文件 `ruff` + 反向依赖关联 `pytest`）本身仅耗时 `< 2s`，但在本仓或带验收钩子环境下调用 `evolve_settle` 总耗时仍飙升至数十秒乃至数百秒，突破 `< 3s` 闪电验证预算。
+- **根因**：`solidify()` 在级联/闪电验证通过后，无条件调用 `acceptance/solidify_hook.py::gate_or_none()`，后者默认拉起子进程跑全仓 T0 契约套件，把 L0 省下的时间全数吃回。此外，未显式隔离 `EVOLVER_HOME` 的测试会意外读到宿主机全局 `~/.evomap/anchor/bench/charter-pack.tasks.json`，触发跨工作区冻结包评分。
+- **修复**：当 `resolved_tier == "L0"`（非高危验证面改动）时，跳过同步全仓 `gate_or_none` T0 重跑，将跨模块回归审计交由晋升后的异步隔离 `eval_worktree` L1 守护门执行；一旦触及高危验证面（自动升 L2），仍跑完整同步 T0 与仓外 Anchor。测试夹具同步隔离 `EVOLVER_HOME`。
+- **经验**：**快路径的延迟上限由整条同步调用链上最慢的一环决定。** 只加速前半段测试命令、不审视后半段钩子是否重跑全仓套件，快路径在真实结算中形同虚设。
+
+### 81. `evolver init` 写完宿主配置与 Hooks 后弄脏用户仓库 `git status`（P0-1 易用性，已修）
+
+- **症状**：新用户在干净的业务 Git 仓库运行 `evolver init`，自动注入 `.mcp.json`、`.cursor/mcp.json`、`.claude/settings.local.json` 并调用 `install_hooks` 后，`git status` 立刻多出一串未跟踪配置文件及被追加段落的已跟踪 `AGENTS.md` / `CLAUDE.md`，不仅制造提交噪音，还会干扰后续周期的 `dirty_files` 归因。
+- **根因**：宿主配置必须落在工作区根目录才能被对应 IDE 识别，但它们属于本机开发工具接线而非业务源码；同时 `install_hooks` 历史上默认 `inject_docs=True`，直接向用户仓库已跟踪文档追加片段，且旧适配器模板里还残留了早已不存在的 `gep_recall` / `gep_record_outcome` 幻影工具名。
+- **修复**：`evolver init` 仅在新建/更新本机未跟踪 IDE 配置文件时将其路径幂等写入 `.git/info/exclude`（不篡改项目共享 `.gitignore`），已纳入 Git 跟踪的配置则保持不动；`init` 调用 `install_hooks(..., inject_docs=False)` 绝不触碰用户文档；全量清理 5 个 IDE 适配器中的幻影工具引用。
+- **经验**：**零干预开箱的第一铁律是不弄脏用户的 `git status`。** 本机 IDE 接线归 `.git/info/exclude`，引擎运行态归 `~/.evolver/workspaces/<id>/`，工作区源码树只留用户真正想提交的代码。

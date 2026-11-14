@@ -354,6 +354,57 @@ def load_session_runs() -> list[dict[str, Any]]:
     return runs
 
 
+def process_blackbox_panel(
+    events: list[dict[str, Any]],
+    blackbox_rows: list[dict[str, Any]] | None = None,
+) -> dict[str, Any]:
+    """In-band cycle-boundary blackbox telemetry panel (算子即基因 P1-2).
+
+    Reports 100% engine-recorded process metrics across ``evolve_begin`` <->
+    ``evolve_settle`` without requiring any external HTTP relay proxy.
+    """
+    rows = [r for r in (blackbox_rows or []) if isinstance(r, dict)]
+    total_recorded = len(rows)
+    event_ids = {str(e.get("id") or "") for e in events if isinstance(e, dict) and e.get("id")}
+    matched_events = sum(1 for r in rows if str(r.get("event_id") or "") in event_ids)
+    denom = len(event_ids) if event_ids else total_recorded
+    coverage_rate = (
+        round(min(1.0, (matched_events if event_ids else total_recorded) / denom), 3)
+        if denom > 0
+        else None
+    )
+
+    lens_rounds = sum(1 for r in rows if int(r.get("lens_calls_count") or 0) > 0)
+    wall_times = [
+        int(r["wall_time_ms"])
+        for r in rows
+        if isinstance(r.get("wall_time_ms"), int | float) and int(r["wall_time_ms"]) >= 0
+    ]
+    checks_total = sum(
+        int((r.get("validation") or {}).get("checks_total") or 0)
+        for r in rows
+        if isinstance(r.get("validation"), dict)
+    )
+    checks_passed = sum(
+        int((r.get("validation") or {}).get("checks_passed") or 0)
+        for r in rows
+        if isinstance(r.get("validation"), dict)
+    )
+    promoted = sum(1 for r in rows if r.get("outcome_ok") is True)
+
+    return {
+        "recorded_rounds": total_recorded,
+        "coverage_rate": coverage_rate,
+        "lens_call_rounds": lens_rounds,
+        "lens_call_rate": (round(lens_rounds / total_recorded, 3) if total_recorded else None),
+        "mean_wall_time_ms": (round(sum(wall_times) / len(wall_times)) if wall_times else None),
+        "check_pass_rate": (round(checks_passed / checks_total, 3) if checks_total else None),
+        "promoted_rounds": promoted,
+        "proxy_required": False,
+        "source": "engine_blackbox",
+    }
+
+
 def build_meta_report(
     events: list[dict[str, Any]],
     feedback: list[dict[str, Any]] | None = None,
@@ -362,6 +413,7 @@ def build_meta_report(
     sessions: list[dict[str, Any]] | None = None,
     inspect_calls: list[dict[str, Any]] | None = None,
     library_entries: list[dict[str, Any]] | None = None,
+    blackbox_rows: list[dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
     """Aggregate the improvement-mechanism panel. Read-only.
 
@@ -547,6 +599,7 @@ def build_meta_report(
             },
             "library_provenance": library_provenance_panel(events, library_entries),
             "improver_tools": _improver_tool_panel(episodes or [], inspect_calls or []),
+            "process_blackbox": process_blackbox_panel(events, blackbox_rows),
             "cost": cost_panel,
             "rere": rere_panel(sessions),
         },
@@ -580,5 +633,6 @@ __all__ = [
     "library_provenance_panel",
     "load_feedback_events",
     "load_session_runs",
+    "process_blackbox_panel",
     "rere_panel",
 ]

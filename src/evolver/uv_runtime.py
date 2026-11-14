@@ -70,6 +70,23 @@ def find_project_root(start: Path | str | None = None) -> Path | None:
     return None
 
 
+def find_evolver_root() -> Path | None:
+    """Return the evolver source checkout root when running from an editable/source tree.
+
+    Unlike :func:`find_project_root`, this never mistakes a target user
+    repository's ``pyproject.toml`` for evolver's own ``uv --project`` root.
+    """
+    try:
+        candidate = Path(__file__).resolve().parents[2]
+    except (IndexError, OSError, RuntimeError):
+        return None
+    if (candidate / "pyproject.toml").is_file() and (
+        candidate / "src" / "evolver" / "__init__.py"
+    ).is_file():
+        return candidate
+    return None
+
+
 def _python_module_cmd(args: list[str]) -> list[str]:
     return [sys.executable, "-m", "evolver", *args]
 
@@ -230,7 +247,14 @@ def describe_launcher() -> dict[str, str | bool | None]:
 
 def hook_command_string(module: str, *, cwd: Path | str | None = None) -> str:
     """Shell command string for IDE hooks (forward-slash paths on Windows)."""
-    argv = build_module_command(module, cwd=cwd)
+    if cwd is not None:
+        argv = build_module_command(module, cwd=cwd)
+    else:
+        evolver_root = find_evolver_root()
+        if evolver_root is not None or resolve_launcher_kind() != "auto":
+            argv = build_module_command(module, cwd=evolver_root)
+        else:
+            argv = build_module_command(module, launcher="python")
     # Quote nothing extra for simple tokens; replace backslashes for JSON configs.
     parts = [p.replace("\\", "/") for p in argv]
     return " ".join(parts)
@@ -242,6 +266,7 @@ __all__ = [
     "build_loop_command",
     "build_module_command",
     "describe_launcher",
+    "find_evolver_root",
     "find_project_root",
     "hook_command_string",
     "is_uv_managed_cmdline",

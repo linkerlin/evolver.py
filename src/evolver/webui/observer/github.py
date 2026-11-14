@@ -6,7 +6,7 @@ Ports ``evolver/src/webui/observer/github.js``:
 2. GitHub REST ``/repos/{slug}/pulls/{n}`` — fallback when ``gh`` is missing
    or cannot answer.
 3. Negative + positive cache with TTL; never throws on lookup failure.
-4. ``EVOLVER_WEBUI_GITHUB=0`` short-circuits the feature.
+4. ``webui_github=false`` in ``EVOLVER_CONFIG`` short-circuits the feature.
 """
 
 # Module-level caches mirror Node (Map + slug latch); intentional globals.
@@ -49,7 +49,9 @@ def _now_ms() -> float:
 
 
 def is_feature_enabled() -> bool:
-    return str(os.environ.get("EVOLVER_WEBUI_GITHUB") or "1").strip() != "0"
+    from evolver.config import get_config
+
+    return get_config().webui_github
 
 
 def _get_ttl_ms() -> int:
@@ -99,10 +101,12 @@ def parse_slug_from_remote(url: Any) -> str | None:
 
 
 def _resolve_repo_slug() -> str | None:
+    from evolver.config import get_config
+
     global _slug_cache
     if _slug_cache is not ...:
         return _slug_cache  # type: ignore[return-value]
-    env_slug = str(os.environ.get("EVOLVER_GITHUB_REPO") or "").strip()
+    env_slug = str(get_config().github_repo or "").strip()
     if env_slug:
         _slug_cache = env_slug
         return env_slug

@@ -13,7 +13,7 @@ Security model
 6. **Network isolation** (Linux only): best-effort via ``unshare`` or
    restricted user. Windows falls back to process-level isolation.
 7. **Fail-closed refusal** (Sprint 24.3): with
-   ``EVOLVER_SANDBOX_REQUIRE_ISOLATION=1`` scripts are refused outright
+   ``sandbox_require_isolation=true`` scripts are refused outright
    unless a network namespace is actually available — mirroring Node v2's
    "unavailable isolation = refuse" sandbox posture.
 
@@ -116,8 +116,6 @@ class SandboxResult:
     elapsed_ms: float
     refused: bool = False
 
-
-ENV_REQUIRE_ISOLATION = "EVOLVER_SANDBOX_REQUIRE_ISOLATION"
 
 _isolation_available: bool | None = None
 
@@ -242,8 +240,10 @@ def assert_node_command_safe(executable: str, args: list[str]) -> None:
 
 def _validate_script(content: str) -> None:
     """Raise ``ValueError`` if *content* contains dangerous patterns."""
+    from evolver.config import get_config
+
     lower = content.lower()
-    if os.environ.get("EVOLVER_SANDBOX_STRICT", "").strip().lower() in ("1", "true", "yes"):
+    if get_config().sandbox_strict:
         for pattern in ("import socket", "import urllib", "import requests", "import httpx"):
             if pattern in lower:
                 raise ValueError(f"Network import blocked in strict sandbox: {pattern}")
@@ -318,15 +318,17 @@ def execute_in_sandbox(
     Returns :class:`SandboxResult` with stdout, stderr, exit code, and
     timing information.
     """
+    from evolver.config import get_config
+
     timeout = timeout_seconds or DEFAULT_TIMEOUT
     if timeout <= 0:
         timeout = DEFAULT_TIMEOUT
 
     # Sprint 24.3 (fail-closed, Node v2 verify/sandboxRunner.js posture:
     # "unavailable isolation = refuse, never run un-isolated"). When
-    # EVOLVER_SANDBOX_REQUIRE_ISOLATION is set, scripts are refused unless a
+    # sandbox_require_isolation is set, scripts are refused unless a
     # real network namespace is available — no silent best-effort downgrade.
-    if _env_flag(ENV_REQUIRE_ISOLATION) and not network_isolation_available():
+    if get_config().sandbox_require_isolation and not network_isolation_available():
         logger.warning("[Sandbox] isolation required but unavailable — refusing to execute")
         return SandboxResult(
             exit_code=-1,

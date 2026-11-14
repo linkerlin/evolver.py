@@ -81,11 +81,14 @@ def test_repair_hard_reset(git_repo: Path, monkeypatch: pytest.MonkeyPatch) -> N
     assert "hard_reset_to_origin" in report.actions or any("reset" in a for a in report.actions)
 
 
-def test_env_force_reset() -> None:
+def test_env_force_reset(monkeypatch: pytest.MonkeyPatch) -> None:
     assert self_repair._env_force_reset() is False
-    os.environ["EVOLVER_SELF_REPAIR_HARD_RESET"] = "1"
+    monkeypatch.setenv(
+        "EVOLVER_CONFIG", '{"self_repair_hard_reset":true,"quiet_legacy_warning":true}'
+    )
     assert self_repair._env_force_reset() is True
-    del os.environ["EVOLVER_SELF_REPAIR_HARD_RESET"]
+    monkeypatch.setenv("EVOLVER_CONFIG", '{"quiet_legacy_warning":true}')
+    assert self_repair._env_force_reset() is False
 
 
 def test_repair_report_ok_property() -> None:

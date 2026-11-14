@@ -1,4 +1,4 @@
-"""Tests for status/boot dual-path copy reflecting soft-accept state."""
+"""Tests for status & FSM phase mapping across IDLE and ACTIVE_RUN."""
 
 from __future__ import annotations
 
@@ -6,91 +6,78 @@ import json
 from pathlib import Path
 
 
-def test_status_pending_false_after_cleared(tmp_path: Path, monkeypatch) -> None:
-    """Status shows pending_solidify=False when last_solidify matches last_run."""
+def test_status_idle_after_settled(tmp_path: Path, monkeypatch) -> None:
+    """Status shows pending_solidify=False and fsm_state='IDLE' when settled."""
     from evolver.gep.paths import get_solidify_state_path
-    from evolver.swarm import swarm_status
+    from evolver.swarm import evolve_status, swarm_status
 
     monkeypatch.setenv("EVOLVER_REPO_ROOT", str(tmp_path))
     monkeypatch.setenv("EVOLUTION_DIR", str(tmp_path / "evolution"))
     (tmp_path / "evolution").mkdir(parents=True)
 
-    # Setup state with matching run_ids (pending cleared)
     state_path = get_solidify_state_path()
     state_path.parent.mkdir(parents=True, exist_ok=True)
     state = {
         "last_run": {"run_id": "run_completed"},
         "last_solidify": {"run_id": "run_completed", "outcome": "success"},
     }
-    state_path.write_text(json.dumps(state))
+    state_path.write_text(json.dumps(state), encoding="utf-8")
 
     status = swarm_status()
     assert status["ok"] is True
     assert status["pending_solidify"] is False
+    assert status["fsm_state"] == "IDLE"
+
+    ev = evolve_status()
+    assert ev["ok"] is True
+    assert ev["fsm_state"] == "IDLE"
+    assert ev["next_action"] == "evolve_begin"
 
 
-def test_status_pending_true_before_solidify(tmp_path: Path, monkeypatch) -> None:
-    """Status shows pending_solidify=True when run is unsaved."""
+def test_status_active_run_before_settle(tmp_path: Path, monkeypatch) -> None:
+    """Status shows pending_solidify=True and fsm_state='ACTIVE_RUN' when run is open."""
     from evolver.gep.paths import get_solidify_state_path
-    from evolver.swarm import swarm_status
+    from evolver.swarm import evolve_status, swarm_status
 
     monkeypatch.setenv("EVOLVER_REPO_ROOT", str(tmp_path))
     monkeypatch.setenv("EVOLUTION_DIR", str(tmp_path / "evolution"))
     (tmp_path / "evolution").mkdir(parents=True)
 
-    # Setup state with different run_ids (pending)
     state_path = get_solidify_state_path()
     state_path.parent.mkdir(parents=True, exist_ok=True)
     state = {
         "last_run": {"run_id": "run_new"},
         "last_solidify": {"run_id": "run_old"},
     }
-    state_path.write_text(json.dumps(state))
+    state_path.write_text(json.dumps(state), encoding="utf-8")
 
     status = swarm_status()
     assert status["ok"] is True
     assert status["pending_solidify"] is True
+    assert status["fsm_state"] == "ACTIVE_RUN"
+
+    ev = evolve_status()
+    assert ev["fsm_state"] == "ACTIVE_RUN"
+    assert ev["next_action"] == "evolve_settle"
 
 
-def test_boot_reflects_pending_state(tmp_path: Path, monkeypatch) -> None:
-    """Boot includes state with correct pending_solidify value."""
-    from evolver.gep.paths import get_solidify_state_path
-    from evolver.swarm import swarm_boot
-
-    monkeypatch.setenv("EVOLVER_REPO_ROOT", str(tmp_path))
-    monkeypatch.setenv("EVOLUTION_DIR", str(tmp_path / "evolution"))
-    (tmp_path / "evolution").mkdir(parents=True)
-
-    # No pending state
-    state_path = get_solidify_state_path()
-    state_path.parent.mkdir(parents=True, exist_ok=True)
-    if state_path.exists():
-        state_path.unlink()
-
-    boot = swarm_boot(agent_name="test")
-    assert boot["ok"] is True
-    assert "state" in boot
-    assert boot["state"]["pending_solidify"] is False
-
-
-def test_status_includes_soft_warnings_concept(tmp_path: Path, monkeypatch) -> None:
-    """Status could include last soft-accept warnings (conceptual).
-
-    This is a forward-looking test. The current implementation doesn't
-    explicitly track last_soft_accept warnings in status, but the mechanism
-    is in place via events.jsonl. If needed, status could read the last
-    event and include soft_warnings.
-    """
-    from evolver.swarm import swarm_status
+def test_evolve_status_core_fields(tmp_path: Path, monkeypatch) -> None:
+    """evolve_status exposes zero-jargon health fields alongside FSM metadata."""
+    from evolver.swarm import evolve_status
 
     monkeypatch.setenv("EVOLVER_REPO_ROOT", str(tmp_path))
     monkeypatch.setenv("EVOLUTION_DIR", str(tmp_path / "evolution"))
     (tmp_path / "evolution").mkdir(parents=True)
 
-    status = swarm_status()
-    assert status["ok"] is True
-    # Status always has these core fields
-    assert "version" in status
-    assert "pending_solidify" in status
-    assert "genes" in status
-    assert "capsules" in status
+    st = evolve_status()
+    assert st["ok"] is True
+    for key in (
+        "version",
+        "fsm_state",
+        "allowed_tools",
+        "vault_operators",
+        "vault_capsules",
+        "workbench_drafts",
+        "available_lenses",
+    ):
+        assert key in st

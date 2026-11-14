@@ -32,7 +32,7 @@ async def test_collect_heartbeat_signals_merges_sources(
 async def test_handle_signals_runs_auto_buyer(
     temp_workspace: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    monkeypatch.setenv("EVOLVER_ATP_AUTOBUY", "1")
+    monkeypatch.setenv("EVOLVER_CONFIG", '{"atp_autobuy":"1"}')
     monkeypatch.setattr(auto_buyer, "get_memory_dir", lambda: temp_workspace)
     mock_tick = AsyncMock(return_value={"ok": True, "placed": 1, "orders": []})
     monkeypatch.setattr(auto_buyer, "run_tick", mock_tick)

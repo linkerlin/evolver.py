@@ -131,7 +131,7 @@ class TestApplyUpdate:
 
 class TestForceUpdateDisabled:
     def test_disabled_by_default(self, monkeypatch):
-        monkeypatch.delenv("EVOLVER_FORCE_UPDATE", raising=False)
+        monkeypatch.setenv("EVOLVER_CONFIG", '{"quiet_legacy_warning":true}')
         monkeypatch.delenv("CI", raising=False)
 
         result = force_update(current_version="1.0.0")

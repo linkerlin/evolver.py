@@ -93,7 +93,9 @@ class TestTlsEnforcement:
         assert len(result["warnings"]) > 0
 
     def test_http_rejected_in_production(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        monkeypatch.setenv("EVOLVER_ENV", "production")
+        monkeypatch.setenv(
+            "EVOLVER_CONFIG", '{"env_mode":"production","quiet_legacy_warning":true}'
+        )
         result = LifecycleManager.enforce_tls("http://evomap.ai")
         assert result["ok"] is False
 

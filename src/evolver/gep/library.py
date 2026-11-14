@@ -212,7 +212,9 @@ def publish(
     }
 
 
-def establish_parent_library(payload: dict[str, Any]) -> dict[str, Any]:
+def establish_parent_library(
+    payload: dict[str, Any], *, allow_move: bool = False
+) -> dict[str, Any]:
     """The Parent library's first-write — the content twin of
     ``establish_parent_baseline``.
 
@@ -222,17 +224,48 @@ def establish_parent_library(payload: dict[str, Any]) -> dict[str, Any]:
     Accept-only, so the human first-write and an Accept never share a path;
     ``solidify`` cannot reach this function (pinned by test). Solves load
     the result by id via :func:`load_version`; ``active`` is untouched by
-    construction. Re-establishing with different content is a human CLI
-    decision that moves the Parent pointer — the previous id is returned
-    and the old snapshot stays stored (versions are never deleted).
+    construction.
+
+    Pointer moves (re-establishing with DIFFERENT content) are a human CLI
+    decision: callers must pass ``allow_move=True`` explicitly. Automatic
+    surfaces (``evolver init`` bootstrap, tool calls) get an honest refusal
+    instead — first-write exclusive, idempotent on identical content.
+    Versions are never deleted; ``previous`` names the moved-from snapshot.
     """
     stored = save_version(payload)
     snap = str(stored["snapshot"])
     with with_file_lock(target_path=library_dir()):
         previous = parent_snapshot_id()
+        if previous is not None and previous != snap and not allow_move:
+            return {
+                "ok": False,
+                "reason": "parent_pointer_move_refused",
+                "snapshot": snap,
+                "previous": previous,
+                "hint": (
+                    "a Parent of-record already exists with different content; "
+                    "re-establishing it is a human CLI decision "
+                    "(evolver library establish-parent --from=... --allow-move)"
+                ),
+            }
         path = parent_path()
         path.parent.mkdir(parents=True, exist_ok=True)
-        atomic_write_json(path, {"format": LIBRARY_FORMAT, "snapshot": snap})
+        body = {"format": LIBRARY_FORMAT, "snapshot": snap}
+        if previous is None and not allow_move:
+            try:
+                with path.open("x", encoding="utf-8") as fh:
+                    fh.write(json.dumps(body, ensure_ascii=False, indent=2) + "\n")
+            except FileExistsError:
+                raced = parent_snapshot_id()
+                if raced is not None and raced != snap:
+                    return {
+                        "ok": False,
+                        "reason": "parent_pointer_move_refused",
+                        "snapshot": snap,
+                        "previous": raced,
+                    }
+        else:
+            atomic_write_json(path, body)
     stored_already = str(stored["reason"]) == "already_stored"
     return {
         "ok": True,

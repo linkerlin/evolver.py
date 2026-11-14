@@ -9,7 +9,7 @@ from evolver.gep.self_report import SelfReport
 
 def test_self_report_no_write_preserves_governance_files(temp_workspace, monkeypatch):
     """Port of md2video test_self_report_no_write_preserves_governance_files."""
-    monkeypatch.setenv("EVOLVER_AUTOPOIESIS_WRITE", "0")
+    monkeypatch.setenv("EVOLVER_CONFIG", '{"autopoiesis_write":false}')
     gep = temp_workspace / ".evolver" / "gep"
     gep.mkdir(parents=True, exist_ok=True)
     evolution = temp_workspace / "memory" / "evolution"

@@ -23,9 +23,9 @@ class TestEnvLayer:
         assert is_enabled("enable_auto_buyer") is False
 
     def test_env_no_override(self, monkeypatch):
-        monkeypatch.delenv("EVOLVER_FF_ENABLE_AUTO_BUYER", raising=False)
+        monkeypatch.delenv("EVOLVER_FF_ENABLE_IDLE_SCHEDULER", raising=False)
         # Falls through to disk/default
-        assert is_enabled("enable_auto_buyer") == DEFAULT_FLAGS["enable_auto_buyer"]
+        assert is_enabled("enable_idle_scheduler") == DEFAULT_FLAGS["enable_idle_scheduler"]
 
 
 class TestDiskLayer:
@@ -68,9 +68,9 @@ class TestGetAllFlags:
 class TestReset:
     def test_reset_to_defaults(self, tmp_path):
         with patch("evolver.gep.feature_flags._get_config_dir", return_value=tmp_path):
-            set_flag("enable_auto_buyer", True)
+            set_flag("enable_idle_scheduler", True)
             reset_to_defaults()
-            assert is_enabled("enable_auto_buyer") == DEFAULT_FLAGS["enable_auto_buyer"]
+            assert is_enabled("enable_idle_scheduler") == DEFAULT_FLAGS["enable_idle_scheduler"]
 
 
 class TestDefaultFlags:

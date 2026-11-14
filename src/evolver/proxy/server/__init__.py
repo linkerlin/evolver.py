@@ -38,12 +38,9 @@ logger = logging.getLogger(__name__)
 
 
 def _lifecycle_enabled() -> bool:
-    return os.environ.get("EVOLVER_PROXY_LIFECYCLE", "1").strip().lower() not in (
-        "0",
-        "false",
-        "no",
-        "off",
-    )
+    from evolver.config import get_config
+
+    return get_config().proxy_lifecycle
 
 
 @asynccontextmanager

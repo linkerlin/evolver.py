@@ -49,35 +49,12 @@ async def run_post_cycle_hooks(ctx: dict[str, Any]) -> dict[str, Any]:
     if not signals:
         return ctx
 
-    from evolver.gep.feature_flags import is_enabled
     from evolver.solo.breaker import is_solo_active
 
     # Solo "禁ATP": cut auto-spend and task pickup at the in-cycle path even if
     # the user forced ATP on (the startup path already overrode the env).
-    if not is_solo_active() and is_enabled("enable_auto_buyer"):
-        try:
-            from evolver.atp import auto_buyer
-            from evolver.gep.idempotency import once
-
-            consent = auto_buyer.get_consent()
-            # Sprint 24.5: a retried cycle must not double-fire the
-            # money-touching tick (Node v2 daemon/idempotency.js semantics).
-            # No cycle identity → no safe dedup key → run ungated.
-            dedup_id = str(ctx.get("cycle_id") or ctx.get("run_id") or "")
-            gated = (
-                consent is not None
-                and bool(consent.get("enabled"))
-                and (not dedup_id or once(dedup_id, "atp_auto_buyer_tick"))
-            )
-            if gated:
-                result = await auto_buyer.run_tick(signals)
-                ctx["atp_auto_buyer"] = result
-                if result.get("placed", 0) > 0:
-                    logger.info("[post_cycle] ATP auto-buyer placed %s order(s)", result["placed"])
-        except Exception as exc:
-            logger.warning("[post_cycle] ATP auto-buyer failed: %s", exc)
-            ctx["atp_auto_buyer_error"] = str(exc)
-
+    # (round-121 P0-4: enable_auto_buyer dead flag removed — auto-buy was never
+    # on by default; ATP auto-buyer remains reachable via its own CLI surface.)
     if not is_solo_active():
         try:
             from evolver.atp.atp_task_pickup import pick_one
@@ -87,25 +64,6 @@ async def run_post_cycle_hooks(ctx: dict[str, Any]) -> dict[str, Any]:
                 ctx["atp_spawn_instruction"] = spawn
                 _persist_atp_spawn(spawn)
                 logger.info("[post_cycle] ATP task pickup produced spawn instruction")
-                # Sprint 23.3 (P2-11 minimal): close the loop — emit the task
-                # to the host platform when bridge mode is active.
-                if ctx.get("bridge_enabled") and is_enabled("enable_atp_spawn_bridge"):
-                    try:
-                        from evolver.gep.bridge import render_sessions_spawn_call
-
-                        print(
-                            render_sessions_spawn_call(
-                                {
-                                    "task": spawn[:4000],
-                                    "agentId": ctx.get("AGENT_NAME", "main"),
-                                    "label": "atp_task",
-                                    "cleanup": "delete",
-                                }
-                            )
-                        )
-                        ctx["atp_spawn_emitted"] = True
-                    except Exception as exc:
-                        logger.debug("[post_cycle] ATP spawn emit skipped: %s", exc)
         except Exception as exc:
             logger.debug("[post_cycle] ATP task pickup skipped: %s", exc)
 

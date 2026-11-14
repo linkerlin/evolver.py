@@ -33,10 +33,15 @@ def _ack_path() -> Path:
 
 
 def get_consent() -> dict[str, Any] | None:
-    env = os.environ.get("EVOLVER_ATP_AUTOBUY", "").strip().lower()
-    if env in ("1", "true", "yes", "on"):
+    from evolver.config import get_config
+    from evolver.solo.breaker import is_solo_active
+
+    if is_solo_active():
+        return {"enabled": False, "source": "env"}
+    cfg_val = get_config().atp_autobuy.strip().lower()
+    if cfg_val in ("1", "true", "yes", "on"):
         return {"enabled": True, "source": "env"}
-    if env in ("0", "false", "no", "off"):
+    if cfg_val in ("0", "false", "no", "off"):
         return {"enabled": False, "source": "env"}
     p = _ack_path()
     if p.exists():

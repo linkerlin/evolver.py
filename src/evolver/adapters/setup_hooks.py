@@ -42,34 +42,21 @@ _VSCODE_SETTINGS = {
 
 _GENERIC_HOOK = """# Evolver IDE Hook
 
-This project uses `@evomap/evolver` for self-evolution.
+This project uses `evolver` for zero-touch self-evolution.
 
 ## Integration Checklist
-- [ ] Install evolver: `pip install evolver` or `uv add --dev evolver`
-- [ ] Run initial cycle: `evolver run`
-- [ ] Review `evolver review` before committing AI-generated changes
-- [ ] Keep `tests/` green — evolver respects test results as fitness signals
+- [ ] One-touch bootstrap: `evolver init`
+- [ ] Autopilot daemon: `evolver up`
+- [ ] Plain-language dashboard: `evolver status`
 
 ## Recommended IDE Configurations
 
 ### Cursor / Claude Code / Codex / Kiro / opencode
-Install runtime lifecycle hooks (session start, signal detect, session end):
-`evolver setup-hooks --platform=cursor|claude-code|codex|kiro|opencode`
-Verify opencode plugin: `evolver setup-hooks --platform=opencode --verify`
-Remove hooks: `evolver setup-hooks --platform=cursor --uninstall`
-
-### VS Code
-Update `.vscode/settings.json` with strict Python settings from:
-`evolver setup-hooks --platform=vscode`
-
-## Useful Aliases
-```bash
-alias evrun='uv run evolver run'
-alias evloop='uv run evolver --loop'
-alias evsol='uv run evolver solidify'
-alias evrev='uv run evolver review'
-alias evtest='uv run pytest tests/ -v'
-```
+`evolver init` configures MCP stdio + lifecycle hooks automatically.
+Manual hook management:
+`evolver internal setup-hooks --platform=cursor|claude-code|codex|kiro|opencode`
+Verify opencode plugin: `evolver internal setup-hooks --platform=opencode --verify`
+Remove hooks: `evolver internal setup-hooks --platform=cursor --uninstall`
 """
 
 
@@ -96,6 +83,7 @@ def _run_adapter_platform(
     dry_run: bool = False,
     uninstall: bool = False,
     verify: bool = False,
+    inject_docs: bool = True,
 ) -> dict[str, Any]:
     adapter = load_adapter(platform)
     if adapter is None:
@@ -139,7 +127,12 @@ def _run_adapter_platform(
     if uninstall:
         result = adapter.uninstall(config_root=config_root, evolver_root=evolver_root)
     else:
-        result = adapter.install(config_root=config_root, evolver_root=evolver_root, force=force)
+        result = adapter.install(
+            config_root=config_root,
+            evolver_root=evolver_root,
+            force=force,
+            inject_docs=inject_docs,
+        )
 
     return {
         "ok": bool(result.get("ok", True)),
@@ -194,6 +187,7 @@ def install_hooks(
     dry_run: bool = False,
     uninstall: bool = False,
     verify: bool = False,
+    inject_docs: bool = True,
 ) -> dict[str, Any]:
     """Install IDE hooks for the given platform.
 
@@ -233,6 +227,7 @@ def install_hooks(
             dry_run=dry_run,
             uninstall=uninstall,
             verify=verify,
+            inject_docs=inject_docs,
         )
 
     if uninstall or verify:

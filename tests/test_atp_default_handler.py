@@ -109,7 +109,9 @@ class TestGetAtpMode:
         ],
     )
     def test_modes(self, value: str, expected: str) -> None:
-        assert get_atp_mode({"EVOLVER_ATP": value}) == expected
+        import json
+
+        assert get_atp_mode({"EVOLVER_CONFIG": json.dumps({"atp": value})}) == expected
 
     def test_default(self) -> None:
         assert get_atp_mode({}) == "auto"

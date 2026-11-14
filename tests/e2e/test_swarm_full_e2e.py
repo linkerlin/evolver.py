@@ -1,20 +1,17 @@
-"""Full-coverage swarm E2E over real stdio MCP — two tiers.
+"""Full-coverage swarm E2E over real stdio MCP — two tiers (v1.114.0 FSM surface).
 
-Tier A (always runs): walks the ENTIRE MCP surface against a real server
-subprocess — every swarm tool, every classic tool, all four resources, the
-evolver_swarm prompt, the auto-hijack instruction invariance, HITL/HOTL flows,
-the skills bridge, and the invalid-enum error path. Two further tests close
-the loops added with the VISTA harness: the PreCompact hook and the MCP
-server share one checkpoint, and a settled round's prediction delta plus
-its truncated check output come back through episode_inspect and the next
-dispatch prompt.
+Tier A (always runs): walks the ENTIRE FSM-gated MCP surface against a real server
+subprocess — dynamic `IDLE` vs `ACTIVE_RUN` catalog gating with
+`notifications/tools/list_changed`, `evolve_status`, `evolve_begin` (preview +
+hypothesis lock), `run_lens` (read-only AST/impact/traceback diagnostics),
+`evolve_settle` (L0 lightning check, blackbox + immutable `episode_record`,
+`draft_preserved` vs `promoted`), all read-only auxiliary tools (`episode_get`,
+`episode_inspect`, `tool_asset_search`, `tool_asset_get`, `tool_cycle_timeline`),
+all four resources, the `evolver_swarm` prompt, PreCompact hook checkpoint
+interoperability, and structured invalid-argument handling.
 
-Tier B (@pytest.mark.llm, requires DEEPSEEK_API_KEY): a REAL LLM joins the
-loop — DeepSeek (deepseek-v4-flash) plays the host executor: it receives the
-GEP dispatch prompt from swarm_tick, produces work output + a valid Gene
-block, which flows through swarm_distill → swarm_feedback → a second tick.
-This validates the takeover contract end-to-end with an actual model, while
-keeping the engine itself LLM-free (the client lives in the test harness).
+Tier B (@pytest.mark.llm, requires DEEPSEEK_API_KEY): a REAL LLM joins the loop
+as the host executor driving `evolve_begin` -> edit -> `evolve_settle`.
 """
 
 from __future__ import annotations
@@ -24,11 +21,14 @@ import os
 import subprocess
 import sys
 import time
+from collections.abc import Iterator
 from pathlib import Path
 from typing import Any
 
 import httpx
 import pytest
+
+from tests.mcp_surface import MCP_ACTIVE_TOOL_NAMES, MCP_IDLE_TOOL_NAMES
 
 DEMO_SKILL_MD = """---
 name: demo-skill
@@ -39,11 +39,6 @@ description: Fix ImportError problems in Python imports quickly
 - step one
 - step two
 """
-
-
-# ---------------------------------------------------------------------------
-# Harness
-# ---------------------------------------------------------------------------
 
 
 def _workspace_env(ws: Path) -> dict[str, str]:
@@ -57,10 +52,7 @@ def _workspace_env(ws: Path) -> dict[str, str]:
             "EVOLVER_USER_LOCK": str(ws / "user.lock"),
             "A2A_HUB_URL": "http://127.0.0.1:9",
             "EVOLVE_LOAD_MAX": "999",
-            "EVOLVER_SKILL_ROOTS": str(ws / "skill-roots"),
             "EVOLVER_HOME": str(ws / ".evomap"),
-            # No frozen pack here; the surface walk needs ticks to run.
-            "EVOLVER_SWARM_GATE_HANDOFF": "hotl",
         }
     )
     return env
@@ -86,8 +78,7 @@ class _McpClient:
         )
         self._id = 0
         self.notifications: list[dict[str, Any]] = []
-        self.init_result: dict[str, Any] = {}
-        self.init_result = self.request(
+        self.init_result: dict[str, Any] = self.request(
             "initialize",
             {
                 "protocolVersion": "2025-06-18",
@@ -104,14 +95,6 @@ class _McpClient:
         self.proc.stdin.flush()
 
     def recv(self) -> dict[str, Any]:
-        """Read the next JSON-RPC response, skipping server notifications.
-
-        ``notifications/initialized`` is answered with
-        ``notifications/tools/list_changed``. That frame has no ``id``.
-        Treating it as the reply desynchronizes every later ``tools/call``
-        and ``prompts/get`` (they see a notification and KeyError on
-        ``result``).
-        """
         assert self.proc.stdout is not None
         while True:
             line = self.proc.stdout.readline()
@@ -130,11 +113,12 @@ class _McpClient:
         assert msg.get("id") == expected, msg
         return msg
 
+    def list_tool_names(self) -> list[str]:
+        res = self.request("tools/list")
+        return [t["name"] for t in res["result"]["tools"]]
+
     def call(self, name: str, args: dict[str, Any] | None = None) -> Any:
         result = self.request("tools/call", {"name": name, "arguments": args or {}})["result"]
-        # Prefer the MCP structured-output channel (the spec requires a
-        # top-level object, so the SDK wraps non-dict returns as
-        # {"result": ...}; content[].text only carries a list's first item).
         structured = result.get("structuredContent")
         if structured is not None:
             if isinstance(structured, dict) and set(structured) == {"result"}:
@@ -168,19 +152,19 @@ def e2e_ws(tmp_path: Path) -> Path:
     (ws / "README.md").write_text("# e2e workspace\n", encoding="utf-8")
     subprocess.run(["git", "add", "."], cwd=ws, check=True, capture_output=True)
     subprocess.run(
-        ["git", "commit", "-q", "-m", "init", "--allow-empty"],
+        ["git", "-c", "commit.gpgsign=false", "commit", "-q", "-m", "init", "--allow-empty"],
         cwd=ws,
         check=True,
         capture_output=True,
     )
-    skill = ws / "skill-roots" / "demo-skill"
+    skill = ws / ".claude" / "skills" / "demo-skill"
     skill.mkdir(parents=True)
     (skill / "SKILL.md").write_text(DEMO_SKILL_MD, encoding="utf-8")
     return ws
 
 
 @pytest.fixture
-def client(e2e_ws: Path) -> _McpClient:
+def client(e2e_ws: Path) -> Iterator[_McpClient]:
     c = _McpClient(e2e_ws)
     yield c
     c.close()
@@ -202,7 +186,7 @@ def _deepseek_chat(system: str, user: str, max_tokens: int = 4000) -> str:
         "max_tokens": max_tokens,
     }
     last_error: Exception | None = None
-    for attempt in range(2):  # transient API hiccups must not flake the e2e
+    for attempt in range(2):
         if attempt:
             time.sleep(2.0)
         try:
@@ -219,11 +203,18 @@ def _deepseek_chat(system: str, user: str, max_tokens: int = 4000) -> str:
     raise AssertionError(f"DeepSeek call failed after retries: {last_error!r}")
 
 
-_PASSING_TEST = """def test_add() -> None:
-    assert 1 + 1 == 2
+_PASSING_TEST = """from app import add
+
+
+def test_add() -> None:
+    assert add(1, 1) == 2
 """
 
-_LONG_FAILURE = """def test_long_failure() -> None:
+_LONG_FAILURE = """from app import add
+
+
+def test_long_failure() -> None:
+    assert add(1, 1) == 2
     print("\\n".join(f"diag-line-{i:03d}" for i in range(60)))
     print("TAIL-NEEDLE")
     raise AssertionError("compound case still broken")
@@ -235,6 +226,7 @@ version = "0.0.0"
 requires-python = ">=3.12"
 
 [tool.pytest.ini_options]
+pythonpath = ["src"]
 testpaths = ["tests"]
 """
 
@@ -254,17 +246,15 @@ def _commit_all(ws: Path, message: str) -> None:
 
 
 def _commit_python_project(ws: Path) -> None:
-    """A clean tree whose own checks pass, so the later edit is the mutation."""
     (ws / "pyproject.toml").write_text(_SANDBOX_PROJECT, encoding="utf-8")
-    (ws / "src").mkdir()
+    (ws / "src").mkdir(exist_ok=True)
     (ws / "src" / "app.py").write_text(_SANDBOX_APP, encoding="utf-8")
-    (ws / "tests").mkdir()
+    (ws / "tests").mkdir(exist_ok=True)
     (ws / "tests" / "test_app.py").write_text(_PASSING_TEST, encoding="utf-8")
     _commit_all(ws, "seed a passing project")
 
 
 def _run_precompact_hook(ws: Path) -> dict[str, Any]:
-    """The Claude hook as its own process, aimed at this workspace's state."""
     completed = subprocess.run(
         [sys.executable, "-m", "evolver.adapters.scripts.compact_checkpoint"],
         cwd=ws,
@@ -284,52 +274,40 @@ def _run_precompact_hook(ws: Path) -> dict[str, Any]:
 
 
 class TestFullSurfaceE2E:
-    def test_00_list_changed_does_not_desync_the_next_response(self, client: _McpClient) -> None:
-        """The post-initialize catalog notification is not a JSON-RPC result.
+    def test_00_list_changed_and_idle_catalog(self, client: _McpClient) -> None:
+        names = client.list_tool_names()
+        assert set(names) == set(MCP_IDLE_TOOL_NAMES)
+        assert "evolve_begin" in names
+        assert "run_lens" not in names
+        assert "evolve_settle" not in names
 
-        Handshake advertises ``tools.listChanged``. The server then emits
-        ``notifications/tools/list_changed``. The next ``tools/list`` and
-        ``prompts/get`` must still pair on ``id`` and carry ``result``.
-        """
-        tools = client.request("tools/list")
-        assert "result" in tools
-        assert tools["id"] == client._id
-        names = [tool["name"] for tool in tools["result"]["tools"]]
-        assert names.count("swarm_doctor") == 1
         prompt = client.request(
             "prompts/get",
             {"name": "evolver_swarm", "arguments": {"agent_name": "e2e-notify"}},
         )
         assert "result" in prompt
-        assert prompt["id"] == client._id
         assert "EVOLVER SWARM" in prompt["result"]["messages"][0]["content"]["text"]
         methods = {note.get("method") for note in client.notifications}
         assert "notifications/tools/list_changed" in methods
 
-    def test_01_boot_status_and_resources(self, client: _McpClient, e2e_ws: Path) -> None:
+    def test_01_status_resources_and_discovery_preview(
+        self, client: _McpClient, e2e_ws: Path
+    ) -> None:
+        _ = e2e_ws
         assert "EVOLVER SWARM" in client.init_result["result"]["instructions"]
+        assert len(client.init_result["result"]["instructions"]) < 600
 
-        boot = client.call("swarm_boot", {"agent_name": "e2e-worker"})
-        assert boot["ok"] is True
-        assert "EVOLVER SWARM" in boot["instrument_prompt"]
-        assert boot["next_action"] == "swarm_tick"
-        assert "gate_handoff: hotl" in boot["instrument_prompt"]
+        status = client.call("evolve_status", {})
+        assert status["ok"] is True
+        assert status["fsm_state"] == "IDLE"
+        assert status["allowed_tools"] == ["evolve_begin", "evolve_status"]
+        assert status["next_action"] == "evolve_begin"
 
-        status = client.call("swarm_status", {})
-        for key in ("version", "supervision", "hitl", "feedback", "mailbox_pending", "genes"):
-            assert key in status
-        assert status["session_claimed"] is True
-        assert status["agent_name"] == "e2e-worker"
-        assert status["source_revision"]
-        assert status["next_action"] == "swarm_tick"
-        assert status.get("severity") == "soft"
-        assert status.get("error") not in ("pack_absent", "no_baseline", "unmeasured")
-
-        doctor = client.call("swarm_doctor", {})
-        assert doctor["read_only"] is True
-        assert doctor["ok"] is True
-        assert doctor.get("error") not in ("pack_absent", "no_baseline", "unmeasured")
-        assert doctor["fixes"]
+        preview = client.call("evolve_begin", {"hypothesis": "", "auto_discover": True})
+        assert preview["ok"] is True
+        assert preview["discovery_only"] is True
+        assert preview["fsm_state"] == "IDLE"
+        assert "hypothesis_template" in preview
 
         for uri, needle in (
             ("evolver://status", '"ok"'),
@@ -342,384 +320,159 @@ class TestFullSurfaceE2E:
             if needle:
                 assert needle in text
 
-    def test_02_prompt_and_hooks(self, client: _McpClient, e2e_ws: Path) -> None:
-        got = client.request(
-            "prompts/get", {"name": "evolver_swarm", "arguments": {"agent_name": "e2e-prompt"}}
-        )
-        text = got["result"]["messages"][0]["content"]["text"]
-        assert "e2e-prompt" in text and "swarm_tick" in text
+    def test_02_auxiliary_asset_and_timeline_tools(
+        self, client: _McpClient, e2e_ws: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setenv("GEP_ASSETS_DIR", str(e2e_ws / "gep"))
+        monkeypatch.setenv("EVOLVER_REPO_ROOT", str(e2e_ws))
+        monkeypatch.setenv("OPENCLAW_WORKSPACE", str(e2e_ws))
+        from evolver.gep import skill_assets
 
-        hook = client.call(
-            "swarm_hook_event",
-            {"event": "signal_detect", "payload": {"content": "request timeout after retry"}},
-        )
-        assert "perf_bottleneck" in hook["detected_signals"]
-        pending = json.loads((e2e_ws / "gep" / "pending_signals.json").read_text())
-        assert "perf_bottleneck" in pending["signals"]
-
-    def test_03_skills_bridge_end_to_end(self, client: _McpClient, e2e_ws: Path) -> None:
-        scan = client.call("swarm_skills", {"action": "scan"})
-        assert any(s["name"] == "demo-skill" for s in scan["skills"])
-
-        dry = client.call("swarm_skills", {"action": "sync", "dry_run": True})
-        assert dry["dry_run"] is True
-
-        synced = client.call("swarm_skills", {"action": "sync"})
+        synced = skill_assets.sync_skills(dry_run=False)
         assert any(i["name"] == "demo-skill" for i in synced["installed"])
 
-        listed = client.call("swarm_skills", {"action": "list"})
-        assert any(g["skill_name"] == "demo-skill" for g in listed["genes"])
-
-        # The skill gene is searchable through the classic asset tools too.
         hits = client.call("tool_asset_search", {"query": "demo-skill"})
         assert hits["ok"] is True
         assert any(h.get("id") == "gene_distilled_s2g-demo-skill" for h in hits["items"])
+
         missed = client.call("tool_asset_search", {"query": "zzz_no_such_asset"})
         assert missed["ok"] is True and missed["items"] == [] and missed["hint"]
+
         one = client.call("tool_asset_get", {"asset_id": "gene_distilled_s2g-demo-skill"})
         assert one["type"] == "Gene"
 
-    def test_04_mailbox_and_events(self, client: _McpClient) -> None:
-        sent = client.call(
-            "tool_mailbox_send", {"type": "e2e.note", "payload": {"hi": 1}, "priority": "high"}
-        )
-        assert sent["status"] in ("pending", "queued", "new")
-        outbound = client.call("tool_mailbox_poll", {"direction": "outbound"})
-        assert outbound["ok"] is True
-        assert any(m["id"] == sent["message_id"] for m in outbound["items"])
-
-        # swarm_boot auto-acks this agent's pending swarm.hello (soft-default UX).
-        client.call("swarm_boot", {"agent_name": "e2e-mailbox"})
-        status = client.call("swarm_status", {})
-        pending = status.get("mailbox_pending") or {}
-        assert int(pending.get("unacked_hello") or 0) == 0
-        # Outbound send id is not an inbound ack target.
-        assert client.call("tool_mailbox_ack", {"message_ids": [sent["message_id"]]}) == 0
-
         timeline = client.call("tool_cycle_timeline", {})
         assert timeline["ok"] is True and timeline["items"] == [] and timeline["hint"]
-        views = client.call("tool_rebuild_views", {})
-        assert "event_count" in views and "cycles" in views
 
-    def test_05_tick_distill_and_gates(self, client: _McpClient) -> None:
-        tick = client.call("swarm_tick", {"agent_name": "e2e-worker"})
-        assert tick["ok"] is True
-        assert tick.get("paused") is not True
-        assert tick["dispatch_reason"] in ("dispatched", "idle_cycle", "no_gene_selected")
-        if tick["dispatch_reason"] == "dispatched":
-            assert "GENOME EVOLUTION PROTOCOL" in (tick["dispatch_prompt"] or "")
+    def test_03_fsm_begin_lens_settle_green_roundtrip(
+        self, client: _McpClient, e2e_ws: Path
+    ) -> None:
+        _commit_python_project(e2e_ws)
 
-        response = (
-            "Executed mutation. Extracted asset:\n```json\n"
-            '{"type": "Gene", "id": "gene_e2e_surface", "category": "repair", '
-            '"summary": "surface e2e gene", "signals_match": ["ImportError"]}\n'
-            "```\n"
-        )
-        distilled = client.call("swarm_distill", {"response_text": response})
-        assert distilled["ok"] is True and distilled["genes"] == 1
+        # Calling ACTIVE_RUN-only tool while IDLE returns structured fsm_state_mismatch
+        early_settle = client.call("evolve_settle", {"summary": "too early"})
+        assert early_settle["ok"] is False
+        assert early_settle["error"] == "fsm_state_mismatch"
+        assert early_settle["fsm_state"] == "IDLE"
 
-        # Solidify gate runs and returns a structured outcome either way
-        # (fresh repo, no real mutation → gate verdict, never a crash).
-        solidified = client.call("swarm_solidify", {})
-        assert isinstance(solidified, dict)
-        assert solidified.get("ok") is not None or solidified.get("error")
-
-        report = client.call(
-            "swarm_report", {"category": "friction", "description": "e2e", "resolution": "none"}
-        )
-        assert report["ok"] is True
-
-        # S29 mechanical proposal channel at the protocol level: a valid
-        # patch applies through validate-all-first; a hallucinated anchor is
-        # rejected with nothing written.
-        proposal = client.call(
-            "swarm_propose",
+        notif_before = len(client.notifications)
+        begun = client.call(
+            "evolve_begin",
             {
-                "proposal": {
-                    "action": "patch",
-                    "edits": [
-                        {
-                            "op": "append",
-                            "file": "e2e_notes.md",
-                            "content": "s29 applied end-to-end\n",
-                        }
-                    ],
-                }
-            },
-        )
-        assert proposal["ok"] is True, proposal
-        bad = client.call(
-            "swarm_propose",
-            {
-                "proposal": {
-                    "action": "patch",
-                    "edits": [
-                        {
-                            "op": "replace",
-                            "file": "e2e_notes.md",
-                            "target": "WILL_NOT_MATCH",
-                            "content": "x",
-                        }
-                    ],
-                }
-            },
-        )
-        assert bad["ok"] is False
-
-        feedback = client.call(
-            "swarm_feedback",
-            {
-                "primary_score": 0.2,
-                "textual_gradient": "surface e2e degraded on purpose",
+                "hypothesis": "Add subtract helper to app.py and cover with unit test",
+                "target_files": ["src/app.py"],
                 "agent_name": "e2e-worker",
             },
         )
-        assert feedback["degraded"] is True
+        assert begun["ok"] is True
+        assert begun["fsm_state"] == "ACTIVE_RUN"
+        assert begun["run_id"]
 
-    def test_06_hitl_and_supervision_flows(self, client: _McpClient) -> None:
-        # HITL mode=off: auto-approve journaled.
-        risky = client.call("swarm_solidify", {"skip_validation": True})
-        assert risky.get("error") != "hitl_pending"
+        # Catalog dynamically switched to ACTIVE_RUN and pushed list_changed
+        active_names = client.list_tool_names()
+        assert set(active_names) == set(MCP_ACTIVE_TOOL_NAMES)
+        assert len(client.notifications) > notif_before
 
-        approvals = client.call("swarm_approvals", {})
-        assert "pending" in approvals and "recent" in approvals
-        unknown = client.call(
-            "swarm_approval_resolve", {"request_id": "hitl_none", "approve": True}
+        # Calling evolve_begin again during ACTIVE_RUN is blocked by hard FSM guard
+        dup_begin = client.call("evolve_begin", {"hypothesis": "duplicate"})
+        assert dup_begin["ok"] is False
+        assert dup_begin["error"] == "fsm_state_mismatch"
+
+        impact = client.call("run_lens", {"name": "import_impact", "target": "src/app.py"})
+        assert impact["ok"] is True
+        assert impact["read_only"] is True
+        assert "tests/test_app.py" in impact["impacted_tests"]
+
+        (e2e_ws / "src" / "app.py").write_text(
+            _SANDBOX_APP
+            + "\ndef subtract(left: int, right: int) -> int:\n    return left - right\n",
+            encoding="utf-8",
         )
-        assert unknown["ok"] is False
-
-        # HOTL: pause blocks ticks; directives inject signals; veto blocks solidify.
-        assert (
-            client.call("swarm_supervise", {"action": "pause", "reason": "e2e"})["state"]
-            == "paused"
-        )
-        paused_tick = client.call("swarm_tick", {})
-        assert paused_tick.get("paused") is True
-        assert client.call("swarm_supervise", {"action": "resume"})["state"] == "running"
-
-        directive = client.call("swarm_supervise", {"action": "direct", "text": "e2e steering"})
-        assert directive["ok"] is True
-
-        veto = client.call("swarm_supervise", {"action": "veto", "pattern": "solidify:"})
-        blocked = client.call("swarm_solidify", {})
-        assert blocked["error"] == "supervision_veto"
-        assert client.call("swarm_supervise", {"action": "unveto", "veto_id": veto["veto_id"]})[
-            "ok"
-        ]
-
-        assert (
-            client.call("swarm_supervise", {"action": "status"})["supervision"]["state"]
-            == "running"
+        (e2e_ws / "tests" / "test_app.py").write_text(
+            "from app import add, subtract\n\n\n"
+            "def test_add() -> None:\n"
+            "    assert add(1, 1) == 2\n\n\n"
+            "def test_sub() -> None:\n"
+            "    assert subtract(5, 2) == 3\n",
+            encoding="utf-8",
         )
 
-        # Round-69: AUTO_HIJACK relay-block semantics — an unattended takeover
-        # must not accept host-relayed human acts (the "no escape valve" rule).
-        # unit-level pin: host_relay_blocked mirrors SWARM_AUTO_HIJACK.
-        from evolver.config import SWARM_AUTO_HIJACK
-        from evolver.swarm import host_relay_blocked
+        settled = client.call("evolve_settle", {"summary": "Added subtract helper and unit test"})
+        assert settled["ok"] is True, settled
+        assert settled["fsm_state"] == "IDLE"
+        assert settled["next_action"] == "evolve_begin"
+        assert settled.get("episode_id")
+        assert settled.get("blackbox", {}).get("lens_calls_count") == 1
 
-        assert host_relay_blocked() == bool(SWARM_AUTO_HIJACK)
+        # Catalog switched back to IDLE
+        assert set(client.list_tool_names()) == set(MCP_IDLE_TOOL_NAMES)
 
-    def test_07_invalid_input_structured_feedback(self, client: _McpClient) -> None:
-        text = client.call_raw_text("swarm_hook_event", {"event": "bogus"})
-        body = json.loads(text)
-        assert body["ok"] is False
-        assert body["error"] == "invalid_arguments"
-        assert body["next_steps"]
-        assert client.call("swarm_status", {})["ok"] is True  # server survived
+        ep_body = client.call("episode_get", {"episode_id": settled["episode_id"]})
+        assert ep_body["run_id"] == begun["run_id"]
+        assert ep_body["gates"]["blackbox"]["lens_calls_count"] == 1
 
-    def test_09_hypothesis_hooks_workflow_and_episode(
-        self, client: _McpClient, e2e_ws: Path, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
-        """The tools the instrument names and Tier A used to skip."""
-        monkeypatch.setenv("EVOLUTION_DIR", str(e2e_ws / "memory" / "evolution"))
-        from evolver.gep import episode_record
-
-        body = episode_record.build_episode(
-            {
-                "event": {
-                    "type": "EvolutionEvent",
-                    "id": "evt_e2e_episode",
-                    "run_id": "run_e2e_episode",
-                    "timestamp": "2026-10-05T00:00:00.000Z",
-                    "gene_id": "gene_e2e",
-                    "mutation": {"id": "mut_e2e", "category": "repair"},
-                    "diff_snapshot": "+e2e\n",
-                    "outcome": {"status": "success", "score": 1.0},
-                },
-                "validation_result": {"ok": True, "results": []},
-                "fitness_verdict": None,
-                "gate": {"accepted": False},
-            }
-        )
-        stored = episode_record.record_episode(body)
-        got = client.call("episode_get", {"episode_id": stored["id"]})
-        assert got["run_id"] == "run_e2e_episode"
-        assert got["event_id"] == "evt_e2e_episode"
+    def test_04_invalid_lookup_structured_feedback(self, client: _McpClient) -> None:
         missing = json.loads(client.call_raw_text("episode_get", {"episode_id": "sha256:nope"}))
         assert missing["ok"] is False
         assert missing["error"] == "not_found"
-        assert "episode not found" in missing["message"]
         assert missing["next_steps"]
+        assert client.call("evolve_status", {})["ok"] is True
 
-        hyp = client.call(
-            "swarm_hypothesis",
-            {
-                "hypothesis": {
-                    "hypothesis": "the e2e surface records one claim",
-                    "dimension": "tool",
-                    "mechanism_family": "e2e-surface",
-                    "target_hook": "README.md",
-                    "mechanism_check": [
-                        {
-                            "id": "scratch-readme",
-                            "before": "README existed before the claim",
-                            "after": "README still exists after the claim",
-                        }
-                    ],
-                }
-            },
-        )
-        assert hyp["ok"] is True, hyp
-
-        hooks = client.call("swarm_hooks", {"action": "status", "platform": "generic"})
-        assert hooks["ok"] is True
-        assert hooks["action"] == "status"
-
-        started = client.call(
-            "swarm_workflow_run", {"template": "innovate", "workflow_id": "e2e-wf"}
-        )
-        assert started["ok"] is True, started
-        assert started["status"] == "waiting_agent"
-        seen = client.call("swarm_workflow_status", {"workflow_id": "e2e-wf"})
-        assert seen["ok"] is True
-        assert seen["status"] == "waiting_agent"
-        cancelled = client.call("swarm_workflow_act", {"workflow_id": "e2e-wf", "action": "cancel"})
-        assert cancelled["ok"] is True
-        assert cancelled["status"] == "cancelled"
-
-    def test_10_precompact_hook_shares_the_checkpoint_with_mcp(
+    def test_05_precompact_hook_and_begin_auto_checkpoint(
         self, client: _McpClient, e2e_ws: Path
     ) -> None:
-        """The hook process and the MCP server must see one EVOLUTION_DIR.
-
-        A block holds compaction until swarm_checkpoint_working, which
-        releases exactly one later compaction. The scratch then rides back
-        out of swarm_boot whole, and into the next dispatch prompt clipped.
-        """
-        scratch = "ruled out the rename\n" + ("x" * 3100) + "\nRULED-OUT-NEEDLE\n"
+        """PreCompact hook blocks once, and evolve_begin auto-satisfies the checkpoint."""
         first = _run_precompact_hook(e2e_ws)
         assert first["decision"] == "block"
-        assert "swarm_checkpoint_working" in first["reason"]
-        refused = client.call("swarm_distill", {"response_text": "not yet"})
-        assert refused["error"] == "checkpoint_required"
 
-        saved = client.call("swarm_checkpoint_working", {"content": scratch})
-        assert saved["ok"] is True, saved
+        begun = client.call(
+            "evolve_begin",
+            {"hypothesis": "Preserve active hypothesis across context compaction"},
+        )
+        assert begun["ok"] is True
+        assert begun["fsm_state"] == "ACTIVE_RUN"
+        # evolve_begin wrote WORKING_SESSION.md and cleared the compaction gate
         assert _run_precompact_hook(e2e_ws) == {}
 
-        booted = client.call("swarm_boot", {"agent_name": "e2e-working"})
-        assert booted["working_session_text"] == scratch
-        assert booted["working_session_source"] == "host_working"
-        assert "RULED-OUT-NEEDLE" not in booted["state"]["working_session"]["preview"]
-        assert "falsifiable hypothesis" in booted["instrument_prompt"]
+        st = client.call("evolve_status", {})
+        assert st["working_session"]["exists"] is True
+        assert "Preserve active hypothesis" in st["working_session"]["preview"]
 
-        client.call(
-            "swarm_hook_event",
-            {"event": "signal_detect", "payload": {"content": "ImportError: cannot import name"}},
-        )
-        tick = client.call("swarm_tick", {"agent_name": "e2e-working"})
-        prompt = tick.get("dispatch_prompt") or ""
-        assert prompt, tick.get("dispatch_reason")
-        assert "- [host_working] ruled out the rename" in prompt
-        assert "swarm_boot returns the full text" in prompt
-        assert "RULED-OUT-NEEDLE" not in prompt
-        assert prompt.index("## Host Clues") < prompt.index("[host_working]")
-
-    def test_11_settled_round_feeds_the_next_prompt(
+    def test_06_draft_preserved_failure_and_episode_inspect(
         self, client: _McpClient, e2e_ws: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        """A real cascade failure keeps the declared expectation and the clip.
-
-        The host edits a committed tree, declares which checks should pass,
-        and solidify runs the engine's own commands. The episode then names
-        the miss and the truncation; episode_inspect reads past the clip
-        without touching the episode, and the following tick quotes both.
-        """
+        """Red test settles as draft_preserved with 3-line fix, intact patch, and inspect."""
         _commit_python_project(e2e_ws)
-        (e2e_ws / "tests" / "test_app.py").write_text(_LONG_FAILURE, encoding="utf-8")
-        client.call(
-            "swarm_hook_event",
-            {"event": "signal_detect", "payload": {"content": "ValueError: invalid literal"}},
-        )
-        tick = client.call("swarm_tick", {"agent_name": "e2e-delta"})
-        run_id = str(tick.get("run_id") or "")
-        assert run_id and tick.get("dispatch_prompt"), tick.get("dispatch_reason")
-
-        declared = client.call(
-            "swarm_hypothesis",
+        begun = client.call(
+            "evolve_begin",
             {
-                "hypothesis": {
-                    "hypothesis": "the long failure goes green",
-                    "dimension": "content",
-                    "mechanism_family": "repair",
-                    "target_hook": "tests/test_app.py",
-                    "mechanism_check": [
-                        {
-                            "id": "test_app",
-                            "before": "the suite failed",
-                            "after": "the suite passed",
-                        }
-                    ],
-                    "expected_outcome": {"expected_checks_to_pass": ["ruff", "mypy", "pytest"]},
-                }
+                "hypothesis": "Verify failing test settles as draft_preserved",
+                "target_files": ["tests/test_app.py"],
             },
         )
-        assert declared["ok"] is True, declared
+        assert begun["ok"] is True
 
-        solidified = client.call("swarm_solidify", {})
-        # Soft-default: cascade/validation failures soft-continue.
-        assert solidified.get("ok") is True, solidified
-        assert (
-            solidified.get("severity") == "soft"
-            or solidified.get("validation_soft_failed") is True
-            or solidified.get("warnings")
-        ), solidified
-        episode = solidified.get("episode") or {}
-        assert episode.get("ok") is True, solidified
-        ep_id = str(episode["id"])
+        (e2e_ws / "tests" / "test_app.py").write_text(_LONG_FAILURE, encoding="utf-8")
 
-        evolution = e2e_ws / "memory" / "evolution"
-        # Soft success consumes hypothesis (ok == True path).
-        consumed = json.loads((evolution / "hypothesis.consumed.json").read_text(encoding="utf-8"))
-        assert consumed["consumed_for_run"] == run_id
-        assert not (evolution / "hypothesis.json").exists()
+        settled = client.call("evolve_settle", {"summary": "Triggered long failure"})
+        assert settled["ok"] is False, settled
+        assert settled["outcome"] == "draft_preserved", settled
+        assert settled["fsm_state"] == "IDLE"
+        fix = settled.get("actionable_fix") or []
+        assert len(fix) == 3 and any("preserved in place" in line for line in fix), settled
+        assert "TAIL-NEEDLE" in (e2e_ws / "tests" / "test_app.py").read_text(encoding="utf-8")
 
-        body_path = evolution / "episodes" / ep_id.replace(":", "_", 1) / "episode.json"
-        before = body_path.read_bytes()
-        body = json.loads(before)
-        delta = body["gates"]["prediction_delta"]
-        assert delta["matched"] is False
-        # Soft-default validation probe skips missing tools/paths; only stages
-        # that actually ran can be unmet. Pytest runs and fails here.
-        unmet = delta["unmet_expectations"]
-        assert "pytest" in unmet
-        assert set(unmet) <= {"ruff", "mypy", "pytest"}
-        assert delta["unexpected_failures"] == []
-        pytest_check = next(
-            row for row in body["scene_index"]["checks"] if "pytest" in row["command"]
-        )
-        assert pytest_check["stdout_chars"] > pytest_check["stdout_stored_chars"]
-
+        ep_id = str(settled["episode_id"])
         refused = client.call(
             "episode_inspect", {"episode_id": ep_id, "question": "  ", "views": []}
         )
         assert refused["ok"] is False and refused["error"] == "empty_question"
+
         zoomed = client.call(
             "episode_inspect",
             {
                 "episode_id": ep_id,
-                "question": "which case is still failing past the clip",
+                "question": "which case failed past the stdout clip",
                 "views": [
                     {"kind": "check", "name": "pytest", "offset_lines": 0, "limit_lines": 200}
                 ],
@@ -727,18 +480,8 @@ class TestFullSurfaceE2E:
         )
         assert zoomed["ok"] is True, zoomed
         assert "TAIL-NEEDLE" in zoomed["views"][0]["text"]
-        assert body_path.read_bytes() == before
-        logged = [
-            json.loads(line)
-            for line in (evolution / "episodes" / "inspect_calls.jsonl")
-            .read_text(encoding="utf-8")
-            .splitlines()
-        ]
-        assert len(logged) == 1
-        assert logged[0]["episode_id"] == ep_id
-        assert logged[0]["view_kinds"] == ["check"]
-        assert "still failing" not in str(logged)
 
+        evolution = e2e_ws / "memory" / "evolution"
         monkeypatch.setenv("EVOLUTION_DIR", str(evolution))
         from evolver.gep.episode_record import load_inspect_calls
         from evolver.ops.meta_report import build_meta_report
@@ -746,18 +489,7 @@ class TestFullSurfaceE2E:
         panel = build_meta_report([], inspect_calls=load_inspect_calls())["panel"]["improver_tools"]
         assert panel["episode_inspect_calls"] == 1
 
-        follow = client.call("swarm_tick", {"agent_name": "e2e-delta"})
-        prompt = follow.get("dispatch_prompt") or ""
-        assert "prediction_delta: matched=False" in prompt, follow.get("dispatch_reason")
-        # Soft-default probe may skip missing ruff/mypy; pytest remains unmet.
-        assert "unmet=" in prompt and "pytest" in prompt
-        assert "stdout truncated at" in prompt
-        assert "episode_inspect" in prompt
-        # Printed by the failing test at runtime, so only the clipped check
-        # output could have carried it. The source line stays in the diff.
-        assert "diag-line-050" not in prompt
-
-    def test_08_auto_hijack_does_not_change_instructions(
+    def test_07_auto_hijack_does_not_change_instructions(
         self, client: _McpClient, e2e_ws: Path
     ) -> None:
         hijacked = _McpClient(e2e_ws, extra_env={"EVOLVER_SWARM_AUTO_HIJACK": "1"})
@@ -765,8 +497,6 @@ class TestFullSurfaceE2E:
             normal = client.init_result["result"]["instructions"]
             instructions = hijacked.init_result["result"]["instructions"]
             assert instructions == normal
-            assert "TAKEOVER ACTIVE" not in instructions
-            assert "takes priority" not in instructions
             assert "EVOLVER SWARM" in instructions
         finally:
             hijacked.close()
@@ -776,163 +506,43 @@ class TestFullSurfaceE2E:
 # Tier B — live LLM loop E2E (DeepSeek as the host executor)
 # ---------------------------------------------------------------------------
 
-_LLM_SYSTEM = """You are the executor of the EVOLVER SWARM loop (a real
-self-evolution engine). You receive a GEP (Genome Evolution Protocol)
-dispatch prompt. This run is sandboxed: do NOT attempt file edits yourself.
-
-Your reply MUST contain, in order:
-1. A short work summary (what the mutation would do).
-2. Exactly ONE fenced ```json block containing a single valid Gene object
-with EXACTLY these keys (no extras — the schema forbids unknown fields):
-{"type": "Gene", "id": "gene_e2e_llm", "category": "repair",
- "summary": "<one line>", "signals_match": ["<one signal keyword>"],
- "strategy": ["<step>"], "preconditions": [], "validation": ["python --version"],
- "avoid": []}
-Replace <...> with content grounded in the dispatch prompt."""
-
 
 @pytest.mark.llm
 @pytest.mark.slow
 @pytest.mark.timeout(300)
 class TestLiveLlmLoopE2E:
-    def test_full_loop_with_deepseek(self, client: _McpClient, e2e_ws: Path) -> None:
-        # Arrange: seed the loop with signals and a skill gene.
-        client.call(
-            "swarm_hook_event",
-            {"event": "signal_detect", "payload": {"content": "ImportError: cannot import name"}},
-        )
-        client.call("swarm_skills", {"action": "sync"})
-
-        # Act 1: tick → GEP dispatch prompt.
-        tick = client.call("swarm_tick", {"agent_name": "deepseek-executor"})
-        assert tick["ok"] is True
-        if tick["dispatch_reason"] not in ("dispatched", "idle_cycle"):
-            pytest.skip(f"no dispatch this cycle: {tick['dispatch_reason']}")
-        dispatch_prompt = tick.get("dispatch_prompt") or ""
-        if not dispatch_prompt:
-            pytest.skip("idle cycle — no prompt to execute")
-
-        # Act 2: the real LLM executes the dispatch prompt.
-        response = _deepseek_chat(_LLM_SYSTEM, dispatch_prompt)
-        assert len(response.strip()) > 40, f"empty LLM response: {response[:200]!r}"
-
-        # Act 3: distill the LLM output (one strict retry if the contract
-        # was violated on the first attempt).
-        distilled = client.call("swarm_distill", {"response_text": response})
-        if distilled["genes"] + distilled["capsules"] + distilled["mutations"] == 0:
-            retry = _deepseek_chat(
-                _LLM_SYSTEM
-                + "\n\nYour previous reply violated the output contract. Output ONLY the "
-                "summary and the single fenced json Gene block.",
-                dispatch_prompt,
-            )
-            distilled = client.call("swarm_distill", {"response_text": retry})
-        assert distilled["ok"] is True
-        assert distilled["genes"] + distilled["capsules"] > 0, (
-            f"LLM produced no distillable assets; response head: {response[:300]!r}"
-        )
-
-        # Act 4: feedback with a gradient grounded in the LLM summary.
-        summary_head = response.strip().splitlines()[0][:120]
-        feedback = client.call(
-            "swarm_feedback",
-            {
-                "primary_score": 0.85,
-                "textual_gradient": f"deepseek executor: {summary_head}",
-                "agent_name": "deepseek-executor",
-                "run_id": tick.get("run_id"),
-                "cycle_id": tick.get("cycle_id"),
-            },
-        )
-        assert feedback["ok"] is True and feedback["degraded"] is False
-
-        # Assert: journals + status reflect the whole round trip.
-        feedback_journal = e2e_ws / "memory" / "evolution" / "feedback.jsonl"
-        assert "deepseek executor" in feedback_journal.read_text(encoding="utf-8")
-
-        status = client.call("swarm_status", {})
-        assert status["feedback"]["recent_count"] >= 1
-        assert status["feedback"]["last"]["primary_score"] == 0.85
-
-        # Act 5: the loop continues — a second tick still works.
-        second = client.call("swarm_tick", {"agent_name": "deepseek-executor"})
-        assert second["ok"] is True
-        assert second.get("paused") is not True
-
     def test_live_host_settles_a_round_into_episodes(
         self, client: _McpClient, e2e_ws: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        """P0-2: the MCP loop is the episode产地 — a real LLM host settles.
-
-        tick → DeepSeek decides (gene + hypothesis + edit) → harness applies
-        the edit → distill + hypothesis + solidify → the settled round lands
-        in the episode store. Accept or Reject-with-episode both count; only
-        a non-settlement (no event_id) fails.
-        """
         import re
 
-        # The server subprocess owns its store env; point this process at the
-        # same directories before reading the episode back.
+        _commit_python_project(e2e_ws)
         monkeypatch.setenv("GEP_ASSETS_DIR", str(e2e_ws / "gep"))
         monkeypatch.setenv("EVOLUTION_DIR", str(e2e_ws / "memory" / "evolution"))
-        tick = client.call("swarm_tick", {"agent_name": "deepseek-settler"})
-        assert tick["ok"] is True
-        if tick["dispatch_reason"] != "dispatched" or not tick.get("dispatch_prompt"):
-            pytest.skip(f"no dispatch this cycle: {tick['dispatch_reason']}")
+
         system = (
-            "You are the host executor of the EVOLVER SWARM loop. Reply with "
-            "EXACTLY three fenced blocks, nothing else:\n"
-            '```gene\n{"type": "Gene", "id": "gene_live_e2e", '
-            '"category": "repair", "summary": "<one line>", '
-            '"signals_match": ["<keyword>"], "strategy": ["<step>"], '
-            '"preconditions": [], "validation": ["python --version"], '
-            '"avoid": []}\n```\n'
-            '```hypothesis\n{"hypothesis": "<what you change and why>", '
-            '"dimension": "content", "mechanism_family": "<family>", '
-            '"target_hook": "<where>", "mechanism_check": '
-            '[{"id": "scratch-readme-edit", "before": "<observed>", '
-            '"after": "<observed>"}]}\n```\n'
-            "```edit\n<2-4 lines of plain text to append to README.md>\n```\n"
-            "No extra keys anywhere."
+            "You are a Python developer driving the EVOLVER 3-tool FSM loop. "
+            "Reply with EXACTLY two fenced blocks:\n"
+            "```hypothesis\n"
+            "<one plain sentence describing adding multiply(a, b) to src/app.py>\n"
+            "```\n"
+            "```code\n<new Python function multiply(a: int, b: int) -> int>\n```\n"
         )
-        answer = _deepseek_chat(system, str(tick["dispatch_prompt"]))
+        answer = _deepseek_chat(system, "Add multiply(a, b) to src/app.py.")
 
         def fenced(tag: str) -> str:
             match = re.search(r"```" + tag + r"\s*\n(.*?)```", answer, re.DOTALL)
             assert match, f"LLM reply missing ```{tag} block"
             return match.group(1).strip()
 
-        gene_text, hypo_text, edit_text = fenced("gene"), fenced("hypothesis"), fenced("edit")
-        with (e2e_ws / "README.md").open("a", encoding="utf-8") as fh:
-            fh.write("\n" + edit_text + "\n")
-        distilled = client.call(
-            "swarm_distill",
-            {"response_text": f"Executed mutation.\n```json\n{gene_text}\n```\n"},
+        hyp_line, code_block = fenced("hypothesis"), fenced("code")
+        begun = client.call(
+            "evolve_begin", {"hypothesis": hyp_line, "target_files": ["src/app.py"]}
         )
-        assert distilled["ok"] is True
-        hyp = client.call("swarm_hypothesis", {"hypothesis": json.loads(hypo_text)})
-        assert hyp.get("ok") is True, hyp
-        settled = client.call("swarm_solidify", {})
-        assert settled.get("event_id"), settled
-        assert (settled.get("episode") or {}).get("ok") is True, settled
+        assert begun["ok"] is True
 
-        from evolver.gep import episode_record
+        with (e2e_ws / "src" / "app.py").open("a", encoding="utf-8") as fh:
+            fh.write("\n\n" + code_block + "\n")
 
-        stored = episode_record.load_episode(str((settled["episode"] or {}).get("id") or ""))
-        assert stored is not None
-        assert "account" not in stored and "tool_actions" not in stored
-
-    def test_llm_reports_signal_from_error_output(self, client: _McpClient) -> None:
-        """The LLM also plays the hook bridge: it classifies an error log."""
-        log_line = "TypeError: cannot read properties of undefined (reading 'map')"
-        response = _deepseek_chat(
-            "Classify the error in the user's log. Reply with ONE word: "
-            "import_error, type_error, runtime_error, or network_error.",
-            log_line,
-            max_tokens=512,
-        )
-        verdict = response.strip().lower()
-        assert any(
-            tag in verdict
-            for tag in ("import_error", "type_error", "runtime_error", "network_error")
-        ), response[:120]
+        settled = client.call("evolve_settle", {"summary": hyp_line})
+        assert settled.get("episode_id"), settled

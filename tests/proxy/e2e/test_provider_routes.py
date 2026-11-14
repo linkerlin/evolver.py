@@ -26,7 +26,7 @@ TOKEN = "a" * 64
 @pytest.fixture
 def proxy_client(monkeypatch: pytest.MonkeyPatch) -> Iterator[TestClient]:
     monkeypatch.setenv("EVOMAP_PROXY_TOKEN", TOKEN)
-    monkeypatch.setenv("EVOLVER_PROXY_LIFECYCLE", "0")
+    monkeypatch.setenv("EVOLVER_CONFIG", '{"proxy_lifecycle":false}')
     app = FastAPI()
     app.include_router(router, prefix="/v1/a2a")
     with TestClient(app) as client:

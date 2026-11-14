@@ -48,21 +48,11 @@ def get_system_load() -> LoadSample:
 def _windows_load_fallback() -> list[float]:
     """Sprint 22.1 (§13.3-#9): ``os.getloadavg`` does not exist on Windows.
 
-    Uses psutil CPU utilization as a load proxy (flag-gated, default off).
-    # ponytail: utilization is a proxy for run-queue depth, not a true loadavg;
-    # swap for GetSystemTimes if sustained-pressure false positives ever matter.
+    Returns zeros on Windows where os.getloadavg is unavailable
+    (round-120 P0-4: enable_windows_load_guard dead flag removed — it was
+    default-off with no schedule, so the zero path was the only live path).
     """
-    from evolver.gep.feature_flags import is_enabled
-
-    if not is_enabled("enable_windows_load_guard"):
-        return [0.0, 0.0, 0.0]
-    try:
-        import psutil
-
-        busy = psutil.cpu_percent(interval=0.2) / 100.0 * detect_cpu_count()
-        return [busy, busy, busy]
-    except Exception:
-        return [0.0, 0.0, 0.0]
+    return [0.0, 0.0, 0.0]
 
 
 def get_default_load_max() -> float:
@@ -198,14 +188,12 @@ async def run_preflight_checks(is_loop: bool = False, is_dry_run: bool = False) 
             abort=True,
             reason=f"system load {sample.load1m:.2f} exceeds threshold {threshold:.2f}",
         )
+    from evolver.config import get_config
+
+    cfg = get_config()
     cb = check_repair_loop_circuit_breaker()
     if cb["tripped"]:
-        degraded_ok = os.environ.get("EVOLVER_REPAIR_LOOP_DEGRADED", "1").lower() not in (
-            "0",
-            "false",
-            "no",
-            "off",
-        )
+        degraded_ok = cfg.repair_loop_degraded
         reason = (
             f"repair loop detected ({cb['consecutive']}/{cb['threshold']} "
             "consecutive failed repair cycles)"
@@ -237,17 +225,15 @@ async def run_preflight_checks(is_loop: bool = False, is_dry_run: bool = False) 
 
     # Sprint 24.4 (enable_trigger_budget): daily caps on cycle firing —
     # Node v2 trigger/budget.js semantics (fire ⟺ budget available).
-    from evolver.gep.feature_flags import is_enabled
-
     has_env_budget = any(
-        bool(os.environ.get(k, "").strip())
-        for k in (
-            "EVOLVER_TRIGGER_MAX_CYCLES_PER_DAY",
-            "EVOLVER_TRIGGER_MAX_TOKENS_PER_DAY",
-            "EVOLVER_TRIGGER_PER_PATTERN_CAP",
+        v > 0
+        for v in (
+            cfg.trigger_max_cycles_per_day,
+            cfg.trigger_max_tokens_per_day,
+            cfg.trigger_per_pattern_cap,
         )
     )
-    if is_enabled("enable_trigger_budget") or has_env_budget:
+    if has_env_budget:
         from evolver.gep.trigger_engine import DailyBudget
 
         budget = DailyBudget()

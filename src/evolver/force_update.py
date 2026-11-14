@@ -832,14 +832,16 @@ def force_update(
     backup_root:
         Directory to store backups (default: ``~/.evomap/backups``).
     """
-    if not os.environ.get("EVOLVER_FORCE_UPDATE") and not os.environ.get("CI"):
+    from evolver.config import get_config
+
+    if not get_config().force_update and not os.environ.get("CI"):
         logger.warning(
             "[ForceUpdate] Non-interactive auto-update disabled. "
-            "Set EVOLVER_FORCE_UPDATE=1 to enable."
+            "Set force_update=true in EVOLVER_CONFIG to enable."
         )
         return _failure(
             "disabled_in_noninteractive",
-            "auto-update disabled in non-interactive mode; set EVOLVER_FORCE_UPDATE=1",
+            "auto-update disabled in non-interactive mode; set force_update=true in EVOLVER_CONFIG",
         )
 
     project_root = project_root or Path.cwd()

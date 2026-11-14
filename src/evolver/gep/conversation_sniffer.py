@@ -7,7 +7,7 @@ reusable action (e.g. ``lark-cli docs +create``) **co-occurs locally** with a
 success marker (e.g. "published successfully"). The output feeds the evolution
 pipeline as ``conv_capability:*`` signals.
 
-Three modes (``EVOLVER_CONV_SNIFF_ENABLED``):
+Three modes (``EvolverConfig.conv_sniff_mode``):
   - ``off``    — no scanning, no signals.
   - ``shadow`` — scan and surface candidates, but inject NO signals (observability).
   - ``enforce`` — scan and inject ``conv_capability:*`` signals into the pipeline.
@@ -24,7 +24,6 @@ Design constraints (Bugbot #175):
 from __future__ import annotations
 
 import json
-import os
 import re
 import time
 from pathlib import Path
@@ -97,8 +96,10 @@ DEFAULT_MODE = "off"
 
 
 def _resolve_mode() -> str:
-    """Read the sniff mode from env at call time (not module-load)."""
-    raw = os.environ.get("EVOLVER_CONV_SNIFF_ENABLED", DEFAULT_MODE).strip().lower()
+    """Read the sniff mode from config at call time (not module-load)."""
+    from evolver.config import get_config
+
+    raw = get_config().conv_sniff_mode.strip().lower()
     return raw if raw in VALID_MODES else DEFAULT_MODE
 
 

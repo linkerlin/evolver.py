@@ -14,7 +14,6 @@ from __future__ import annotations
 
 import json
 import logging
-import os
 import secrets
 import time
 from dataclasses import dataclass
@@ -29,7 +28,6 @@ from evolver.gep.self_report import SelfReport
 
 logger = logging.getLogger(__name__)
 
-AUTOPOIESIS_LOG_ENV = "EVOLVER_AUTOPOIESIS_LOG_PATH"
 AUTOPOIESIS_STATE_FILE = "autopoiesis_state.json"
 PREFLIGHT_ABORT_FILE = "autopoiesis_preflight_abort.json"
 VIABILITY_STABLE = 0.65
@@ -59,20 +57,21 @@ class ViabilityReport:
 
 
 def is_autopoiesis_enabled() -> bool:
-    return os.environ.get("EVOLVER_AUTOPOIESIS", "1").lower() not in ("0", "false", "no", "off")
+    from evolver.config import get_config
+
+    return get_config().autopoiesis
 
 
 def is_autopoiesis_write_enabled() -> bool:
-    return os.environ.get("EVOLVER_AUTOPOIESIS_WRITE", "1").lower() not in (
-        "0",
-        "false",
-        "no",
-        "off",
-    )
+    from evolver.config import get_config
+
+    return get_config().autopoiesis_write
 
 
 def _log_path() -> Path:
-    override = os.environ.get(AUTOPOIESIS_LOG_ENV)
+    from evolver.config import get_config
+
+    override = get_config().autopoiesis_log_path.strip()
     if override:
         return Path(override)
     return get_evolution_dir() / "autopoiesis.jsonl"

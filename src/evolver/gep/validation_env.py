@@ -64,7 +64,7 @@ _EVAL_SECRET_KEYS: frozenset[str] = frozenset(
         "EVOLVER_HITL_MODE",
         "EVOLVER_ACCEPTANCE_SHADOW",
         "EVOLVER_SWARM_AUTO_HIJACK",
-        "EVOLVER_SWARM_GATE_HANDOFF",
+        "EVOLVER_CONFIG",
     }
 )
 

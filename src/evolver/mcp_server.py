@@ -1,21 +1,27 @@
-"""MCP server — thin tool surface over existing engine modules.
+"""MCP server — FSM dynamic 3-tool atomic surface (算子即基因 P1-1).
 
-Concept harvest from Node v2 ``evolver-mcp`` (asset.search/fetch/publish,
-gep.build, mailbox.*; behavioral re-implementation, no code copied).
-Python-side minimal slice (Sprint 24.7, 演进方案.md §9 概念收割 #5):
+Exposes a zero-cognitive-load finite-state tool catalog over stdio MCP:
 
-- ``asset_search`` / ``asset_get`` — local-first GEP asset lookup
-- ``mailbox_send`` / ``mailbox_poll`` / ``mailbox_ack`` — durable
-  agent↔daemon messages (reuses the proxy MailboxStore)
-- ``rebuild_views`` / ``cycle_timeline`` — Sprint 24.1 event projections
+- ``IDLE`` state:
+  - ``evolve_begin`` (start a round & lock one plain-string hypothesis)
+  - ``evolve_status`` (read-only status & signal discovery)
+- ``ACTIVE_RUN`` state:
+  - ``run_lens`` (read-only AST / impact / traceback / contract diagnostics)
+  - ``evolve_settle`` (``< 3s`` L0 lightning validation, blackbox + episode
+    settlement, dual-track draft preservation vs. vault promotion)
+  - ``evolve_status`` (read-only status)
 
-The core engine never calls an LLM through these tools; they expose
-read/coordination operations to MCP clients (Claude Code, opencode, ...).
-Run with ``evolver mcp`` (stdio transport).
+Read-only record & asset lookup helpers (``episode_get``, ``episode_inspect``,
+``tool_asset_search``, ``tool_asset_get``, ``tool_cycle_timeline``) remain
+available as non-mutating auxiliaries. Whenever ``fsm_state()`` transitions
+between ``IDLE`` and ``ACTIVE_RUN``, the server automatically pushes
+``notifications/tools/list_changed`` so MCP hosts refresh their tool catalog
+immediately.
 """
 
 from __future__ import annotations
 
+import contextlib
 import inspect
 import json
 from collections.abc import Callable
@@ -38,7 +44,7 @@ def _mailbox_store() -> MailboxStore:
 
 
 # ---------------------------------------------------------------------------
-# Assets (local-first; no Hub calls)
+# Assets & Episodes (local-first, read-only)
 # ---------------------------------------------------------------------------
 
 
@@ -52,12 +58,7 @@ def _local_assets() -> list[tuple[str, dict[str, Any]]]:
 
 
 def asset_search(query: str, limit: int = 10) -> list[dict[str, Any]]:
-    """Search local Genes/Capsules by token-AND over id/name/summary/signals.
-
-    Tool-check finding (2026-09-05): the old whole-string substring match made
-    multi-word queries ("hub retry") silently empty, and `summary` /
-    `signals_match` — a Gene's primary text — were not searched at all.
-    """
+    """Search local Genes/Capsules by token-AND over id/name/summary/signals."""
     needles = [t.casefold() for t in query.strip().split() if t]
     matches: list[dict[str, Any]] = []
     if not needles:
@@ -97,28 +98,17 @@ def episode_inspect(
     question: str,
     views: list[dict[str, Any]],
 ) -> dict[str, Any]:
-    """Read a line window of the lossless scene behind one episode.
-
-    ``question`` is required and is recorded only as a host clue in the
-    reply. The call does not write the episode, the library, or any pointer;
-    a successful call appends one row to the inspect side log.
-    """
-    import contextlib
-
+    """Read a val-sealed line window of the lossless scene behind one episode."""
     from evolver.gep import episode_record
 
     result = episode_record.inspect_episode_scene(episode_id, question=question, views=views)
-    with contextlib.suppress(Exception):  # the side log must never fail the read
+    with contextlib.suppress(Exception):
         episode_record.note_inspect_call(result)
     return result
 
 
 def episode_get(episode_id: str) -> dict[str, Any]:
-    """Fetch one episode record by id (read-only).
-
-    经验即证据 §5.1c: the thin read side of the episode store — the same
-    read discipline as ``asset_get``, over the runtime-held round record.
-    """
+    """Fetch one episode record by id (read-only)."""
     from evolver.gep import episode_record
 
     body = episode_record.load_episode(episode_id)
@@ -128,7 +118,7 @@ def episode_get(episode_id: str) -> dict[str, Any]:
 
 
 # ---------------------------------------------------------------------------
-# Mailbox (durable agent↔daemon messages)
+# Mailbox & Projections (Python API preserved for internal callers)
 # ---------------------------------------------------------------------------
 
 
@@ -137,18 +127,12 @@ def mailbox_send(
     payload: dict[str, Any],
     priority: str = "normal",
 ) -> dict[str, Any]:
-    """Enqueue an outbound mailbox message."""
     if priority not in ("high", "normal", "low"):
         raise ValueError(f"priority must be high|normal|low, got {priority}")
     return _mailbox_store().send(type=type, payload=payload, priority=priority)  # type: ignore[arg-type]
 
 
 def mailbox_poll(limit: int = 10, direction: str = "inbound") -> list[dict[str, Any]]:
-    """Poll mailbox messages (newest first).
-
-    ``direction="inbound"`` reads daemon→agent messages; ``"outbound"``
-    lists this side's pending sends (useful when no daemon is pumping).
-    """
     store = _mailbox_store()
     if direction == "outbound":
         return [m.to_dict() for m in store.poll_outbound(limit=max(1, limit))]
@@ -158,40 +142,7 @@ def mailbox_poll(limit: int = 10, direction: str = "inbound") -> list[dict[str, 
 
 
 def mailbox_ack(message_ids: list[str]) -> int:
-    """Acknowledge processed messages; returns the acked count."""
     return _mailbox_store().ack(message_ids)
-
-
-# ---------------------------------------------------------------------------
-# Event projections (Sprint 24.1)
-# ---------------------------------------------------------------------------
-
-
-def rebuild_views() -> dict[str, Any]:
-    """Replay the event log into derived projections and summarize."""
-    views = rebuild_projections_safe()
-    return {
-        "event_count": views["event_count"],
-        "genes": len(views["gene_outcomes"]),
-        "cycles": len(views["cycle_timeline"]),
-        "path": str(views.get("_path") or ""),
-    }
-
-
-def cycle_timeline(limit: int = 20) -> list[dict[str, Any]]:
-    """Recent per-run cycle timelines (stage ladder + the same settlement).
-
-    ``stage`` and ``outcome_status`` come from the last terminal event.
-    success settles as ``solidified``; any other non-abort settlement
-    settles as ``failed``; ``cycle_abort`` settles as ``aborted``.
-    ``outcome_matches_stage`` is true when those two fields agree.
-    """
-    from evolver.gep.asset_store import read_all_events
-    from evolver.gep.event_projection import project_events
-
-    timeline = project_events(read_all_events())["cycle_timeline"]
-    result: list[dict[str, Any]] = list(timeline)[-max(1, limit) :]
-    return result
 
 
 def rebuild_projections_safe() -> dict[str, Any]:
@@ -202,51 +153,50 @@ def rebuild_projections_safe() -> dict[str, Any]:
     return views
 
 
+def rebuild_views() -> dict[str, Any]:
+    views = rebuild_projections_safe()
+    return {
+        "event_count": views["event_count"],
+        "genes": len(views["gene_outcomes"]),
+        "cycles": len(views["cycle_timeline"]),
+        "path": str(views.get("_path") or ""),
+    }
+
+
+def cycle_timeline(limit: int = 20) -> list[dict[str, Any]]:
+    from evolver.gep.asset_store import read_all_events
+    from evolver.gep.event_projection import project_events
+
+    timeline = project_events(read_all_events())["cycle_timeline"]
+    return list(timeline)[-max(1, limit) :]
+
+
 _EMPTY_ASSET_SEARCH_HINT: Final[str] = (
     "No local Genes or Capsules matched. Try fewer keywords, or tool_asset_get "
     "when you already have an id."
 )
-_EMPTY_MAILBOX_HINT: Final[str] = (
-    "No mailbox messages in this direction. An empty poll is normal, not a tool failure."
-)
 _EMPTY_TIMELINE_HINT: Final[str] = (
-    "No evolution cycles recorded yet. swarm_tick writes events; "
-    "call tool_cycle_timeline again after a cycle."
-)
-_EMPTY_APPROVALS_HINT: Final[str] = (
-    "No HITL requests are waiting for a human. An empty queue is normal, not a tool failure."
-)
-_APPROVALS_SEMANTICS: Final[str] = (
-    "items and pending are the same waiting queue. recent is the latest "
-    "journal, including rows already decided."
+    "No evolution cycles recorded yet. Complete an evolve_begin -> evolve_settle "
+    "round and query tool_cycle_timeline again."
 )
 _TIMELINE_SEMANTICS: Final[str] = (
     "stage and outcome_status come from the last terminal event. "
-    "success settles as solidified; other non-abort settlements settle as failed; "
-    "cycle_abort settles as aborted. An earlier soft_failed does not leave "
-    "stage=failed once a later success is recorded."
+    "success settles as solidified; other non-abort settlements settle as failed."
 )
-_CORE_LOOP_TOOLS: Final[frozenset[str]] = frozenset(
-    {
-        "swarm_boot",
-        "swarm_tick",
-        "swarm_distill",
-        "swarm_hypothesis",
-        "swarm_propose",
-        "swarm_solidify",
-        "swarm_feedback",
-        "swarm_report",
-    }
-)
+
+#: FSM visibility rules for ``tools/list`` and hard call gating.
+IDLE_ONLY_TOOLS: Final[frozenset[str]] = frozenset({"evolve_begin"})
+ACTIVE_ONLY_TOOLS: Final[frozenset[str]] = frozenset({"run_lens", "evolve_settle"})
+
+
+def visible_tools_for_state(state: str, all_names: list[str]) -> list[str]:
+    """Filter registered tool names according to FSM state (``IDLE`` vs ``ACTIVE_RUN``)."""
+    hidden = ACTIVE_ONLY_TOOLS if state == "IDLE" else IDLE_ONLY_TOOLS
+    return [n for n in all_names if n not in hidden]
 
 
 def tool_failure_envelope(tool: str, exc: BaseException) -> dict[str, Any]:
-    """Structured failure for a tool the SDK would otherwise stringify.
-
-    Soft-accept paths that already return ``{ok: false, ...}`` do not come
-    through here. Raised errors (missing episode, bad enum, bad priority)
-    do. ``message`` keeps the underlying text; ``next_steps`` is the action.
-    """
+    """Structured failure envelope for raised tool exceptions."""
     cause = exc.__cause__ or exc
     text = str(exc)
     prefix = f"Error executing tool {tool}: "
@@ -257,20 +207,19 @@ def tool_failure_envelope(tool: str, exc: BaseException) -> dict[str, Any]:
         error = "not_found"
         steps = [
             f"The id passed to `{tool}` is not in this workspace.",
-            "List existing ids (episode list, tool_asset_search, or "
-            "tool_cycle_timeline) and call the tool again.",
+            "List existing ids via tool_asset_search or tool_cycle_timeline and retry.",
         ]
     elif isinstance(cause, ValueError) or "validation error" in lowered:
         error = "invalid_arguments"
         steps = [
             f"Read message and fix the arguments for `{tool}` so they match the tool schema.",
-            "Call the tool again. This does not stop the swarm loop.",
+            "Call the tool again.",
         ]
     else:
         error = "tool_error"
         steps = [
             f"Read message for `{tool}` and correct the call.",
-            "Call swarm_status if the workspace binding looks wrong, then retry once.",
+            "Call evolve_status to verify workspace state and current FSM phase.",
         ]
     return {
         "ok": False,
@@ -281,70 +230,56 @@ def tool_failure_envelope(tool: str, exc: BaseException) -> dict[str, Any]:
     }
 
 
+def _fsm_mismatch_envelope(tool: str, current_state: str) -> dict[str, Any]:
+    allowed = (
+        ["evolve_begin", "evolve_status"]
+        if current_state == "IDLE"
+        else ["run_lens", "evolve_settle", "evolve_status"]
+    )
+    next_act = "evolve_begin" if current_state == "IDLE" else "evolve_settle"
+    return {
+        "ok": False,
+        "error": "fsm_state_mismatch",
+        "tool": tool,
+        "fsm_state": current_state,
+        "allowed_tools": allowed,
+        "next_action": next_act,
+        "message": (
+            f"Tool `{tool}` is unavailable in FSM state `{current_state}`. "
+            f"Allowed core tools now: {', '.join(allowed)}."
+        ),
+        "next_steps": [
+            f"Refresh your tool list or call `{next_act}` directly.",
+        ],
+    }
+
+
 def _host_tool_description(fn: Callable[..., Any]) -> str:
-    """Docstring text for tools/list, without the indent of a nested def."""
     return inspect.cleandoc(fn.__doc__ or "")
 
 
 def list_envelope(items: list[dict[str, Any]], *, empty_hint: str) -> dict[str, Any]:
-    """Object payload for list/search tools. Empty matches stay a dict, never ``[]``.
-
-    Hosts that only read ``content[]`` drop a bare empty list (the body is blank).
-    ``ok`` / ``items`` / ``hint`` are present for both empty and non-empty results.
-    """
     count = len(items)
     hint = empty_hint if count == 0 else f"{count} item(s)."
     return {"ok": True, "items": items, "hint": hint}
 
 
 def standing_instructions() -> str:
-    """Takeover the host sees on connect. The full protocol is ``swarm_boot``.
-
-    One imperative, not a tool map. ``EVOLVER_SWARM_AUTO_HIJACK`` does not
-    change this text. The user's current message still wins. Keep under ~1200
-    chars (host hard limit); longer Grok Bot / path detail lives in README.
-    """
+    """Concise server takeover instructions (< 600 chars, zero internal flag jargon)."""
     return (
-        "EVOLVER SWARM is connected. If THIS message already asks for something "
-        "else, do that and do not start the loop.\n"
-        "If it does not, call swarm_boot and follow its instrument_prompt, "
-        "including boot_once. One sentence on the actual state: severity=soft, "
-        "hard gate, or paused.\n"
-        "\n"
-        "Loop per turn via next_action:\n"
-        "  swarm_tick → edit dispatch_prompt → swarm_distill →\n"
-        "  swarm_hypothesis → swarm_solidify → swarm_feedback (score or 0)\n"
-        "PROPOSAL REQUIRED or proposal_required=true: swarm_propose that edit, "
-        "no free edit.\n"
-        "next_action=swarm_solidify or loop_fuse=pending_redirect_loop: solidify. "
-        "session_not_failed=true: not failed. "
-        "Do not tick or abandon. Soft gap: severity=soft.\n"
-        "Grok Bot: /workspace root; src=/workspace/evolver-research/evolver.py; "
-        "restart mcp after pull.\n"
-        "\n"
-        "never retry: next_action=stop_and_report, await_human, "
-        "await_human_approval, await_supervisor_resume, paused=true, "
-        "preflight_aborted=true, error=instance_lock_held. "
-        "await_human_approval: swarm_approvals, then swarm_approval_resolve "
-        "after user decides. "
-        "retryable=true: swarm_tick again. "
-        "停: swarm_supervise action pause, then stop. "
-        "继续: action resume, then swarm_boot again.\n"
-        "Never edit .evolver/, solve val here, or call skip_validation."
+        "EVOLVER SWARM is connected (FSM 3-tool autopilot protocol).\n"
+        "If the user's current message asks for another task, do that first.\n"
+        "Otherwise run the atomic self-evolution loop:\n"
+        '  1. IDLE: call `evolve_begin(hypothesis="one sentence claim")`.\n'
+        "  2. ACTIVE_RUN: inspect with `run_lens`, make a focused single-component edit,\n"
+        '     then call `evolve_settle(summary="what changed")` (< 3s lightning check).\n'
+        "  3. On `ok=false` (`draft_preserved`), your patch stays intact—fix the 3-line\n"
+        "     `actionable_fix` and run `evolve_begin` again. Never edit `~/.evolver/`."
     )
 
 
 def _enable_tool_catalog_refresh(server: Any) -> None:
-    """Tell hosts the tool list can change, and ping them once they initialize.
-
-    ``tools.listChanged`` defaults to false. A host that treats that as
-    "catalog is immutable" keeps a session cache from before ``swarm_doctor``
-    existed: calls hit the new process, ``tools/list`` on that process already
-    includes the tool, and the host catalog still omits it. Advertising
-    ``listChanged`` and sending ``notifications/tools/list_changed`` after
-    ``notifications/initialized`` is the server-side refresh. This does not
-    register a tool the server does not implement.
-    """
+    """Advertise ``tools.listChanged=True`` and emit ``notifications/tools/list_changed``."""
     low = server._lowlevel_server
     original = low.create_initialization_options
 
@@ -374,17 +309,44 @@ def _enable_tool_catalog_refresh(server: Any) -> None:
     )
 
 
-def build_server() -> Any:
-    """Construct the MCP server instance (stdio transport via ``run``)."""
+def build_server(*, lazy_bootstrap: bool = False) -> Any:
+    """Construct the FSM-gated MCP server instance."""
     from mcp.server.mcpserver import MCPServer
     from mcp.server.mcpserver.context import Context
     from mcp.shared.exceptions import MCPError
+    from mcp.types import ToolAnnotations
     from mcp_types import CallToolResult, TextContent
 
+    from evolver.swarm import fsm_state
+
     class _HostFacingServer(MCPServer):
-        """Same tools, but raised failures are a structured envelope."""
+        """FSM-gated MCP server with dynamic ``list_tools`` and ``list_changed`` pushes."""
+
+        async def list_tools(self) -> list[Any]:
+            all_tools = await super().list_tools()
+            cur = fsm_state()
+            hidden = ACTIVE_ONLY_TOOLS if cur == "IDLE" else IDLE_ONLY_TOOLS
+            return [t for t in all_tools if t.name not in hidden]
 
         async def _handle_call_tool(self, ctx: Any, params: Any) -> Any:
+            tool_name = str(getattr(params, "name", "") or "")
+            before = fsm_state()
+
+            # Hard FSM guard for stale client tool caches
+            if (before == "IDLE" and tool_name in ACTIVE_ONLY_TOOLS) or (
+                before == "ACTIVE_RUN" and tool_name in IDLE_ONLY_TOOLS
+            ):
+                mismatch = _fsm_mismatch_envelope(tool_name, before)
+                with contextlib.suppress(Exception):
+                    await ctx.session.send_tool_list_changed()
+                return CallToolResult(
+                    content=[
+                        TextContent(type="text", text=json.dumps(mismatch, ensure_ascii=False))
+                    ],
+                    structured_content=mismatch,
+                    is_error=True,
+                )
+
             context = Context(
                 request_context=ctx,
                 mcp_server=self,
@@ -392,11 +354,11 @@ def build_server() -> Any:
                 subscriptions=self._subscriptions,
             )
             try:
-                return await self.call_tool(params.name, params.arguments or {}, context)
+                res = await self.call_tool(tool_name, params.arguments or {}, context)
             except MCPError:
                 raise
             except Exception as exc:
-                envelope = tool_failure_envelope(str(getattr(params, "name", "") or ""), exc)
+                envelope = tool_failure_envelope(tool_name, exc)
                 return CallToolResult(
                     content=[
                         TextContent(type="text", text=json.dumps(envelope, ensure_ascii=False))
@@ -405,10 +367,138 @@ def build_server() -> Any:
                     is_error=True,
                 )
 
+            after = fsm_state()
+            if after != before:
+                with contextlib.suppress(Exception):
+                    await ctx.session.send_tool_list_changed()
+            return res
+
     server: Any = _HostFacingServer("evolver", instructions=standing_instructions())
 
-    # Typed defs first, registered via decorator *expressions* — keeps mypy
-    # strict clean (the mcp package ships no stubs, so @server.tool() is Any).
+    # -----------------------------------------------------------------------
+    # Core 3-tool FSM surface + evolve_status
+    # -----------------------------------------------------------------------
+
+    async def tool_evolve_begin(
+        hypothesis: Annotated[
+            str,
+            Field(
+                description=(
+                    "Plain one-sentence hypothesis describing the single bug fix "
+                    "or improvement mechanism to validate in this round. Leave empty "
+                    "with auto_discover=True to preview top signals & candidate operators first."
+                )
+            ),
+        ] = "",
+        target_files: Annotated[
+            list[str] | None,
+            Field(description="Optional relative file paths you expect to touch."),
+        ] = None,
+        auto_discover: Annotated[
+            bool,
+            Field(description="Automatically scan workspace signals and match operator genes."),
+        ] = True,
+        discard_draft: Annotated[
+            bool,
+            Field(description="Revert uncommitted tracked draft edits before starting."),
+        ] = False,
+        project: Annotated[
+            str | None,
+            Field(description="Optional existing project directory path to bind."),
+        ] = None,
+        agent_name: str = "host-agent",
+    ) -> dict[str, Any]:
+        """Core FSM (IDLE -> ACTIVE_RUN). Lock one plain-sentence hypothesis and start a round."""
+        from evolver.swarm import evolve_begin
+
+        return await evolve_begin(
+            hypothesis=hypothesis,
+            target_files=target_files,
+            auto_discover=auto_discover,
+            discard_draft=discard_draft,
+            project=project,
+            agent_name=agent_name,
+        )
+
+    def tool_run_lens(
+        name: Annotated[
+            Literal["list", "ast_hotspot", "import_impact", "trace_locator", "contract_surface"]
+            | str,
+            Field(
+                description=(
+                    "Lens name (`list`, `ast_hotspot`, `import_impact`, "
+                    "`trace_locator`, `contract_surface`, or an operator gene id)."
+                )
+            ),
+        ] = "list",
+        target: Annotated[
+            str,
+            Field(
+                description="Relative file/directory path (or traceback text for trace_locator)."
+            ),
+        ] = ".",
+        args: Annotated[
+            dict[str, Any] | None,
+            Field(
+                description=(
+                    "Optional lens parameters (e.g. {'traceback': '...'} or {'files': [...]})."
+                )
+            ),
+        ] = None,
+        project: str | None = None,
+    ) -> dict[str, Any]:
+        """Core FSM (ACTIVE_RUN, read-only). Run a deterministic Python diagnostic lens."""
+        from evolver.swarm import evolve_run_lens
+
+        return evolve_run_lens(name=name, target=target, args=args, project=project)
+
+    def tool_evolve_settle(
+        summary: Annotated[
+            str,
+            Field(description="Concise summary of the change applied during this round."),
+        ] = "",
+        validation_scope: Annotated[
+            Literal["auto", "lightning", "cascade", "related"],
+            Field(
+                description=(
+                    "`auto` (default) runs `< 3s` AST reverse-dependency L0 lightning "
+                    "validation and escalates to L2 only on high-risk surfaces."
+                )
+            ),
+        ] = "auto",
+        related_commands: Annotated[
+            list[list[str]] | None,
+            Field(description="Explicit argv list when validation_scope='related'."),
+        ] = None,
+        restore_draft: Annotated[
+            bool,
+            Field(description="Restore the last backed-up draft from rejected_stashes."),
+        ] = False,
+        project: str | None = None,
+        agent_name: str = "host-agent",
+    ) -> dict[str, Any]:
+        """Core FSM (ACTIVE_RUN -> IDLE). Validate, settle blackbox/episode, promote or draft."""
+        from evolver.swarm import evolve_settle
+
+        return evolve_settle(
+            summary=summary,
+            validation_scope=validation_scope,
+            related_commands=related_commands,
+            restore_draft=restore_draft,
+            project=project,
+            agent_name=agent_name,
+        )
+
+    def tool_evolve_status(project: str | None = None) -> dict[str, Any]:
+        """Read-only status. Inspect current FSM state, vault counts, signals, and saved time."""
+        from evolver.swarm import evolve_status
+
+        return evolve_status(project=project)
+
+    # -----------------------------------------------------------------------
+    # Read-only auxiliary lookup tools
+    # -----------------------------------------------------------------------
+
     def tool_asset_search(query: str, limit: int = 10) -> dict[str, Any]:
         """Read-only auxiliary. Search local GEP assets (Genes/Capsules) by keyword."""
         return list_envelope(asset_search(query, limit), empty_hint=_EMPTY_ASSET_SEARCH_HINT)
@@ -417,473 +507,33 @@ def build_server() -> Any:
         """Read-only auxiliary. Fetch one local Gene/Capsule by id."""
         return asset_get(asset_id)
 
-    def tool_mailbox_send(
-        type: str, payload: dict[str, Any], priority: str = "normal"
-    ) -> dict[str, Any]:
-        """Auxiliary. Send a durable mailbox message to the evolver daemon."""
-        return mailbox_send(type, payload, priority)
-
-    def tool_mailbox_poll(limit: int = 10, direction: str = "inbound") -> dict[str, Any]:
-        """Read-only auxiliary. Poll mailbox messages (direction: inbound|outbound)."""
-        return list_envelope(mailbox_poll(limit, direction), empty_hint=_EMPTY_MAILBOX_HINT)
-
-    def tool_mailbox_ack(message_ids: list[str]) -> int:
-        """Auxiliary. Acknowledge processed mailbox messages."""
-        return mailbox_ack(message_ids)
-
-    def tool_rebuild_views() -> dict[str, Any]:
-        """Auxiliary. Rebuild event-log projections (gene tallies, cycle timelines)."""
-        return rebuild_views()
-
     def tool_cycle_timeline(limit: int = 20) -> dict[str, Any]:
-        """Read-only auxiliary. Recent cycle timelines from the event log.
-
-        stage and outcome_status describe one settlement: the last terminal
-        event. success settles as solidified; any other non-abort settlement
-        settles as failed; cycle_abort settles as aborted.
-        outcome_matches_stage is true when the two fields agree. A non-empty
-        result also includes semantics.
-        """
+        """Read-only auxiliary. Recent cycle timelines from the event log."""
         items = cycle_timeline(limit)
         payload = list_envelope(items, empty_hint=_EMPTY_TIMELINE_HINT)
         if items:
             payload["semantics"] = _TIMELINE_SEMANTICS
         return payload
 
-    # Swarm takeover surface (evolver.swarm; clean names, not tool_* — these
-    # are the names host agents see and must match the instrument prompt).
-    def tool_swarm_boot(
-        agent_name: str = "host-agent",
-        project: str | None = None,
-    ) -> dict[str, Any]:
-        """Core loop. Take over this host as an evolver swarm worker (returns the protocol).
-
-        project binds only an existing directory. bound_paths states repo_root
-        (code root) and workspace_root. A difference, or a label that is not a
-        directory, is a soft warning; the loop still continues.
-        An unfinished run on a soft gap keeps next_action=swarm_solidify,
-        gate_soft_continue=true, and tick_again=false. This steer does not
-        list evolver doctor --fix, evolver bench freeze, or evolver bench
-        baseline as a current step in commands or next_steps.
-        This call does not settle the run or write a Parent baseline.
-        """
-        from evolver.swarm import swarm_boot
-
-        return swarm_boot(agent_name, project=project)
-
-    async def tool_swarm_tick(
-        agent_name: str | None = None,
-        include_prompt: bool = True,
-        prompt_mode: Annotated[
-            Literal["full", "short"],
-            Field(
-                description=(
-                    "full (default) inlines the gene preview. "
-                    "short returns the core-loop checklist and drops the inlined "
-                    "GEP text from engine_log. The full prompt stays at "
-                    "dispatch_prompt_artifact and evolver://dispatch/last."
-                )
-            ),
-        ] = "full",
-        checklist_only: Annotated[
-            bool,
-            Field(
-                description=(
-                    "When true, same payload as prompt_mode=short. "
-                    "When false, prompt_mode stays in control. "
-                    "Does not change include_prompt."
-                )
-            ),
-        ] = False,
-        supersede_pending: Annotated[
-            bool,
-            Field(
-                description=(
-                    "Default false. While a run is unfinished, the first "
-                    "swarm_tick does not start a cycle: ok stays true, "
-                    "severity=soft, cycle_started=false, progress=false, "
-                    "tick_again=false, retryable=false, next_action=swarm_solidify, "
-                    "and last_run stays. Absent retryable is not a license to tick "
-                    "again. A repeat on that same run returns ok=false, "
-                    "severity=soft, retryable=false, "
-                    "loop_fuse=pending_redirect_loop, "
-                    "redirect_reason=pending_redirect_loop, and no error field. "
-                    "next_action stays swarm_solidify. The fuse code is not an "
-                    "error and not a next_action value. It still does not start "
-                    "a cycle. dispatch_reason stays pending_solidify. The fuse "
-                    "is not a gate failure and not an abandon signal. Both returns set "
-                    "session_not_failed=true, preserve_pending=true, "
-                    "abandon_run=false, and action_required=swarm_solidify. "
-                    "A soft gap stays in warning. Boot and status keep "
-                    "gate_soft_continue=true. The first redirect and the fuse omit "
-                    "that key and set soft_gap.advisory=true with soft_gap.tick=false. "
-                    "Absent is not false. This path never writes "
-                    "gate_soft_continue=false. tick_again=false means do "
-                    "not tick. The first redirect keeps ok true and sets no error. "
-                    "supersede_pending=true starts a new cycle "
-                    "and replaces that run. Does not weaken the solidify gate "
-                    "or write a Parent baseline. Checkpoint and pause still "
-                    "refuse the cycle."
-                )
-            ),
-        ] = False,
-    ) -> dict[str, Any]:
-        """Core loop. Run one evolution cycle; returns the GEP prompt to execute.
-
-        prompt_mode=full (default) inlines the gene preview. A short payload
-        requires prompt_mode=short or checklist_only=true: the core-loop
-        checklist replaces the preview, and engine_log drops the inlined GEP
-        text. The full prompt stays at dispatch_prompt_artifact and
-        evolver://dispatch/last. include_prompt=false only clears
-        dispatch_prompt.
-
-        If a run is unfinished, the first default call does not start a cycle
-        (cycle_started=false, next_action=swarm_solidify, ok=true, severity=soft,
-        progress=false, tick_again=false, retryable=false). A repeat on that
-        run returns ok=false and loop_fuse=pending_redirect_loop with
-        redirect_reason the same code and no error field (severity=soft,
-        retryable=false). next_action stays
-        swarm_solidify. The fuse code is not an error and not a next_action
-        value. It still does not start a cycle. dispatch_reason stays
-        pending_solidify. The first redirect keeps
-        redirect_reason=pending_solidify and sets no loop_fuse. That is not a
-        gate failure and not an abandon signal. Both returns set
-        session_not_failed=true, preserve_pending=true, abandon_run=false, and
-        action_required=swarm_solidify. Read session_not_failed before other
-        flags. True means the session is not failed: do not drop the unfinished
-        run, call swarm_solidify. A soft gap stays in warning.
-        On a soft gap, boot and status keep gate_soft_continue=true. The first
-        redirect and the fuse omit that key and set soft_gap.advisory=true with
-        soft_gap.tick=false. Absent is not false, so do not treat the session
-        as failed. This path never writes gate_soft_continue=false.
-        tick_again=false means do not tick.
-        The first redirect keeps ok true and sets no error.
-        This steer does not list evolver doctor --fix, evolver bench freeze,
-        or evolver bench baseline as the current step in commands or next_steps.
-        Those commands stay listed when no run is unfinished.
-        This call does not execute it. Pass supersede_pending=true to replace
-        that run. This does not weaken the solidify gate and does not write
-        a Parent baseline.
-        """
-        from evolver.swarm import swarm_tick
-
-        return await swarm_tick(
-            agent_name=agent_name,
-            include_prompt=include_prompt,
-            prompt_mode=prompt_mode,
-            checklist_only=checklist_only,
-            supersede_pending=supersede_pending,
-        )
-
-    def tool_swarm_distill(response_text: str, dry_run: bool = False) -> dict[str, Any]:
-        """Core loop. Distill executed work output into Gene/Capsule candidates."""
-        from evolver.swarm import swarm_distill
-
-        return swarm_distill(response_text, dry_run=dry_run)
-
-    def tool_swarm_hypothesis(
-        hypothesis: dict[str, Any], agent_name: str = "host-agent"
-    ) -> dict[str, Any]:
-        """Core loop. Declare this Candidate's one primary hypothesis (演进方案.md §5.3).
-
-        Fields: hypothesis (what you claim), dimension (content|tool|schema),
-        mechanism_family, target_hook, mechanism_check (train task refs only —
-        the validation reserve is sealed). Optional expected_outcome
-        ({"expected_checks_to_pass": [...]}) lets the engine record a
-        prediction_delta at settlement. The host owns the claim; the engine
-        never invents one. Declaring is not passing: the gate re-reads it.
-        """
-        from evolver.swarm import swarm_hypothesis
-
-        return swarm_hypothesis(hypothesis=hypothesis, agent_name=agent_name)
-
-    def tool_swarm_propose(
-        proposal: dict[str, Any],
-        agent_name: str = "host-agent",
-        hypothesis: dict[str, Any] | None = None,
-    ) -> dict[str, Any]:
-        """Core loop. S29 mechanical mutation: validate-all-first, exact unique anchor matching.
-
-        hypothesis (§5.3) is recorded before the proposal is applied.
-        """
-        from evolver.swarm import swarm_propose
-
-        return swarm_propose(proposal=proposal, agent_name=agent_name, hypothesis=hypothesis)
-
-    def tool_swarm_solidify(
-        skip_validation: bool = False,
-        agent_name: str = "host-agent",
-        proposal: dict[str, Any] | None = None,
-        hypothesis: dict[str, Any] | None = None,
-        validation_scope: str | None = None,
-        related_commands: list[list[str]] | None = None,
-        restore_stash: bool = False,
-    ) -> dict[str, Any]:
-        """Core loop. Run the solidify gate: validations, acceptance gate, commit/rollback.
-
-        skip_validation=True is high-risk: it passes the HITL approval gate
-        (blocked → await_human_approval; timeout fails safe to reject).
-        Optionally accepts a proposal to mechanically apply before validation (S29).
-        hypothesis (§5.3) is recorded before gating; no claim, no measurement.
-        validation_scope: 'related' | 'cascade' | 'skip'; restore_stash=True restores stash.
-        """
-        from evolver.swarm import swarm_solidify
-
-        return swarm_solidify(
-            skip_validation=skip_validation,
-            agent_name=agent_name,
-            proposal=proposal,
-            hypothesis=hypothesis,
-            validation_scope=validation_scope,
-            related_commands=related_commands,
-            restore_stash=restore_stash,
-        )
-
-    def tool_swarm_approvals() -> dict[str, Any]:
-        """Read-only. List HITL requests waiting for a human decision.
-
-        Same list envelope as mailbox and timeline: ok, items, hint.
-        items and pending are the waiting queue. recent is the latest
-        journal, including rows already decided. An empty queue is still
-        that object.
-        """
-        from evolver.gep.hitl import list_pending, list_recent
-
-        pending = list_pending()
-        recent = list_recent(limit=10)
-        payload = list_envelope(pending, empty_hint=_EMPTY_APPROVALS_HINT)
-        payload["pending"] = pending
-        payload["recent"] = recent
-        payload["semantics"] = _APPROVALS_SEMANTICS
-        if pending or recent:
-            payload["hint"] = f"{len(pending)} pending, {len(recent)} recent."
-        return payload
-
-    def tool_swarm_approval_resolve(
-        request_id: str, approve: bool, note: str = ""
-    ) -> dict[str, Any]:
-        """Swarm control. Relay a HUMAN decision on a pending HITL request (ask the user first)."""
-        from evolver.gep.hitl import resolve_approval
-        from evolver.swarm import host_relay_blocked
-
-        if approve and host_relay_blocked():
-            return {
-                "ok": False,
-                "error": "host_relay_blocked",
-                "hint": "EVOLVER_SWARM_AUTO_HIJACK=1: approve via `evolver hitl approve`",
-            }
-        return resolve_approval(request_id, approve=approve, decided_by="human-via-host", note=note)
-
-    def tool_swarm_report(
-        category: str | None = None,
-        description: str | None = None,
-        resolution: str | None = None,
-        no_write: bool = False,
-        dry_run: bool = False,
-    ) -> dict[str, Any]:
-        """Core loop. Heartbeat: capture friction/lessons into the living memory.
-
-        no_write and dry_run are the same switch. Either one persists nothing
-        (no rules, no lessons, no report file) and returns wrote=false.
-        The default writes and returns wrote=true plus written.
-        """
-        from evolver.swarm import swarm_report
-
-        return swarm_report(
-            category=category,
-            description=description,
-            resolution=resolution,
-            no_write=no_write,
-            dry_run=dry_run,
-        )
-
-    def tool_swarm_status() -> dict[str, Any]:
-        """Read-only. Lightweight engine status for swarm agents (no cycle side effects).
-
-        After boot, an unfinished run on a soft gap keeps next_action=swarm_solidify,
-        gate_soft_continue=true, and tick_again=false. This steer does not
-        list evolver doctor --fix, evolver bench freeze, or evolver bench
-        baseline as a current step in commands or next_steps.
-        This call does not settle the run or write a Parent baseline.
-        """
-        from evolver.swarm import swarm_status
-
-        return swarm_status()
-
-    def tool_swarm_doctor() -> dict[str, Any]:
-        """Read-only. Open-box summary (same checks as evolver doctor, never --fix).
-
-        While a run is unfinished and the report is soft-continue, next_action
-        is swarm_solidify and tick_again=false. soft_continue stays true.
-        fixes does not list evolver doctor --fix, evolver bench freeze, or
-        evolver bench baseline as a current step.
-        Those commands stay listed when no run is unfinished, and after solidify.
-        This call does not settle the run, write a Parent baseline, or execute
-        evolver doctor --fix. gate_soft_continue and session_not_failed stay absent.
-        """
-        from evolver.swarm import swarm_doctor
-
-        return swarm_doctor()
-
-    def tool_swarm_supervise(
-        action: Literal["status", "pause", "resume", "direct", "veto", "unveto"],
-        text: str | None = None,
-        pattern: str | None = None,
-        veto_id: str | None = None,
-        reason: str = "",
-        by: str = "human-via-host",
-    ) -> dict[str, Any]:
-        """Swarm control. HOTL supervision (relay a HUMAN decision — ask the user first).
-
-        pause/resume the loop, veto a substring pattern, or inject a steering
-        directive. tick refuses cycles while paused; vetoed genes have their
-        dispatch prompt withheld.
-        """
-        from evolver.swarm import host_relay_blocked, swarm_supervise
-
-        if action in ("resume", "unveto") and host_relay_blocked():
-            return {
-                "ok": False,
-                "error": "host_relay_blocked",
-                "hint": "EVOLVER_SWARM_AUTO_HIJACK=1: resume/unveto via `evolver supervise`",
-            }
-        return swarm_supervise(
-            action,
-            text=text,
-            pattern=pattern,
-            veto_id=veto_id,
-            reason=reason,
-            by=by,
-        )
-
-    def tool_swarm_hooks(
-        action: Literal["status", "install", "uninstall"] = "status",
-        platform: str = "auto",
-        project_dir: str | None = None,
-        force: bool = False,
-        dry_run: bool = False,
-    ) -> dict[str, Any]:
-        """Swarm control. Manage IDE/agent file hooks (cursor/claude-code/codex/kiro/opencode...).
-
-        action=status previews what setup-hooks would write for the platform.
-        """
-        from evolver.swarm import swarm_hooks
-
-        return swarm_hooks(
-            action=action,
-            platform=platform,
-            project_dir=project_dir,
-            force=force,
-            dry_run=dry_run,
-        )
-
-    def tool_swarm_checkpoint_working(content: str) -> dict[str, Any]:
-        """Swarm control. Write WORKING_SESSION.md and clear a pending compaction checkpoint."""
-        from evolver.swarm import swarm_checkpoint_working
-
-        return swarm_checkpoint_working(content)
-
-    def tool_swarm_hook_event(
-        event: Literal["session_start", "session_end", "signal_detect", "precompact"],
-        payload: dict[str, Any] | None = None,
-        source: str = "host-agent",
-    ) -> dict[str, Any]:
-        """Swarm control. In-process hook bridge (for hosts without file hooks).
-
-        Call at session boundaries and when error output is observed; the
-        payload's `content` text is scanned and detected signals are injected
-        into the next cycle's selection.
-        """
-        from evolver.swarm import swarm_hook_event
-
-        return swarm_hook_event(event, payload=payload, source=source)
-
-    def tool_swarm_feedback(
-        primary_score: float,
-        textual_gradient: str = "",
-        metrics: dict[str, float] | None = None,
-        success: bool = True,
-        error_message: str | None = None,
-        eval_mode: Literal["train", "validation", "test"] = "validation",
-        sample_count: int = 0,
-        agent_name: str = "host-agent",
-        run_id: str | None = None,
-        cycle_id: str | None = None,
-    ) -> dict[str, Any]:
-        """Core loop. Report unified evaluation feedback E (score/metrics/gradient)."""
-        from evolver.swarm import swarm_feedback
-
-        return swarm_feedback(
-            primary_score=primary_score,
-            textual_gradient=textual_gradient,
-            metrics=metrics,
-            success=success,
-            error_message=error_message,
-            eval_mode=eval_mode,
-            sample_count=sample_count,
-            agent_name=agent_name,
-            run_id=run_id,
-            cycle_id=cycle_id,
-        )
-
-    def tool_swarm_skills(
-        action: Literal["scan", "list", "sync"],
-        dry_run: bool = False,
-    ) -> dict[str, Any]:
-        """Swarm control. Skill ecosystem bridge: scan host skill roots (project > user >
-        builtin), list synced skill genes, or sync skills into the store."""
-        from evolver.swarm import swarm_skills
-
-        return swarm_skills(action=action, dry_run=dry_run)
-
-    def tool_swarm_workflow_run(
-        file: str | None = None,
-        template: str | None = None,
-        workflow_id: str | None = None,
-    ) -> dict[str, Any]:
-        """Swarm control. Start a durable evolution workflow from a YAML/JSON spec file or a
-        bundled template (repair-cycle / innovate-cycle). Returns the state,
-        including the agent role + instruction the host should execute now."""
-        from evolver.swarm import swarm_workflow_run
-
-        return swarm_workflow_run(file=file, template=template, workflow_id=workflow_id)
-
-    def tool_swarm_workflow_act(
-        workflow_id: str,
-        action: Literal["approve", "reject", "complete", "resume", "cancel"],
-        result: Any = None,
-        note: str | None = None,
-    ) -> dict[str, Any]:
-        """Swarm control. Advance a waiting workflow: approve/reject its approval gate,
-        complete its agent step with the host's result, resume, or cancel."""
-        from evolver.swarm import swarm_workflow_act
-
-        return swarm_workflow_act(workflow_id=workflow_id, action=action, result=result, note=note)
-
-    def tool_swarm_workflow_status(workflow_id: str) -> dict[str, Any]:
-        """Read-only. Full state of one workflow run — step index, variables, gate
-        verdicts, and what the host executor should do next."""
-        from evolver.swarm import swarm_workflow_status
-
-        return swarm_workflow_status(workflow_id=workflow_id)
-
     def prompt_evolver_swarm(agent_name: str = "host-agent") -> str:
-        """Instrument prompt: inject the swarm-evolution takeover protocol."""
-        from evolver.swarm import swarm_boot
+        """Instrument prompt: inject the concise 3-tool FSM takeover protocol."""
+        from evolver.swarm import build_instrument_prompt, evolve_status
 
-        return str(swarm_boot(agent_name)["instrument_prompt"])
+        return build_instrument_prompt({**evolve_status(), "agent_name": agent_name})
 
-    # Resources (read-only state surfaces — hosts can subscribe/read these
-    # without tool round-trips; dicts are auto-serialized to JSON).
+    # -----------------------------------------------------------------------
+    # Resources
+    # -----------------------------------------------------------------------
+
     def resource_status() -> dict[str, Any]:
-        from evolver.swarm import swarm_status
+        from evolver.swarm import evolve_status
 
-        return swarm_status()
+        return evolve_status()
 
     def resource_instrument_prompt() -> str:
-        from evolver.swarm import build_instrument_prompt, swarm_status
+        from evolver.swarm import build_instrument_prompt, evolve_status
 
-        return build_instrument_prompt({**swarm_status(), "agent_name": "resource-reader"})
+        return build_instrument_prompt({**evolve_status(), "agent_name": "resource-reader"})
 
     def resource_dispatch_last() -> str:
         from evolver.gep.paths import get_evolution_dir
@@ -897,12 +547,12 @@ def build_server() -> Any:
         return cycle_timeline(10)
 
     server.resource(
-        "evolver://status", name="status", description="Live swarm/engine status (JSON)"
+        "evolver://status", name="status", description="Live FSM & engine status (JSON)"
     )(resource_status)
     server.resource(
         "evolver://instrument-prompt",
         name="instrument-prompt",
-        description="The swarm takeover instrument prompt (current render)",
+        description="The 3-tool FSM takeover instrument prompt",
     )(resource_instrument_prompt)
     server.resource(
         "evolver://dispatch/last",
@@ -915,86 +565,59 @@ def build_server() -> Any:
         description="Recent evolution cycle timeline (JSON)",
     )(resource_events_recent)
 
-    # Tool annotations (MCP spec hints: hosts may surface confirmations or
-    # skip read-only tools in plan mode).
-    from mcp.types import ToolAnnotations
-
     read_only = ToolAnnotations(read_only_hint=True)
     destructive = ToolAnnotations(destructive_hint=True)
 
-    classic_tools: list[tuple[str, ToolAnnotations | None]] = [
-        ("tool_asset_search", read_only),
-        ("tool_asset_get", read_only),
-        ("episode_get", read_only),
-        ("episode_inspect", read_only),
-        ("tool_mailbox_send", None),
-        ("tool_mailbox_poll", read_only),
-        ("tool_mailbox_ack", None),
-        ("tool_rebuild_views", None),
-        ("tool_cycle_timeline", read_only),
-    ]
-    classic_fns: dict[str, Callable[..., Any]] = {
-        "tool_asset_search": tool_asset_search,
-        "tool_asset_get": tool_asset_get,
-        "episode_get": episode_get,
-        "episode_inspect": episode_inspect,
-        "tool_mailbox_send": tool_mailbox_send,
-        "tool_mailbox_poll": tool_mailbox_poll,
-        "tool_mailbox_ack": tool_mailbox_ack,
-        "tool_rebuild_views": tool_rebuild_views,
-        "tool_cycle_timeline": tool_cycle_timeline,
-    }
-    for name, ann in classic_tools:
-        fn = classic_fns[name]
-        read_only_hint = bool(ann is not None and ann.read_only_hint)
-        if name.startswith("episode_"):
-            role = "Read-only record"
-        elif read_only_hint:
-            role = "Read-only auxiliary"
-        else:
-            role = "Auxiliary"
-        server.tool(
-            name=name,
-            title=f"{role}: {name}",
-            description=_host_tool_description(fn),
-            annotations=ann,
-        )(fn)
+    _lazy_bootstrapped = False
 
-    # Schema titles follow the function __name__. The wrappers below are
-    # named tool_swarm_* in source; align that to the public swarm_* name
-    # so hosts do not see tool_swarm_tickArguments for a tool called swarm_tick.
+    def _with_lazy_bootstrap(fn: Callable[..., Any], *, skip: bool = False) -> Callable[..., Any]:
+        if not lazy_bootstrap or skip:
+            return fn
+        import functools
 
-    swarm_tools: list[tuple[str, Callable[..., Any], ToolAnnotations | None]] = [
-        ("swarm_boot", tool_swarm_boot, None),
-        ("swarm_tick", tool_swarm_tick, None),
-        ("swarm_distill", tool_swarm_distill, None),
-        ("swarm_hypothesis", tool_swarm_hypothesis, destructive),
-        ("swarm_propose", tool_swarm_propose, destructive),
-        ("swarm_solidify", tool_swarm_solidify, destructive),
-        ("swarm_feedback", tool_swarm_feedback, None),
-        ("swarm_report", tool_swarm_report, None),
-        ("swarm_status", tool_swarm_status, read_only),
-        ("swarm_doctor", tool_swarm_doctor, read_only),
-        ("swarm_approvals", tool_swarm_approvals, read_only),
-        ("swarm_approval_resolve", tool_swarm_approval_resolve, destructive),
-        ("swarm_supervise", tool_swarm_supervise, destructive),
-        ("swarm_hooks", tool_swarm_hooks, None),
-        ("swarm_hook_event", tool_swarm_hook_event, None),
-        ("swarm_checkpoint_working", tool_swarm_checkpoint_working, None),
-        ("swarm_skills", tool_swarm_skills, None),
-        ("swarm_workflow_run", tool_swarm_workflow_run, None),
-        ("swarm_workflow_act", tool_swarm_workflow_act, destructive),
-        ("swarm_workflow_status", tool_swarm_workflow_status, read_only),
+        if inspect.iscoroutinefunction(fn):
+
+            @functools.wraps(fn)
+            async def _async_wrapped(*args: Any, **kwargs: Any) -> Any:
+                nonlocal _lazy_bootstrapped
+                if not _lazy_bootstrapped:
+                    _lazy_bootstrapped = True
+                    with contextlib.suppress(Exception):
+                        from evolver.swarm import _maybe_lazy_bootstrap
+
+                        _maybe_lazy_bootstrap()
+                return await fn(*args, **kwargs)
+
+            return _async_wrapped
+
+        @functools.wraps(fn)
+        def _sync_wrapped(*args: Any, **kwargs: Any) -> Any:
+            nonlocal _lazy_bootstrapped
+            if not _lazy_bootstrapped:
+                _lazy_bootstrapped = True
+                with contextlib.suppress(Exception):
+                    from evolver.swarm import _maybe_lazy_bootstrap
+
+                    _maybe_lazy_bootstrap()
+            return fn(*args, **kwargs)
+
+        return _sync_wrapped
+
+    registrations: list[tuple[str, Callable[..., Any], ToolAnnotations | None, str]] = [
+        ("evolve_begin", tool_evolve_begin, None, "Core FSM"),
+        ("run_lens", tool_run_lens, read_only, "Core FSM"),
+        ("evolve_settle", tool_evolve_settle, destructive, "Core FSM"),
+        ("evolve_status", tool_evolve_status, read_only, "Read-only"),
+        ("episode_get", episode_get, read_only, "Read-only record"),
+        ("episode_inspect", episode_inspect, read_only, "Read-only record"),
+        ("tool_asset_search", tool_asset_search, read_only, "Read-only auxiliary"),
+        ("tool_asset_get", tool_asset_get, read_only, "Read-only auxiliary"),
+        ("tool_cycle_timeline", tool_cycle_timeline, read_only, "Read-only auxiliary"),
     ]
-    for name, fn, ann in swarm_tools:
+
+    for name, raw_fn, ann, role in registrations:
+        fn = _with_lazy_bootstrap(raw_fn, skip=(name == "evolve_begin"))
         fn.__name__ = name
-        read_only_hint = bool(ann is not None and ann.read_only_hint)
-        if name in _CORE_LOOP_TOOLS:
-            role = "Core loop"
-        elif read_only_hint:
-            role = "Read-only"
-        else:
-            role = "Swarm"
         server.tool(
             name=name,
             title=f"{role}: {name}",
@@ -1010,15 +633,13 @@ def build_server() -> Any:
 
 def main(project: str | None = None) -> int:
     """Entry point for ``evolver mcp`` — stdio transport."""
-    import contextlib
     import os
+    import sys
 
     from evolver.gep.paths import ensure_workspace_meta, get_repo_root
     from evolver.ops.soak_env import maybe_route_to_soak
 
     if project and str(project).strip():
-        import sys
-
         from evolver.swarm import bind_project_directory
 
         info = bind_project_directory(project)
@@ -1035,15 +656,17 @@ def main(project: str | None = None) -> int:
     with contextlib.suppress(Exception):
         ensure_workspace_meta()
     maybe_route_to_soak()
-    build_server().run(transport="stdio")
+    build_server(lazy_bootstrap=True).run(transport="stdio")
     return 0
 
 
-if __name__ == "__main__":  # `python -m evolver.mcp_server` (host configs)
+if __name__ == "__main__":
     raise SystemExit(main())
 
 
 __all__ = [
+    "ACTIVE_ONLY_TOOLS",
+    "IDLE_ONLY_TOOLS",
     "asset_get",
     "asset_search",
     "build_server",
@@ -1055,4 +678,5 @@ __all__ = [
     "mailbox_send",
     "main",
     "rebuild_views",
+    "visible_tools_for_state",
 ]

@@ -561,7 +561,8 @@ def record_round(event_id: str, run_id: str = "") -> dict[str, Any]:
     scene = _find_scene(event_id, run_id)
     if scene is None:
         return {"ok": False, "error": "scene_missing", "event_id": event_id}
-    return record_episode(_attach_prediction_delta(build_episode(scene)))
+    body = _attach_blackbox(_attach_prediction_delta(build_episode(scene)))
+    return record_episode(body)
 
 
 def find_episode_id_for_run(run_id: str) -> str | None:
@@ -753,6 +754,36 @@ def _attach_prediction_delta(body: dict[str, Any]) -> dict[str, Any]:
     updated = dict(body)
     updated["gates"] = gates
     return updated
+
+
+def _attach_blackbox(body: dict[str, Any]) -> dict[str, Any]:
+    """Fold engine-captured cycle-boundary blackbox telemetry into ``gates`` (P1-2).
+
+    Leaves ``body`` byte-identical when no blackbox entry exists for this round
+    so unit tests and historical rounds without in-band blackboxes keep stable
+    content hashes.
+    """
+    from evolver.gep.blackbox import find_blackbox_for_round
+
+    entry = find_blackbox_for_round(
+        run_id=str(body.get("run_id") or ""),
+        event_id=str(body.get("event_id") or ""),
+    )
+    if entry is None:
+        return body
+    gates = dict(body.get("gates") or {})
+    gates["blackbox"] = {
+        "wall_time_ms": entry.get("wall_time_ms"),
+        "lens_calls_count": entry.get("lens_calls_count", 0),
+        "lens_names": list(entry.get("lens_names") or [])[:12],
+        "ast_delta": entry.get("ast_delta"),
+        "diff_stats": entry.get("diff_stats"),
+        "validation": entry.get("validation"),
+        "source": "engine_blackbox",
+    }
+    updated = dict(body)
+    updated["gates"] = gates
+    return attach_component_attribution(updated)
 
 
 def _prediction_delta_line(gates: dict[str, Any]) -> list[str]:

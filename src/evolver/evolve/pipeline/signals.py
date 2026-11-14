@@ -10,7 +10,6 @@ from typing import Any
 
 from evolver.gep.asset_store import consume_pending_signals, load_capsules, load_genes
 from evolver.gep.autopoiesis_rules import guard_check_signal_keys, merge_signal_keys
-from evolver.gep.cognition import augment_signals
 from evolver.gep.feature_flags import is_enabled
 from evolver.gep.learning_signals import (
     gather_pipeline_learning_signals,
@@ -61,13 +60,6 @@ async def signals_phase(ctx: dict[str, Any]) -> dict[str, Any]:
     # Sprint 22.1 (§13.3-#1): feed EvolutionEvent history into the pipeline so
     # signal-history modulation (saturation / dedup / ban_gene / plateau) can fire.
     recent_events = ctx.get("recent_events")
-    if not isinstance(recent_events, list) and is_enabled("enable_event_history"):
-        try:
-            from evolver.gep.asset_store import read_all_events
-
-            recent_events = read_all_events()[-20:]
-        except Exception as exc:
-            logger.debug("[signals] event history load skipped: %s", exc)
     if not isinstance(recent_events, list):
         recent_events = []
 
@@ -78,42 +70,20 @@ async def signals_phase(ctx: dict[str, Any]) -> dict[str, Any]:
         recent_events=recent_events,
     )
 
-    # Sprint 22.1 (§13.3-#2): infer an outcome for the previous cycle's attempt
-    # (error cleared => success) when no solidify outcome was ever recorded.
-    # Only error-family signals count as "error persists" — boilerplate signals
-    # like memory_missing must not mark an attempt failed.
-    if is_enabled("enable_gap_outcome_inference"):
-        error_signals = [
-            s for s in signals if s == "log_error" or s.startswith(("errsig:", "recurring_errsig"))
-        ]
-        try:
-            from evolver.gep.memory_graph import record_outcome_from_state
-
-            record_outcome_from_state(signals=error_signals)
-        except Exception as exc:
-            logger.debug("[signals] gap outcome inference skipped: %s", exc)
-
     # Append pending signals (they were consumed; re-inject)
     for s in pending:
         if s not in signals:
             signals.append(s)
 
-    max_explore_tasks = 5
     if is_enabled("enable_idle_scheduler"):
         try:
-            from evolver.gep.idle_scheduler import EvolutionIntensity, get_intensity
+            from evolver.gep.idle_scheduler import get_intensity
 
             intensity = get_intensity()
             ctx["evolution_intensity"] = intensity.value
-            if intensity == EvolutionIntensity.deep:
-                max_explore_tasks = 10
-            elif intensity == EvolutionIntensity.signal_only:
-                max_explore_tasks = 0
         except Exception as exc:
             logger.debug("[signals] idle scheduler check skipped: %s", exc)
 
-    if max_explore_tasks > 0:
-        signals = augment_signals(signals, max_explore_tasks=max_explore_tasks)
     if is_learning_signals_enabled():
         signals, learning_added = merge_signal_keys(signals, gather_pipeline_learning_signals())
         if learning_added:

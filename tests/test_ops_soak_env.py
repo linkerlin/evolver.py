@@ -169,14 +169,14 @@ class TestSoakInterlock:
         assert is_test_environment() is True
 
         monkeypatch.delenv("PYTEST_CURRENT_TEST", raising=False)
-        monkeypatch.delenv("EVOLVER_TEST_MODE", raising=False)
+        monkeypatch.setenv("EVOLVER_CONFIG", '{"quiet_legacy_warning":true}')
         monkeypatch.delenv("EVOLVER_NO_PARENT_GIT", raising=False)
         assert is_test_environment() is False
 
-        monkeypatch.setenv("EVOLVER_TEST_MODE", "1")
+        monkeypatch.setenv("EVOLVER_CONFIG", '{"test_mode":true,"quiet_legacy_warning":true}')
         assert is_test_environment() is True
 
-        monkeypatch.delenv("EVOLVER_TEST_MODE", raising=False)
+        monkeypatch.setenv("EVOLVER_CONFIG", '{"quiet_legacy_warning":true}')
         monkeypatch.setenv("EVOLVER_NO_PARENT_GIT", "1")
         assert is_test_environment() is True
 
@@ -190,7 +190,9 @@ class TestSoakInterlock:
     def test_maybe_route_bypassed_by_env(self, monkeypatch: pytest.MonkeyPatch) -> None:
         from evolver.ops.soak_env import maybe_route_to_soak
 
-        monkeypatch.setenv("EVOLVER_SOAK_ALLOW_INSIDE", "1")
+        monkeypatch.setenv(
+            "EVOLVER_CONFIG", '{"soak_allow_inside":true,"quiet_legacy_warning":true}'
+        )
         res = maybe_route_to_soak()
         assert res["routed"] is False
         assert res["reason"] == "bypassed_by_env"

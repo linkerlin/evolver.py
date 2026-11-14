@@ -58,7 +58,7 @@ def test_merge_autopoiesis_signals_same_cycle():
 
 @pytest.mark.asyncio
 async def test_repair_bias_forces_repair_mutation(temp_workspace, monkeypatch):
-    monkeypatch.setenv("EVOLVER_AUTOPOIESIS_WRITE", "0")
+    monkeypatch.setenv("EVOLVER_CONFIG", '{"autopoiesis_write":false}')
     ctx = {
         "signals": ["stable_success_plateau"],
         "genes": [{"id": "g1", "category": "repair", "signals_match": ["repair_loop"]}],

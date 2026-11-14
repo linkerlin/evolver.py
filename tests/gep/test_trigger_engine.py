@@ -121,9 +121,10 @@ class TestDailyBudget:
         temp_workspace: Path,
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
-        monkeypatch.setenv("EVOLVER_TRIGGER_MAX_CYCLES_PER_DAY", "1")
-        monkeypatch.setenv("EVOLVER_TRIGGER_MAX_TOKENS_PER_DAY", "500")
-        monkeypatch.setenv("EVOLVER_TRIGGER_PER_PATTERN_CAP", "1")
+        monkeypatch.setenv(
+            "EVOLVER_CONFIG",
+            '{"trigger_max_cycles_per_day":1,"trigger_max_tokens_per_day":500,"trigger_per_pattern_cap":1}',
+        )
         b = DailyBudget(path=temp_workspace / "env_budget.json")
         assert b.max_cycles == 1
         assert b.max_tokens == 500

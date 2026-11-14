@@ -129,10 +129,15 @@ def isolate(ws: Path) -> None:
     os.environ["EVOLUTION_DIR"] = str(ws / "memory" / "evolution")
     os.environ["EVOLVER_USER_LOCK"] = str(ws / "user.lock")
     os.environ["EVOLVER_HOME"] = str(ws / ".evomap")
-    os.environ["EVOLVER_NO_PARENT_GIT"] = "1"
-    os.environ["EVOLVER_HITL_MODE"] = "off"  # explicit: auto-approve with audit
-    os.environ["A2A_HUB_URL"] = "http://127.0.0.1:9"  # fast-refused, never real Hub
-    os.environ["EVOLVE_LOAD_MAX"] = "999"  # ambient host load must not abort the demo
+    os.environ["EVOLVER_STATE_ROOT"] = str(ws / ".evolver_state")
+    os.environ["EVOLVER_CONFIG"] = json.dumps(
+        {
+            "no_parent_git": True,
+            "hitl_mode": "off",
+            "a2a_hub_url": "http://127.0.0.1:9",
+            "load_max": 999.0,
+        }
+    )
 
 
 def git_init(ws: Path) -> None:

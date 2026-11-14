@@ -29,10 +29,7 @@ def _isolate_solo_env() -> None:
         "EVOLVER_SOLO",
         "A2A_HUB_URL",
         "EVOMAP_HUB_URL",
-        "EVOLVER_DEFAULT_HUB_URL",
-        "EVOLVER_VALIDATOR_ENABLED",
-        "EVOLVER_ATP",
-        "EVOLVER_ATP_AUTOBUY",
+        "EVOLVER_CONFIG",
     )
     saved = {k: os.environ.get(k) for k in touched}
     breaker.deactivate()
@@ -49,11 +46,15 @@ def _isolate_solo_env() -> None:
 # breaker: no escape valve
 # ---------------------------------------------------------------------------
 def test_activate_sets_solo_flag_and_forces_services_off() -> None:
+    from evolver.atp.auto_buyer import get_consent
+    from evolver.atp.default_handler import get_atp_mode
+    from evolver.config import get_config
+
     breaker.activate()
     assert breaker.is_solo_active() is True
-    assert os.environ["EVOLVER_VALIDATOR_ENABLED"] == "0"
-    assert os.environ["EVOLVER_ATP"] == "off"
-    assert os.environ["EVOLVER_ATP_AUTOBUY"] == "off"
+    assert get_config().validator_enabled is False
+    assert get_atp_mode() == "off"
+    assert get_consent() == {"enabled": False, "source": "env"}
 
 
 def test_no_escape_valve_hub_url_ignored_even_when_set(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -115,23 +116,12 @@ def test_run_cmd_allows_local_git_without_solo(tmp_path: Path) -> None:
 # post_cycle ATP cut
 # ---------------------------------------------------------------------------
 async def test_post_cycle_skips_atp_under_solo(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Solo must cut ATP auto-buyer and task pickup even if the flag is on."""
-    # Force the feature flag on AND seed consent so the only thing preventing
-    # ATP spend is the solo guard.
-    monkeypatch.setattr("evolver.gep.feature_flags.is_enabled", lambda _name: True, raising=False)
+    """Solo must cut the ATP task pickup even if the environment invites it.
 
+    (round-121 P0-4: the auto-buyer post_cycle path is gone — dead flag; the
+    solo guard now covers the remaining in-cycle ATP surface, task pickup.)
+    """
     calls: list[str] = []
-    monkeypatch.setattr(
-        "evolver.atp.auto_buyer.get_consent",
-        lambda: {"enabled": True},
-        raising=False,
-    )
-
-    async def _boom_run_tick(_signals):
-        calls.append("run_tick")
-        return {"placed": 0}
-
-    monkeypatch.setattr("evolver.atp.auto_buyer.run_tick", _boom_run_tick, raising=False)
 
     async def _boom_pick():
         calls.append("pick_one")
@@ -140,11 +130,11 @@ async def test_post_cycle_skips_atp_under_solo(monkeypatch: pytest.MonkeyPatch) 
 
     breaker.activate()
     await post_cycle.run_post_cycle_hooks({"signals": ["log_error"]})
-    assert calls == []  # neither ATP path ran under solo
+    assert calls == []  # task pickup did not run under solo
 
     breaker.deactivate()
     await post_cycle.run_post_cycle_hooks({"signals": ["log_error"]})
-    assert "run_tick" in calls  # ATP runs again once solo is off
+    assert "pick_one" in calls  # ATP runs again once solo is off
 
 
 # ---------------------------------------------------------------------------
@@ -176,11 +166,10 @@ def _solo_env(tmp: Path) -> dict[str, str]:
             "EVOLUTION_DIR": str(tmp / "memory" / "evolution"),
             "EVOMAP_PROXY": "0",
             "EVOMAP_PROXY_AUTO_INJECT": "off",
-            "EVOLVER_VALIDATOR_ENABLED": "true",  # solo must cut it
-            "EVOLVER_ATP": "on",
-            "EVOLVER_ATP_AUTOBUY": "on",  # solo must cut it
-            "EVOLVER_MAX_CYCLES_PER_PROCESS": "1",
-            "EVOLVER_IDLE_FETCH_INTERVAL_MS": "1",
+            "EVOLVER_CONFIG": (
+                '{"validator_enabled":true,"atp":"on","atp_autobuy":"on",'
+                '"max_cycles_per_process":1,"idle_fetch_interval_ms":1}'
+            ),
             # The max-cycles handoff spawns a replacement; point it at a
             # harmless no-op so no orphan loop chain survives the test.
             "EVOLVER_LOOP_COMMAND": f"{sys.executable} -c pass",

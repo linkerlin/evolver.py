@@ -63,8 +63,10 @@ def check_dirty_runtime(src: Path) -> list[str]:
 
 
 def _whitelist_doc_globs() -> list[str]:
+    from evolver.config import get_config
+
     globs = list(DEFAULT_WHITELIST_DOC_GLOBS)
-    extra = os.environ.get("EVOLVER_EVAL_WORKTREE_WHITELIST", "")
+    extra = get_config().eval_worktree_whitelist
     if extra.strip():
         for part in extra.split(","):
             if part.strip() and part.strip() not in globs:

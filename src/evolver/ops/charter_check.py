@@ -231,8 +231,8 @@ def build_charter_report(
         },
         "env_vars": {
             "count": env_count,
-            "target": 80,
-            "met": env_count <= 80,
+            "target": 35,
+            "met": env_count <= 35,
         },
         "capability_trajectory": trajectory,
         "git_cleanliness": {

@@ -334,7 +334,7 @@ def render_dashboard() -> str:
       </table>
       <p class="muted" style="font-size:0.8rem;margin-top:0.5rem;">
         Hover status API: <code>GET /api/github/pr/&lt;n&gt;</code>
-        · disable with <code>EVOLVER_WEBUI_GITHUB=0</code>
+        · disable with <code>webui_github=false</code> in <code>EVOLVER_CONFIG</code>
       </p>
     </div>
     """

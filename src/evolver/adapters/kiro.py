@@ -88,14 +88,14 @@ def build_agents_md_section() -> str:
     return f"""{SECTION_MARKER}
 ## Evolution Memory (Evolver)
 
-This project uses evolver for self-evolution. Hooks automatically:
+This project uses `evolver` for zero-touch self-evolution. Hooks automatically:
 1. Inject recent evolution memory on prompt submit
 2. Detect evolution signals during file edits
 3. Record outcomes at session end
 
-For substantive tasks, call `gep_recall` before work and `gep_record_outcome` after.
-Signals: log_error, perf_bottleneck, user_feature_request, capability_gap,
-deployment_issue, test_failure."""
+When driving self-evolution via MCP, follow the 3-tool atomic cycle:
+`evolve_begin` (lock hypothesis) -> `run_lens` / edit code -> `evolve_settle` (lightning check).
+CLI dashboard: `evolver status` | Autopilot daemon: `evolver up`."""
 
 
 def _append_section_to_file(file_path: Path, marker: str, content: str) -> bool:
@@ -142,6 +142,7 @@ def install(
     config_root: Path,
     evolver_root: Path,
     force: bool = False,
+    inject_docs: bool = True,
 ) -> dict[str, Any]:
     kiro_dir = config_root / ".kiro"
     hooks_dir = kiro_dir / HOOK_SCRIPTS_DIR_NAME
@@ -173,9 +174,14 @@ def install(
     copied = copy_hook_scripts(hooks_dir, evolver_root)
     print(f"[kiro] Copied {len(copied)} hook scripts to {hooks_dir}")
 
-    injected = _append_section_to_file(agents_md_path, SECTION_MARKER, build_agents_md_section())
-    if injected:
-        print(f"[kiro] Injected evolution section into {agents_md_path}")
+    files = [str(w) for w in written] + [str(c) for c in copied]
+    if inject_docs:
+        injected = _append_section_to_file(
+            agents_md_path, SECTION_MARKER, build_agents_md_section()
+        )
+        if injected:
+            print(f"[kiro] Injected evolution section into {agents_md_path}")
+        files.insert(len(written), str(agents_md_path))
 
     print("[kiro] Installation complete.")
     print("[kiro] Kiro auto-discovers *.kiro.hook files in .kiro/hooks/ -- no restart needed.")
@@ -183,7 +189,7 @@ def install(
     return {
         "ok": True,
         "platform": "kiro",
-        "files": [str(w) for w in written] + [str(agents_md_path)] + [str(c) for c in copied],
+        "files": files,
     }
 
 

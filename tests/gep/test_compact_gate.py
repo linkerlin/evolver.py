@@ -1,7 +1,8 @@
-"""Compaction marker locks mutation tools until the scratch pad is written."""
+"""Compaction marker locks mutation tools until scratch pad or evolve_begin clears it."""
 
 from __future__ import annotations
 
+import asyncio
 import json
 from pathlib import Path
 
@@ -18,10 +19,12 @@ from evolver.gep.compact_gate import (
 )
 from evolver.gep.episode_record import build_episode, record_episode
 from evolver.swarm import (
+    evolve_begin,
+    evolve_status,
     swarm_checkpoint_working,
     swarm_distill,
     swarm_hook_event,
-    swarm_tick,
+    swarm_solidify,
 )
 
 
@@ -65,7 +68,6 @@ def test_claude_precompact_hook_is_installed(tmp_path: Path) -> None:
 
 def test_settled_run_returns_the_episode_without_resolidifying(temp_workspace: Path) -> None:
     from evolver.gep.paths import get_solidify_state_path
-    from evolver.swarm import swarm_solidify
 
     scene = {
         "event": {
@@ -90,26 +92,29 @@ def test_settled_run_returns_the_episode_without_resolidifying(temp_workspace: P
     result = swarm_solidify()
     assert result["status"] == "already_settled"
     assert result["episode_id"] == stored["id"]
-    assert result["next_action"] == "swarm_tick"
+    assert result["next_action"] == "evolve_begin"
 
 
-def test_tick_is_refused_while_the_marker_is_set(temp_workspace: Path) -> None:
+def test_evolve_begin_auto_satisfies_pending_checkpoint(
+    temp_workspace: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("EVOLVER_REPO_ROOT", str(temp_workspace))
+    monkeypatch.setenv("A2A_HUB_URL", "http://127.0.0.1:9")
     request_checkpoint("test")
-    import asyncio
+    assert checkpoint_pending() is True
 
-    result = asyncio.run(swarm_tick())
-    assert result["error"] == "checkpoint_required"
+    result = asyncio.run(evolve_begin(hypothesis="Validate checkpoint auto-satisfaction"))
+    assert result["ok"] is True
+    assert checkpoint_pending() is False
 
 
-def test_boot_returns_the_full_scratch(temp_workspace: Path) -> None:
-    from evolver.swarm import swarm_boot
-
-    assert "working_session_text" not in swarm_boot("t")
-    text = "ruled out: rename\n" + "y" * 1_000 + "\nkey episode: sha256:abc\n"
+def test_status_returns_working_session_preview(temp_workspace: Path) -> None:
+    assert evolve_status()["working_session"]["exists"] is False
+    text = "ruled out: rename\n" + "y" * 200 + "\nkey episode: sha256:abc\n"
     swarm_checkpoint_working(text)
-    booted = swarm_boot("t")
-    assert booted["working_session_text"] == text
-    assert booted["working_session_source"] == "host_working"
+    st = evolve_status()
+    assert st["working_session"]["exists"] is True
+    assert "ruled out: rename" in st["working_session"]["preview"]
 
 
 def test_precompact_blocks_once_then_lets_a_full_context_through(temp_workspace: Path) -> None:

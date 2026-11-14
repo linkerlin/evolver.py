@@ -188,21 +188,18 @@ def test_cascade_failure_score_partial_and_lineage(
     )
     write_state_for_solidify(_last_run())
     result = solidify()
-    assert result["ok"] is True
-    assert result.get("severity") == "soft" or result.get("validation_soft_failed") is True
-    # Soft path records a soft_failed event then continues to success; score 0.5
-    # is visible on the soft event and/or result.
+    # 支柱一 (v1.114.0): a red cascade is an honest draft, never ok=True.
+    assert result["ok"] is False
+    assert result["outcome"] == "draft_preserved"
+    assert result["score"] == 0.5
     from evolver.gep.asset_store import read_all_events
 
-    soft_events = [
-        e
-        for e in read_all_events()
-        if (e.get("outcome") or {}).get("status") == "soft_failed"
-        or (e.get("outcome") or {}).get("error") == "validation_failed_soft"
+    failed_events = [
+        e for e in read_all_events() if (e.get("outcome") or {}).get("error") == "validation_failed"
     ]
-    assert soft_events, read_all_events()[-1]
-    assert soft_events[0]["outcome"]["score"] == 0.5
-    assert soft_events[0].get("parent_event_id") is None
+    assert failed_events, read_all_events()[-1]
+    assert failed_events[0]["outcome"]["score"] == 0.5
+    assert failed_events[0].get("parent_event_id") is None
 
 
 # ---------------------------------------------------------------------------
@@ -229,9 +226,11 @@ def test_solidify_records_fitness_verdict(
     assert evt["fitness_gate"]["verdict"] == "baseline_established"
     assert _fitness_state()["r_best"] == 1.0
 
-    # Second run, same score: strict > means no improvement — SHADOW: still ok.
-    # The §5.3 gate consumes the hypothesis record on the first pass, so this
-    # round must re-declare its own claim before re-solidifying.
+    # Second run, same score: strict > means no_improvement is RECORDED but
+    # never rejects (round-121 review: the cascade score saturates at 1.0 —
+    # it is a validation floor, not a fitness ruler; the frozen val pack gate
+    # is the ruler that rejects). The §5.3 gate consumes the hypothesis
+    # record on the first pass, so this round must re-declare its own claim.
     declared_hypothesis["redeclare"]()
     _rearm_pack_bar(armed_pack)
     write_state_for_solidify(_last_run(run_id="run_s26_2"))
@@ -240,28 +239,25 @@ def test_solidify_records_fitness_verdict(
     assert evt["fitness_gate"]["verdict"] == "no_improvement"
 
 
-def test_fitness_gate_enforce_rolls_back_no_improvement(
+def test_fitness_ledger_records_verdict_without_rejecting(
     git_ws: Path,
     monkeypatch: pytest.MonkeyPatch,
     armed_pack: dict[str, Any],
     declared_hypothesis: dict[str, Any],
 ) -> None:
+    """Round-121 review pin: the cascade fitness ledger must never reject.
+
+    The r_best scale saturates (all green == 1.0 == healthy-project floor),
+    so a no_improvement verdict is bookkeeping, not a bar; the frozen val
+    pack gate is the ruler that rejects non-improvements."""
     from evolver.gep.fitness_state import record_measurement
 
     set_flag("enable_acceptance_gate", False, persist=False)
     record_measurement(1.0, source="solidify:seed")  # cascade r_best = 1.0
-    # Cascade will measure 1.0 again → no_improvement → ENFORCE rejects.
-    monkeypatch.setattr(solidify_mod, "FITNESS_GATE_ENFORCE", True)
     write_state_for_solidify(_last_run())
     result = solidify()
-    assert result["ok"] is False
-    assert result["error"] == "fitness_gate_no_improvement"
-    assert _last_event()["outcome"]["error"] == "fitness_gate_no_improvement"
-    # S27: enforced rejection lands wiki evidence too.
-    from evolver.gep.wiki import wiki_dir
-
-    impact = (wiki_dir() / "skill-impact.md").read_text(encoding="utf-8")
-    assert "fitness_gate_no_improvement: gene_s26" in impact
+    assert result["ok"] is True  # recorded, not rejected
+    assert _last_event()["fitness_gate"]["verdict"] == "no_improvement"
 
 
 def test_harmful_mutation_rejected_end_to_end(
@@ -269,9 +265,11 @@ def test_harmful_mutation_rejected_end_to_end(
     monkeypatch: pytest.MonkeyPatch,
     declared_hypothesis: dict[str, Any],
 ) -> None:
-    """S26.3 acceptance #2: inject a HARMFUL mutation (one that breaks the
-    validation cascade), soft-default soft-continues with warnings and keeps the worktree;
-    hard rollback is reserved for secrets/protected-state only.
+    """S26.3 acceptance #2, 支柱一 (v1.114.0): inject a HARMFUL mutation (one
+    that breaks the validation cascade) — solidify returns an honest
+    ``ok=False, outcome=draft_preserved`` with the worktree KEPT (the host's
+    code is never destroyed); hard rollback is reserved for
+    secrets/protected-state only.
 
     (Bench-val variant needs an agent executor and is tracked in 演进方案
     §8 移交; here the cascade stands in for the val surface, which is the
@@ -316,16 +314,13 @@ def test_harmful_mutation_rejected_end_to_end(
         _last_run(run_id="run_harmful", selected_gene_id="gene_harmful", signals=["harm"])
     )
     result = solidify()
-    # Soft-default: harmful cascade failure soft-continues; worktree kept.
-    assert result["ok"] is True
-    assert result.get("severity") == "soft" or result.get("validation_soft_failed") is True
+    # 支柱一: harmful cascade failure is an honest draft; worktree kept.
+    assert result["ok"] is False
+    assert result["outcome"] == "draft_preserved"
     assert victim.read_text(encoding="utf-8") == "harmed\n"
     from evolver.gep.asset_store import read_all_events
 
-    soft_events = [
-        e
-        for e in read_all_events()
-        if (e.get("outcome") or {}).get("status") == "soft_failed"
-        or (e.get("outcome") or {}).get("error") == "validation_failed_soft"
+    failed_events = [
+        e for e in read_all_events() if (e.get("outcome") or {}).get("error") == "validation_failed"
     ]
-    assert soft_events
+    assert failed_events

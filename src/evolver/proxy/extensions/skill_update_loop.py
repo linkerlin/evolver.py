@@ -5,7 +5,6 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import logging
-import os
 from typing import TYPE_CHECKING
 
 from evolver.proxy.router.features import is_route_enabled
@@ -19,13 +18,9 @@ DEFAULT_SKILL_UPDATE_INTERVAL_SEC = 300.0
 
 
 def _interval_sec() -> float:
-    raw = os.environ.get("EVOLVER_SKILL_UPDATE_INTERVAL_SEC", "").strip()
-    if not raw:
-        return DEFAULT_SKILL_UPDATE_INTERVAL_SEC
-    try:
-        return max(30.0, float(raw))
-    except ValueError:
-        return DEFAULT_SKILL_UPDATE_INTERVAL_SEC
+    from evolver.config import get_config
+
+    return get_config().skill_update_interval_sec
 
 
 class SkillUpdateLoop:

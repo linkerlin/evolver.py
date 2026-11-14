@@ -1,36 +1,24 @@
-"""Swarm evolution — close the dispatch open-loop via MCP host-agent takeover.
+"""Swarm evolution — atomic FSM host-agent orchestration (算子即基因 v1.114.0).
 
-系统评估报告 P0("半开环执行断层")的解法: 引擎不自建 LLM API 调度层, 而是把
-连接到本引擎 MCP server 的宿主 Agent (ZCode / Claude Code / Cursor / ...)变成
-GEP 变异提示词的执行器。No Node.js equivalent — this is a Python-native
-design; the injection scheme is concept-harvested from nanoclaw.go
-(internal/mcp/server.go: server instructions force the host to call a boot
-tool whose result carries the full takeover context, no prompts/get needed).
+Implements the zero-cognitive-load 3-tool FSM protocol over transport-agnostic
+Python functions (surfaced via MCP stdio in :mod:`evolver.mcp_server`):
 
-Two injection channels (belt and braces):
+- ``IDLE``       : ``evolve_begin`` + ``evolve_status``
+- ``ACTIVE_RUN`` : ``run_lens`` + ``evolve_settle`` + ``evolve_status``
 
-1. ``evolver_swarm`` MCP prompt — the formal instrument, rendered by hosts
-   that surface ``prompts/get``;
-2. a short standing server instruction plus the ``swarm_boot`` tool — covers
-   hosts that never render MCP prompts (nanoclaw pattern). The standing text
-   starts the loop when the user message has no other task, the bench gate can
-   publish, and supervision is not paused; otherwise boot returns a handoff.
-   The full protocol is
-   the tool result, not the instruction. ``EVOLVER_SWARM_AUTO_HIJACK=1`` does
-   not change that text: it forces the HITL gate on and refuses host-relayed
-   approvals.
-
-Loop protocol::
-
-    swarm_tick --> host executes the GEP mutation prompt --> swarm_distill
-        ^                    (host = the LLM executor)            |
-        |                                                      swarm_solidify
-        +------------ swarm_report (heartbeat / friction) <----------+
-
-This module is transport-agnostic (``evolver.mcp_server`` stays a thin tool
-surface) and never imports ``mcp`` — it is importable and testable without the
-MCP SDK installed. All engine stdout is captured (stdio MCP uses stdout for
-JSON-RPC; stray ``print()`` would corrupt the protocol).
+Key guarantees:
+1. **Zero JSON ceremony**: ``evolve_begin(hypothesis="...")`` accepts a plain
+   one-sentence string, lazily bootstraps native baselines if absent, discovers
+   workspace signals, synthesizes the internal §5.3 hypothesis record, and opens
+   the cycle-boundary in-band blackbox.
+2. **No whack-a-mole redirect flags**: ``pending_tick_redirects.json`` and the
+   17 legacy boolean steering flags are eliminated; the FSM physically hides
+   ``evolve_begin`` while ``_pending_solidify_state()`` is ``True``.
+3. **Dual-track settlement**: ``evolve_settle`` runs ``< 3s`` AST reverse-dep
+   L0 lightning validation by default, settles the blackbox, records the
+   immutable ``episode_record`` at this declared cycle boundary, preserves
+   failed patches in place with a 3-line ``actionable_fix``, and promotes only
+   all-green net gains to the vault.
 """
 
 from __future__ import annotations
@@ -41,30 +29,22 @@ import io
 import json
 import os
 import re
+import secrets
 import time
 from collections.abc import Iterator
 from pathlib import Path
 from typing import Any, Final, Literal
 
-SWARM_PROTOCOL_VERSION: Final = "1"
+SWARM_PROTOCOL_VERSION: Final = "2"
 
-_SWARM_STATE_FILENAME = "swarm_state.json"
-# Side ledger for unfinished-run tick redirects. Not ``swarm_state.json``:
-# a redirect does not count as a cycle and must not bump ``ticks``.
-_PENDING_REDIRECT_LEDGER: Final = "pending_tick_redirects.json"
-# The first default tick stays a soft redirect. The next identical tick on
-# the same run closes the loop for hosts that only branch on ``ok``.
-_PENDING_REDIRECT_LOOP_AFTER: Final = 2
-_ABORT_REASON_RE = re.compile(r"Preflight abort: (.+)")
-# One hello per agent name per server process (a process = one MCP session).
+_SWARM_STATE_FILENAME: Final = "swarm_state.json"
+_ABORT_REASON_RE: Final = re.compile(r"Preflight abort: (.+)")
 _hello_sent: set[str] = set()
-# Set by a successful ``swarm_boot`` in this process. Cold ``swarm_status``
-# reads this to tell the host to boot before the loop.
 _session_claim: dict[str, str] | None = None
 
 
 # ---------------------------------------------------------------------------
-# Helpers
+# Low-level helpers
 # ---------------------------------------------------------------------------
 
 
@@ -85,62 +65,6 @@ def _tail(text: str, max_chars: int) -> str:
     if len(text) <= max_chars:
         return text
     return "…[truncated head]\n" + text[-max_chars:]
-
-
-_GEP_LOG_BANNER: Final = "GENOME EVOLUTION PROTOCOL"
-# Stdout spans that inline the gene preview. Short ticks point at the artifact
-# instead of repeating this text in ``engine_log``.
-_GEP_LOG_SPANS: Final[tuple[tuple[str, str], ...]] = (
-    ("BUILT_PROMPT\n", "SOLIDIFY REQUIRED"),
-    ("BUILT_MULTI_PROPOSE_PROMPT\n", "MULTI PROPOSE REQUIRED"),
-)
-
-
-def _shorten_engine_log(log: str, *, artifact: str | None) -> str:
-    """Drop an inlined GEP preview from captured stdout.
-
-    Full mode keeps the print. Short mode already returns a checklist and
-    points at ``last_prompt.md`` / ``evolver://dispatch/last``; the same
-    preview otherwise rides along in ``engine_log`` (the ``BUILT_PROMPT``
-    body, or the first 4000 characters inside ``sessions_spawn``).
-    """
-    if _GEP_LOG_BANNER not in log:
-        return log
-    where = artifact or "evolver://dispatch/last"
-    pointer = f"[gene preview omitted from engine_log; full GEP prompt: {where}]"
-
-    for start, end in _GEP_LOG_SPANS:
-        begin = log.find(start)
-        if begin < 0 or _GEP_LOG_BANNER not in log[begin:]:
-            continue
-        finish = log.find(end, begin + len(start))
-        if finish < 0:
-            return log[:begin] + pointer + "\n"
-        return log[:begin] + pointer + "\n" + log[finish + len(end) :]
-
-    marker = "sessions_spawn("
-    search_from = 0
-    while True:
-        begin = log.find(marker, search_from)
-        if begin < 0:
-            break
-        line_end = log.find("\n", begin)
-        if line_end < 0:
-            line_end = len(log)
-        if _GEP_LOG_BANNER in log[begin:line_end]:
-            return log[:begin] + pointer + log[line_end:]
-        search_from = line_end if line_end > begin else begin + len(marker)
-
-    # Banner survived an unexpected wrapper. Keep the prefix and phase trailer.
-    head, _, tail = log.partition(_GEP_LOG_BANNER)
-    for introducer in ("BUILT_PROMPT\n", "BUILT_MULTI_PROPOSE_PROMPT\n", marker):
-        cut = head.rfind(introducer)
-        if cut >= 0:
-            head = head[:cut]
-            break
-    phases = [line for line in tail.splitlines() if line.startswith("cycle phases:")]
-    trailer = f"\n{phases[-1]}" if phases else ""
-    return head.rstrip() + "\n" + pointer + trailer + "\n"
 
 
 @contextlib.contextmanager
@@ -168,287 +92,7 @@ def _save_swarm_state(state: dict[str, Any]) -> None:
     atomic_write_json(_state_path(), state)
 
 
-# ---------------------------------------------------------------------------
-# Instrument prompt (the takeover system prompt injected into the host)
-# ---------------------------------------------------------------------------
-
-
-def build_instrument_prompt(state: dict[str, Any]) -> str:
-    """Render the swarm takeover protocol with live engine state interpolated.
-
-    ``state`` is the ``swarm_status()`` dict (plus ``agent_name``).
-    """
-    agent = str(state.get("agent_name") or "host-agent")
-    workspace = str(state.get("workspace_root") or "(workspace)")
-    tick_count = state.get("tick_count", 0)
-    genes_n = state.get("genes", "?")
-    capsules_n = state.get("capsules", "?")
-    pending = state.get("pending_solidify", False)
-    # Pending run first: a tick writes fresh solidify state and would clobber
-    # the un-solidified run (tool-check 2026-09-05: boot said pending_solidify:
-    # True while directing the host to tick first).
-    next_action, first_action = _opening_action(state)
-    # Chores wait while a run is unsaved. Skills are not in this list: syncing
-    # the user skill roots on boot flooded the gene pool.
-    boot_once = _boot_once(bool(pending))
-    boot_note = (
-        "待固化时列表为空：先固化。完成后再补一次 `swarm_hook_event`（event=session_start）。"
-        if pending
-        else "做完再执行立即行动。不要在开机时同步技能。"
-    )
-    supervision_raw = state.get("supervision") or {}
-    supervision_state = (
-        supervision_raw.get("state", "?") if isinstance(supervision_raw, dict) else "?"
-    )
-    bench_raw = state.get("bench_pack_gate") or {}
-    armed = bool(bench_raw.get("armed", False)) if isinstance(bench_raw, dict) else False
-    raw_ids = bench_raw.get("train_ids") if isinstance(bench_raw, dict) else None
-    if isinstance(raw_ids, list) and raw_ids:
-        shown = [str(item) for item in raw_ids[:20]]
-        train_ids_text = ", ".join(shown)
-        hidden = len(raw_ids) - len(shown)
-        if hidden:
-            train_ids_text += f" (+{hidden} more, {len(raw_ids)} total)"
-    else:
-        train_ids_text = "(none — pack not loaded)"
-    boot_once_json = json.dumps(boot_once, ensure_ascii=False)
-    hotl = gate_handoff_skipped()
-    gate_handoff = "hotl" if hotl else "human"
-    hotl_note = "\n当前 `gate_handoff: hotl`：人已选择不在 tick 前等待。" if hotl else ""
-    soft_gate_note = (
-        "\n门未就绪（pack_absent / no_baseline）时默认 **soft-continue**：仍可 "
-        "`swarm_tick` / `swarm_solidify`；Accept/publish 走 soft-accept（带 "
-        "warnings + next_steps），**不**伪造 Parent baseline，**不**在候选对话中"
-        "打开 val 密封材料。建议仍按 `evolver doctor` / `evolver bench baseline` "
-        "补齐，但非强制。drop/flat/regression 与 unmeasured 同样 soft-accept。"
-        "硬拒绝仅限：secrets/credentials 入仓、改写 ~/.evolver 等引擎保护路径、val_seal 泄露。"
-    )
-    hitl = state.get("hitl") or {}
-    hitl_mode = hitl.get("mode", "?")
-    hitl_pending = hitl.get("pending", 0)
-    fence_open = "```json"
-    fence_close = "```"
-    from evolver.gep.prompt import EVOLVER_CHARTER
-
-    working = state.get("working_session") if isinstance(state.get("working_session"), dict) else {}
-    preview = str((working or {}).get("preview") or "").strip()
-    working_block = (
-        "\n## WORKING_SESSION.md（当轮草稿，线索层，不进验收）\n" + preview + "\n"
-        if preview
-        else ""
-    )
-
-    # Task 3.1: Core Loop Tools guidance for beginners (first 5 ticks).
-    # Skip while a solidify is pending — opening action is solidify, not the loop primer.
-    # Do not embed the literal token await_supervisor_resume here: pending+paused
-    # prompts assert that token is absent when solidify takes priority.
-    beginner_guidance = ""
-    if tick_count < 5 and not state.get("pending_solidify"):
-        beginner_guidance = """
-
-## 核心循环工具（新手必读 / Core Loop Tools）
-
-这是你的前几轮进化循环。核心流程六步：
-
-1. **swarm_tick** — 获取 dispatch_prompt（含变异指令）
-2. **编辑文件** — 只改 dispatch_prompt 指定的范围
-3. **swarm_distill** — 提取 Gene/Capsule（传入包含围栏块的完整响应文本）
-4. **swarm_hypothesis** — 声明本轮唯一假说（expected_outcome 可选）
-5. **swarm_solidify** — 应用、验证、持久化（首轮一般 soft-accept）
-6. **swarm_feedback** — 上报评分（0-1）或失败
-
-每个工具返回 `next_action` — 照做即可。遇到 `stop_and_report` / `await_human` /
-或监督暂停（resume 后继续）就停下报告。
-
-**首次准备警告正常**：no_baseline / pack_absent 都会 soft-accept（带 warnings），
-experience 仍写入 ~/.evolver/workspaces/<id>/，不自动提交。补齐基线推荐但非强制。
-
-**不自动提交**：工作区改动（staged/unstaged）保持原样，由你或用户决定何时提交。
-"""
-
-    prompt = f"""# EVOLVER SWARM — 宿主接管协议 (instrument v{SWARM_PROTOCOL_VERSION})
-
-> 本提示词由 evolver 引擎经 MCP 注入。你（{agent}）是进化工作节点：
-> 引擎选择、验证、固化；你只改代码。本条消息里的用户指令优先。
-> 本条没有别的任务时，先按下面开机。开机后用一句话说明实际状态：循环开始
-> （含 soft-continue / 有建议缺口）、硬门禁需人处理、或已经暂停。说「停」即可停下。
-
-## 宪章
-
-{EVOLVER_CHARTER}
-{beginner_guidance}
-
-## 开机（本会话一次）
-
-按 `swarm_boot` 返回的 `boot_once` 逐项调用。它们自己的 `next_action` 忽略。
-本轮列表：{boot_once_json}
-{boot_note}
-若 `state.mailbox_pending.inbound` 大于 0：接着 `tool_mailbox_poll`，处理完
-`tool_mailbox_ack`。`supervision: state=paused` 时不要 tick。用户说「停」才 pause，
-说「继续」才 resume，见终止条件。不要自己 resume。
-
-立即行动（`next_action={next_action}`）：{first_action}
-
-## 循环（每轮一步，只服从返回里的 `next_action`）
-
-1. `swarm_tick` — 看 `dispatch_prompt`。提示词携带 **Evidence Pack**。
-   它标着 **PROPOSAL REQUIRED**，或返回 `proposal_required=true` 时，
-   本轮改动**必须**经 `swarm_propose` 提交，不得自由编辑；自由编辑仅限新颖信号与结构性
-   改动。`paused=true`、`preflight_aborted=true`、`supervision_veto` 非空、
-   `next_action=stop_and_report`（含 `error=instance_lock_held`）都停下来报告。
-   若返回 `cycle_started=false` 且 `pending_solidify=true`，本调用没有新周期：
-   立刻调用 `swarm_solidify`，不要再 `swarm_tick`。`progress=false` 且
-   `redirect_count` 在涨，说明还是这一条 run。两次返回都带
-   `session_not_failed=true`、`preserve_pending=true`、`abandon_run=false`、
-   `action_required=swarm_solidify`。   `session_not_failed=true` 表示会话没有失败，
-   先读它再读别的旗标。`tick_again=false` 与 `retryable=false` 都表示不要再 tick
-   （第一次重定向也写 `retryable=false`，`ok` 仍为 true）。
-   boot 与 status 的 `gate_soft_continue=true` 仍在。第一次 tick 与保险丝不写这个键
-   （缺席，不写成 false），并写 `soft_gap.advisory=true`、`soft_gap.tick=false`
-   （`ok` 第一次仍为 true，没有 `error`）：缺席不是失败的会话，
-   也不是再 tick 的许可，软缺口仍在 `warning` 与 `soft_gap`。
-   停 tick 看 `tick_again=false` 与 `soft_gap.tick=false`。再 tick 才是 `ok=false`、
-   `loop_fuse=pending_redirect_loop`、`redirect_reason=pending_redirect_loop`、
-   没有 `error` 字段、`next_action` 仍是 `swarm_solidify`（保险丝码不是
-   `next_action`）、`severity=soft`、`retryable=false`：这不是门禁失败，也不放弃
-   run。`dispatch_reason` 仍是 `pending_solidify`。第一次重定向的
-   `redirect_reason` 仍是 `pending_solidify`，没有 `loop_fuse`。preserve
-   三元组仍指向 `swarm_solidify`。要换掉未完成 run 才传
-   `supersede_pending=true`（会替换 `last_run`，不放宽固化门）。
-2. 编辑 — 只改 `dispatch_prompt` 锚点所写的范围。工作区是 {workspace}。
-3. `swarm_distill` — `response_text` 里要有下面这种围栏。
-   `genes + capsules + mutations` 为 0 时按返回的 `hint` 重交，不重做编辑。
-   EvolutionEvent 与 PersonalityState 会被静默丢弃。
-{fence_open}
-{{"type": "Gene", "id": "gene_<slug>", "category": "repair",
- "summary": "...", "signals_match": ["..."], "strategy": ["..."]}}
-{fence_close}
-   `category` 只能是 repair、optimize、innovate、explore。
-4. `swarm_hypothesis` — 固化之前调用，五个字段都要有，看返回 `ok=true`。
-   `swarm_propose` 与 `swarm_solidify` 也可以带 `hypothesis` 参数。引擎不代写。
-{fence_open}
-{{"hypothesis": "一句话说明改了什么", "dimension": "content",
- "mechanism_family": "与本轮同类的上次改法",
- "target_hook": "改动的文件或函数",
- "mechanism_check": [{{"id": "<train 题 id>",
- "before": "改前如何失败", "after": "改后如何通过"}}]}}
-{fence_close}
-   `dimension` 只能是 content、tool、schema。`id` 从下方 `train_ids` 里挑，
-   禁止编造，禁止引用 val。要有 before 与 after。
-   可选 `expected_outcome`：`{{"expected_checks_to_pass": ["pytest"]}}`，写你预计
-   会通过的检查命令片段。结算时引擎对照实际检查写 `prediction_delta`，不影响门。
-5. `swarm_solidify` — 看 `ok`。失败读 `failure_mode.retryable`：
-   true 回到步骤 1；false 停止并报告。
-6. `swarm_feedback` — `primary_score` 用第 5 步返回的 `score`，没有就填 0。
-   `textual_gradient` 写一句实际发生了什么。
-7. 回到步骤 1。每 3 轮或卡住时调用 `swarm_report`。
-
-## 终止条件
-
-- 用户说「停」或要求停止：调用 `swarm_supervise`，`action=pause`，然后停止。不要让用户自己敲命令。
-  用户之后说「继续」：调用 `swarm_supervise`，`action=resume`，再重新 `swarm_boot`。
-  返回 `error=host_relay_blocked` 时，请用户执行 `evolver supervise resume`。
-- `next_action=stop_and_report`，或 `paused=true`，或 `preflight_aborted=true`，
-  或 `error=instance_lock_held`；
-- `next_action=await_human_approval`：停。`swarm_approvals` 把待决读给人，
-  人决定后才 `swarm_approval_resolve`。返回 `error=host_relay_blocked` 时请人执行
-  `evolver hitl approve` 或 `evolver hitl reject`。不要自己批准。
-- 连续 3 次 `failure_mode.reasonClass` 相同：先 `swarm_report` 再停。
-- `loop_fuse=pending_redirect_loop`（`redirect_reason=pending_redirect_loop`，
-  不是 `error`，也不是 `next_action`）：`session_not_failed=true`。停止 tick，
-  调用 `swarm_solidify`。`next_action` 仍是 `swarm_solidify`。没有 `error` 字段。
-  不是固化门失败，也不是整段会话失败。先读 `session_not_failed`，再读
-  `preserve_pending=true`、`abandon_run=false`，不要放弃这条 run。有软缺口时
-  第一次 tick 与保险丝不写 `gate_soft_continue`（缺席，不写成 false），
-  `soft_gap.tick=false` 不是再 tick 的许可。
-
-`retryable=true` 的拒绝是稳态，回到步骤 1。
-
-## 不要做（安全边界）
-
-- 只在 {workspace} 内改动。禁止 `git push --force`，禁止改写已发布历史。
-- 不手改 `.evolver/`。内容哈希校验会令其失效。
-- 不在本对话解 val。题面回到写下候选的这场对话，密封就失效；求解在另一上下文
-  完成，评分只读已经写好的沙箱。沙箱不全即是 `unmeasured`，门拒绝，基线不动。
-- 不改 `EVOLVER_SWARM_GATE_HANDOFF` 或 MCP 配置。是否跳过人由人决定。
-- 不调用 `skip_validation`。那要过 HITL：`EVOLVER_HITL_MODE=on` 时须人类批准，
-  超时未决自动拒绝。若仍返回 `await_human_approval`，按终止条件转达，不重试。
-- 不虚报 `swarm_feedback` 的分数，也不把没执行过的变异写进 distill。
-- `paused` 时不启动新周期。`supervision_veto` 命中的基因不得执行。
-  `supervision:directive:` 是人类转向，视为最高优先级上下文。
-
-## 功能（宿主自己调用）
-
-- 看到报错或失败输出：`swarm_hook_event`，`event=signal_detect`，`payload.content` 贴原文。
-  会话结束再调 `event=session_end`。
-- 有文件 Hooks 的宿主：`swarm_hooks`，先 `action=status`。用户在本条消息里同意再 `install`。
-  没装过也不阻塞循环。
-- 用户说的是一套多步修复或创新，而不是一轮基因：`swarm_workflow_run`，`template` 用
-  `repair-cycle` 或 `innovate-cycle`。按返回的 `awaiting_agent` 做完，用 `swarm_workflow_act` 交回。
-  要回看全状态用 `swarm_workflow_status`。
-- 名字：`swarm_*` 是核心循环。`tool_*` 是辅助面（资产、邮箱、投影），不是循环本身。
-  `episode_get` / `episode_inspect` 只读记录。
-- 要按关键词找基因：`tool_asset_search`。要全文再 `tool_asset_get`。
-- 要按 id 读上一轮：`episode_get`。`dispatch_prompt` 里已有摘要时不必再读。
-- 摘要写了 truncated：`episode_inspect`，必须带 `question`，按 `views` 看未截断现场。
-- 返回 `next_action=call_swarm_checkpoint_working`：先 `swarm_checkpoint_working` 把假设、
-  已排除路径和 episode id 写入 WORKING_SESSION.md，再压缩或开新会话。
-- 要看状态、不跑周期：`swarm_status`。资源 `evolver://status` 是同一份。
-  本进程还没 `swarm_boot` 时，status 的 `next_action` 是 `swarm_boot`。
-- 要看开箱就绪、不改状态：`swarm_doctor`（只读，等同 `evolver doctor` 摘要，不执行 --fix）。
-  有未完成 run 且为 soft-continue 时，`fixes` 不把 `evolver doctor --fix` 当当前步骤。
-- 要看最近周期：`tool_cycle_timeline`，或资源 `evolver://events/recent`。
-  投影陈旧时再 `tool_rebuild_views`。
-- 多节点：`tool_mailbox_poll` / `tool_mailbox_send`。
-- 不要在开机时调用 `swarm_skills`。用户明确要求把技能纳入进化时才 `action=sync`。
-
-## 交给人 / soft-continue
-
-冻结 val 包门仍是外部适应度标尺；首次准备缺口不再硬卡住循环，带 warnings + next_steps 继续：
-
-- `bench_pack.reason=pack_absent`：**可继续**。建议人按
-  `examples/swarm-quickstart/README.md`「开箱 / 首次准备」执行
-  `evolver setup` / `evolver doctor --fix` / `evolver bench freeze`。
-  有未完成 run 时，这条命令不是当前步骤：先 `swarm_solidify`。
-  此时 `swarm_doctor` 的 `fixes`、boot/status 的 `commands`，以及第一次
-  tick 与保险丝的 `commands` 和 `next_steps`，都不把 `evolver doctor --fix`、
-  `evolver bench freeze` 或 `evolver bench baseline` 当当前步骤。没有未完成 run，
-  或固化之后，列出它们仍然合适。
-  soft-accept 可发布但会警告；装包仍强烈推荐。
-- `reason=no_baseline`：**可继续**。建议在另一上下文写好 val 沙箱后执行
-  `evolver bench baseline`（或 doctor --fix 在沙箱齐时测量）。基线不由候选
-  书写；本对话不得解 val、不得打开 val 密封材料。soft-accept **不**写入 Parent bar。
-- `reason=unmeasured`：**可 soft-accept**。把 `pending_tasks` 报告给人；val 由
-  另一上下文写入 `sandboxes/r1` 与 `sandboxes/r2`。非强制完成后再 solidify。
-- `ok=true` 且 `bench_pack.accept=true`（含 soft_accept）：停并报告。发布要人执行
-  `evolver session accept`（soft 时 CLI 会打印 warnings）。没有配对会话时，
-  这次返回就是最终结果。
-- secrets/credentials 入仓、改写 ~/.evolver 等引擎保护路径、val_seal 泄露：硬拒绝，
-  不要重试同一失败。
-{hotl_note}{soft_gate_note}
-{working_block}
-## 当前状态
-
-- pending_solidify: {pending}
-- bench_pack_gate.armed: {armed}
-- gate_handoff: {gate_handoff}
-- train_ids: {train_ids_text}
-- supervision: state={supervision_state}
-- hitl: mode={hitl_mode} pending={hitl_pending}
-- tick_count: {tick_count} | genes: {genes_n} | capsules: {capsules_n}
-"""
-    return prompt
-
-
-# ---------------------------------------------------------------------------
-# Swarm tools (transport-agnostic; MCP layer wraps these)
-# ---------------------------------------------------------------------------
-
-
 def _feedback_stability(rows: list[dict[str, Any]], window: int = 10) -> dict[str, Any] | None:
-    """EvoX dual-convergence observation surface: score stddev (<0.01 counts as
-    converged) over the last ``window`` feedback reports. Observation only —
-    enforcement stays with the signal-history modulation (plateau detection)."""
     scores = [
         float(r["primary_score"]) for r in rows if isinstance(r.get("primary_score"), int | float)
     ][-window:]
@@ -466,16 +110,7 @@ def _feedback_stability(rows: list[dict[str, Any]], window: int = 10) -> dict[st
 
 
 def _code_staleness() -> dict[str, Any] | None:
-    """Compare process start against the newest source mtime (status surface).
-
-    Dogfood round-6: a reconnect landing between two fixes produced a
-    half-new process; the host only found out by diffing prompt texts.
-    The stdio server loads code at spawn — surface the mismatch so the
-    host sees "reload required" directly.
-    """
     try:
-        import os
-
         import psutil
 
         pkg_dir = Path(__file__).resolve().parent
@@ -491,9 +126,7 @@ def _code_staleness() -> dict[str, Any] | None:
 
 
 def _package_source_root() -> Path | None:
-    """Best-effort git root of the running evolver package source tree."""
     pkg_dir = Path(__file__).resolve().parent
-    # Editable checkout: …/src/evolver → repo root is parents[1].
     candidates = [pkg_dir.parents[1], pkg_dir.parents[2], pkg_dir.parent, pkg_dir]
     for root in candidates:
         if (root / ".git").exists():
@@ -505,7 +138,6 @@ def _package_source_root() -> Path | None:
 
 
 def _source_revision() -> str | None:
-    """Git SHA of the running package/source checkout, if available."""
     import subprocess
 
     root = _package_source_root()
@@ -531,35 +163,23 @@ def _source_revision() -> str | None:
 
 
 def _stale_import_error(exc: ImportError) -> dict[str, Any]:
-    """Self-diagnosing error for stale long-lived MCP hosts (round-17).
-
-    A process that predates a code change holds old modules in memory while
-    lazily importing new ones from disk; the mixed import chain dies with a
-    raw ``ImportError`` (round-16 live: tick/distill crashed on
-    ``ANCHOR_PROBE_TIMEOUT_S``). Convert it into an actionable result instead
-    of a stack trace: fail closed, tell the host to reconnect.
-    """
     return {
         "ok": False,
         "error": "code_stale_process",
         "reason": str(exc)[:300],
         "next_action": "reconnect_host",
         "hint": (
-            "this MCP process predates the current src tree (in-memory old "
-            "modules + on-disk new ones); restart/reconnect the host so a "
-            "fresh process loads matching code (see swarm_status "
-            "code_staleness)"
+            "This MCP process predates the current src tree; restart/reconnect "
+            "the host so a fresh process loads matching code."
         ),
     }
 
 
 def _pending_solidify_state() -> bool:
-    """True when the state file holds a last_run newer than the last solidify.
+    """True iff solidify state holds an unsettled ``last_run`` (Anchor DEBUG #9).
 
-    The file persists after success by design (lineage: ``last_run`` +
-    ``last_solidify``), so existence alone kept reporting pending forever —
-    and boot's pending-first directive then sent every fresh host into a
-    full no-op cascade (round-9 measurement: 424 s, ok:True, nothing landed).
+    Corrupt state fails safe toward ``True`` (ACTIVE_RUN -> settle required).
+    File existence alone never reports pending.
     """
     from evolver.gep.paths import get_solidify_state_path
 
@@ -569,15 +189,35 @@ def _pending_solidify_state() -> bool:
     try:
         data = json.loads(path.read_text(encoding="utf-8"))
     except Exception:
-        return True  # unreadable state: assume pending (fail toward solidify)
+        return True
     last_run_id = str((data.get("last_run") or {}).get("run_id") or "")
     last_done_id = str((data.get("last_solidify") or {}).get("run_id") or "")
     return bool(last_run_id) and last_run_id != last_done_id
 
 
+def fsm_state() -> Literal["IDLE", "ACTIVE_RUN"]:
+    """Authoritative FSM state derived from ``_pending_solidify_state()``."""
+    return "ACTIVE_RUN" if _pending_solidify_state() else "IDLE"
+
+
+def _pending_solidify_meta() -> dict[str, str]:
+    from evolver.gep.paths import get_solidify_state_path
+
+    try:
+        data = json.loads(get_solidify_state_path().read_text(encoding="utf-8"))
+        last = data.get("last_run") or {}
+        landed = last.get("landed_gene_ids") or []
+        head = str(landed[0]) if isinstance(landed, list) and landed else ""
+        return {
+            "run_id": str(last.get("run_id") or (last.get("mutation") or {}).get("id") or ""),
+            "gene_id": str(last.get("selected_gene_id") or ""),
+            "landed_gene_id": head,
+        }
+    except Exception:
+        return {"run_id": "", "gene_id": "", "landed_gene_id": ""}
+
+
 def _bench_gate_snapshot() -> dict[str, Any]:
-    """Frozen bench-pack gate state for status/boot/instrument (never raises —
-    an unusable gate is ``armed: false``, not a crash)."""
     try:
         from evolver.bench.frozen_gate import gate_snapshot
 
@@ -593,7 +233,6 @@ def _build_state_health(
     bench_gate: dict[str, Any],
     legacy_info: dict[str, Any],
 ) -> dict[str, Any]:
-    """U-10: Single-pane health view of evolution, hypothesis, gep, and bench baseline."""
     from evolver.gep.hypothesis import hypothesis_path
     from evolver.gep.paths import get_evolution_dir, get_gep_assets_dir
 
@@ -649,67 +288,747 @@ def _build_state_health(
     }
 
 
-def _claim_session(agent_name: str) -> None:
-    """Remember that this process successfully entered via ``swarm_boot``."""
+def _working_snapshot() -> dict[str, Any]:
+    try:
+        from evolver.gep.compact_gate import checkpoint_pending
+        from evolver.gep.working_memory import read_working
+
+        text = read_working()
+        has_text = bool(text.strip())
+        return {
+            "present": has_text,
+            "exists": has_text,
+            "chars": len(text),
+            "preview": text[:400],
+            "compact_checkpoint_pending": checkpoint_pending(),
+        }
+    except Exception:
+        return {
+            "present": False,
+            "exists": False,
+            "chars": 0,
+            "preview": "",
+            "compact_checkpoint_pending": False,
+        }
+
+
+def _checkpoint_block() -> dict[str, Any] | None:
+    from evolver.gep.compact_gate import pending_block
+
+    block = pending_block()
+    if block is None:
+        return None
+    refused = dict(block)
+    refused["working_session"] = _working_snapshot()
+    return refused
+
+
+def _settled_run_barrier(run_id: str) -> dict[str, Any] | None:
+    if not run_id or run_id == "unknown" or _pending_solidify_state():
+        return None
+    from evolver.gep import episode_record
+
+    try:
+        ep_id = episode_record.find_episode_id_for_run(run_id)
+    except Exception:
+        return None
+    if not ep_id:
+        return None
+    return {
+        "ok": True,
+        "status": "already_settled",
+        "fsm_state": "IDLE",
+        "run_id": run_id,
+        "episode_id": ep_id,
+        "episode": {"ok": True, "reason": "already_stored", "id": ep_id},
+        "next_action": "evolve_begin",
+        "steer_message": (
+            "This run_id is already settled. Call evolve_begin to start a new evolution run."
+        ),
+    }
+
+
+def bind_project_directory(project: str | Path | None) -> dict[str, Any]:
+    """Point the process at ``project`` only when that path is an existing directory."""
+    if project is None or not str(project).strip():
+        return {"project": None, "project_applied": False, "project_reason": "not_requested"}
+    raw = str(project).strip()
+    resolved = Path(raw).expanduser().resolve()
+    if not resolved.is_dir():
+        return {
+            "project": raw,
+            "project_resolved": str(resolved),
+            "project_applied": False,
+            "project_reason": "not_a_directory",
+        }
+    os.environ["EVOLVER_REPO_ROOT"] = str(resolved)
+    os.environ["OPENCLAW_WORKSPACE"] = str(resolved)
+    return {
+        "project": raw,
+        "project_resolved": str(resolved),
+        "project_applied": True,
+        "project_reason": "bound_existing_directory",
+    }
+
+
+def describe_bound_paths(bind: dict[str, Any] | None = None) -> dict[str, Any]:
+    from evolver.gep.paths import get_repo_root, get_workspace_root
+
+    workspace = get_workspace_root().resolve()
+    repo = get_repo_root(_quiet=True)
+    repo_text = str(repo.resolve()) if repo is not None else ""
+    differ = repo is not None and repo.resolve() != workspace
+    out: dict[str, Any] = {
+        "repo_root": repo_text,
+        "workspace_root": str(workspace),
+        "code_root": repo_text or str(workspace),
+        "differ": differ,
+    }
+    if bind is not None:
+        out["project"] = bind.get("project")
+        out["project_resolved"] = bind.get("project_resolved")
+        out["project_applied"] = bool(bind.get("project_applied"))
+        out["project_reason"] = bind.get("project_reason")
+    if bind is not None and bind.get("project_reason") == "not_a_directory":
+        out["warning"] = f"project {bind.get('project')!r} is not an existing directory."
+    elif differ:
+        out["warning"] = f"workspace_root ({workspace}) != repo_root ({repo_text})."
+    return out
+
+
+def _maybe_lazy_bootstrap() -> None:
+    """Lazily dispatch clean background native-baseline bootstrap on uninitialized repos."""
+    if os.environ.get("PYTEST_CURRENT_TEST"):
+        return
+    try:
+        from evolver.gep.paths import get_repo_root, get_workspace_state_dir
+
+        repo = get_repo_root(_quiet=True)
+        if repo is None:
+            return
+        marker = get_workspace_state_dir(repo) / "bootstrap_baseline.json"
+        if marker.exists():
+            return
+        from evolver.ops.init_bootstrap import bootstrap
+
+        bootstrap(project=repo, yes=False, spawn=True, configure_hosts=False)
+    except Exception:
+        pass
+
+
+def _opening_action(state: dict[str, Any]) -> tuple[str, str]:
+    if state.get("pending_solidify") or state.get("fsm_state") == "ACTIVE_RUN":
+        return (
+            "evolve_settle",
+            (
+                "当前存在活跃进化轮次（ACTIVE_RUN）：使用 `run_lens` 诊断或修改代码后，"
+                "调用 `evolve_settle` 一键验证结算。"
+            ),
+        )
+    supervision = state.get("supervision")
+    if isinstance(supervision, dict) and supervision.get("state") == "paused":
+        return (
+            "await_supervisor_resume",
+            "人工监督已暂停进化循环；待用户指示继续后再启动新一轮。",
+        )
+    return (
+        "evolve_begin",
+        "调用 `evolve_begin(hypothesis='一句话描述本轮唯一修复/优化假说')` 开启原子进化轮次。",
+    )
+
+
+# ---------------------------------------------------------------------------
+# Instrument prompt (concise 3-tool FSM protocol)
+# ---------------------------------------------------------------------------
+
+
+def build_instrument_prompt(state: dict[str, Any] | None = None) -> str:
+    """Render the concise zero-jargon 3-tool FSM takeover prompt."""
+    from evolver.gep.lenses import BUILTIN_LENSES
+    from evolver.gep.prompt import CHARTER_PREAMBLE
+
+    st = state if isinstance(state, dict) else evolve_status()
+    agent = str(st.get("agent_name") or "host-agent")
+    workspace = str(st.get("repo_root") or st.get("workspace_root") or "(workspace)")
+    cur_fsm = str(st.get("fsm_state") or fsm_state())
+    next_act, prose = _opening_action(st)
+    lens_names = ", ".join(sorted(BUILTIN_LENSES))
+
+    working = st.get("working_session") if isinstance(st.get("working_session"), dict) else {}
+    preview = str((working or {}).get("preview") or "").strip()
+    working_block = f"\n## 当轮工作草稿 (WORKING_SESSION.md)\n{preview}\n" if preview else ""
+
+    body_lines = [
+        f"# EVOLVER SWARM — 零干预三工具原子协议 (v{SWARM_PROTOCOL_VERSION})",
+        "",
+        f"> 你（{agent}）已连接 evolver 自进化引擎（工作区：`{workspace}`）。",
+        "> 若用户当前消息已有明确其他任务，优先完成用户任务；否则按以下三步状态机闭环执行。",
+        "",
+        "## 宪章",
+        "",
+        CHARTER_PREAMBLE,
+        "",
+        f"## 三步状态机协议（FSM = `{cur_fsm}`，下一步：`{next_act}`）",
+        "",
+        '1. **`evolve_begin(hypothesis="...")`**（仅 `IDLE` 态可见）',
+        "   - 传入**一句话清晰假说**，说明本轮准备验证的唯一改动（无需手写 JSON 模板或题号）。",
+        "   - 引擎自动完成基线懒自举、信号发现、算子匹配，并开启黑匣子切换至 `ACTIVE_RUN`。",
+        '2. **`run_lens(name="...", target="...")` + 编辑代码**（`ACTIVE_RUN` 态）',
+        f"   - 可选只读诊断透镜：`{lens_names}`",
+        "     （`import_impact` 查受影响单测，`ast_hotspot` 查异常吞没，`trace_locator` 定位栈）。",
+        f"   - 仅在 `{workspace}` 内做聚焦、单组件最小代码修改（严禁手改运行态目录）。",
+        '3. **`evolve_settle(summary="...")`**（仅 `ACTIVE_RUN` 态可见）',
+        "   - 默认运行 `< 3s` AST 反向依赖图 **L0 闪电验证**并记录 `episode_record` 与黑匣子。",
+        "   - **双轨裁决**：",
+        '     - 全绿净增益（`ok=true, outcome="promoted"`）：经验自动晋升金库，切回 `IDLE`。',
+        '     - 验证未过或未胜（`ok=false, outcome="draft_preserved"`）：补丁原位保留，',
+        "       返回精确到行号的 3 行 `actionable_fix`，不污染金库；按指引修复后再验证即可。",
+        "     - 首轮缺口（`pack_absent` / `no_baseline` / `unmeasured`）`soft-continue`，",
+        "       不写基线不自动提交；硬阻断仅限密钥（secrets）、`~/.evolver/` 与 `val_seal`。",
+        "",
+        f"当前指引：{prose}{working_block}",
+    ]
+    return "\n".join(body_lines) + "\n"
+
+
+# ---------------------------------------------------------------------------
+# First-class 3-tool FSM orchestrators (P1-1 + P1-2)
+# ---------------------------------------------------------------------------
+
+
+def _discover_workspace_signals() -> list[str]:
+    """Best-effort fast read of pending workspace signals without side effects."""
+    try:
+        from evolver.gep.paths import get_gep_assets_dir
+
+        pending_file = get_gep_assets_dir() / "pending_signals.json"
+        if pending_file.is_file():
+            data = json.loads(pending_file.read_text(encoding="utf-8"))
+            if isinstance(data, dict) and isinstance(data.get("signals"), list):
+                return [str(s) for s in data["signals"] if str(s).strip()][:12]
+    except Exception:
+        pass
+    return []
+
+
+def _discover_recommended_operators(signals: list[str]) -> list[dict[str, Any]]:
+    """Match active vault genes/operators against *signals* for zero-side-effect preview."""
+    try:
+        from evolver.gep.asset_store import load_genes
+        from evolver.gep.index_db import query_operator_stats
+
+        op_stats_map: dict[str, dict[str, Any]] = {}
+        with contextlib.suppress(Exception):
+            for row in query_operator_stats(limit=100, auto_sync=False):
+                gid = str(row.get("gene_id") or "")
+                if gid:
+                    op_stats_map[gid] = row
+
+        sig_set = {s.lower() for s in signals}
+        scored: list[tuple[float, dict[str, Any]]] = []
+        for g in load_genes():
+            if not isinstance(g, dict):
+                continue
+            gid = str(g.get("id") or "")
+            g_sigs = [str(x).lower() for x in (g.get("signals_match") or [])]
+            hits = sum(1 for x in g_sigs if x in sig_set)
+            st = op_stats_map.get(gid) or {}
+            helped_bonus = min(0.5, 0.1 * int(st.get("helped") or 0))
+            hit_rate = st.get("hit_rate")
+            rate_bonus = 0.2 * float(hit_rate) if isinstance(hit_rate, int | float) else 0.0
+            scored.append(
+                (
+                    float(hits) + helped_bonus + rate_bonus,
+                    {
+                        "id": gid,
+                        "category": str(g.get("category") or "repair"),
+                        "summary": str(g.get("summary") or g.get("description") or "")[:160],
+                        "has_lens": bool(g.get("lens")),
+                        "hit_rate": hit_rate,
+                    },
+                )
+            )
+        scored.sort(key=lambda item: item[0], reverse=True)
+        return [item[1] for item in scored[:3]]
+    except Exception:
+        return []
+
+
+def _infer_dimension(target_files: list[str] | None, hypothesis_text: str) -> str:
+    joined = " ".join(target_files or []).lower() + " " + hypothesis_text.lower()
+    if any(tok in joined for tok in ("schema", "pydantic", "model")):
+        return "schema"
+    if any(tok in joined for tok in ("mcp", "cli", "hook", "adapter", "lens", "tool")):
+        return "tool"
+    return "content"
+
+
+def _synthesize_internal_hypothesis(
+    hypothesis_text: str,
+    *,
+    run_id: str,
+    target_files: list[str] | None = None,
+    selected_gene_id: str | None = None,
+) -> dict[str, Any]:
+    """Synthesize a §5.3-compliant internal hypothesis record from a plain sentence."""
+    from evolver.gep.val_seal import assert_sealed, task_ids
+
+    clean = hypothesis_text.strip()
+    assert_sealed(clean, where="dispatch")
+
+    buckets = task_ids()
+    train_ids = buckets.get("train") or []
+    check_id = str(train_ids[0]) if train_ids else "native-baseline"
+    hook = (
+        str(target_files[0]).replace("\\", "/").strip()
+        if target_files and str(target_files[0]).strip()
+        else "workspace"
+    )
+    family = str(selected_gene_id or "").strip() or "operator_repair"
+    return {
+        "run_id": run_id,
+        "hypothesis": clean,
+        "dimension": _infer_dimension(target_files, clean),
+        "mechanism_family": family,
+        "target_hook": hook,
+        "mechanism_check": [
+            {
+                "id": check_id,
+                "before": "observed pre-change baseline or failure signal in workspace",
+                "after": clean[:240],
+            }
+        ],
+    }
+
+
+def evolve_status(project: str | Path | None = None) -> dict[str, Any]:
+    """Read-only unified status for both MCP agents and humans (no cycle side effects)."""
+    from evolver import __version__
+    from evolver.gep.blackbox import load_active_blackbox
+    from evolver.gep.lenses import BUILTIN_LENSES
+    from evolver.gep.paths import get_repo_root, get_workspace_root
+    from evolver.gep.supervision import supervision_summary
+    from evolver.ops.status_human import human_status
+
+    bind = bind_project_directory(project) if project else None
+    repo = get_repo_root(_quiet=True) or get_workspace_root()
+    panel = human_status(project=repo)
+    cur_fsm = fsm_state()
+    meta = _pending_solidify_meta() if cur_fsm == "ACTIVE_RUN" else {}
+    active_bb = load_active_blackbox() if cur_fsm == "ACTIVE_RUN" else None
+    sup = supervision_summary()
+
+    out: dict[str, Any] = {
+        "ok": True,
+        "version": __version__,
+        "protocol_version": SWARM_PROTOCOL_VERSION,
+        "fsm_state": cur_fsm,
+        "allowed_tools": (
+            ["run_lens", "evolve_settle", "evolve_status"]
+            if cur_fsm == "ACTIVE_RUN"
+            else ["evolve_begin", "evolve_status"]
+        ),
+        "active_run_id": meta.get("run_id") or None,
+        "selected_gene_id": meta.get("gene_id") or None,
+        "ready": bool(panel.get("ready")),
+        "lamp": panel.get("lamp"),
+        "headline": panel.get("headline"),
+        "promoted": panel.get("promoted", 0),
+        "intercepted": panel.get("intercepted", 0),
+        "saved_validation_seconds": panel.get("saved_validation_seconds"),
+        "vault_operators": panel.get("vault_operators", 0),
+        "vault_capsules": panel.get("vault_capsules", 0),
+        "workbench_drafts": panel.get("workbench_drafts", 0),
+        "repo_root": str(repo),
+        "workspace_id": panel.get("workspace_id"),
+        "state_dir": panel.get("state_dir"),
+        "top_signals": _discover_workspace_signals(),
+        "available_lenses": sorted(BUILTIN_LENSES),
+        "active_blackbox": (
+            {
+                "run_id": active_bb.get("run_id"),
+                "started_at": active_bb.get("started_at"),
+                "lens_calls_count": len(active_bb.get("lens_calls") or []),
+            }
+            if isinstance(active_bb, dict)
+            else None
+        ),
+        "supervision": sup,
+        "working_session": _working_snapshot(),
+        "bound_paths": describe_bound_paths(bind),
+    }
+    next_act, prose = _opening_action({"fsm_state": cur_fsm, "supervision": sup})
+    out["next_action"] = next_act
+    out["hint"] = prose
+    return out
+
+
+async def evolve_begin(
+    hypothesis: str = "",
+    *,
+    target_files: list[str] | None = None,
+    auto_discover: bool = True,
+    discard_draft: bool = False,
+    project: str | Path | None = None,
+    agent_name: str = "host-agent",
+) -> dict[str, Any]:
+    """Atomically start one evolution run, lock its single hypothesis, and enter ``ACTIVE_RUN``."""
+    from evolver.config import SWARM_TICK_LOG_MAX_CHARS
+    from evolver.gep import supervision
+    from evolver.gep.blackbox import begin_blackbox
+    from evolver.gep.hypothesis import record_hypothesis
+    from evolver.gep.lenses import BUILTIN_LENSES
+    from evolver.gep.paths import ensure_workspace_meta, get_repo_root, get_workspace_root
+    from evolver.gep.val_seal import ValSealBreachError
+
+    bind = bind_project_directory(project) if project else None
+    with contextlib.suppress(Exception):
+        ensure_workspace_meta()
+    _maybe_lazy_bootstrap()
+
     global _session_claim
     _session_claim = {"agent_name": str(agent_name or "host-agent")}
 
+    if _pending_solidify_state():
+        meta = _pending_solidify_meta()
+        return {
+            "ok": False,
+            "error": "fsm_state_mismatch",
+            "fsm_state": "ACTIVE_RUN",
+            "active_run_id": meta.get("run_id") or None,
+            "allowed_tools": ["run_lens", "evolve_settle", "evolve_status"],
+            "next_action": "evolve_settle",
+            "message": (
+                "An evolution run is already active. Use `run_lens` or call "
+                "`evolve_settle` before starting a new run."
+            ),
+        }
 
-def _attach_host_session(status: dict[str, Any]) -> dict[str, Any]:
-    """Cold hosts must see ``next_action=swarm_boot``; claimed hosts keep soft gaps.
+    tripwire = supervision.auto_pause_check()
+    if supervision.is_paused():
+        return {
+            "ok": False,
+            "paused": True,
+            "error": "supervision_paused",
+            "fsm_state": "IDLE",
+            "supervision": supervision.supervision_summary(),
+            "tripwire": tripwire,
+            "next_action": "await_supervisor_resume",
+            "message": "Evolution loop is paused by human supervision.",
+        }
 
-    A missing claim is the whole signal. Soft gaps (no pack / no baseline) are
-    attached only after boot, and they stay ``severity=soft`` — not an ``error``.
-    An unfinished run on that soft gap keeps ``next_action=swarm_solidify``,
-    ``gate_soft_continue`` true, and sets ``tick_again`` false. Absent is not
-    false, so a host that stops only on strict false would tick again.
-    """
-    claim = _session_claim
-    if not claim:
-        status["session_claimed"] = False
-        status["agent_name"] = None
-        status["next_action"] = "swarm_boot"
-        status["hint"] = (
-            "This session is not claimed. Call swarm_boot first and follow its "
-            "instrument_prompt and next_action."
+    clean_hyp = (hypothesis or "").strip()
+    if not clean_hyp:
+        sigs = _discover_workspace_signals()
+        if auto_discover:
+            recs = _discover_recommended_operators(sigs)
+            top_sig = sigs[0] if sigs else "workspace defect or optimization target"
+            return {
+                "ok": True,
+                "discovery_only": True,
+                "fsm_state": "IDLE",
+                "top_signals": sigs,
+                "recommended_operators": recs,
+                "available_lenses": sorted(BUILTIN_LENSES),
+                "hypothesis_template": (
+                    f"Fix/improve {top_sig} in <module> so <specific check> passes."
+                ),
+                "next_action": "evolve_begin",
+                "message": (
+                    "Candidate signals and operators discovered. Call "
+                    "`evolve_begin(hypothesis='...')` with a one-sentence falsifiable "
+                    "hypothesis to lock the round and enter ACTIVE_RUN."
+                ),
+            }
+        return {
+            "ok": False,
+            "error": "empty_hypothesis",
+            "fsm_state": "IDLE",
+            "top_signals": sigs,
+            "next_action": "evolve_begin",
+            "message": (
+                "Pass a non-empty one-sentence `hypothesis` stating the single "
+                "mechanism or bug fix you intend to validate this round."
+            ),
+        }
+
+    # Auto-satisfy compaction scratch checkpoint using the host's explicit hypothesis
+    from evolver.gep.compact_gate import checkpoint_pending, clear_checkpoint
+    from evolver.gep.working_memory import write_working
+
+    if checkpoint_pending():
+        with contextlib.suppress(Exception):
+            write_working(f"# Active Hypothesis\n\n{clean_hyp}\n")
+            clear_checkpoint()
+
+    cwd = (get_repo_root(_quiet=True) or get_workspace_root()).resolve()
+    if discard_draft:
+        with contextlib.suppress(Exception):
+            from evolver.gep.git_ops import rollback_tracked
+
+            rollback_tracked(cwd=cwd, include_untracked=False)
+
+    # Validate val_seal before touching any cycle state
+    try:
+        probe_payload = _synthesize_internal_hypothesis(
+            clean_hyp,
+            run_id="run_preflight",
+            target_files=target_files,
         )
-        status["hint_zh"] = "本会话尚未认领。请先调用 swarm_boot，再按其 next_action 继续。"
-        return status
+    except ValSealBreachError as exc:
+        return {
+            "ok": False,
+            "error": "val_seal_breach",
+            "fsm_state": "IDLE",
+            "message": str(exc),
+            "next_action": "evolve_begin",
+        }
+    _ = probe_payload
 
-    status["session_claimed"] = True
-    status["agent_name"] = claim["agent_name"]
-    action, prose = _opening_action(status)
-    status["next_action"] = action
-    status["hint"] = prose
-    if status.get("pending_solidify") and action == "swarm_solidify":
-        status["readonly_smoke"] = _readonly_smoke_block()
-        _stamp_preserve_pending(status)
-    gap = _gate_gap(status.get("bench_pack_gate"))
-    steer_solidify = bool(status.get("pending_solidify") and action == "swarm_solidify")
-    pending_run = _pending_solidify_meta()["run_id"] if steer_solidify else ""
-    if gap is None:
-        if steer_solidify:
-            _prefer_solidify_steps(status, hold_tick=False, run_id=pending_run)
-            _defer_doctor_fix_on_steer(status)
-        return status
-    from evolver.ops.open_box import apply_soft_gap
+    from evolver.evolve.runner import _run_single_cycle
+    from evolver.gep.instance_lock import instance_lock_ctx
+    from evolver.gep.solidify import write_state_for_solidify
 
-    # Keep the opening action. apply_soft_gap does not replace an existing hint,
-    # and it still attaches warning / next_steps for the soft gap.
-    surfaced = apply_soft_gap(status, gap)
-    surfaced["next_action"] = action
-    if steer_solidify:
-        _prefer_solidify_steps(surfaced, hold_tick=False, run_id=pending_run)
-        # Keep gate_soft_continue true. Write tick_again false so a host that
-        # stops only on strict false does not tick again after this status.
-        if surfaced.get("gate_soft_continue") is True:
-            surfaced["tick_again"] = False
-        _defer_doctor_fix_on_steer(surfaced)
-    return surfaced
+    ctx: dict[str, Any] = {}
+    engine_log = ""
+    with instance_lock_ctx(blocking=False, timeout=0) as lock_ok:
+        if not lock_ok:
+            return {
+                "ok": False,
+                "error": "instance_lock_held",
+                "fsm_state": "IDLE",
+                "next_action": "stop_and_report",
+                "message": "Another evolver process holds the workspace lock.",
+            }
+        if auto_discover:
+            with _capture_stdout() as capture:
+                try:
+                    ctx = await _run_single_cycle(is_loop=False)
+                except Exception as exc:
+                    ctx = {"cycle_warning": str(exc)[:240]}
+            engine_log = capture.getvalue()
+
+        if ctx.get("autopoiesis_preflight_abort"):
+            abort_reason = (
+                m.group(1) if (m := _ABORT_REASON_RE.search(engine_log)) else "preflight_abort"
+            )
+            return {
+                "ok": False,
+                "error": "preflight_abort",
+                "abort_reason": abort_reason,
+                "fsm_state": fsm_state(),
+                "next_action": "stop_and_report",
+            }
+
+        gene = ctx.get("selected_gene") if isinstance(ctx.get("selected_gene"), dict) else None
+        selected_gene_id = str(gene.get("id") or "") if isinstance(gene, dict) else ""
+        signals = (
+            [str(s) for s in ctx.get("signals", []) if str(s).strip()]
+            if isinstance(ctx.get("signals"), list)
+            else _discover_workspace_signals()
+        )
+
+        # Guarantee deterministic transition to ACTIVE_RUN even on cold/idle repos
+        if not _pending_solidify_state():
+            run_id = str(ctx.get("run_id") or "") or (
+                f"run_{int(time.time() * 1000)}_{secrets.token_hex(3)}"
+            )
+            write_state_for_solidify(
+                {
+                    "run_id": run_id,
+                    "selected_gene_id": selected_gene_id or None,
+                    "signals": signals,
+                    "mutation": {
+                        "id": f"mut_{run_id}",
+                        "category": "repair",
+                        "validation": [],
+                    },
+                }
+            )
+        else:
+            run_id = _pending_solidify_meta()["run_id"]
+            if not selected_gene_id:
+                selected_gene_id = _pending_solidify_meta()["gene_id"]
+
+        hyp_record = _synthesize_internal_hypothesis(
+            clean_hyp,
+            run_id=run_id,
+            target_files=target_files,
+            selected_gene_id=selected_gene_id or None,
+        )
+        record_hypothesis(hyp_record)
+        bb = begin_blackbox(
+            run_id,
+            cwd,
+            hypothesis=clean_hyp,
+            selected_gene_id=selected_gene_id,
+        )
+
+    dispatch_prompt = (
+        str(ctx.get("dispatch_prompt") or "").strip()
+        if isinstance(ctx.get("dispatch_prompt"), str)
+        else ""
+    )
+    _record_tick(
+        {
+            "run_id": run_id,
+            "cycle_id": ctx.get("cycle_id"),
+            "agent_name": agent_name,
+            "preflight_aborted": False,
+            "dispatch_reason": "evolve_begin",
+            "selected_gene": {"id": selected_gene_id} if selected_gene_id else None,
+            "proposal_required": False,
+            "next_action": "evolve_settle",
+        }
+    )
+
+    return {
+        "ok": True,
+        "fsm_state": "ACTIVE_RUN",
+        "run_id": run_id,
+        "hypothesis": clean_hyp,
+        "repo_root": str(cwd),
+        "selected_gene": (
+            {
+                "id": gene.get("id"),
+                "name": gene.get("name") or gene.get("summary"),
+                "category": gene.get("category"),
+            }
+            if isinstance(gene, dict)
+            else None
+        ),
+        "signals": signals[:12],
+        "available_lenses": sorted(BUILTIN_LENSES),
+        "blackbox_started_at": bb.get("started_at"),
+        "dispatch_context": _tail(dispatch_prompt, 4000) if dispatch_prompt else None,
+        "engine_log": _tail(engine_log, SWARM_TICK_LOG_MAX_CHARS) if engine_log else "",
+        "bound_paths": describe_bound_paths(bind),
+        "next_action": "evolve_settle",
+        "hint": (
+            "ACTIVE_RUN started. Optional: call `run_lens` to inspect AST hotspots "
+            "or impacted tests, apply your focused edit, then call `evolve_settle`."
+        ),
+    }
+
+
+def evolve_run_lens(
+    name: str = "list",
+    target: str = ".",
+    args: dict[str, Any] | None = None,
+    *,
+    project: str | Path | None = None,
+) -> dict[str, Any]:
+    """Run a read-only diagnostic lens during ``ACTIVE_RUN`` and log to the blackbox."""
+    from evolver.gep.blackbox import record_lens_call
+    from evolver.gep.lenses import run_lens
+    from evolver.gep.paths import get_repo_root, get_workspace_root
+
+    if project:
+        bind_project_directory(project)
+    root = (get_repo_root(_quiet=True) or get_workspace_root()).resolve()
+    res = run_lens(name=name, target=target, args=args, repo_root=root)
+    record_lens_call(
+        name=str(res.get("lens") or name),
+        target=target,
+        ok=bool(res.get("ok")),
+        duration_ms=int(res.get("duration_ms") or 0),
+        summary=str(res.get("summary") or ""),
+    )
+    res["fsm_state"] = fsm_state()
+    return res
+
+
+def evolve_settle(
+    summary: str = "",
+    *,
+    validation_scope: str = "auto",
+    related_commands: list[list[str]] | None = None,
+    proposal: dict[str, Any] | None = None,
+    restore_draft: bool = False,
+    project: str | Path | None = None,
+    agent_name: str = "host-agent",
+) -> dict[str, Any]:
+    """Validate, adjudicate, settle blackbox + episode record, and transition back to ``IDLE``."""
+    from evolver.gep import episode_clue
+    from evolver.gep.paths import get_repo_root, get_workspace_root
+
+    if project:
+        bind_project_directory(project)
+
+    if restore_draft:
+        restored = swarm_solidify(restore_stash=True, agent_name=agent_name)
+        restored["fsm_state"] = fsm_state()
+        return restored
+
+    if not _pending_solidify_state():
+        return {
+            "ok": False,
+            "error": "fsm_state_mismatch",
+            "fsm_state": "IDLE",
+            "allowed_tools": ["evolve_begin", "evolve_status"],
+            "next_action": "evolve_begin",
+            "message": "No active evolution run to settle. Call `evolve_begin` first.",
+        }
+
+    clean_summary = (summary or "").strip()
+    if clean_summary:
+        if "```json" in clean_summary:
+            with contextlib.suppress(Exception):
+                swarm_distill(clean_summary, dry_run=False)
+        else:
+            with contextlib.suppress(Exception):
+                episode_clue.append_clue(clean_summary[:2000], source="host_settle")
+
+    effective_scope = (validation_scope or "auto").strip() or "auto"
+    result = swarm_solidify(
+        agent_name=agent_name,
+        proposal=proposal,
+        validation_scope=effective_scope,
+        related_commands=related_commands,
+    )
+    cur_fsm = fsm_state()
+    result["fsm_state"] = cur_fsm
+    result["repo_root"] = str((get_repo_root(_quiet=True) or get_workspace_root()).resolve())
+    if result.get("ok") is True:
+        result["next_action"] = "evolve_begin"
+        result.setdefault(
+            "hint",
+            "Run promoted to vault and settled. FSM returned to IDLE.",
+        )
+    else:
+        result["next_action"] = "evolve_begin" if cur_fsm == "IDLE" else "evolve_settle"
+    return result
+
+
+# ---------------------------------------------------------------------------
+# Engine / CLI internal building blocks (preserved for CLI & unit seams)
+# ---------------------------------------------------------------------------
+
+
+def _record_tick(result: dict[str, Any]) -> None:
+    state = _load_swarm_state()
+    state["ticks"] = int(state.get("ticks") or 0) + 1
+    state["updated"] = datetime.datetime.now(datetime.UTC).isoformat()
+    state["last_tick"] = {
+        key: result.get(key)
+        for key in (
+            "run_id",
+            "cycle_id",
+            "agent_name",
+            "preflight_aborted",
+            "abort_reason",
+            "dispatch_reason",
+            "selected_gene",
+            "proposal_required",
+            "next_action",
+        )
+    }
+    with contextlib.suppress(Exception):
+        _save_swarm_state(state)
 
 
 def swarm_status() -> dict[str, Any]:
-    """Summarize engine state for swarm agents (cheap, no cycle side effects)."""
+    """Engine status dictionary (used by ``evolver://status`` and CLI diagnostics)."""
     from evolver import __version__
     from evolver.gep.adaptive import feedback_mutation_bias
     from evolver.gep.asset_store import load_capsules, load_genes
@@ -748,29 +1067,16 @@ def swarm_status() -> dict[str, Any]:
     prompt_artifact = get_solidify_state_path().parent / "last_prompt.md"
     swarm_state = _load_swarm_state()
     recent_feedback = load_recent_feedback(10)
-    mailbox: dict[str, int] = {}
-    try:
-        store = _mailbox_store()
-        # "Pending" means status=pending: poll() returns every inbound message
-        # (acked/synced included), and counting them all made the label lie —
-        # the number only ever went up, even after acks (dogfood round-7).
-        inbound_pending = [
-            m for m in store.poll(limit=100) if getattr(m, "status", "") == "pending"
-        ]
-        mailbox = {
-            "inbound": len(inbound_pending),
-            "outbound": len(store.poll_outbound(limit=100)),
-            "unacked_hello": sum(
-                1 for m in inbound_pending if getattr(m, "type", "") == "swarm.hello"
-            ),
-        }
-    except Exception:
-        mailbox = {"inbound": -1, "outbound": -1}
+    pending = _pending_solidify_state()
+    cur_fsm: Literal["IDLE", "ACTIVE_RUN"] = "ACTIVE_RUN" if pending else "IDLE"
+    sup = supervision_summary()
+    next_act, prose = _opening_action({"pending_solidify": pending, "supervision": sup})
 
-    body = {
+    return {
         "ok": True,
         "version": __version__,
         "protocol_version": SWARM_PROTOCOL_VERSION,
+        "fsm_state": cur_fsm,
         "workspace_root": str(ws_root),
         "repo_root": str(repo_root or ""),
         "workspace_id": ws_id,
@@ -786,7 +1092,7 @@ def swarm_status() -> dict[str, Any]:
         "bridge_enabled": determine_bridge_enabled(),
         "genes": len(load_genes()),
         "capsules": len(load_capsules()),
-        "pending_solidify": _pending_solidify_state(),
+        "pending_solidify": pending,
         "last_prompt_artifact": str(prompt_artifact) if prompt_artifact.exists() else None,
         "source_revision": _source_revision(),
         "code_staleness": _code_staleness(),
@@ -802,1463 +1108,48 @@ def swarm_status() -> dict[str, Any]:
             "mode": "on" if hitl_mode_enabled() else "off",
             "pending": len(list_pending()),
         },
-        "supervision": supervision_summary(),
+        "supervision": sup,
         "bench_pack_gate": bench_gate,
-        "mailbox_pending": mailbox,
         "working_session": _working_snapshot(),
+        "bound_paths": describe_bound_paths(),
+        "next_action": next_act,
+        "hint": prose,
     }
-    bound = describe_bound_paths()
-    body["bound_paths"] = bound
-    return _surface_bound_paths(_attach_host_session(body), bound)
-
-
-_DOCTOR_FIX_COMMAND: Final = "evolver doctor --fix"
-_BENCH_FREEZE_COMMAND: Final = "evolver bench freeze"
-_BENCH_BASELINE_COMMAND: Final = "evolver bench baseline"
-_STEER_COMMANDS_NOT_CURRENT: Final = frozenset(
-    {
-        _DOCTOR_FIX_COMMAND,
-        _BENCH_FREEZE_COMMAND,
-        _BENCH_BASELINE_COMMAND,
-    }
-)
-_DOCTOR_FIX_NOT_CURRENT: Final = (
-    "Current action is swarm_solidify "
-    "(next_action, preserve_pending, action_required). "
-    "Do not run evolver doctor --fix before solidify. "
-    "That command is appropriate after this run is solidified, "
-    "or when no run is unfinished."
-)
-_BENCH_NOT_CURRENT: Final = (
-    "Current action is swarm_solidify "
-    "(next_action, preserve_pending, action_required). "
-    "Do not run evolver bench freeze or evolver bench baseline before solidify. "
-    "This steer does not settle the run and does not write a Parent baseline. "
-    "Those commands are appropriate after this run is solidified, "
-    "or when no run is unfinished."
-)
-
-
-def _commands_without_current_doctor_fix(items: list[Any] | None) -> list[str]:
-    """Drop setup commands that are not the current solidify step.
-
-    Exact ``evolver doctor --fix``, ``evolver bench freeze``, and
-    ``evolver bench baseline`` leave the list. Other commands stay.
-    """
-    kept: list[str] = []
-    for item in items or []:
-        text = str(item).strip()
-        if not text or text in _STEER_COMMANDS_NOT_CURRENT:
-            continue
-        if text not in kept:
-            kept.append(text)
-    return kept
-
-
-def _steps_without_current_doctor_fix(items: list[Any] | None) -> list[str]:
-    """Replace a step that tells the host to run setup commands now."""
-    kept: list[str] = []
-    for item in items or []:
-        text = str(item).strip()
-        if not text:
-            continue
-        if text not in (_DOCTOR_FIX_NOT_CURRENT, _BENCH_NOT_CURRENT):
-            mentions_bench = _BENCH_FREEZE_COMMAND in text or _BENCH_BASELINE_COMMAND in text
-            if _DOCTOR_FIX_COMMAND in text:
-                text = _DOCTOR_FIX_NOT_CURRENT
-            elif mentions_bench:
-                text = _BENCH_NOT_CURRENT
-        if text not in kept:
-            kept.append(text)
-    return kept
-
-
-def _defer_doctor_fix_on_steer(payload: dict[str, Any]) -> None:
-    """Stop offering ``evolver doctor --fix`` as the current solidify-steer step.
-
-    ``commands`` loses the exact command. A ``next_steps`` entry that names it
-    is replaced with a solidify steer. Boot, status, the first unfinished-run
-    tick, and the loop fuse call this while ``next_action`` is
-    ``swarm_solidify``. A tick with no unfinished run does not. Doctor
-    ``fixes`` use :func:`_commands_without_current_doctor_fix`.
-    """
-    if "commands" in payload:
-        payload["commands"] = _commands_without_current_doctor_fix(payload.get("commands"))
-    if "next_steps" in payload:
-        payload["next_steps"] = _steps_without_current_doctor_fix(payload.get("next_steps"))
-
-
-def _attach_unfinished_run_to_doctor(report: dict[str, Any]) -> dict[str, Any]:
-    """Steer a soft doctor smoke at solidify while a run is unfinished.
-
-    ``readonly_smoke`` names this tool next to ``swarm_status``. Status already
-    sets ``next_action``. A soft-continue doctor that omits it looks like
-    "the loop is not blocked", so the host ticks again. Hard blockers keep
-    ``ok`` false and do not gain that action.
-
-    ``gate_soft_continue`` stays absent: a strict false is session death for
-    hosts that do not read ``session_not_failed``. That flag stays absent too.
-    It belongs on the tick redirect, not on a doctor health bit.
-    ``tick_again`` is false here. Absent is not false, so a host that stops
-    only on strict false would tick again. ``soft_continue`` stays true: that
-    bit means the gap is not a hard stop. Unfinished soft-gap boot and status
-    set the same ``tick_again`` false and keep ``gate_soft_continue`` true.
-    ``fixes`` does not list ``evolver doctor --fix``, ``evolver bench freeze``,
-    or ``evolver bench baseline`` as a current step. Those commands stay
-    listed when no run is unfinished. This does not run ``--fix``, does not
-    freeze a pack, and does not write a Parent baseline.
-    """
-    if not _pending_solidify_state():
-        return report
-    if report.get("soft_continue") is not True or report.get("blockers"):
-        return report
-    out = dict(report)
-    out["pending_solidify"] = True
-    out["next_action"] = "swarm_solidify"
-    out["tick_again"] = False
-    out["readonly_smoke"] = _readonly_smoke_block()
-    _stamp_preserve_pending(out)
-    run_id = str(_pending_solidify_meta().get("run_id") or "").strip()
-    who = f"run_id={run_id}" if run_id else "the unfinished run"
-    lead = (
-        f"Call swarm_solidify now for {who}. "
-        "Do not call swarm_tick. "
-        "tick_again=false means do not call swarm_tick. "
-        "This doctor call does not settle the run, does not write a Parent "
-        "baseline, and does not relax the solidify gate. "
-        "Soft gaps stay advisory. Do not apply fixes before swarm_solidify. "
-        "fixes does not list `evolver doctor --fix`, `evolver bench freeze`, "
-        "or `evolver bench baseline` as a current step. "
-        "Do not run evolver doctor --fix before solidify. "
-        "Do not run evolver bench freeze or evolver bench baseline before solidify. "
-        "This tool does not execute them. "
-        "Those commands are appropriate after this run is solidified, "
-        "or when no run is unfinished. "
-    )
-    out["hint"] = lead + str(out.get("hint") or "")
-    out["fixes"] = _commands_without_current_doctor_fix(out.get("fixes"))
-    return out
 
 
 def swarm_doctor() -> dict[str, Any]:
-    """Read-only open-box summary. Does not install a pack or write a baseline.
-
-    Same checks as ``evolver doctor`` without ``--fix``. ``no_baseline`` /
-    ``pack_absent`` / ``unmeasured`` stay soft warnings. ``fixes`` are command
-    hints for the host to show a person; this function never runs them.
-    A soft-continue report with an unfinished run also sets
-    ``next_action=swarm_solidify`` and ``tick_again=false``. ``soft_continue``
-    stays true. On that steer, ``fixes`` does not list ``evolver doctor --fix``,
-    ``evolver bench freeze``, or ``evolver bench baseline`` as a current step.
-    Those commands stay listed when no run is unfinished.
-    A hard blocker does not gain either field.
-    """
+    """Read-only open-box summary (never runs ``--fix``)."""
     from evolver.ops.open_box import SOFT_GAP_ERRORS, doctor
 
     report = doctor(fix=False)
-    warnings: list[dict[str, Any]] = []
-    fixes: list[str] = []
-    for rec in report.get("recommendations") or []:
-        warnings.append(
-            {
-                "gap": rec.get("gap") or rec.get("error"),
-                "severity": "soft",
-                "message": rec.get("message"),
-            }
-        )
-        for cmd in rec.get("commands") or []:
-            text = str(cmd)
-            if text not in fixes:
-                fixes.append(text)
-    blockers: list[dict[str, Any]] = []
-    for blocker in report.get("blockers") or []:
-        blockers.append(
-            {
-                "error": blocker.get("error"),
-                "severity": "hard",
-                "message": blocker.get("message"),
-                "next_steps": list(blocker.get("next_steps") or []),
-            }
-        )
-        for cmd in blocker.get("commands") or []:
-            text = str(cmd)
-            if text not in fixes:
-                fixes.append(text)
-    checks: list[dict[str, Any]] = []
-    for check in report.get("checks") or []:
-        err = check.get("error")
-        if check.get("ok"):
-            severity = "ok"
-        elif err in SOFT_GAP_ERRORS:
-            severity = "soft"
-        else:
-            severity = "hard"
-        checks.append(
-            {
-                "id": check.get("id"),
-                "ok": bool(check.get("ok")),
-                "error": err,
-                "severity": severity,
-            }
-        )
-    body = {
+    checks = [
+        {
+            "id": c.get("id"),
+            "ok": bool(c.get("ok")),
+            "error": c.get("error"),
+            "severity": (
+                "ok" if c.get("ok") else ("soft" if c.get("error") in SOFT_GAP_ERRORS else "hard")
+            ),
+        }
+        for c in (report.get("checks") or [])
+    ]
+    return {
         "ok": bool(report.get("ok")),
+        "fsm_state": fsm_state(),
         "soft_continue": bool(report.get("soft_continue")),
         "loop_ready": bool(report.get("loop_ready")),
         "read_only": True,
         "checks": checks,
-        "warnings": warnings,
-        "blockers": blockers,
-        "fixes": fixes,
-        "hint": (
-            "Read-only doctor. Soft gaps (no_baseline, pack_absent, unmeasured) "
-            "do not block the loop. fixes are command hints; this tool does not apply them."
-        ),
+        "warnings": list(report.get("recommendations") or []),
+        "blockers": list(report.get("blockers") or []),
         "repo_root": report.get("repo_root"),
         "workspace_id": report.get("workspace_id"),
     }
-    return _attach_unfinished_run_to_doctor(body)
 
 
-def _working_snapshot() -> dict[str, Any]:
-    """Scratch-pad preview plus whether a compact checkpoint is waiting."""
-    try:
-        from evolver.gep.compact_gate import checkpoint_pending
-        from evolver.gep.working_memory import read_working
-
-        text = read_working()
-        return {
-            "present": bool(text.strip()),
-            "chars": len(text),
-            "preview": text[:400],
-            "compact_checkpoint_pending": checkpoint_pending(),
-        }
-    except Exception:
-        return {
-            "present": False,
-            "chars": 0,
-            "preview": "",
-            "compact_checkpoint_pending": False,
-        }
-
-
-def _checkpoint_block() -> dict[str, Any] | None:
-    from evolver.gep.compact_gate import pending_block
-
-    block = pending_block()
-    if block is None:
-        return None
-    refused = dict(block)
-    refused["working_session"] = _working_snapshot()
-    return refused
-
-
-def _settled_run_barrier(run_id: str) -> dict[str, Any] | None:
-    """Return the recorded episode when this run is already landed.
-
-    A run that is still pending (a failed solidify the host may retry) is
-    left open. Sealing those would trap boot on ``solidify first`` forever.
-    """
-    if not run_id or run_id == "unknown" or _pending_solidify_state():
-        return None
-    from evolver.gep import episode_record
-
-    try:
-        ep_id = episode_record.find_episode_id_for_run(run_id)
-    except Exception:
-        return None
-    if not ep_id:
-        return None
-    return {
-        "ok": True,
-        "status": "already_settled",
-        "run_id": run_id,
-        "episode_id": ep_id,
-        "episode": {"ok": True, "reason": "already_stored", "id": ep_id},
-        "next_action": "swarm_tick",
-        "steer_message": (
-            "This run_id is already settled. The recorded episode id is returned; "
-            "call swarm_tick for a new cycle instead of solidifying again."
-        ),
-    }
-
-
-def _gate_gap(gate: Any) -> str | None:
-    """Why the frozen gate cannot publish yet, or ``None`` when it can."""
-    if not isinstance(gate, dict) or not gate.get("armed"):
-        return "pack_absent"
-    if gate.get("baseline") is None:
-        return "no_baseline"
-    return None
-
-
-def gate_handoff_skipped() -> bool:
-    """True when the human chose HOTL over the pre-tick gate handoff."""
-    from evolver.config import SWARM_GATE_HANDOFF
-
-    return SWARM_GATE_HANDOFF.strip().lower() == "hotl"
-
-
-def _bump_pending_redirect(run_id: str) -> int:
-    """Count default ticks against one unfinished run. Does not start a cycle."""
-    from evolver.gep.asset_store import atomic_write_json
-    from evolver.gep.paths import get_evolution_dir
-
-    path = get_evolution_dir() / _PENDING_REDIRECT_LEDGER
-    data: dict[str, Any] = {}
-    if path.is_file():
-        try:
-            loaded = json.loads(path.read_text(encoding="utf-8"))
-        except (OSError, json.JSONDecodeError):
-            loaded = None
-        if isinstance(loaded, dict):
-            data = loaded
-    if str(data.get("run_id") or "") != run_id:
-        count = 1
-    else:
-        try:
-            count = int(data.get("count") or 0) + 1
-        except (TypeError, ValueError):
-            count = 1
-    with contextlib.suppress(Exception):
-        atomic_write_json(path, {"run_id": run_id, "count": count})
-    return count
-
-
-def _stamp_preserve_pending(payload: dict[str, Any]) -> None:
-    """An ``error`` on this envelope is not permission to drop the unfinished run."""
-    payload["preserve_pending"] = True
-    payload["abandon_run"] = False
-    payload["action_required"] = "swarm_solidify"
-
-
-def _stamp_session_not_failed(payload: dict[str, Any]) -> None:
-    """The unfinished-run tick redirect is not a failed session.
-
-    A soft-gap redirect omits ``gate_soft_continue`` and sets ``soft_gap``.
-    ``loop_fuse=pending_redirect_loop`` is the tick fuse and is not an ``error``.
-    Hosts read ``session_not_failed`` before either signal. True means call
-    ``swarm_solidify`` and keep the run. The preserve triad still says how.
-    Absent on boot, status, and a real cycle: this flag is not a general
-    health bit.
-    """
-    payload["session_not_failed"] = True
-
-
-def _prefer_solidify_steps(
-    payload: dict[str, Any],
-    *,
-    hold_tick: bool,
-    run_id: str | None = None,
-) -> None:
-    """Name ``swarm_solidify`` as the next call while a run is unfinished.
-
-    ``hold_tick`` is only the pending tick redirect that already carries a
-    soft gap. ``apply_soft_gap`` sets ``gate_soft_continue`` true. This drops
-    that key on the first redirect and on the fuse. Absent is not true, so a
-    host that ticks only while the flag is true stops. Absent is not false, so
-    a host that dies on strict false stays up. ``soft_gap.advisory`` stays true
-    and ``soft_gap.tick`` is false. ``tick_again`` stays false. This never
-    writes false. Boot and status keep the true bit and also set
-    ``tick_again`` false. Doctor still omits the key and does not set
-    ``soft_gap``.
-    """
-    rid = str(run_id if run_id is not None else payload.get("run_id") or "").strip()
-    who = f"run_id={rid}" if rid else "this unfinished run"
-    closed = payload.get("tick_closed") is True
-    lead = (
-        f"Call swarm_solidify now for {who}. "
-        "Do not call swarm_tick again. "
-        "Do not drop this unfinished run and do not write a Parent baseline."
-    )
-    if hold_tick and not closed:
-        lead += (
-            " session_not_failed=true. "
-            "gate_soft_continue is absent, not false. "
-            "soft_gap.advisory=true. soft_gap.tick=false. "
-            "Absent is not a license to tick, and not a failed session. "
-            "tick_again=false means do not tick. "
-            "ok is still true and there is no error. "
-            "retryable=false means do not tick."
-        )
-    elif hold_tick and closed:
-        lead += (
-            " session_not_failed=true. "
-            "gate_soft_continue is absent, not false. "
-            "soft_gap.advisory=true. soft_gap.tick=false. "
-            "Absent is not a license to tick, and not a failed session. "
-            "tick_again=false means do not tick. "
-            "loop_fuse=pending_redirect_loop is not an error field. "
-            "redirect_reason=pending_redirect_loop is that fuse, not a next_action. "
-            "Do not abandon the run."
-        )
-    elif payload.get("session_not_failed") is True:
-        lead += (
-            " session_not_failed=true: the session is not failed. "
-            "If loop_fuse is pending_redirect_loop, redirect_reason is that same "
-            "code, there is no error field, and next_action stays swarm_solidify. "
-            "Read session_not_failed and the preserve flags. Do not abandon the run."
-        )
-    rewritten: list[str] = []
-    for step in payload.get("next_steps") or []:
-        text = str(step)
-        lowered = text.lower()
-        invites_tick = "swarm_tick" in text or "continue swarm" in lowered
-        if invites_tick and "do not call swarm_tick" not in lowered:
-            text = (
-                "Do not call swarm_tick while this run is unfinished. "
-                "Call swarm_solidify. The soft gap stays advisory and does not "
-                "write a Parent baseline."
-            )
-        if text not in rewritten:
-            rewritten.append(text)
-    if lead not in rewritten:
-        rewritten.insert(0, lead)
-    payload["next_steps"] = rewritten
-    if not hold_tick:
-        return
-    # Drop the true apply_soft_gap wrote. Never assign false (DEBUG #67).
-    payload.pop("gate_soft_continue", None)
-    gap_code = str(payload.get("gap") or payload.get("gate_gap") or "").strip()
-    soft_gap: dict[str, Any] = {
-        "present": True,
-        "advisory": True,
-        "tick": False,
-    }
-    if gap_code:
-        soft_gap["code"] = gap_code
-    payload["soft_gap"] = soft_gap
-    if closed:
-        steer = (
-            "session_not_failed=true. "
-            "gate_soft_continue is absent, not false. "
-            "soft_gap.advisory=true. soft_gap.tick=false: do not call swarm_tick. "
-            "Call swarm_solidify. loop_fuse=pending_redirect_loop is not a failed session. "
-            "redirect_reason=pending_redirect_loop is that fuse, not a next_action. "
-            "There is no error field."
-        )
-    else:
-        steer = (
-            "session_not_failed=true. "
-            "gate_soft_continue is absent, not false. "
-            "soft_gap.advisory=true. soft_gap.tick=false: do not call swarm_tick. "
-            "Call swarm_solidify. ok is true and there is no error. "
-            "The session is not failed. The soft gap stays advisory."
-        )
-    warnings = list(payload.get("warnings") or [])
-    if steer not in warnings:
-        warnings.insert(0, steer)
-    payload["warnings"] = warnings
-
-
-def _pending_redirect_note(count: int, closed: bool, *, gap: bool) -> str:
-    """Host-facing note. The loop fuse is not a solidify-gate failure."""
-    keep = (
-        "session_not_failed=true. "
-        "preserve_pending=true, abandon_run=false, action_required=swarm_solidify. "
-        "tick_again=false means do not call swarm_tick. "
-        "Read session_not_failed before any other flag. "
-        "Do not drop this unfinished run. Call swarm_solidify now."
-    )
-    soft_flag = ""
-    if gap:
-        soft_flag = (
-            "gate_soft_continue is absent, not false. "
-            "Absent is not a failed session. "
-            "soft_gap.advisory=true. soft_gap.tick=false is not a license to tick. "
-            "The soft gap stays in warning and soft_gap. "
-        )
-    if not closed:
-        return (
-            "swarm_tick did not start a cycle because a run is still unfinished "
-            f"(redirect_count={count}, progress=false). "
-            "ok stays true and this is not a hard gate. "
-            "retryable=false means do not call swarm_tick. "
-            f"{keep} "
-            f"{soft_flag}"
-            "Another swarm_tick on this same run returns "
-            "loop_fuse=pending_redirect_loop, "
-            "redirect_reason=pending_redirect_loop, ok false, and no error field. "
-            "next_action stays swarm_solidify. It still does not start a cycle. "
-            "Pass supersede_pending=true only to replace that run. "
-            "The solidify gate is unchanged and no Parent baseline is written."
-        )
-    return (
-        "Repeated swarm_tick on the same unfinished run "
-        f"(redirect_count={count}, progress=false). "
-        "ok is false so a host that only checks ok stops. "
-        "loop_fuse=pending_redirect_loop is not a gate failure. "
-        "redirect_reason=pending_redirect_loop names that fuse. "
-        "It is not an error and not a next_action. "
-        "next_action stays swarm_solidify. "
-        "dispatch_reason stays pending_solidify. "
-        "error is absent. severity stays soft. retryable=false. Do not tick again. "
-        f"{keep} {soft_flag}"
-        "Call swarm_solidify for this run_id. "
-        "Pass supersede_pending=true only to replace that run. "
-        "No cycle was started and no Parent baseline was written."
-    )
-
-
-def _pending_tick_redirect(gap: str | None) -> dict[str, Any]:
-    """Soft envelope when ``swarm_tick`` is called with an unfinished run.
-
-    A tick writes a fresh ``last_run`` and would replace the run the host
-    has not solidified. Default: do not start that cycle. The first call
-    keeps ``ok`` true and ``redirect_reason`` ``pending_solidify``. The same
-    run's next call sets ``ok`` false with ``loop_fuse=pending_redirect_loop``,
-    ``redirect_reason=pending_redirect_loop``, and no ``error`` field, so a
-    host that only checks ``ok`` stops, a host that reads the fuse code
-    solidifies, and a host that abandons on any ``error`` keeps the run.
-    ``next_action`` stays ``swarm_solidify``. ``dispatch_reason`` stays
-    ``pending_solidify``. That fuse is not a gate and not a ``next_action``
-    value. Both calls set
-    ``session_not_failed`` true, ``preserve_pending`` true, ``abandon_run``
-    false, and ``action_required`` to ``swarm_solidify``. Both calls set
-    ``retryable`` false. Absent is not a license to tick again; strict false
-    means do not tick. The first call still keeps ``ok`` true. Read
-    ``session_not_failed`` before other flags. True means the session is
-    not failed: call ``swarm_solidify`` and keep the run.
-    When a soft gap is present, the first redirect and the fuse omit
-    ``gate_soft_continue`` and set ``soft_gap`` (``advisory`` true, ``tick``
-    false). Boot and status keep the true bit. This path never writes false:
-    a host that treats strict false as session death stays up even if it
-    ignores ``session_not_failed``. A host that ticks only while the flag is
-    true stops. ``tick_again`` is false.
-    The first call keeps ``ok`` true and sets no ``error``.
-    The gap itself stays in ``warning``. An unfinished soft-gap boot or
-    status keeps ``gate_soft_continue`` true and sets ``tick_again`` false.
-    ``session_not_failed`` stays absent there. Doctor still omits the key.
-    ``supersede_pending=true`` is the explicit replace. No Parent baseline
-    is written.
-    On a soft gap, ``commands`` drops ``evolver doctor --fix``,
-    ``evolver bench freeze``, and ``evolver bench baseline``. A ``next_steps``
-    entry that names one of those commands is rewritten so the current step
-    is ``swarm_solidify``. ``gate_soft_continue`` is omitted and is never
-    false. ``soft_gap.tick`` is false. ``tick_again`` stays false. This does
-    not execute ``--fix`` and does not write a Parent baseline.
-    """
-    meta = _pending_solidify_meta()
-    count = _bump_pending_redirect(str(meta.get("run_id") or ""))
-    closed = count >= _PENDING_REDIRECT_LOOP_AFTER
-    _, prose = _opening_action({"pending_solidify": True})
-    prose = f"{prose} Call `swarm_solidify` now. Do not call `swarm_tick` again."
-    run_id = meta.get("run_id") or None
-    has_gap = gap is not None
-    note = _pending_redirect_note(count, closed, gap=has_gap)
-    payload: dict[str, Any] = {
-        "ok": not closed,
-        "severity": "soft",
-        "pending_solidify": True,
-        "cycle_started": False,
-        "progress": False,
-        "redirect_count": count,
-        "tick_again": False,
-        "retryable": False,
-        "tick_closed": closed,
-        "dispatch_prompt": None,
-        "dispatch_reason": "pending_solidify",
-        "redirect_reason": "pending_solidify",
-        "run_id": run_id,
-        "next_action": "swarm_solidify",
-        "hint": prose,
-        "readonly_smoke": _readonly_smoke_block(),
-        "supersede_pending": False,
-        "note": note,
-    }
-    _stamp_preserve_pending(payload)
-    _stamp_session_not_failed(payload)
-    if closed:
-        payload.pop("error", None)
-        payload["loop_fuse"] = "pending_redirect_loop"
-        payload["redirect_reason"] = "pending_redirect_loop"
-        payload["retryable"] = False
-        payload["warnings"] = [
-            (
-                "loop_fuse=pending_redirect_loop. "
-                "redirect_reason=pending_redirect_loop. "
-                "session_not_failed=true. "
-                "Stop swarm_tick and call swarm_solidify. "
-                "next_action stays swarm_solidify. "
-                "The fuse is not an error and not a next_action. "
-                "Read session_not_failed and the preserve flags. "
-                "Not a gate failure. The unfinished run is unchanged."
-            )
-        ]
-    if gap is None:
-        _prefer_solidify_steps(payload, hold_tick=False)
-        _defer_doctor_fix_on_steer(payload)
-        return payload
-    from evolver.ops.open_box import apply_soft_gap
-
-    surfaced = apply_soft_gap(payload, gap)
-    surfaced["ok"] = not closed
-    surfaced["next_action"] = "swarm_solidify"
-    surfaced["hint"] = prose
-    surfaced["cycle_started"] = False
-    surfaced["progress"] = False
-    surfaced["redirect_count"] = count
-    surfaced["tick_again"] = False
-    surfaced["tick_closed"] = closed
-    surfaced["pending_solidify"] = True
-    surfaced["dispatch_prompt"] = None
-    surfaced["dispatch_reason"] = "pending_solidify"
-    surfaced["redirect_reason"] = "pending_solidify"
-    surfaced["supersede_pending"] = False
-    surfaced["severity"] = "soft"
-    surfaced["note"] = note
-    _stamp_preserve_pending(surfaced)
-    _stamp_session_not_failed(surfaced)
-    if closed:
-        surfaced.pop("error", None)
-        surfaced["loop_fuse"] = "pending_redirect_loop"
-        surfaced["redirect_reason"] = "pending_redirect_loop"
-        surfaced["retryable"] = False
-    else:
-        surfaced.pop("error", None)
-        surfaced.pop("loop_fuse", None)
-    extra = (
-        "pending_solidify: cycle_started=false. The soft gap stays advisory; "
-        "it did not start this tick."
-    )
-    warnings = list(surfaced.get("warnings") or [])
-    if extra not in warnings:
-        warnings.append(extra)
-    if closed:
-        loop_warn = (
-            "loop_fuse=pending_redirect_loop. "
-            "redirect_reason=pending_redirect_loop. "
-            "session_not_failed=true. "
-            "Stop swarm_tick and call swarm_solidify. "
-            "next_action stays swarm_solidify. "
-            "The fuse is not an error and not a next_action. "
-            "preserve_pending=true, abandon_run=false. Not a gate failure. "
-            "gate_soft_continue is absent, not false. "
-            "soft_gap.tick=false means do not tick again. "
-            "The soft gap stays advisory."
-        )
-        if loop_warn not in warnings:
-            warnings.append(loop_warn)
-    surfaced["warnings"] = warnings
-    # Omit gate_soft_continue. Never write false. soft_gap keeps the advisory.
-    _prefer_solidify_steps(surfaced, hold_tick=True)
-    _defer_doctor_fix_on_steer(surfaced)
-    return surfaced
-
-
-def _note_superseded_run(result: dict[str, Any], old_run_id: str) -> None:
-    """Mark a tick that explicitly replaced an unfinished run."""
-    note = (
-        "supersede_pending=true: this tick started a new cycle and replaced "
-        f"unfinished run {old_run_id or '(unknown)'}. "
-        "The default (false) leaves that run in place and does not start a cycle."
-    )
-    warnings = list(result.get("warnings") or [])
-    if note not in warnings:
-        warnings.append(note)
-    result["warnings"] = warnings
-    result["superseded_run_id"] = old_run_id or None
-    result["supersede_pending"] = True
-    result["cycle_started"] = True
-
-
-def _readonly_smoke_block() -> dict[str, Any]:
-    """Read-only alternative while ``next_action`` stays ``swarm_solidify``.
-
-    Doctor and status do not settle the unfinished run. The solidify gate
-    is unchanged, and this block does not invent a Parent baseline.
-    """
-    return {
-        "safe": True,
-        "tools": ["swarm_doctor", "swarm_status"],
-        "settles_run": False,
-        "note": (
-            "A prior run is unfinished, so next_action stays swarm_solidify. "
-            "That does not skip or weaken the solidify gate and does not invent "
-            "a Parent baseline. A read-only smoke can call swarm_doctor or "
-            "swarm_status; neither settles the run."
-        ),
-    }
-
-
-def _opening_action(state: dict[str, Any]) -> tuple[str, str]:
-    """What the host does after boot, as ``(next_action, prose)``.
-
-    A pending run is settled first. A paused loop is next, matching the
-    ``await_supervisor_resume`` tick returns when already paused. Usability
-    gaps (no pack / no Parent baseline) soft-continue into ``swarm_tick`` with
-    warnings — they no longer hard-stop on ``await_human``. Drop/flat/seal
-    stay hard at solidify time.
-    """
-    if state.get("pending_solidify"):
-        return (
-            "swarm_solidify",
-            "存在待固化 run——先调用 `swarm_solidify` 完成固化，再回到步骤 1。"
-            "此时直接 `swarm_tick` 不启新周期（`cycle_started=false`，`progress=false`）。"
-            "两次 tick 返回都带 `session_not_failed=true`：会话没有失败。"
-            "boot 与 status 的 `gate_soft_continue=true` 仍在。"
-            "有软缺口时这次 tick 与保险丝不写这个键（缺席，不写成 false），"
-            "并写 `soft_gap.advisory=true`、`soft_gap.tick=false`"
-            "（`ok` 第一次仍为 true，没有 `error`）：缺席不是失败的会话，"
-            "也不是再 tick 的许可。`tick_again=false` 表示不要再 tick。"
-            "同一条 run 再 tick 得到 `loop_fuse=pending_redirect_loop`"
-            "与 `redirect_reason=pending_redirect_loop`"
-            "（`ok=false`，没有 `error` 字段，`next_action` 仍是 `swarm_solidify`，"
-            "保险丝码不是 `next_action`，仍不启周期，不是门禁失败）。"
-            "`dispatch_reason` 仍是 `pending_solidify`。"
-            "第一次的 `redirect_reason` 仍是 `pending_solidify`，没有 `loop_fuse`。"
-            "`session_not_failed=true` 优先：返回带 "
-            "`preserve_pending=true`、`abandon_run=false`，不要丢掉这条 run。"
-            "要替换这条 run 才传 `supersede_pending=true`。"
-            "只读冒烟请改调 `swarm_doctor` 或 `swarm_status`"
-            "（不结算这条 run，不放宽固化门，不写 Parent baseline）。",
-        )
-    supervision = state.get("supervision")
-    if isinstance(supervision, dict) and supervision.get("state") == "paused":
-        return (
-            "await_supervisor_resume",
-            "监督已暂停——不要 tick。告诉用户说「继续」即可恢复。"
-            "用户说了才调用 `swarm_supervise` action=resume，不要自己 resume。",
-        )
-    gap = _gate_gap(state.get("bench_pack_gate"))
-    if gap is not None:
-        hotl = "（gate_handoff=hotl）" if gate_handoff_skipped() else ""
-        return (
-            "swarm_tick",
-            f"门未就绪（{gap}）{hotl}——soft-continue：调用 `swarm_tick` 开始。"
-            "Accept/publish 将带 soft-accept 警告与 next_steps；建议 "
-            "`evolver doctor` / `evolver bench baseline`，非强制。"
-            "本对话不得解 val、不得打开 val 密封材料。",
-        )
-    return ("swarm_tick", "调用 `swarm_tick` 开始第一轮进化")
-
-
-_BOUND_PATHS_SEMANTICS: Final[str] = (
-    "repo_root is the bound code root: the git root walked from the project "
-    "pin, or the pin itself when it is not inside a git repo. workspace_root "
-    "is the directory mutations use (EVOLVER_REPO_ROOT / OPENCLAW_WORKSPACE). "
-    "project binds only an existing directory; a free-text label does not "
-    "create a workspace. When repo_root and workspace_root differ, warning "
-    "and next_steps are set and the loop still soft-continues (ok stays true, "
-    "no hard error)."
-)
-
-
-def bind_project_directory(project: str | Path | None) -> dict[str, Any]:
-    """Point the process at ``project`` only when that path is a directory.
-
-    A free-text label used to become ``cwd / label`` via ``Path.resolve``.
-    ``get_repo_root`` then walked up to a different git root, so
-    ``workspace_root != repo_root`` with nothing in the tool result that said
-    so. Non-directories leave the current pin untouched.
-    """
-    if project is None or not str(project).strip():
-        return {"project": None, "project_applied": False, "project_reason": "not_requested"}
-    raw = str(project).strip()
-    resolved = Path(raw).expanduser().resolve()
-    if not resolved.is_dir():
-        return {
-            "project": raw,
-            "project_resolved": str(resolved),
-            "project_applied": False,
-            "project_reason": "not_a_directory",
-        }
-    os.environ["EVOLVER_REPO_ROOT"] = str(resolved)
-    os.environ["OPENCLAW_WORKSPACE"] = str(resolved)
-    return {
-        "project": raw,
-        "project_resolved": str(resolved),
-        "project_applied": True,
-        "project_reason": "bound_existing_directory",
-    }
-
-
-def describe_bound_paths(bind: dict[str, Any] | None = None) -> dict[str, Any]:
-    """Code root versus mutation directory, plus this call's project outcome."""
-    from evolver.gep.paths import get_repo_root, get_workspace_root
-
-    workspace = get_workspace_root().resolve()
-    repo = get_repo_root(_quiet=True)
-    repo_text = str(repo.resolve()) if repo is not None else ""
-    differ = repo is not None and repo.resolve() != workspace
-    out: dict[str, Any] = {
-        "repo_root": repo_text,
-        "workspace_root": str(workspace),
-        "code_root": repo_text or str(workspace),
-        "differ": differ,
-        "semantics": _BOUND_PATHS_SEMANTICS,
-    }
-    if bind is not None:
-        out["project"] = bind.get("project")
-        out["project_resolved"] = bind.get("project_resolved")
-        out["project_applied"] = bool(bind.get("project_applied"))
-        out["project_reason"] = bind.get("project_reason")
-    notes: list[str] = []
-    steps: list[str] = []
-    if bind is not None and bind.get("project_reason") == "not_a_directory":
-        label = bind.get("project")
-        notes.append(
-            f"project {label!r} is not an existing directory. "
-            "The workspace was not moved; repo_root stays the code root."
-        )
-        steps.extend(
-            [
-                "Pass swarm_boot project as the absolute path of the git checkout to evolve.",
-                "Or set EVOLVER_REPO_ROOT to that checkout before starting evolver mcp.",
-                "The current binding is unchanged. Soft-continue.",
-            ]
-        )
-    if differ:
-        notes.append(
-            f"workspace_root ({workspace}) != repo_root ({repo_text}). "
-            "repo_root is the bound code root; workspace_root is the mutation directory."
-        )
-        steps.extend(
-            [
-                "Pass swarm_boot project as the git checkout to evolve, "
-                "or set EVOLVER_REPO_ROOT to that checkout.",
-                "repo_root stays the code root. workspace_root is explicit and was not retargeted.",
-                "This is a soft warning. Continue the loop; it is not a hard stop.",
-            ]
-        )
-    if notes:
-        out["warning"] = " ".join(notes)
-        out["next_steps"] = steps
-    return out
-
-
-def _surface_bound_paths(payload: dict[str, Any], bound: dict[str, Any]) -> dict[str, Any]:
-    """Attach ``bound_paths``. A mismatch is a soft warning, never ``error``."""
-    payload["bound_paths"] = bound
-    warning = bound.get("warning")
-    if not warning:
-        return payload
-    warnings = list(payload.get("warnings") or [])
-    text = str(warning)
-    if text not in warnings:
-        warnings.append(text)
-    payload["warnings"] = warnings
-    if not payload.get("warning"):
-        payload["warning"] = text
-    steps = list(payload.get("next_steps") or [])
-    for step in bound.get("next_steps") or []:
-        if step not in steps:
-            steps.append(step)
-    if steps:
-        payload["next_steps"] = steps
-    if payload.get("severity") != "hard" and not payload.get("severity"):
-        payload["severity"] = "soft"
-    return payload
-
-
-def _boot_once(pending_solidify: bool) -> list[dict[str, Any]]:
-    """Tools the host runs once per session, before the evolution step.
-
-    Empty while a run is waiting to solidify. Skill sync is not here: it
-    pulls every user skill root into the gene store.
-    """
-    if pending_solidify:
-        return []
-    return [{"tool": "swarm_hook_event", "arguments": {"event": "session_start"}}]
-
-
-def swarm_boot(
-    agent_name: str = "host-agent",
-    project: str | Path | None = None,
-) -> dict[str, Any]:
-    """Boot a host agent into the swarm: status + instrument prompt + hello.
-
-    The MCP prompt ``evolver_swarm`` and the ``swarm_boot`` tool both land
-    here — this is the takeover entry point. ``next_action`` mirrors the
-    instrument prompt's first-action branch (round-57: it was unconditionally
-    ``swarm_tick`` while the prompt said "solidify first" when pending —
-    hosts reading the structured field got the wrong first action; the
-    round-4 fix only covered the prose). An unfinished soft gap keeps
-    ``gate_soft_continue`` true and sets ``tick_again`` false beside
-    ``next_action=swarm_solidify``.
-    """
-    from evolver.gep.paths import ensure_workspace_meta
-
-    bind = bind_project_directory(project)
-    with contextlib.suppress(Exception):
-        ensure_workspace_meta()
-
-    _claim_session(agent_name)
-    state = swarm_status()
-    prompt = build_instrument_prompt({**state, "agent_name": agent_name})
-    next_action, first_action = _opening_action(state)
-    pending = bool(state.get("pending_solidify"))
-    payload: dict[str, Any] = {
-        "ok": True,
-        "protocol_version": SWARM_PROTOCOL_VERSION,
-        "agent_name": agent_name,
-        "repo_root": state.get("repo_root"),
-        "workspace_id": state.get("workspace_id"),
-        "state_root": state.get("state_root"),
-        "instrument_prompt": prompt,
-        "state": state,
-        "mailbox_hello": _announce(agent_name),
-        "boot_once": _boot_once(pending),
-        "next_action": next_action,
-    }
-    from evolver.gep.working_memory import read_working
-
-    try:
-        working_text = read_working()
-    except Exception:  # a broken scratch file must not block takeover
-        working_text = ""
-    if working_text.strip():
-        payload["working_session_text"] = working_text
-        payload["working_session_source"] = "host_working"
-    blocked = _checkpoint_block()
-    if blocked is not None:
-        payload["next_action"] = blocked["next_action"]
-        payload["checkpoint"] = blocked
-        payload["steer_message"] = blocked["steer_message"]
-    embedded = payload.get("state")
-    if pending and payload.get("next_action") == "swarm_solidify":
-        # Set the hint before a soft gap is attached. apply_soft_gap keeps an
-        # existing hint and still adds warning / next_steps for the gap.
-        payload["pending_solidify"] = True
-        payload["hint"] = first_action
-        payload["readonly_smoke"] = _readonly_smoke_block()
-        _stamp_preserve_pending(payload)
-    elif isinstance(embedded, dict):
-        # Status was snapshotted before the checkpoint override. Do not leave
-        # a solidify smoke block on that copy when boot is asking for something else.
-        embedded.pop("readonly_smoke", None)
-        embedded.pop("preserve_pending", None)
-        embedded.pop("abandon_run", None)
-        embedded.pop("action_required", None)
-        embedded.pop("tick_again", None)
-    gap = _gate_gap(state.get("bench_pack_gate"))
-    if gap is not None and str(payload.get("next_action") or "") != "await_supervisor_resume":
-        from evolver.ops.open_box import apply_soft_gap
-
-        payload = apply_soft_gap(payload, gap)
-    elif str(payload.get("next_action") or "") == "await_human":
-        from evolver.ops.open_box import attach_next_steps
-
-        payload = attach_next_steps(
-            {
-                **payload,
-                "error": gap or "no_baseline",
-                "reason": gap,
-                "severity": "hard",
-            },
-            error=gap or "no_baseline",
-        )
-        payload.setdefault("severity", "hard")
-    payload["source_revision"] = state.get("source_revision")
-    payload["mailbox_hello_ack"] = _ack_own_hello(agent_name)
-    if payload.get("pending_solidify") and payload.get("next_action") == "swarm_solidify":
-        # The soft-continue flag stays true here. Step text still names solidify
-        # so a host that reads next_steps does not tick first.
-        _prefer_solidify_steps(
-            payload,
-            hold_tick=False,
-            run_id=_pending_solidify_meta()["run_id"],
-        )
-        # Status already set tick_again on the nested copy. The top-level
-        # boot envelope is a separate dict. Keep gate_soft_continue true.
-        if payload.get("gate_soft_continue") is True:
-            payload["tick_again"] = False
-        _defer_doctor_fix_on_steer(payload)
-    bound = describe_bound_paths(bind)
-    if isinstance(payload.get("state"), dict):
-        payload["state"]["bound_paths"] = bound
-    return _surface_bound_paths(payload, bound)
-
-
-def _announce(agent_name: str) -> str | None:
-    """Broadcast a swarm.hello to the shared mailbox (once per agent/session)."""
-    if agent_name in _hello_sent:
-        return None
-    _hello_sent.add(agent_name)
-    try:
-        store = _mailbox_store()
-        return str(
-            store.write_inbound(
-                id=f"swarm_hello_{agent_name}_{int(time.time())}",
-                type="swarm.hello",
-                payload={
-                    "agent": agent_name,
-                    "protocol": SWARM_PROTOCOL_VERSION,
-                    "ts": datetime.datetime.now(datetime.UTC).isoformat(),
-                },
-            )
-        )
-    except Exception:
-        return None
-
-
-def _ack_own_hello(agent_name: str) -> dict[str, Any]:
-    """Auto-ack this agent's pending inbound ``swarm.hello`` mailbox messages.
-
-    Prefer auto-ack over documenting that hosts must call ``mailbox_ack`` for
-    their own hello. Matching is by ``payload.agent == agent_name``.
-    """
-    try:
-        store = _mailbox_store()
-        pending = [
-            m
-            for m in store.poll(limit=100, type="swarm.hello")
-            if getattr(m, "status", "") == "pending"
-            and str((getattr(m, "payload", None) or {}).get("agent") or "") == agent_name
-        ]
-        ids = [str(m.id) for m in pending]
-        acked = int(store.ack(ids)) if ids else 0
-        return {"acked": acked, "ids": ids, "agent_name": agent_name}
-    except Exception as exc:
-        return {"acked": 0, "ids": [], "agent_name": agent_name, "error": str(exc)[:200]}
-
-
-def _normalize_prompt_mode(prompt_mode: str, checklist_only: bool) -> str | None:
-    """``short`` when the host opted out of the gene preview; else ``full``."""
-    if checklist_only:
-        return "short"
-    mode = str(prompt_mode or "full").strip().lower()
-    if mode not in ("full", "short"):
-        return None
-    return mode
-
-
-def _short_tick_prompt(checklist: dict[str, Any], artifact: str | None) -> str:
-    """Core-loop checklist without the GEP gene preview."""
-    footer = _format_tick_checklist_footer(checklist).strip()
-    lines = [
-        "## Core loop checklist (prompt_mode=short)",
-        "Gene preview omitted from this payload. Full GEP prompt:",
-    ]
-    if artifact:
-        lines.append(f"- file: `{artifact}`")
-    lines.append("- resource: `evolver://dispatch/last`")
-    if footer:
-        lines.append(footer)
-    return "\n".join(lines)
-
-
-async def swarm_tick(
-    agent_name: str | None = None,
-    include_prompt: bool = True,
-    prompt_mode: str = "full",
-    checklist_only: bool = False,
-    supersede_pending: bool = False,
-) -> dict[str, Any]:
-    """Run one full evolution cycle and return its GEP dispatch prompt.
-
-    ``prompt_mode="full"`` (default) inlines the gene preview.
-    ``prompt_mode="short"`` or ``checklist_only=True`` returns the core-loop
-    checklist instead and points at ``last_prompt.md`` for the full text.
-
-    The host agent executes the returned ``dispatch_prompt`` with its own
-    editing tools, then closes the loop via ``swarm_distill`` →
-    ``swarm_solidify``. Engine stdout is captured into ``engine_log`` (stdio
-    MCP owns stdout; a stray print would corrupt JSON-RPC framing).
-    ``prompt_mode="short"`` drops the inlined gene preview from that log and
-    leaves a pointer at the artifact. ``include_prompt=False`` only clears
-    ``dispatch_prompt``; the full log stays unless the mode is short.
-
-    An unfinished run (``pending_solidify``) makes a default tick return a
-    soft redirect: the first call keeps ``ok`` true, ``cycle_started`` false,
-    ``progress`` false, ``next_action`` ``swarm_solidify``. The same run's
-    next call returns ``ok`` false, ``loop_fuse=pending_redirect_loop``, and
-    ``redirect_reason=pending_redirect_loop``, with no ``error`` field
-    (``severity`` soft, ``retryable`` false). ``next_action`` stays
-    ``swarm_solidify``. That is not a gate failure and not an abandon signal.
-    Both calls set
-    ``session_not_failed`` true, ``preserve_pending`` true,
-    ``abandon_run`` false, and ``retryable`` false. An omitted ``retryable``
-    is not permission to tick again. The first call still keeps ``ok`` true.
-    Read ``session_not_failed`` before other flags.
-    A soft gap omits ``gate_soft_continue`` on the first redirect and
-    on the fuse, and never writes false. ``soft_gap.advisory`` is true and
-    ``soft_gap.tick`` is false. Boot and status keep the true bit.
-    The first call keeps ``ok`` true and sets no ``error``.
-    This steer does not list ``evolver doctor --fix``, ``evolver bench freeze``,
-    or ``evolver bench baseline`` as the current step in ``commands`` or
-    ``next_steps``. Those commands stay listed when no run is unfinished.
-    This call does not execute them and does not write a Parent baseline.
-    Neither call starts a cycle or replaces ``last_run``.
-    ``supersede_pending=True`` is the explicit replace. Checkpoint and pause
-    still outrank that flag and do not consume the redirect count.
-
-    HOTL supervision (v1.101.0): the tripwire runs first (consecutive
-    degraded feedback may auto-pause), a paused state refuses the cycle, and
-    a supervisor veto on the selected gene withholds the dispatch prompt.
-    A gate usability gap (no pack / no baseline) soft-continues the cycle with
-    warnings + next_steps instead of hard-stopping on ``await_human``.
-    """
-    mode = _normalize_prompt_mode(prompt_mode, checklist_only)
-    if mode is None:
-        return {
-            "ok": False,
-            "error": "invalid_prompt_mode",
-            "allowed": ["full", "short"],
-        }
-
-    from evolver.config import SWARM_TICK_LOG_MAX_CHARS
-
-    try:
-        from evolver.gep import supervision
-    except ImportError as exc:
-        # Stale long-lived host: in-memory modules predate the on-disk tree.
-        return _stale_import_error(exc)
-
-    blocked = _checkpoint_block()
-    if blocked is not None:
-        return blocked
-
-    tripwire = supervision.auto_pause_check()
-    if supervision.is_paused():
-        summary = supervision.supervision_summary()
-        return {
-            "ok": True,
-            "paused": True,
-            "cycle_started": False,
-            "supervision": summary,
-            "tripwire": tripwire,
-            "agent_name": agent_name or "host-agent",
-            "next_action": "await_supervisor_resume",
-        }
-
-    gap = _gate_gap(_bench_gate_snapshot())
-    was_pending = _pending_solidify_state()
-    old_run_id = _pending_solidify_meta()["run_id"] if was_pending else ""
-    if was_pending and not supersede_pending:
-        return _pending_tick_redirect(gap)
-
-    try:
-        from evolver.evolve.runner import _run_single_cycle
-        from evolver.gep.instance_lock import instance_lock_ctx
-    except ImportError as exc:
-        return _stale_import_error(exc)
-
-    with instance_lock_ctx(blocking=False, timeout=0) as lock_ok:
-        if not lock_ok:
-            return {
-                "ok": False,
-                "error": "instance_lock_held",
-                "agent_name": agent_name or "host-agent",
-                "cycle_started": False,
-                "next_action": "stop_and_report",
-            }
-        result = await _swarm_tick_locked(
-            agent_name=agent_name,
-            include_prompt=include_prompt,
-            prompt_mode=mode,
-            tripwire=tripwire,
-            run_cycle=_run_single_cycle,
-            log_budget=SWARM_TICK_LOG_MAX_CHARS,
-            supervision=supervision,
-        )
-        if gap is not None and isinstance(result, dict):
-            from evolver.ops.open_box import SOFT_GAP_ERRORS, apply_soft_gap
-
-            # Preserve a real hard error from the cycle; only soft-label the gap.
-            hard_error = result.get("error")
-            if hard_error in SOFT_GAP_ERRORS:
-                hard_error = None
-                result = {**result}
-                result.pop("error", None)
-            result = apply_soft_gap(result, gap)
-            if hard_error:
-                result["error"] = hard_error
-                result["severity"] = "hard"
-            else:
-                note = (
-                    f"soft-continue ({gap}): tick ran despite missing pack/baseline; "
-                    "Accept/publish may soft-accept with warnings. Recommended: "
-                    "`evolver doctor` / `evolver bench baseline` (do not open sealed val)."
-                )
-                warnings = list(result.get("warnings") or [])
-                if note not in warnings:
-                    warnings.append(note)
-                result["warnings"] = warnings
-        if was_pending and supersede_pending and isinstance(result, dict):
-            _note_superseded_run(result, old_run_id)
-        return result
-
-
-def _build_tick_checklist(
-    *,
-    run_id: str | None,
-    selected_gene: dict[str, Any] | None,
-    proposal_required: bool,
-) -> dict[str, Any]:
-    """U-13: Structured checklist guiding edit -> distill -> hypothesis -> solidify -> feedback."""
-    from evolver.gep.paths import get_repo_root, get_workspace_root, get_workspace_state_dir
-
-    repo = get_repo_root(_quiet=True) or get_workspace_root()
-    state_root = get_workspace_state_dir(repo)
-    gene_id = (selected_gene or {}).get("id") or "gene_selected"
-    return {
-        "run_id": run_id,
-        "repo_root": str(repo),
-        "state_root": str(state_root),
-        "steps": [
-            {
-                "step": 1,
-                "phase": "edit",
-                "title": "修改代码（仅限 git 工作区）",
-                "where_to_edit": str(repo),
-                "do_not_touch": ["memory/", ".evolver/", str(state_root)],
-                "tool": "swarm_propose" if proposal_required else "file_edit_or_swarm_propose",
-            },
-            {
-                "step": 2,
-                "phase": "distill",
-                "title": "蒸馏本轮改动与经验线索",
-                "tool": "swarm_distill",
-                "note": "传入包含 Gene/Capsule 代码块与分析说明的完整响应文本。",
-            },
-            {
-                "step": 3,
-                "phase": "hypothesis",
-                "title": "声明本轮唯一主假说（未通过 solidify 不会丢失）",
-                "tool": "swarm_hypothesis",
-                "template": {
-                    "hypothesis": f"Applying {gene_id} resolves the target failure mechanism",
-                    "dimension": "content",
-                    "mechanism_family": "repair",
-                    "target_hook": "src/",
-                    "mechanism_check": [
-                        {
-                            "id": "train-task-id",
-                            "before": "observed failure or baseline behavior before edit",
-                            "after": "observed fix or replay verification after edit",
-                        }
-                    ],
-                },
-            },
-            {
-                "step": 4,
-                "phase": "solidify",
-                "title": "运行固化门禁（支持分层验证与失败 stash 恢复）",
-                "tool": "swarm_solidify",
-                "preconditions": [
-                    "git status 含有效代码改动",
-                    "hypothesis.json 已在 state_root 下就绪",
-                    (
-                        "可选 validation_scope='related' 传入 argv list"
-                        "（如 [['pytest', 'tests/test_x.py']]）"
-                    ),
-                    (
-                        "若失败补丁自动 stash，可通过 restore_stash=True 或 "
-                        "`evolver solidify --restore-stash` 恢复"
-                    ),
-                ],
-            },
-            {
-                "step": 5,
-                "phase": "feedback",
-                "title": "提交评估反馈闭环",
-                "tool": "swarm_feedback",
-                "template": {
-                    "primary_score": 1.0,
-                    "textual_gradient": "What improved and what remains for the next cycle",
-                },
-            },
-        ],
-    }
-
-
-def _format_tick_checklist_footer(checklist: dict[str, Any]) -> str:
-    """U-13: Render a concise markdown footer appended to ``dispatch_prompt``."""
-    repo = checklist.get("repo_root", "")
-    state_root = checklist.get("state_root", "")
-    tmpl = json.dumps(checklist["steps"][2]["template"], ensure_ascii=False)
-    lines = [
-        "",
-        "---",
-        "## Host Execution Checklist (U-13)",
-        (
-            f"1. **改哪里 (Edit)**: 仅在仓库根目录 `{repo}` 修改源码/测试"
-            f"（严禁写 `memory/` 或 `{state_root}`）。"
-        ),
-        (
-            "2. **蒸馏 (Distill)**: 调用 `swarm_distill(response_text=...)` "
-            "提取 Gene/Capsule 并记录宿主线索。"
-        ),
-        (
-            f"3. **假说 (Hypothesis)**: 调用 `swarm_hypothesis(hypothesis={tmpl})`"
-            "（若固化失败，假说将自动保留无需重登）。"
-        ),
-        (
-            "4. **固化 (Solidify)**: 调用 `swarm_solidify(validation_scope='related'|'cascade')`；"
-            "若被拒，补丁自动保存至 stash，可用 `restore_stash=True` 或 "
-            "`evolver solidify --restore-stash` 一键恢复。"
-        ),
-        (
-            "5. **反馈 (Feedback)**: 调用 "
-            "`swarm_feedback(primary_score=..., textual_gradient=...)` 完成闭环。"
-        ),
-    ]
-    return "\n".join(lines)
-
-
-async def _swarm_tick_locked(
-    *,
-    agent_name: str | None,
-    include_prompt: bool,
-    tripwire: dict[str, Any],
-    run_cycle: Any,
-    log_budget: int,
-    supervision: Any,
-    prompt_mode: str = "full",
-) -> dict[str, Any]:
-    with _capture_stdout() as capture:
-        try:
-            ctx = await run_cycle(is_loop=False)
-        except ImportError as exc:  # stale-host lazy import (round-17)
-            return _stale_import_error(exc)
-        except Exception as exc:  # engine crash must not kill the MCP session
-            crashed = capture.getvalue()
-            if prompt_mode == "short":
-                crashed = _shorten_engine_log(crashed, artifact=None)
-            return {
-                "ok": False,
-                "error": f"cycle_crashed: {exc}",
-                "engine_log": _tail(crashed, log_budget),
-            }
-    log = capture.getvalue()
-
-    if ctx.get("supervision_paused"):
-        return {
-            "ok": True,
-            "paused": True,
-            "supervision": supervision.supervision_summary(),
-            "tripwire": tripwire,
-            "agent_name": agent_name or "host-agent",
-            "next_action": "await_supervisor_resume",
-        }
-
-    aborted = bool(ctx.get("autopoiesis_preflight_abort"))
-    prompt = ctx.get("dispatch_prompt") if isinstance(ctx.get("dispatch_prompt"), str) else ""
-    gene = ctx.get("selected_gene") or None
-
-    # Charter step 1 (round-79): the evidence pack's repeat-failure mandate,
-    # surfaced structurally so the host doesn't have to parse the prompt
-    # block to know this family must go through swarm_propose.
-    pack_ctx = ctx.get("evidence_pack")
-    mandate = pack_ctx.get("mandate") if isinstance(pack_ctx, dict) else None
-    proposal_required = bool(isinstance(mandate, dict) and mandate.get("required"))
-
-    veto: dict[str, Any] | None = (
-        ctx.get("supervision_veto") if isinstance(ctx.get("supervision_veto"), dict) else None
-    )
-    if veto is not None:
-        prompt = ""
-        if "BUILT_PROMPT" in log:
-            log = log.split("BUILT_PROMPT", 1)[0] + "[dispatch withheld]\n"
-
-    if veto is not None:
-        reason = "supervision_veto"
-    elif aborted:
-        reason = "preflight_abort"
-    elif prompt:
-        reason = "dispatched"
-    elif ctx.get("skip_hub_calls"):
-        reason = "idle_cycle"
-    elif not ctx.get("selected_gene"):
-        reason = "no_gene_selected"
-    else:
-        reason = "no_prompt"
-
-    selected_gene_info = (
-        {"id": gene.get("id"), "name": gene.get("name")} if isinstance(gene, dict) else None
-    )
-    checklist = _build_tick_checklist(
-        run_id=ctx.get("run_id"),
-        selected_gene=selected_gene_info,
-        proposal_required=proposal_required,
-    )
-    full_prompt = f"{prompt.rstrip()}\n{_format_tick_checklist_footer(checklist)}" if prompt else ""
-    short = prompt_mode == "short"
-    artifact: str | None = None
-    if short and full_prompt:
-        try:
-            from evolver.gep.paths import get_evolution_dir
-
-            artifact_path = get_evolution_dir() / "last_prompt.md"
-            if artifact_path.is_file():
-                artifact = str(artifact_path)
-        except Exception:
-            artifact = None
-    if not include_prompt or not full_prompt:
-        shown: str | None = None
-    elif short:
-        shown = _short_tick_prompt(checklist, artifact)
-    else:
-        shown = full_prompt
-
-    result: dict[str, Any] = {
-        "ok": True,
-        "run_id": ctx.get("run_id"),
-        "cycle_id": ctx.get("cycle_id"),
-        "agent_name": agent_name or "host-agent",
-        "preflight_aborted": aborted,
-        "abort_reason": (m.group(1) if (m := _ABORT_REASON_RE.search(log)) else None),
-        "dispatch_reason": reason,
-        "selected_gene": selected_gene_info,
-        "supervision_veto": veto,
-        "proposal_required": proposal_required,
-        "prompt_mode": "short" if short else "full",
-        "cycle_started": True,
-        "dispatch_prompt": shown,
-        "checklist": checklist,
-        "engine_log": _tail(
-            _shorten_engine_log(log, artifact=artifact) if short else log,
-            log_budget,
-        ),
-        "next_action": (
-            "stop_and_report" if aborted else ("swarm_tick" if not prompt else "execute_prompt")
-        ),
-        "tripwire": tripwire,
-        "working_session": _working_snapshot(),
-    }
-    if short and full_prompt:
-        result["gene_preview_omitted"] = True
-        result["dispatch_prompt_artifact"] = artifact
-        result["dispatch_prompt_resource"] = "evolver://dispatch/last"
-    if aborted or reason == "preflight_abort":
-        from evolver.ops.open_box import attach_next_steps
-
-        abort_reason = str(result.get("abort_reason") or "preflight_abort")
-        err = "user_lock" if "user lock" in abort_reason.lower() else "preflight_abort"
-        result = attach_next_steps({**result, "error": err}, error=err)
-
-    _record_tick(result)
-    return result
-
-
-def _record_tick(result: dict[str, Any]) -> None:
-    state = _load_swarm_state()
-    state["ticks"] = int(state.get("ticks") or 0) + 1
-    state["updated"] = datetime.datetime.now(datetime.UTC).isoformat()
-    # Keep the persisted snapshot small — drop the prompt and the log.
-    state["last_tick"] = {
-        key: result.get(key)
-        for key in (
-            "run_id",
-            "cycle_id",
-            "agent_name",
-            "preflight_aborted",
-            "abort_reason",
-            "dispatch_reason",
-            "selected_gene",
-            "proposal_required",
-            "next_action",
-        )
-    }
-    # Round-71: preserve the runner's phase timings across the summary
-    # rewrite — _record_cycle_phase_timings writes them BEFORE this tick's
-    # bookkeeping; the full-dict load/save above carries them forward, and
-    # a regression test pins that (the timing instrument must survive the
-    # tick path that runs it).
-    # Bookkeeping only — never fail the tick on state-write errors.
-    with contextlib.suppress(Exception):
-        _save_swarm_state(state)
+def _extract_host_account(response_text: str) -> str:
+    prose = re.sub(r"```[a-zA-Z]*\s*\n.*?```", "", response_text, flags=re.DOTALL)
+    return prose.strip()[:2000]
 
 
 def swarm_distill(
@@ -2268,13 +1159,7 @@ def swarm_distill(
     strict_transferable: bool = False,
     attribution: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
-    """Distill the host agent's work output into Gene/Capsule candidates.
-
-    Dogfood round-4: a response that yields zero assets used to return silently
-    (genes=0, errors=[]) — the host had no way to self-correct the format. The
-    result now carries a ``hint`` with the expected asset-block shape so one
-    round-trip fixes the submission.
-    """
+    """Distill structured Gene/Capsule blocks and record host clues."""
     blocked = _checkpoint_block()
     if blocked is not None:
         return blocked
@@ -2284,9 +1169,9 @@ def swarm_distill(
         return _stale_import_error(exc)
 
     if not response_text.strip():
-        return {"ok": False, "error": "empty_response", "next_action": "execute_prompt"}
-    distilled = distill_text(response_text)
+        return {"ok": False, "error": "empty_response", "next_action": "evolve_settle"}
     try:
+        distilled = distill_text(response_text)
         install = install_distilled(
             distilled,
             dry_run=dry_run,
@@ -2294,8 +1179,6 @@ def swarm_distill(
             strict_transferable=strict_transferable,
         )
     except ImportError as exc:
-        # Deep lazy imports (solidify.record_landed_gene_ids) hit the same
-        # stale-host module mix (round-16 live crash).
         return _stale_import_error(exc)
     extracted = (
         len(distilled.get("genes", []))
@@ -2310,7 +1193,7 @@ def swarm_distill(
         "installed": install.get("installed", []),
         "errors": [*(distilled.get("errors", [])), *(install.get("errors", []))],
         "dry_run": dry_run,
-        "next_action": "swarm_solidify",
+        "next_action": "evolve_settle",
     }
     skipped_genes = install.get("skipped_genes")
     if isinstance(skipped_genes, list) and skipped_genes:
@@ -2323,30 +1206,12 @@ def swarm_distill(
             result["skipped_confounded"] = True
     if extracted == 0:
         result["hint"] = DISTILL_FORMAT_HINT
-        result["next_action"] = "resubmit_with_asset_blocks"
     elif not dry_run:
         gene_ids = [str(g.get("id")) for g in distilled.get("genes") or [] if g.get("id")]
         if gene_ids:
             from evolver.gep.solidify import record_landed_gene_ids
 
             record_landed_gene_ids(gene_ids)
-    # Round-61 bridge: a GeneProposal embedded in the response text (fenced
-    # json block with action/edits) is surfaced as a replay candidate so the
-    # host's structural work product reaches the S29/population channel's
-    # upstream without a second manual step. Observation-only — nothing is
-    # applied here; the proposal still goes through swarm_propose/solidify
-    # gates if the operator chooses to replay it.
-    proposals = _extract_proposal_candidates(response_text)
-    if proposals:
-        result["proposal_candidates"] = proposals
-        result["proposal_next_step"] = (
-            f"{len(proposals)} GeneProposal block(s) detected — replayable via "
-            "swarm_propose or `evolver solidify --proposal/--population` "
-            "(same validation gates as any mutation)"
-        )
-    # 经验即证据 §5.2: the host's own account is a clue, not evidence — stored
-    # apart from the episode record, tagged with its source. Not in dry_run:
-    # a clue for a round that never happened is worse than no clue.
     if not dry_run:
         account = _extract_host_account(response_text)
         if account:
@@ -2356,66 +1221,7 @@ def swarm_distill(
     return result
 
 
-def _extract_host_account(response_text: str) -> str:
-    """The host's free-text account: the response minus its fenced asset blocks.
-
-    The distill channel keeps the structured assets; the prose around them is
-    the host's own account of what it did and saw — exactly the material the
-    engine never observed. Bounded so one verbose host cannot flood the layer.
-    """
-    prose = re.sub(r"```[a-zA-Z]*\s*\n.*?```", "", response_text, flags=re.DOTALL)
-    return prose.strip()[:2000]
-
-
-def _extract_proposal_candidates(response_text: str) -> list[dict[str, Any]]:
-    """Fenced ```json blocks that parse as GeneProposal (action + edits).
-
-    Best-effort: invalid shapes are skipped silently (the distill assets are
-    the primary product; the bridge must never turn a format variation into
-    an error for the host).
-    """
-    candidates: list[dict[str, Any]] = []
-    for match in re.finditer(r"```json\s*\n(.*?)```", response_text, re.DOTALL):
-        try:
-            data = json.loads(match.group(1))
-        except ValueError:
-            continue
-        if (
-            isinstance(data, dict)
-            and data.get("action") in ("patch", "create", "no_action")
-            and isinstance(data.get("edits"), list)
-        ):
-            candidates.append(data)
-    return candidates
-
-
-def _pending_solidify_meta() -> dict[str, str]:
-    """Pending solidify run_id / gene ids (empty strings if none)."""
-    import json as _json
-
-    from evolver.gep.paths import get_solidify_state_path
-
-    try:
-        data = _json.loads(get_solidify_state_path().read_text(encoding="utf-8"))
-        last = data.get("last_run") or {}
-        landed = last.get("landed_gene_ids") or []
-        head = str(landed[0]) if isinstance(landed, list) and landed else ""
-        return {
-            "run_id": str(last.get("run_id") or (last.get("mutation") or {}).get("id") or ""),
-            "gene_id": str(last.get("selected_gene_id") or ""),
-            "landed_gene_id": head,
-        }
-    except Exception:
-        return {"run_id": "", "gene_id": "", "landed_gene_id": ""}
-
-
-def _pending_solidify_run_id() -> str:
-    """Best-effort run_id of the pending solidify state (gates HITL subjects)."""
-    return _pending_solidify_meta()["run_id"] or "unknown"
-
-
 def _hypothesis_payload(payload: dict[str, Any], run_id: str) -> dict[str, Any]:
-    """Stamp the pending run id onto a host-supplied hypothesis."""
     stored = dict(payload)
     if run_id and run_id != "unknown":
         stored.setdefault("run_id", run_id)
@@ -2423,12 +1229,6 @@ def _hypothesis_payload(payload: dict[str, Any], run_id: str) -> dict[str, Any]:
 
 
 def _record_host_hypothesis(payload: dict[str, Any]) -> dict[str, Any]:
-    """Persist the host's hypothesis (演进方案.md §5.3).
-
-    Soft failure by contract: a malformed record is a host fixable error, not
-    an engine crash. The host learns the shape here, before paying for a round.
-    Recording never passes the gate - the gate re-reads what landed on disk.
-    """
     from evolver.gep import hypothesis as hypothesis_mod
 
     try:
@@ -2443,7 +1243,7 @@ def _record_host_hypothesis(payload: dict[str, Any]) -> dict[str, Any]:
                 "reasonClass": "hypothesis_rejected",
                 "retryable": True,
             },
-            "next_action": "swarm_tick",
+            "next_action": "evolve_begin",
         }
     except Exception as exc:
         return {
@@ -2455,40 +1255,39 @@ def _record_host_hypothesis(payload: dict[str, Any]) -> dict[str, Any]:
                 "reasonClass": "hypothesis_unwritable",
                 "retryable": True,
             },
-            "next_action": "swarm_tick",
+            "next_action": "evolve_begin",
         }
-    return {"ok": True, "hypothesis_path": str(path), "next_action": "swarm_solidify"}
+    return {"ok": True, "hypothesis_path": str(path), "next_action": "evolve_settle"}
 
 
-def swarm_hypothesis(hypothesis: dict[str, Any], agent_name: str = "host-agent") -> dict[str, Any]:
-    """Declare this Candidate's one primary hypothesis (演进方案.md §5.3).
-
-    The host owns the hypothesis: only the executor knows what it intends to
-    change, so the engine never invents one on its behalf. Fields are
-    ``hypothesis`` / ``dimension`` (content|tool|schema) / ``mechanism_family``
-    / ``target_hook`` / ``mechanism_check`` (train refs only - the validation
-    reserve is sealed).
-
-    Declaring is not passing: the gate re-reads the record and can still refuse.
-    """
+def swarm_hypothesis(
+    hypothesis: dict[str, Any] | str,
+    agent_name: str = "host-agent",
+) -> dict[str, Any]:
+    """Record a round hypothesis (accepts either a plain sentence or §5.3 dict)."""
     blocked = _checkpoint_block()
     if blocked is not None:
         return blocked
-    if not isinstance(hypothesis, dict):
+    run_id = _pending_solidify_meta()["run_id"]
+    if isinstance(hypothesis, str):
+        if not hypothesis.strip():
+            return {
+                "ok": False,
+                "error": "hypothesis_rejected",
+                "message": "hypothesis must be non-empty",
+                "next_action": "evolve_begin",
+            }
+        payload = _synthesize_internal_hypothesis(hypothesis, run_id=run_id or "run_manual")
+    elif isinstance(hypothesis, dict):
+        payload = _hypothesis_payload(hypothesis, run_id)
+    else:
         return {
             "ok": False,
             "error": "hypothesis_rejected",
-            "message": "hypothesis must be a JSON object",
-            "failure_mode": {
-                "mode": "soft",
-                "reasonClass": "hypothesis_rejected",
-                "retryable": True,
-            },
-            "next_action": "swarm_tick",
+            "message": "hypothesis must be a string or JSON object",
+            "next_action": "evolve_begin",
         }
-    result = _record_host_hypothesis(
-        _hypothesis_payload(hypothesis, _pending_solidify_meta()["run_id"])
-    )
+    result = _record_host_hypothesis(payload)
     if result.get("ok"):
         result["agent_name"] = agent_name
     return result
@@ -2499,23 +1298,13 @@ def swarm_propose(
     agent_name: str = "host-agent",
     hypothesis: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
-    """Apply a GeneProposal mechanically with anchor validation.
-
-    S29 mechanical mutation application: validate-all-first, exact unique anchor
-    matching, fail-safe against hallucinations.
-
-    ``hypothesis`` (§5.3) is recorded *before* the proposal is applied: the
-    claim about what changes must exist before the change itself.
-
-    Takes the same non-blocking instance lock as tick/solidify: a running
-    daemon loop owns the workspace while it holds the lock, and a host
-    proposal landing mid-cycle would interleave two writers.
-    """
+    """Apply a mechanical GeneProposal with anchor validation."""
     blocked = _checkpoint_block()
     if blocked is not None:
         return blocked
     from evolver.gep.instance_lock import instance_lock_ctx
     from evolver.gep.paths import get_workspace_root
+    from evolver.gep.proposal import apply_proposal, compose_proposals, parse_proposal
 
     with instance_lock_ctx(blocking=False, timeout=0) as lock_ok:
         if not lock_ok:
@@ -2525,106 +1314,94 @@ def swarm_propose(
                 "agent_name": agent_name,
                 "next_action": "stop_and_report",
             }
-        return _swarm_propose_locked(
-            proposal,
-            agent_name=agent_name,
-            hypothesis=hypothesis,
-            workspace_root=get_workspace_root(),
-        )
-
-
-def _swarm_propose_locked(
-    proposal: dict[str, Any],
-    *,
-    agent_name: str,
-    hypothesis: dict[str, Any] | None,
-    workspace_root: Path,
-) -> dict[str, Any]:
-    """Body of :func:`swarm_propose` once the instance lock is held."""
-    from evolver.gep.proposal import apply_proposal, compose_proposals, parse_proposal
-
-    if hypothesis is not None:
-        recorded = _record_host_hypothesis(
-            _hypothesis_payload(hypothesis, _pending_solidify_meta()["run_id"])
-        )
-        if not recorded.get("ok"):
-            return recorded
-
-    composition_ledger: list[dict[str, Any]] | None = None
-    decision: str | None = None
-    try:
-        if isinstance(proposal, dict) and isinstance(proposal.get("candidates"), list):
-            composed = compose_proposals(
-                proposal["candidates"],
-                root=workspace_root,
-                apply=True,
-                gene_id=str(proposal.get("gene_id") or "") or None,
+        workspace_root = get_workspace_root()
+        if hypothesis is not None:
+            recorded = _record_host_hypothesis(
+                _hypothesis_payload(hypothesis, _pending_solidify_meta()["run_id"])
             )
-            decision = str(composed.get("decision") or "keep_base")
-            composition_ledger = list(composed.get("composition_ledger") or [])
-            comp_prop = composed.get("proposal")
-            if isinstance(comp_prop, dict):
-                action_name = str(comp_prop.get("action") or "no_action")
-                gene_id_val = comp_prop.get("gene_id")
+            if not recorded.get("ok"):
+                return recorded
+
+        composition_ledger: list[dict[str, Any]] | None = None
+        decision: str | None = None
+        try:
+            if isinstance(proposal, dict) and isinstance(proposal.get("candidates"), list):
+                composed = compose_proposals(
+                    proposal["candidates"],
+                    root=workspace_root,
+                    apply=True,
+                    gene_id=str(proposal.get("gene_id") or "") or None,
+                )
+                decision = str(composed.get("decision") or "keep_base")
+                composition_ledger = list(composed.get("composition_ledger") or [])
+                comp_prop = composed.get("proposal")
+                if isinstance(comp_prop, dict):
+                    action_name = str(comp_prop.get("action") or "no_action")
+                    gene_id_val = comp_prop.get("gene_id")
+                else:
+                    action_name = str(getattr(comp_prop, "action", None) or "no_action")
+                    gene_id_val = getattr(comp_prop, "gene_id", None)
+                apply_rep = composed.get("apply_report")
+                files_changed = (
+                    list(apply_rep.get("files_changed") or [])
+                    if isinstance(apply_rep, dict)
+                    else []
+                )
             else:
-                action_name = str(getattr(comp_prop, "action", None) or "no_action")
-                gene_id_val = getattr(comp_prop, "gene_id", None)
-            apply_rep = composed.get("apply_report")
-            files_changed = (
-                list(apply_rep.get("files_changed") or []) if isinstance(apply_rep, dict) else []
-            )
-        else:
-            parsed = parse_proposal(proposal)
-            report = apply_proposal(parsed, workspace_root)
-            action_name = parsed.action
-            gene_id_val = parsed.gene_id
-            files_changed = list(report.get("files_changed", []))
-    except Exception as exc:
-        return {
-            "ok": False,
-            "error": "proposal_rejected",
-            "message": str(exc),
-            "next_action": "swarm_tick",
+                parsed = parse_proposal(proposal)
+                report = apply_proposal(parsed, workspace_root)
+                action_name = parsed.action
+                gene_id_val = parsed.gene_id
+                files_changed = list(report.get("files_changed", []))
+        except Exception as exc:
+            return {
+                "ok": False,
+                "error": "proposal_rejected",
+                "message": str(exc),
+                "next_action": "evolve_settle",
+            }
+
+        integrity_report: dict[str, Any] | None = None
+        if (
+            isinstance(proposal, dict)
+            and proposal.get("check_component_integrity")
+            and files_changed
+        ):
+            from evolver.gep.policy_check import validate_harness_component_integrity
+
+            raw_integrity = validate_harness_component_integrity(workspace_root, files_changed)
+            integrity_report = {
+                "ok": bool(raw_integrity.get("ok")),
+                "violations": [
+                    v.to_dict() if hasattr(v, "to_dict") else v
+                    for v in (raw_integrity.get("violations") or [])
+                ],
+            }
+
+        state = _load_swarm_state()
+        state["last_proposal"] = {
+            "action": action_name,
+            "gene_id": gene_id_val,
+            "files_changed": files_changed,
+            "agent_name": agent_name,
+            "timestamp": datetime.datetime.now(datetime.UTC).isoformat().replace("+00:00", "Z"),
         }
+        _save_swarm_state(state)
 
-    integrity_report: dict[str, Any] | None = None
-    if isinstance(proposal, dict) and proposal.get("check_component_integrity") and files_changed:
-        from evolver.gep.policy_check import validate_harness_component_integrity
-
-        raw_integrity = validate_harness_component_integrity(workspace_root, files_changed)
-        integrity_report = {
-            "ok": bool(raw_integrity.get("ok")),
-            "violations": [
-                v.to_dict() if hasattr(v, "to_dict") else v
-                for v in (raw_integrity.get("violations") or [])
-            ],
+        out: dict[str, Any] = {
+            "ok": True,
+            "action": action_name,
+            "gene_id": gene_id_val,
+            "files_changed": files_changed,
+            "next_action": "evolve_begin" if decision == "keep_base" else "evolve_settle",
         }
-
-    # Track pending proposal in swarm state
-    state = _load_swarm_state()
-    state["last_proposal"] = {
-        "action": action_name,
-        "gene_id": gene_id_val,
-        "files_changed": files_changed,
-        "agent_name": agent_name,
-        "timestamp": datetime.datetime.now(datetime.UTC).isoformat().replace("+00:00", "Z"),
-    }
-    _save_swarm_state(state)
-
-    out: dict[str, Any] = {
-        "ok": True,
-        "action": action_name,
-        "gene_id": gene_id_val,
-        "files_changed": files_changed,
-        "next_action": "swarm_tick" if decision == "keep_base" else "swarm_solidify",
-    }
-    if decision is not None:
-        out["decision"] = decision
-    if composition_ledger is not None:
-        out["composition_ledger"] = composition_ledger
-    if integrity_report is not None:
-        out["component_integrity"] = integrity_report
-    return out
+        if decision is not None:
+            out["decision"] = decision
+        if composition_ledger is not None:
+            out["composition_ledger"] = composition_ledger
+        if integrity_report is not None:
+            out["component_integrity"] = integrity_report
+        return out
 
 
 def swarm_solidify(
@@ -2637,19 +1414,7 @@ def swarm_solidify(
     related_commands: list[list[str]] | None = None,
     restore_stash: bool = False,
 ) -> dict[str, Any]:
-    """Run the solidify gate (validations + acceptance gate + commit/rollback).
-
-    High-risk calls (``skip_validation=True``) require a pending run and pass
-    the HITL gate inside ``solidify()``. ``EVOLVER_HITL_MODE=on`` (or auto-hijack)
-    blocks until a human approves; timeout fails safe to reject.
-    Optionally accepts a ``proposal`` to mechanically apply before gating (S29).
-    ``hypothesis`` (§5.3) is recorded before gating; the host that declines to
-    state a claim is refused by the gate rather than measured anyway.
-
-    Takes the same non-blocking instance lock as tick: a running daemon loop
-    owns the workspace while it holds the lock, and a host solidify landing
-    mid-cycle (stash/rollback) would interleave two writers.
-    """
+    """Run the solidify gate, settle in-band blackbox, and record boundary episode."""
     from evolver.gep.instance_lock import instance_lock_ctx
 
     with instance_lock_ctx(blocking=False, timeout=0) as lock_ok:
@@ -2679,9 +1444,10 @@ def _swarm_solidify_locked(
     related_commands: list[list[str]] | None = None,
     restore_stash: bool = False,
 ) -> dict[str, Any]:
-    """Body of :func:`swarm_solidify` once the instance lock is held."""
     from evolver.config import SWARM_TICK_LOG_MAX_CHARS
     from evolver.gep import supervision
+    from evolver.gep.blackbox import load_active_blackbox, settle_blackbox
+    from evolver.gep.paths import get_repo_root, get_workspace_root
     from evolver.gep.solidify import solidify
 
     if restore_stash:
@@ -2705,7 +1471,7 @@ def _swarm_solidify_locked(
         return {
             "ok": False,
             "error": "skip_validation_requires_pending_run",
-            "next_action": "swarm_tick",
+            "next_action": "evolve_begin",
         }
     veto = supervision.check_veto(
         f"solidify:{run_id}",
@@ -2718,7 +1484,7 @@ def _swarm_solidify_locked(
             "ok": False,
             "error": "supervision_veto",
             "veto": veto,
-            "next_action": "swarm_tick",
+            "next_action": "evolve_begin",
         }
 
     with _capture_stdout() as capture:
@@ -2735,6 +1501,7 @@ def _swarm_solidify_locked(
                 "error": f"solidify_crashed: {exc}",
                 "engine_log": _tail(capture.getvalue(), SWARM_TICK_LOG_MAX_CHARS),
             }
+
     if isinstance(result, dict):
         result = dict(result)
         result.setdefault("ok", False)
@@ -2742,15 +1509,14 @@ def _swarm_solidify_locked(
         err = str(result.get("error") or "")
         if err.startswith("hitl_"):
             status = err.removeprefix("hitl_")
-            result["next_action"] = "await_human_approval" if status == "pending" else "swarm_tick"
+            result["next_action"] = (
+                "await_human_approval" if status == "pending" else "evolve_begin"
+            )
         elif err == "supervision_paused":
             result["next_action"] = "await_supervisor_resume"
         elif err == "supervision_veto":
-            result["next_action"] = "swarm_tick"
+            result["next_action"] = "evolve_begin"
         if not result.get("ok") and "failure_mode" not in result:
-            # The instrument prompt tells the host to read ``failure_mode`` —
-            # make it real (tool-check 2026-09-05: the key was referenced but
-            # never present, so the host could not decide retry vs stop).
             from evolver.gep.solidify import classify_failure_mode
 
             details = result.get("details")
@@ -2760,34 +1526,69 @@ def _swarm_solidify_locked(
                 mode = {"mode": "hard", "reasonClass": err or "unknown", "retryable": False}
             result["failure_mode"] = mode
             result.setdefault(
-                "next_action", "swarm_tick" if mode.get("retryable") else "stop_and_report"
+                "next_action", "evolve_begin" if mode.get("retryable") else "stop_and_report"
             )
+
+    # P1-2: Settle cycle-boundary blackbox BEFORE episode_record.record_round so
+    # gates.blackbox is folded into the content-addressed episode atomically.
     if isinstance(result, dict) and result.get("event_id"):
-        # 经验即证据 §5.1: the runtime records the settled round, Accept or
-        # Reject, at the cycle boundary. The mutation path cannot (call-graph
-        # pin). A record failure must not change the settlement outcome.
+        event_id_str = str(result["event_id"])
+        active_bb = load_active_blackbox()
+        if active_bb is not None:
+            with contextlib.suppress(Exception):
+                from evolver.gep.evidence import load_evidence
+
+                cwd = (get_repo_root(_quiet=True) or get_workspace_root()).resolve()
+                scene = load_evidence(run_id, event_id_str)
+                val_res = (
+                    scene.get("validation_result")
+                    if isinstance(scene, dict) and isinstance(scene.get("validation_result"), dict)
+                    else None
+                )
+                bb_entry = settle_blackbox(
+                    cwd,
+                    run_id=run_id,
+                    event_id=event_id_str,
+                    outcome_ok=bool(result.get("ok")),
+                    outcome_label=str(
+                        result.get("outcome") or ("promoted" if result.get("ok") else "failed")
+                    ),
+                    validation_result=val_res,
+                    clear_active=not _pending_solidify_state(),
+                )
+                result["blackbox"] = {
+                    "wall_time_ms": bb_entry.get("wall_time_ms"),
+                    "lens_calls_count": bb_entry.get("lens_calls_count"),
+                    "ast_delta": bb_entry.get("ast_delta"),
+                    "validation": bb_entry.get("validation"),
+                }
+
         from evolver.gep import episode_record
 
         try:
-            result["episode"] = episode_record.record_round(event_id=str(result["event_id"]))
+            ep_res = episode_record.record_round(event_id=event_id_str, run_id=str(run_id or ""))
+            result["episode"] = ep_res
+            if ep_res.get("id"):
+                result["episode_id"] = str(ep_res["id"])
+                if isinstance(result.get("experience_written"), dict):
+                    result["experience_written"]["episodes"] = [str(ep_res["id"])]
         except Exception as exc:
             result["episode"] = {"ok": False, "error": f"episode_record_failed: {exc}"}
+
     if isinstance(result, dict):
-        try:
+        with contextlib.suppress(Exception):
             from evolver.gep.compact_gate import note_outcome
 
             note_outcome(bool(result.get("ok")))
-        except Exception:
-            pass
+        with contextlib.suppress(Exception):
+            from evolver.gep.index_db import sync_index_db
+
+            sync_index_db()
     return result
 
 
 def swarm_checkpoint_working(content: str) -> dict[str, Any]:
-    """Crystallize session scratch and clear a pending compaction marker.
-
-    The host writes the hypothesis, ruled-out approaches, and episode ids.
-    Mutation tools stay refused until this succeeds while the marker is set.
-    """
+    """Write ``WORKING_SESSION.md`` and clear a pending compaction marker."""
     from evolver.gep.compact_gate import clear_checkpoint
     from evolver.gep.working_memory import write_working
 
@@ -2799,10 +1600,6 @@ def swarm_checkpoint_working(content: str) -> dict[str, Any]:
             "error": "checkpoint_rejected",
             "message": str(exc),
             "next_action": "call_swarm_checkpoint_working",
-            "steer_message": (
-                "Write a non-empty WORKING_SESSION.md within 16000 characters, "
-                "then call swarm_checkpoint_working again."
-            ),
         }
     cleared = clear_checkpoint()
     return {
@@ -2813,10 +1610,6 @@ def swarm_checkpoint_working(content: str) -> dict[str, Any]:
         "checkpoint_cleared": cleared,
         "source": "host_working",
         "next_action": "compact_or_new_session",
-        "steer_message": (
-            "WORKING_SESSION.md is saved. Compact or open a new session. "
-            "swarm_boot reloads this scratch; it is a clue, not a gate input."
-        ),
     }
 
 
@@ -2827,13 +1620,6 @@ def swarm_report(
     no_write: bool = False,
     dry_run: bool = False,
 ) -> dict[str, Any]:
-    """Heartbeat: capture friction/lessons into the living memory.
-
-    ``no_write`` and ``dry_run`` are one switch. Either one skips rule
-    encoding, ``LESSONS_LEARNED.md``, and ``self_report.json``. The
-    response always says what happened: ``wrote`` false and ``written``
-    empty, or ``wrote`` true plus the files this call persisted.
-    """
     from evolver.config import SWARM_TICK_LOG_MAX_CHARS
     from evolver.gep.autopoiesis import run_self_report_cli
 
@@ -2880,12 +1666,6 @@ def swarm_feedback(
     run_id: str | None = None,
     cycle_id: str | None = None,
 ) -> dict[str, Any]:
-    """Report a unified evaluation signal E (EvoX concept harvest) into the loop.
-
-    Degraded reports (low ``primary_score`` or ``success=false``) inject
-    repair-bias signals for the next cycle; the natural-language
-    ``textual_gradient`` rides along as a direction hint.
-    """
     from evolver.gep.feedback import EvaluationFeedback, record_feedback
 
     try:
@@ -2907,7 +1687,6 @@ def swarm_feedback(
 
 
 def host_relay_blocked() -> bool:
-    """True when unattended takeover must not accept host-relayed human acts."""
     from evolver.config import SWARM_AUTO_HIJACK
 
     return bool(SWARM_AUTO_HIJACK)
@@ -2922,13 +1701,6 @@ def swarm_supervise(
     note: str = "",
     by: str = "human",
 ) -> dict[str, Any]:
-    """HOTL supervision entry point (human-on-the-loop; v1.101.0).
-
-    ``pause``/``resume`` flip the loop state (tick refuses cycles while
-    paused); ``direct`` injects a steering signal into the next cycle;
-    ``veto``/``unveto`` manage substring patterns that block ticked genes and
-    solidify subjects; ``status`` returns the summary.
-    """
     from evolver.gep import supervision
 
     if action == "status":
@@ -2956,18 +1728,6 @@ def swarm_hook_event(
     payload: dict[str, Any] | None = None,
     source: str = "host-agent",
 ) -> dict[str, Any]:
-    """In-process hook bridge for MCP-only hosts (no file hooks needed).
-
-    Mirrors the adapter runtime scripts (adapters/scripts/signal_detect.py):
-    the payload's content is run through the shared signal detector, and
-    detected tags go straight into ``pending_signals`` — the same channel
-    autopoiesis friction and feedback gradients use — so the next cycle's
-    selection sees them. Hosts with file hooks installed do not need this;
-    the scripts already feed memory collection.
-    """
-    import contextlib
-    import datetime as _dt
-
     from evolver.adapters.scripts.signal_detect import _extract_content, detect_signals
     from evolver.gep.asset_store import append_jsonl, append_pending_signals
     from evolver.gep.paths import get_evolution_dir
@@ -2988,9 +1748,6 @@ def swarm_hook_event(
             "source": source,
             "marker": str(path),
             "next_action": "call_swarm_checkpoint_working",
-            "steer_message": (
-                "Compaction was requested. Call swarm_checkpoint_working before any mutation tool."
-            ),
         }
     content, file_path = _extract_content(payload or {})
     signals = detect_signals(content)
@@ -3008,12 +1765,9 @@ def swarm_hook_event(
         "source": source,
         "signals": signals,
         "file_path": file_path or None,
-        "at": _dt.datetime.now(_dt.UTC).isoformat(),
+        "at": datetime.datetime.now(datetime.UTC).isoformat(),
     }
     with contextlib.suppress(OSError):
-        # Locked + closed append (DEBUG #54 family): the daemon loop and the
-        # MCP server are two live processes writing JSONL, and a bare
-        # open().write() without close can lose the tail on crash.
         append_jsonl(get_evolution_dir() / "hook_events.jsonl", entry)
     out: dict[str, Any] = {
         "ok": True,
@@ -3036,13 +1790,6 @@ def swarm_hooks(
     force: bool = False,
     dry_run: bool = False,
 ) -> dict[str, Any]:
-    """Manage IDE/agent hooks from the swarm surface.
-
-    Thin wrapper over ``adapters.setup_hooks.install_hooks`` so a host agent
-    can bootstrap its own file hooks over MCP (``status`` previews via
-    dry-run). Platforms: cursor / claude-code / codex / kiro / opencode /
-    vscode / generic / auto.
-    """
     from evolver.adapters.hook_adapter import detect_platform
     from evolver.adapters.setup_hooks import install_hooks
     from evolver.gep.paths import get_workspace_root
@@ -3073,12 +1820,6 @@ def swarm_skills(
     action: Literal["scan", "list", "sync"],
     dry_run: bool = False,
 ) -> dict[str, Any]:
-    """Skill ecosystem bridge (EvoX SkillRegistry concept harvest).
-
-    ``scan`` discovers host skills (project > user > builtin, same-name
-    shadowing); ``list`` shows skill-derived genes already in the store;
-    ``sync`` converts + installs them so skills participate in selection.
-    """
     from evolver.gep import skill_assets
 
     if action == "scan":
@@ -3095,22 +1836,12 @@ def swarm_workflow_run(
     template: str | None = None,
     workflow_id: str | None = None,
 ) -> dict[str, Any]:
-    """Start a durable workflow from a YAML/JSON spec file or bundled template.
-
-    EvoX harvest: the collaboration is data — a YAML workflow whose agent
-    steps declare roles the host executor picks up via ``swarm_workflow_status``.
-    """
     from evolver.gep.workflow import WorkflowEngine, load_spec, load_template
 
     if bool(file) == bool(template):
         return {"ok": False, "error": "exactly one of file|template is required"}
     try:
-        spec: dict[str, Any]
-        if file is not None:
-            spec = load_spec(Path(file))
-        else:
-            assert template is not None  # exactly-one guard above
-            spec = load_template(template)
+        spec = load_spec(Path(file)) if file is not None else load_template(template or "")
     except (OSError, FileNotFoundError) as exc:
         return {"ok": False, "error": f"spec_unreadable:{exc}"}
     if workflow_id:
@@ -3119,7 +1850,7 @@ def swarm_workflow_run(
     try:
         state = engine.create(spec)
         state = engine.run(state)
-    except Exception as exc:  # surfaced to the host verbatim
+    except Exception as exc:
         return {"ok": False, "error": f"workflow_error:{exc}"}
     result: dict[str, Any] = {
         "ok": True,
@@ -3143,8 +1874,6 @@ def swarm_workflow_act(
     result: Any = None,
     note: str | None = None,
 ) -> dict[str, Any]:
-    """Advance a waiting workflow: approve/reject approvals, complete agent
-    steps (host reports the mutation result), resume retries, cancel."""
     from evolver.gep.workflow import WorkflowEngine, WorkflowPermanentError
 
     engine = WorkflowEngine()
@@ -3178,10 +1907,7 @@ def swarm_workflow_act(
     return out
 
 
-def swarm_workflow_status(
-    workflow_id: str,
-) -> dict[str, Any]:
-    """Full state of one workflow run, including what the host should do now."""
+def swarm_workflow_status(workflow_id: str) -> dict[str, Any]:
     from evolver.gep.workflow import WorkflowEngine
 
     engine = WorkflowEngine()
@@ -3203,49 +1929,35 @@ async def swarm_host_round(
     *,
     include_prompt: bool = True,
 ) -> dict[str, Any]:
-    """U-12: Single-entry host protocol runner (boot -> state_health -> tick -> checklist)."""
-    boot = swarm_boot(agent_name=agent_name, project=project)
-    state = boot.get("state") or {}
-    next_act = str(boot.get("next_action") or "swarm_tick")
-    tick_res: dict[str, Any] | None = None
-    checklist: dict[str, Any]
-    if next_act == "swarm_tick":
-        tick_res = await swarm_tick(agent_name=agent_name, include_prompt=include_prompt)
-        checklist = tick_res.get("checklist") or _build_tick_checklist(
-            run_id=tick_res.get("run_id"),
-            selected_gene=tick_res.get("selected_gene"),
-            proposal_required=bool(tick_res.get("proposal_required")),
-        )
-        next_act = str(tick_res.get("next_action") or next_act)
-    else:
-        meta = _pending_solidify_meta()
-        checklist = _build_tick_checklist(
-            run_id=meta.get("run_id") or None,
-            selected_gene={"id": meta.get("gene_id")} if meta.get("gene_id") else None,
-            proposal_required=False,
-        )
-
+    """Single-entry CLI host round inspector (``evolver internal round --host``)."""
+    _ = include_prompt
+    status = evolve_status(project=project)
     return {
         "ok": True,
         "mode": "host_round",
         "agent_name": agent_name,
-        "repo_root": state.get("repo_root"),
-        "workspace_id": state.get("workspace_id"),
-        "state_root": state.get("state_root"),
-        "mismatch": state.get("mismatch"),
-        "state_health": state.get("state_health"),
-        "boot_next_action": boot.get("next_action"),
-        "bound_paths": boot.get("bound_paths"),
-        "next_action": next_act,
-        "tick": tick_res,
-        "checklist": checklist,
+        "fsm_state": status.get("fsm_state"),
+        "repo_root": status.get("repo_root"),
+        "workspace_id": status.get("workspace_id"),
+        "state_root": status.get("state_dir"),
+        "bound_paths": status.get("bound_paths"),
+        "next_action": status.get("next_action"),
+        "allowed_tools": status.get("allowed_tools"),
+        "status": status,
     }
 
 
 __all__ = [
     "SWARM_PROTOCOL_VERSION",
+    "bind_project_directory",
     "build_instrument_prompt",
-    "swarm_boot",
+    "describe_bound_paths",
+    "evolve_begin",
+    "evolve_run_lens",
+    "evolve_settle",
+    "evolve_status",
+    "fsm_state",
+    "host_relay_blocked",
     "swarm_checkpoint_working",
     "swarm_distill",
     "swarm_doctor",
@@ -3253,13 +1965,13 @@ __all__ = [
     "swarm_hook_event",
     "swarm_hooks",
     "swarm_host_round",
+    "swarm_hypothesis",
     "swarm_propose",
     "swarm_report",
     "swarm_skills",
     "swarm_solidify",
     "swarm_status",
     "swarm_supervise",
-    "swarm_tick",
     "swarm_workflow_act",
     "swarm_workflow_run",
     "swarm_workflow_status",

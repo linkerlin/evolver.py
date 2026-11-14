@@ -6,11 +6,11 @@
 
 现行章程：[`演进方案.md`](演进方案.md)。工作清单：[`TODO.md`](TODO.md)。
 
-上一阶段（库即尺子）已归档，机器仍在树上（`library.establish_parent_library`、`bench prompt --library`、`solve_receipt.v0` 只捕获不执法），未竟项折在 [`TODO.md`](TODO.md) 的「带走」表。版本 **1.113.0**。本阶段叫**经验即证据**，对照 arXiv:2609.37968v2（SelfSearch）：把「一次自改进的过程记录」（episode record）升为一等经验源，让改进过程本身可替代下游分数推进改进。**记录分层是护栏**——进提示词当证据的只有引擎自记与 relay 观测，宿主上报只作线索（标来源、不单独支撑裁决、不进验收维）。本阶段出口是**消融裁决**（同预算有记录 vs 无记录影子对照）。n < 30 时 signal 与 no_signal 都只写 indicative only，不判阶段失败；n ≥ 30 且无信号才判负并停。不是一次评测。`EVOLVER_ACCEPTANCE_SHADOW` 保持打开。运行态不进产品 git。**出口已裁（2026-10-23，round-119）**：30 条真实结算＋32 题冻结包，两独立种子 `--stage-exit --from-episodes --placebo` 均 `signal`（`p=1.86e-09` / `2.98e-08`，`n_per_arm=32`）——阶段出口关上，切 minor 版本由人执；数字在 [`CHANGELOG.md`](CHANGELOG.md)。
+上一阶段（经验即证据，v1.113.0，round-119 出口已裁）已收束归档为 [`演进方案_经验即证据.md`](演进方案_经验即证据.md) 与 [`TODO_经验即证据.md`](TODO_经验即证据.md)，其不可变 `episode_record`、记录分层、`val_seal` 与仓外 `anchor` 机器留在树上。版本 **1.114.0**。本阶段代号**算子即基因**（全称：**零干预自进化：算子即基因，回放即裁决**）：对外以**零干预自动驾驶体验（Zero-Touch Autopilot UX）**统领全局——`evolver init` / `up` / `status` 三动词极简主界面、自动注入 IDE MCP 与 Hooks、干净子进程无感自举项目原生基线与 Anchor（零人工跨窗口手解题目、零内部黑话暴露），并**一步到位切换为 FSM 动态门控三工具原子 MCP 协议**（`evolve_begin` 前置锁假说 + `run_lens` + `evolve_settle` 一键结算 + 周期边界带内黑匣子 + AST 反向依赖 `< 3s` 闪电验证）；对内终结 `soft-accept` 经验污染，物理拆分**工作台草稿态**（`ok=False` 原位保补丁并附 3 行修复指引）与**金库晋升态**（唯验证全绿且单组件净增益自动入库），将基因从英文散文口号跃迁为**三阶可执行算子基因（EOG：`lens` + `codemod` + `invariant`）**并从真实红转绿修复中全自动合成。本阶段唯一出口是**双源时间胶囊真实代码修复配对盲测（`--stage-exit v2`，$N \ge 30$：本仓 `DEBUG.md` 真实历史故障 + 外部开源 Python 项目微型真实故障集，实跑 `pytest` Pass@1 配对显著且外源净胜 $> 0$）**。运行态一律外置于 `~/.evolver/workspaces/<id>/`，不进产品 git。
 
-本阶段不做：移植本体图式或 DGM/HGM/Hyperagents 本体、外部公开基准适配器（SWE-bench / Terminal-Bench）、更难的微任务包、LLM Judge、RSI P2-6/8/9、validator 重写、ATP 商业闭环、PyPI、为拆 `cli.py` 单独立项、种群择优（解禁的只是双向记录路线）、引擎改自己的源码、「无奖励」全面切换、把 soak `ready` 当出口。Evolver.php（停在 2026-04 / v1.69）与 EvoScientists 分叉不追这次协议。只修测量仪器或测试针的一轮，不算阶段进度。
+本阶段不做：让用户手写 JSON / 跨窗口手解 `val` / 手敲多步会话命令、保留旧 6 步 MCP 手工串联与 17 个打地鼠布尔旗标、内置黑盒主循环私改业务代码的 LLM 调度器、无客观测试支撑的 LLM Judge、移植 DGM/HGM/Hyperagents 本体、ATP 商业扩建、为凑样本编造无真实故障出处的假题。Evolver.php（停在 2026-04 / v1.69）与 EvoScientists 分叉不追本次协议。
 
-[`RSI演进对照.md`](RSI演进对照.md)、[`演进方案_wikiskill对照版.md`](演进方案_wikiskill对照版.md)、[`演进方案_库即尺子.md`](演进方案_库即尺子.md) 与 [`TODO_库即尺子.md`](TODO_库即尺子.md) 是史料。史料里的「下一步」不得当作当前排期。
+[`演进方案_经验即证据.md`](演进方案_经验即证据.md)、[`TODO_经验即证据.md`](TODO_经验即证据.md)、[`演进方案_库即尺子.md`](演进方案_库即尺子.md)、[`TODO_库即尺子.md`](TODO_库即尺子.md)、[`RSI演进对照.md`](RSI演进对照.md) 与 [`演进方案_wikiskill对照版.md`](演进方案_wikiskill对照版.md) 是史料。史料里的「下一步」不得当作当前排期。
 
 并行补充方案（不改章程、不另开出口）：[`VISTA演进方案.md`](VISTA演进方案.md)——零参数机械套具，Tier 1–3 八项与评审六条已于 2026-10-18 合入主干，落地清单 [`TODO_VISTA.md`](TODO_VISTA.md)；[`Harness2演进方案.md`](Harness2演进方案.md)——对照 arXiv:2610.14224v1 之双层递归与对比合成机械套具，Tier 1–3 六项 `H2-1`..`H2-6` 已于 2026-10-26 合入主干，落地清单 [`TODO_HARNESS2.md`](TODO_HARNESS2.md)；[`易用性演进方案.md`](易用性演进方案.md)——运行时数据外置（`~/.evolver/workspaces/<id>/`）与非标准宿主恢复机制，P0–P2 十四项 `U-1`..`U-14` 已于 2026-10-27 合入主干，落地清单 [`TODO_USABILITY.md`](TODO_USABILITY.md)；[`Schema演进方案.md`](Schema演进方案.md)——只取思想，除一句提示词外未排期。（VISTA / Harness2 / 易用性方案与 [`设计方案.md`](设计方案.md) 是本地私有文档，`.gitignore` `*方案*.md` 规则不入库；设计方案正文停在 2026-07-31，现行模块清单以本文件源码布局为准。）
 
@@ -19,6 +19,9 @@
 | 操作 | 命令 |
 |---|---|
 | 安装依赖 | `uv sync` |
+| 一键零配置开箱（P0-1） | `uv run evolver init [--yes] [--host <name>] [--no-hosts]`（`< 3s` 探测 IDE、幂等注入 MCP+Hooks、写 `.git/info/exclude` 保持零脏文件、后台干净子进程自举原生基线与 Anchor） |
+| 零干预自动驾驶（P0-2） | `uv run evolver up`（别名 `auto`；支持 `--once` / `--project <dir>`；自适应滑动会话 + 连续 3 轮空转休眠） |
+| 纯人话状态面板（P0-2） | `uv run evolver status [--json]`（就绪灯、守护灯、已晋升修复、节省验证秒数、金库算子、工作台草稿——零内部旗标） |
 | 运行一进化周期 | `uv run evolver`（或 `uv run evolver run`） |
 | 守护进程循环 | `uv run evolver --loop` |
 | 审查模式 | `uv run evolver --review` |
@@ -79,7 +82,8 @@
 ```
 cli.py              CLI 入口（argparse）、.env 加载、命令分发
 cli_options.py      CLI 公共路径选项（home/store/settings/env-file 解析）
-config.py           全部运行时阈值/超时、环境变量覆盖
+config.py           统一配置体系（EvolverConfig：`~/.evolver/config.json` 或
+                    `EVOLVER_CONFIG` 嵌套覆盖；全仓 `EVOLVER_*` 收敛至 ≤35）
 canary.py           Fork-canary：验证 CLI 加载不出崩溃
 cycle_control.py    周期硬超时、进度心跳、守护重生辅助
 force_update.py     强制更新引擎：Hub 触发版本过期时自更新
@@ -91,18 +95,28 @@ experiment/         受控实验与消融裁决（经验即证据 §5.8/§5.9）
                     --stage-exit 机器契约（种子交错/逐调用记录/配对检验/eligibility 门）；
                     agent_runner（单 agent 单题执行）、trigger_shift（触发漂移离线复评）；
                     全仓调用图钉白名单隔离
-swarm.py            蜂群进化核心：instrument prompt（宿主接管协议）+ 闭环工具
-                    （boot/tick/distill/solidify/report/status…），stdout 全捕获
-mcp_server.py       MCP stdio server（薄工具面）：asset/mailbox/timeline 工具 +
-                    swarm 工具（含 workflow 三工具）+ episode_get / episode_inspect +
-                    `evolver_swarm` prompt（mcp>=2.0 之 MCPServer）+
-                    只读资源（evolver://status 等）+ 工具注解（readOnly/
-                    destructive hint）；协议 E2E 测试见 tests/test_mcp_protocol.py
+swarm.py            蜂群进化核心：FSM 三工具状态机（evolve_begin / evolve_run_lens /
+                    evolve_settle / evolve_status）+ 仪器提示词 + 引擎内部闭环原语，stdout 全捕获
+mcp_server.py       MCP stdio server（FSM 动态门控三工具面）：`IDLE` 态暴露
+                    `evolve_begin` + `evolve_status`；`ACTIVE_RUN` 态物理隐藏
+                    `evolve_begin` 并解锁 `run_lens` + `evolve_settle` + `evolve_status`
+                    （状态切换自动推 `notifications/tools/list_changed`）+ 只读记录/资产辅助
+                    （episode_get / episode_inspect / tool_asset_* / tool_cycle_timeline）+
+                    `evolver_swarm` prompt + 只读资源；协议 E2E 测试见 tests/test_mcp_protocol.py
 gep/                GEP（基因组进化协议）核心。150+ 模块，下按功能分簇；注解给
                     承重模块，完整清单以目录为准
   schemas/          Pydantic 模型：Gene、Capsule、Task、Protocol
 
-  ── 记录与经验源（经验即证据 + VISTA）────────────────
+  ── 记录·透镜·黑匣子与经验源（算子即基因 + 经验即证据 + VISTA）────────
+  lenses.py         只读诊断透镜（P1-1）：`ast_hotspot`、`import_impact`、
+                    `trace_locator`、`contract_surface`；输出自动经 `val_seal` 脱敏
+  blackbox.py       周期边界带内黑匣子（P1-2）：在 `evolve_begin` ↔ `evolve_settle`
+                    自动采集前后 AST 符号增量、透镜调用栈、diff 行数与墙钟耗时（无需
+                    本地 HTTP 代理即达 100% 过程遥测覆盖）
+  import_graph.py   标准库 `ast` 增量反向依赖图（P1-3）：按文件 SHA-256 增量缓存于
+                    `<workspace_state_dir>/import_graph.json`，驱动 `< 3s` L0 闪电验证
+  index_db.py       WAL 模式 `sqlite3` 统一读索引（P1-4）：`~/.evolver/workspaces/<id>/index.sqlite`
+                    增量聚合信号频次、算子命中率、四向归因、episode 头与日预算状态
   episode_record.py episode record e_k（§5.1）：引擎自记的一次自改进结算
                     （选中基因、diff、检查结果、门裁决），内容寻址、写后
                     不可变、同轮幂等；写入只在周期边界，白名单外引用即测试
@@ -156,8 +170,9 @@ gep/                GEP（基因组进化协议）核心。150+ 模块，下按�
   candidate_isolation.py 进程内候选隔离（Python 模块面）
   eval_worktree.py  S26.5：干净 git worktree 中评估变异（enable_eval_worktree；
                     失败回退 live cwd 并告警，STRICT=1 改为失败）
-  solidify.py       应用基因 → 验证 → 经验落盘（默认 soft-accept，不自动提交、不写 Parent；折账在进周期前取假说正文，
-                    round-91）
+  solidify.py       应用基因 → 验证 → 经验落盘（双轨：验证失败/适应度未胜 = draft_preserved
+                    草稿保留附 3 行修复指引，唯全绿净增益进金库；仅首轮环境缺口
+                    soft-accept；不自动提交、不写 Parent；折账在进周期前取假说正文，round-91）
   solidify_helpers.py 固化过程辅助（v1.94.0 parity）
   proposal.py       基因提案（S29）：结构化变异 + 机械应用（apply-proposal）
   variant_archive.py 变体档案（RSI P1-3，DGM）：拒绝但保留的候选
@@ -175,13 +190,11 @@ gep/                GEP（基因组进化协议）核心。150+ 模块，下按�
   ── 记忆·认知·自检 ────────────────────────────────
   memory_graph.py   JSONL 记忆图谱存储与信号键查询
   memory_graph_adapter.py 记忆图谱高级查询接口
-  cognition.py      高级认知编排：recall/explore/curriculum/reflection/distill 接线
+  cognition.py      高级认知编排：recall/reflection/distill 接线
   recall_inject.py  回忆注入：既往成功策略浮上 GEP 提示词
   recall_verifier.py 回忆校验：注入的记忆是否仍有效
   reflection.py     反思引擎：周期性自评与人格调参
   narrative_memory.py 叙事记忆：演化史压缩成可读叙事
-  curriculum.py     课程管理：GEP 渐进任务序列
-  explore.py        探索引擎：发现未访代码路径并生成探针
   wiki.py / wiki_projection.py  Wiki 知识层（S27）：永不回滚的证据 + 人读投影
   living_memory.py  活记忆加载（LESSONS_LEARNED YAML frontmatter）
   memory_bridge.py  living_memory ↔ memory_graph ↔ signals 桥接
@@ -190,9 +203,10 @@ gep/                GEP（基因组进化协议）核心。150+ 模块，下按�
   autopoiesis_rules.py  guard 规则 → pending/autopoiesis 信号
 
   ── 提示词·信号·调度 ──────────────────────────────
-  prompt.py         GEP 提示词组装：三块序 ## Previous Episode → ## Evidence
-                    Pack → ## Host Clues（含 host_working 尾注）；EVOLVER_CHARTER
-                    置顶（VISTA 极简宪章）
+  prompt.py         GEP 提示词组装（P1-4 效用感知打包器）：按 `utility / token_cost`
+                    整节贪心装配 `< 4,000 tokens`（`PROMPT_TOKEN_BUDGET = 3800`），严守
+                    `## Previous Episode → ## Evidence Pack → ## Host Clues` 序并替换
+                    盲目尾截断；`CHARTER_PREAMBLE` 置顶（VISTA 极简宪章）
   signals.py        信号收集与分类
   feedback.py       统一评估反馈 E（EvoX 概念收割）：primary_score/metrics/
                     textual_gradient 三分离，日志 + repair-bias 信号注入
@@ -203,7 +217,7 @@ gep/                GEP（基因组进化协议）核心。150+ 模块，下按�
   host_error_classifier.py 宿主/LLM 客户端错误分类（信号归因护栏 #571）
   local_state_awareness.py 本地状态感知：GEP 用的全项目快照
   learning_signals.py   平台/依赖环境学习信号
-  personality.py    人格配置文件（严谨度、风险容忍度）
+  personality.py    人格配置文件（严谨度、风险容忍度；v2 五轴统计机器已随死旗标裁撤，round-121）
   trigger_engine.py 触发引擎：WFQ 调度、问题价值模型、日预算
   idle_scheduler.py 闲时感知调度：按用户活动调进化强度
 
@@ -219,7 +233,6 @@ gep/                GEP（基因组进化协议）核心。150+ 模块，下按�
                     技能蒸馏 / ATP 发布
   fetch.py          从 Hub 下载并安装资源
   sync_asset.py     Hub 资产本地安装归一化（sync 管线）
-  material.py       物料基质：水印增量摄取 + 消费组
 
   ── Hub·身份·对外 ─────────────────────────────────
   a2a_protocol.py   Agent 间 Hub 协议（HTTP）
@@ -257,7 +270,6 @@ gep/                GEP（基因组进化协议）核心。150+ 模块，下按�
   token_savings.py  token 节省追踪；env_fingerprint.py 环境 fingerprint
   event_projection.py 事件投影：重放事件日志重建派生视图
   execution_trace.py 为 capsule 构建脱敏执行轨迹
-  surface.py        表面快照：可编辑表面的稳定基线
   portable.py       .gepx 可携归档：工作区 GEP 资产导出/导入
   report.py         进化 run 报告（S27.4）：逐周期裁决、如实负结果
   llm_template.py   外置可复现 LLM 调用模板
@@ -270,7 +282,6 @@ gep/                GEP（基因组进化协议）核心。150+ 模块，下按�
   trajectory/       轨迹导出：proxy trace → 编码轨迹（cursor_vscdb / gemini_cli /
                     kimi_wire 等采集器）
   acceptance/       Self-Harness 验收门层（opt-in）：t0_frozen 冻结契约
-  diagnosis/        Self-Harness 因果诊断层（opt-in）：终端原因优先归因
   hooks/            Self-Harness hooks 包：AST 合并 / taxonomy / 校验
   validator/        验证者守护进程（文件存在，安全模型待完善）
 evolve/             进化流水线
@@ -283,7 +294,6 @@ evolve/             进化流水线
     hub.py          向 Hub 查询匹配之资源与任务
     enrich.py       以 Hub 数据丰富上下文 + 认知蒸馏/回忆 + living_memory 桥接
     autopoiesis.py  SelfReport / homeostasis（enrich 之后、select 之前）
-    diagnosis.py    诊断阶段：失败事件的终端原因优先归因
     select.py       选择最佳 Gene/Capsule（repair bias + innovation 记录）
     dispatch.py     生成 GEP 提示词（三块序 + 回忆 + autopoiesis_context），
                     写入分发输出
@@ -326,7 +336,12 @@ webui/              FastAPI 只读仪表盘
   dashboard.py      暗色 HTML 仪表盘（实时事件表）
   observer/         数据聚合模块（已实现）
   client/           内嵌 JS/CSS（sse、bootstrap、i18n、static）
-ops/                健康检查、清理、叙事日志、遥测
+ops/                开箱自举、自动驾驶、健康检查、叙事日志与遥测
+  init_bootstrap.py 一键零污染开箱自举（`evolver init`：IDE MCP+Hooks 幂等注入、
+                    `.git/info/exclude` 防脏、干净子进程无感首写原生基线与 Anchor）
+  autopilot.py      零干预自动驾驶策略（`SessionSlider` 滑动会话 + `Dormancy` 空转休眠）
+  status_human.py   纯人话状态面板与真实 `saved_validation_seconds` 节省验证耗时统计
+  open_box.py       非破坏式诊断与安全补齐（`evolver doctor` / `evolver setup`）
   lifecycle.py      跨平台守护进程管理（较完整）
   health_check.py   系统健康检查（较完整）
   self_repair.py    Git 紧急修复
@@ -378,122 +393,41 @@ atp/                Agent 交易协议市场
 
 上下文为一纯 `dict[str, Any]`，贯穿各流水线阶段。
 
-### 蜂群进化（MCP 宿主接管）
+### 蜂群进化（MCP 宿主接管：FSM 动态三工具协议）
 
-「半开环执行断层」之解：引擎不自建 LLM API 调度，宿主 Agent（经 `evolver mcp`，
-stdio）即执行器。常驻 instructions：本条消息已有别的任务就做那件事，否则
-`swarm_boot`，再用一句话说明实际状态（循环开始、需要首次准备，或已暂停）。
-用户说「停」时宿主调用 `swarm_supervise` action=pause，说「继续」时转达
-resume，不必让用户敲命令。
-全文协议在 MCP prompt `evolver_swarm` 与 `swarm_boot` 的返回里（覆盖不渲染
-prompt 的宿主）。`boot_once` 只登记会话（`swarm_hook_event` session_start），
-不在开机时同步技能。冻结包未装或没有基线时 boot 与 `swarm_tick` **soft-continue**
-（`severity=soft`，带 warnings + next_steps，进入循环）；Accept/publish 为 soft-accept
-（不写 Parent baseline、不自动 git commit，经验只落在 `~/.evolver/workspaces/<id>/`）。
-硬阻断仅限密钥、改写 `~/.evolver/`、`val_seal`。`EVOLVER_SWARM_GATE_HANDOFF=hotl`
-是仪器上的人在环上标签，不是「否则停 tick」的开关。前 5 次 tick 且无待固化 run 时，
-instrument 增加「核心循环工具 / Core Loop Tools」。soft-accept 的 T0 为 minimal
-（`t0_probe.py`）；成功结算后 `pending_solidify` 为 false（`last_run` 与
-`last_solidify` 的 run id 一致）。`swarm_boot` / `swarm_status` 带 `source_revision`，
-boot 自动 ack 本 agent 的 `swarm.hello`。安装或拉代码后须重启 MCP。握手广告 `tools.listChanged=true`，并在
-`notifications/initialized` 之后发 `notifications/tools/list_changed`。stdio
-`tools/list` 同一页（无 `nextCursor`）已含只读 `swarm_doctor`。若宿主目录仍只列出
-`swarm_tick` 的 `agent_name` 与 `include_prompt`，或搜不到 `swarm_doctor`，那是客户端
-没重读这份清单（旧会话把 `listChanged: false` 当成目录永不变）。新开宿主会话才会重读。
-服务端不另造一个假工具。
-已暂停时 `next_action=await_supervisor_resume`。有待固化 run 时 `next_action` 仍是
-`swarm_solidify`（`hint` 写明先固化；软缺口留在 `warning`，不盖掉这句），并带
-`readonly_smoke`：只读冒烟用 `swarm_doctor` / `swarm_status`，不结算、不放宽门、不写
-Parent。软缺口（`soft_continue=true`）下 `swarm_doctor` 同样给出
-`next_action=swarm_solidify`、`tick_again=false` 与 preserve 三元组，不写
-`gate_soft_continue`、不写 `session_not_failed`；`soft_continue` 仍为 true。
-这条引导上 `fixes` 不把 `evolver doctor --fix`、`evolver bench freeze` 或
-`evolver bench baseline` 列为当前步骤；boot/status，以及第一次未完成 run 的 tick
-与保险丝，其 `commands` 与 `next_steps` 同样不把这三条当成现在要执行的修复。
-没有未完成 run，或固化之后，列出它们仍然合适。本工具仍不执行它们，也不写 Parent baseline。
-有软缺口时，boot/status 仍写 `gate_soft_continue=true`。第一次 tick 与保险丝不写这个键
-（缺席，不写成 false），并写 `soft_gap.advisory=true`、`soft_gap.tick=false`。
-硬阻断的 doctor 仍是 `ok=false`，不另给这个动作，也不写 `tick_again`。
-此时 `boot_once` 为空。忽略 `next_action` 再调 `swarm_tick` 时默认不启新周期。
-第一次 `ok=true`、`severity=soft`、`cycle_started=false`、`progress=false`、
-`redirect_count=1`，`next_action` 仍是 `swarm_solidify`，不改 `last_run`。
-同一条 run 再 tick 返回 `ok=false`、`loop_fuse=pending_redirect_loop`、
-`redirect_reason=pending_redirect_loop`（`severity=soft`，`retryable=false`，
-没有 `error` 字段），仍不启周期；这不是门禁失败，也不是放弃，也不是另一个
-`next_action`。`next_action` 仍是 `swarm_solidify`。`dispatch_reason` 仍是
-`pending_solidify`。第一次重定向的 `redirect_reason` 仍是 `pending_solidify`，
-没有 `loop_fuse`。常驻 instructions 写 `loop_fuse=pending_redirect_loop`，
-不把裸码当成 `next_action`。软缺口留在 `warning`。两次返回都带
-`preserve_pending=true`、`abandon_run=false`、
-`action_required=swarm_solidify`（boot/status 在仍要固化时同样带上）。有软缺口时，第一次 tick 与保险丝不写 `gate_soft_continue`（缺席不是 false，也不是再 tick 的许可；`soft_gap.advisory=true`，`soft_gap.tick=false`；`ok` 第一次仍为 true，
-没有 `error`；`tick_again=false` 与 `retryable=false` 都表示不要再 tick，第一次也写 `retryable=false`）。两次 tick 都带
-`session_not_failed=true`：先读它，会话没有失败。`loop_fuse` 不在 `error` 里，
-preserve 三元组仍指向 `swarm_solidify`。
-boot/status 的 `gate_soft_continue` 仍为 true，且不带 `session_not_failed`。未完成 run 的软缺口 boot/status 同时写 `tick_again=false`（只看 `gate_soft_continue=true` 的宿主仍可能再 tick）。
-`next_steps` 第一条是调用 `swarm_solidify`。
-要替换这条 run 才传 `supersede_pending=true`。暂停与压缩检查点仍优先，且不消耗这次计数。
-首次准备见 `examples/swarm-quickstart/README.md`。
-`EVOLVER_SWARM_AUTO_HIJACK=1` 不改这段文字，只强制打开 HITL 并拒绝宿主转达放行。
-常驻文本仍不是工具地图。它多两条环内规则：`PROPOSAL REQUIRED`（或
-`proposal_required=true`）改走 `swarm_propose`；`next_action=await_human_approval`
-停止，`swarm_approvals` 读给人，人决定后才 `swarm_approval_resolve`。
-instrument 正文点名每一个已注册工具。
+「半开环执行断层」之解：引擎不自建 LLM API 调度，宿主智能体（经 `evolver mcp`，stdio）即执行器。自 P1-1/P1-2/P1-3 起，MCP 工具面一步到位收敛为 **FSM 动态门控三工具原子协议**（废除旧 6 步手工串联、`pending_tick_redirects.json` 及全部 17 个打地鼠布尔旗标），状态切换自动推送 `notifications/tools/list_changed`：
 
 ```
-swarm_tick → 宿主执行 GEP 变异提示词 → swarm_distill → swarm_hypothesis → swarm_solidify
-     ↑                        ↓                                            │
-     └── swarm_feedback（评估信号 E，低分注入 repair-bias）◀────────────────┘
-     └──────────── swarm_report（心跳）+ mailbox（多节点协调）◀──────────────┘
+IDLE 态（暴露 evolve_begin + evolve_status；隐藏 run_lens / evolve_settle）
+  ├── evolve_begin(hypothesis="") ──▶ 零副作用探测（discovery_only=true，保持 IDLE）
+  └── evolve_begin(hypothesis="...", target_files=[...])
+        ──▶ 懒自举基线 + 前置锁定唯一假说 + 装配 <4,000 tokens 提示词 + 启动黑匣子
+        ──▶ 推 notifications/tools/list_changed 切入 ACTIVE_RUN
+
+ACTIVE_RUN 态（物理隐藏 evolve_begin；暴露 run_lens + evolve_settle + evolve_status）
+  ├── run_lens(name="ast_hotspot"|"import_impact"|"trace_locator"|"contract_surface")
+  │     ──▶ 只读 AST/反向依赖/异常栈/契约面诊断（输出经 val_seal 自动脱敏）
+  ├── 宿主原生工具编辑代码
+  └── evolve_settle(summary="...", validation_scope="auto")
+        ──▶ <3s L0 AST 反向依赖闪电验证（高危面自动升 L2）+ 收束周期边界带内黑匣子
+        ──▶ 全绿净增益：promoted（写 episode_record + 同步 index.sqlite + 后台 L1 守护门）
+        ──▶ 检查未过或退化：draft_preserved（ok=false，补丁原位保留 + 3 行 actionable_fix，金库 +0）
+        ──▶ 推 notifications/tools/list_changed 切回 IDLE
 ```
 
-统一评估反馈（EvoX 概念收割）：`swarm_feedback` 上报 `primary_score`（0-1）/
-`metrics`（多维诊断）/`textual_gradient`（自然语言方向信号），全量记入
-`feedback.jsonl`；低分或失败注入 `swarm_feedback:degraded` 信号键——与
-autopoiesis 摩擦信号同走 `pending_signals` → 下周期选择与提示词之通路。
-
-HITL 审批门（EvoX HITLManager 概念收割）：`swarm_solidify(skip_validation=true)`
-属高危，经 `gep/hitl.py` 审批——`EVOLVER_HITL_MODE=on` 时阻塞待人类批准
-（`evolver hitl approve` 或 `swarm_approval_resolve` 转达），TTL 超时
-fail-safe 拒绝；按 subject（含 run_id）幂等，被拒之 subject 不得重试申请；
-mode=off 时自动批准但全程记审计日志。
-
-HOTL 人在环上监督（`gep/supervision.py`，与 HITL 正交）：HITL 决定「某个
-高危动作可否执行」，HOTL 决定「循环是否运行」。`paused` 时 `swarm_tick`
-拒绝新周期（优雅排水）；`veto` 子串模式命中选中基因则扣发 dispatch 提示词、
-命中 solidify subject 则阻断固化（纵深防御）；`directive` 转向指令经
-`supervision:directive:` 信号注入下周期选择；绊线——连续
-`EVOLVER_SUPERVISION_AUTO_PAUSE_STREAK` 次降级反馈自动暂停（人不在场之保险丝）。
-监督入口：CLI `evolver supervise` 与 MCP `swarm_supervise`（宿主转达人类决定）。
-
-Hooks 双轨（v1.102.0）：宿主支持文件 hooks 者，经 `evolver setup-hooks` 或 MCP
-`swarm_hooks`（status/install/uninstall，包装 `adapters.setup_hooks.install_hooks`）
-安装——session 边界信号自动采集进记忆；MCP-only 宿主改用进程内桥
-`swarm_hook_event`（session_start/session_end/signal_detect/precompact，payload.content
-过共享信号检测器，检出标签直入 `pending_signals`；事件记 `hook_events.jsonl`）。
-instrument 的「不要做」一节指出两条择轨：`swarm_hooks` 或 `swarm_hook_event`。
-
-经验重注视与工作草稿（VISTA，2026-10-18 合入）：episode 里的检查输出被
-400/4000 字截断时，宿主用只读 `episode_inspect`（与 CLI `evolver episode
-inspect` 同源）按行放大读回——空 question 拒绝、切片过 val-seal、成功调用
-记 `episodes/inspect_calls.jsonl`。宿主的跨轮草稿落 `WORKING_SESSION.md`
-（16k 字配额，会话收口归档后删），dispatch 在 `## Host Clues` 末尾以
-`- [host_working]` 尾注 3k 字进提示词，全文由 `swarm_boot` 返回；压缩前
-`checkpoint_required` 锁住全部变异工具，`swarm_checkpoint_working` 写完
-草稿才放行（连续 4 次 solidify 失败或 hook precompact 置位）。假说可带
-`expected_outcome`，过门 consume 后由引擎检查结果写 `gates.prediction_delta`
-回 episode——宿主的事后解释不进记录。
-
-要紧者：stdio MCP 下 stdout 为 JSON-RPC 通道，`swarm.py` 全量捕获引擎
-`print()`。实例锁被占时 `swarm_tick`、`swarm_propose`、`swarm_solidify`
-都返回 `error=instance_lock_held`、`next_action=stop_and_report`；
-`swarm_tick` 遇 preflight abort 同样返回 `stop_and_report`。这些返回是
-稳态信号，不得视为故障重试。
+关键护栏与配套机制：
+- **双轨结算**：仅首轮环境缺口（`no_baseline` / `pack_absent` / `unmeasured`）附带软警告放行（`soft_continue`），不伪造 Parent 基线、不开 `val` 密封；检查失败或 `drop`/`flat`/`regression` 一律按 `draft_preserved` 诚实拒绝，补丁留原位并快照至 `rejected_stashes/<run_id>/`；密钥入仓、触碰 `~/.evolver/`、`val_seal` 泄露则硬拒绝回滚。引擎绝不自动执行 `git commit`。
+- **周期边界带内黑匣子（`gep/blackbox.py`）**：在 `evolve_begin` ↔ `evolve_settle` 边界自动采集前后 AST 符号增量、透镜调用栈、diff 行数与墙钟耗时，无需配置本地 HTTP 代理，`meta-report` 核心过程遥测覆盖率达 100%。
+- **只读辅助与重注视（VISTA）**：`episode_get`、`episode_inspect`（按问题与行号窗口只读放大截断检查输出，空 question 拒绝、过 `val_seal`）、`tool_asset_search`、`tool_asset_get`、`tool_cycle_timeline` 常驻可用；会话草稿落 `WORKING_SESSION.md`（16k 字配额，会话终结归档后 `unlink`），压缩前 `checkpoint_required` 锁变异动作直至检查点写妥。
+- **HITL 与 HOTL 正交安全**：`gep/hitl.py` 管控单次高危审批（TTL 超时 fail-safe 拒绝）；`gep/supervision.py`（`evolver supervise`）管控全局暂停/恢复、基因否决（`veto`）、方向指令（`directive`）与连续降级自动熔断绊线。stdio MCP 下引擎 `print()` 全量捕获，实例锁冲突返回 `error=instance_lock_held` 稳态信号。
 
 ### GEP 资源存储与外置运行态（`~/.evolver/workspaces/<workspace-id>/`）
 
 自 `U-1`..`U-14` 起，用户与运行时数据默认一律外置至 `~/.evolver/workspaces/<workspace-id>/`（`<workspace-id>` 默认取 `sha256(realpath(repo_root))[:16]`，源码树零文件；一期兼容模式支持只读回退旧路径并提示 `evolver migrate-state`）：
 
 - `meta.json`——工作区元数据（`workspace_id`、`repo_root`、`display_name`、`created_at`、`updated_at`）
+- `index.sqlite`——WAL 模式统一读索引（P1-4：信号频次、算子命中率、四向归因、episode 头与日预算）
+- `import_graph.json`——AST 反向依赖增量缓存（P1-3：按文件 SHA-256 增量刷新，驱动 `< 3s` L0 闪电门）
 - `migration_report.json`——`evolver migrate-state` 生成之迁移回填报告
 
 位于 `<GEP_ASSETS_DIR>`（默认 `~/.evolver/workspaces/<id>/gep/`）：
@@ -594,53 +528,29 @@ inspect` 同源）按行放大读回——空 question 拒绝、切片过 val-se
 
 `strict = true`，`ignore_missing_imports = true`，`warn_return_any`，`warn_unused_ignores`。
 
-## 要紧环境变量
+## 要紧环境变量与 `EvolverConfig`
 
-测试须隔离此诸项。最重要者：
+自 P0-4 刀 D 起，全仓 `src/` 唯一 `EVOLVER_*` 环境变量严格收敛至 **≤ 35 个**（现 32 个，`evolver charter-check` 机器守护），低频阈值与策略参数统一收归 `EvolverConfig`（读取 `~/.evolver/config.json` 或环境变量 `EVOLVER_CONFIG` 内联 JSON / 文件路径）。测试须隔离此诸项：
 
 | 变量 | 默认 | 用途 |
 |---|---|---|
 | `OPENCLAW_WORKSPACE` | （无） | 工作区根覆盖 |
-| `EVOLVER_REPO_ROOT` | 通过 `.git` 自动检测 | 仓库根覆盖（亦支持 `--project` 或 `~/.evolver/config.json`） |
+| `EVOLVER_REPO_ROOT` | 通过 `.git` 自动检测 | 仓库根覆盖（亦支持 `--project`） |
 | `EVOLVER_STATE_ROOT` | `~/.evolver` | 外置工作区状态根目录（`<state_root>/workspaces/<id>/`） |
 | `EVOLVER_WORKSPACE_ID` | `sha256(realpath(repo))[:16]` | 显式覆盖工作区 ID |
 | `EVOLVER_HOME` | `~/.evomap` | 每用户锚点与全局状态目录 |
+| `EVOLVER_CONFIG` | `~/.evolver/config.json` | 统一嵌套配置 JSON 或路径（承载 `hitl_mode`、`load_max`、`skill_roots`、冷却窗口、轮转上限、soak 阈值等全部低频参数） |
 | `GEP_ASSETS_DIR` | `~/.evolver/workspaces/<id>/gep/` | GEP 资源存储覆盖（仅供测试） |
 | `EVOLUTION_DIR` | `~/.evolver/workspaces/<id>/evolution/` | 进化状态目录覆盖（仅供测试） |
 | `MEMORY_DIR` | `~/.evolver/workspaces/<id>/` | 记忆根目录覆盖（仅供测试） |
-| `EVOLVER_NO_PARENT_GIT` | （无） | 设为 `1` 以禁用 `.git` 遍历 |
+| `EVOLVER_NO_PARENT_GIT` | （无） | 设为 `1` 以禁用向上遍历父级 `.git` |
 | `A2A_HUB_URL` | `https://evomap.ai` | Hub 端点 |
 | `EVOLVE_STRATEGY` | `balanced` | 进化策略 |
-| `EVOLVE_BRIDGE` | auto | Git worktree 变异 |
-| `EVOLVER_ROLLBACK_MODE` | `stash` | 回滚策略 |
-| `EVOLVER_AUTOPOIESIS` | `1` | 启用 Autopoiesis 阶段 |
-| `EVOLVER_AUTOPOIESIS_WRITE` | `1` | 持久化规则/活记忆（`0`=dry-run） |
-| `EVOLVER_REPAIR_LOOP_DEGRADED` | `1` | repair-loop 降级运行（非硬 abort） |
-| `EVOLVER_LEARNING_SIGNALS` | `1` | 注入环境学习信号 |
-| `EVOLVER_GENE_INERT_BAN_STREAK` | `8` | 惰性基因禁用阈值——连续 N 次零工作结果后禁选 (#562) |
-| `EVOLVER_APPLIED_GENE_COOLDOWN_EVENTS` | `5` | 已应用基因冷却窗口——近 N 个成功固化事件内选择打分惩罚 (#round-5) |
-| `EVOLVER_APPLIED_GENE_COOLDOWN_PENALTY` | `0.25` | 冷却惩罚乘数（非禁选：唯一匹配仍可选） |
-| `EVOLVER_MEMORY_GRAPH_MAX_SIZE_MB` | `100` | memory_graph.jsonl 超阈值 gzip 轮转 (#519) |
-| `EVOLVER_MEMORY_GRAPH_RETENTION_COUNT` | `7` | 轮转归档保留个数（`0`=全删） |
-| `EVOLVER_MEMORY_GRAPH_AUTO_ROTATE` | `true` | 设为 `false`/`0`/`no` 关闭自动轮转 |
-| `EVOLVER_ROTATE_GZIP_MAX_MB` | `32` | 轮转 gzip 上限；更大文件仅 rename 不压缩（防 OOM） |
-| `EVOLVER_ANTI_ABUSE_TELEMETRY` | `heartbeat` | 反滥用遥测模式（`heartbeat`/`off`，空值视为 heartbeat） |
-| `EVOLVER_OUTCOME_REPORT` | `off` | 结果上报模式——向 Hub 上报复用结果以获归因 (P4-a Slice B) |
-| `EVOLVER_FORCE_UPDATE_RETRY_COOLDOWN_MS` | `300000` (5min) | Hub 推送强制更新的最小间隔冷却 |
-| `A2A_NODE_SECRET_VERSION` | （无） | 节点密钥版本号——Hub 轮换密钥时递增，客户端据此检测陈旧 secret |
-| `EVOLVER_SWARM_AUTO_HIJACK` | `false` | 置 `1` 时强制打开 HITL，并拒绝宿主转达 approve/resume/unveto。不改常驻 instructions |
-| `EVOLVER_SWARM_GATE_HANDOFF` | `human` | 仪器提示里的门交接标签。默认与 `hotl` 都 soft-continue 进 tick；soft-accept 不写 Parent、不自动提交。硬阻断：密钥、`~/.evolver/`、`val_seal`。由人在 MCP 配置里设，宿主不得改 |
-| `EVOLVER_SWARM_TICK_LOG_MAX_CHARS` | `8000` | `swarm_tick` 返回之 `engine_log` 尾部截断预算（dispatch prompt 不截断） |
-| `EVOLVER_FEEDBACK_DEGRADED_THRESHOLD` | `0.5` | 蜂群反馈降级阈值——低于此分或 `success=false` 注入 repair-bias 信号 |
-| `EVOLVER_HITL_MODE` | `off` | HITL 审批门——`on`/`true`/`1`/`yes` 打开；`off`/`false`/`0`/`no` 关闭；**未知值（如 `disabled`）fail-closed 为 on**；`AUTO_HIJACK=1` 强制 on |
-| `EVOLVER_HITL_TTL_MS` | `1800000` | HITL 待决请求 TTL——超时 fail-safe 拒绝 |
-| `EVOLVER_SUPERVISION_AUTO_PAUSE_STREAK` | `3` | HOTL 绊线——连续 N 次降级反馈自动暂停（`0` 关闭） |
-| `EVOLVER_SKILL_ROOTS` | （默认三级根） | 技能根目录覆盖（os.pathsep 分隔，顺序即优先级） |
-| `EVOLVER_ADAPTIVE_MUTATION` | `true` | 评估反馈驱动之策略权重自适应（false 关闭） |
-| `EVOLVER_ADAPTIVE_MUTATION_SHIFT` | `0.2` | 自适应权重偏移幅度（归一化前） |
-| `EVOLVER_GATE_SOAK_MIN_RUNS` | `20` | 验收门转正判定之最小 gated 样本数 |
-| `EVOLVER_GATE_SOAK_MAX_FALSE_KILL` | `0.1` | 转正判定之 false-kill 上限 |
-| `EVOLVER_GATE_SOAK_INTERCEPT_MIN`/`_MAX` | `0.05`/`0.5` | 转正判定之拦截率区间 |
+| `EVOLVER_ROLLBACK_MODE` | `stash` | 硬阻断回滚策略 |
+| `EVOLVER_FF_<NAME>` | 见 `feature_flags.py` | 统一特性开关覆盖（`1`/`0`） |
+| `EVOLVER_EVAL_WORKTREE_STRICT` | `0` | 置 `1` 时隔离 `eval_worktree` 创建失败即拒绝而非回退 |
+| `EVOLVER_ACCEPTANCE_SHADOW` | `0` | Self-Harness 影子验收门开关 |
+| `EVOLVER_PROXY_PORT` / `EVOMAP_PROXY_PORT` | `8081` | 本地代理监听端口 |
 
 ## 坑阱篇
 

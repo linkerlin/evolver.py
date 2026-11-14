@@ -39,7 +39,7 @@ class TestValidateScript:
             _validate_script("import os; os.system('ls')")
 
     def test_strict_blocks_socket_import(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        monkeypatch.setenv("EVOLVER_SANDBOX_STRICT", "1")
+        monkeypatch.setenv("EVOLVER_CONFIG", '{"sandbox_strict":true}')
         with pytest.raises(ValueError, match="Network import blocked"):
             _validate_script("import socket\nprint('hi')")
 
@@ -96,7 +96,7 @@ class TestRequireIsolation:
     def test_refuses_without_isolation(self, monkeypatch):
         from evolver.gep.validator import sandbox_executor as se
 
-        monkeypatch.setenv("EVOLVER_SANDBOX_REQUIRE_ISOLATION", "1")
+        monkeypatch.setenv("EVOLVER_CONFIG", '{"sandbox_require_isolation":true}')
         monkeypatch.setattr(se, "network_isolation_available", lambda: False)
 
         def _explode(*args, **kwargs):  # must never be reached
@@ -111,7 +111,7 @@ class TestRequireIsolation:
     def test_runs_when_required_and_available(self, monkeypatch):
         from evolver.gep.validator import sandbox_executor as se
 
-        monkeypatch.setenv("EVOLVER_SANDBOX_REQUIRE_ISOLATION", "1")
+        monkeypatch.setenv("EVOLVER_CONFIG", '{"sandbox_require_isolation":true}')
         monkeypatch.setattr(se, "network_isolation_available", lambda: True)
         result = se.execute_in_sandbox("print('isolated-ok')", timeout_seconds=5)
         assert not result.refused
@@ -121,7 +121,7 @@ class TestRequireIsolation:
     def test_flag_off_keeps_best_effort(self, monkeypatch):
         from evolver.gep.validator import sandbox_executor as se
 
-        monkeypatch.delenv("EVOLVER_SANDBOX_REQUIRE_ISOLATION", raising=False)
+        monkeypatch.delenv("EVOLVER_CONFIG", raising=False)
         monkeypatch.setattr(se, "network_isolation_available", lambda: False)
         result = se.execute_in_sandbox("print('best-effort')", timeout_seconds=5)
         assert not result.refused

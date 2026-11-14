@@ -15,8 +15,10 @@ Domain routing from *source*:
 - ``bench:pack:<split>``           → ``bench:pack:<split>``
 - anything else                    → ``misc`` (explicit, never silently mixed)
 
-Shadow period: solidify records the verdict on the event but does not roll
-back. Enforcement is gated by EVOLVER_FITNESS_GATE_ENFORCE.
+Verdicts are recorded, never enforced (round-121 review: the cascade
+score saturates at 1.0 — a healthy-project floor, not a fitness bar; the
+frozen val pack gate rejects non-improvements on its own verdict). The
+old fitness-gate-enforce switch was a phantom: never readable.
 
 Legacy state (pre-domains, top-level baseline/r_best/history) migrates to
 the ``cascade`` domain on first load — it was cascade-only by construction.

@@ -1,46 +1,37 @@
-"""Closed MCP surface the host is allowed to see.
+"""Closed FSM MCP surface the host is allowed to see (算子即基因 P1-1).
 
-A registered tool that the instrument prompt does not name is a hole: the
-host is told to follow that prompt, and a name that exists only in
-``tools/list`` is not part of the protocol. Adding a tool means updating
-this set and the prompt together.
+In ``IDLE`` state, ``tools/list`` exposes ``evolve_begin`` + ``evolve_status``
+(plus read-only record/asset lookup helpers) and hides ``run_lens`` and
+``evolve_settle``.
+
+In ``ACTIVE_RUN`` state, ``tools/list`` hides ``evolve_begin`` and exposes
+``run_lens`` + ``evolve_settle`` + ``evolve_status`` (plus read-only helpers).
 """
 
 from __future__ import annotations
 
-MCP_TOOL_NAMES: frozenset[str] = frozenset(
+MCP_READONLY_AUX_TOOL_NAMES: frozenset[str] = frozenset(
     {
-        "tool_asset_search",
-        "tool_asset_get",
         "episode_get",
         "episode_inspect",
-        "tool_mailbox_send",
-        "tool_mailbox_poll",
-        "tool_mailbox_ack",
-        "tool_rebuild_views",
+        "tool_asset_search",
+        "tool_asset_get",
         "tool_cycle_timeline",
-        "swarm_boot",
-        "swarm_tick",
-        "swarm_distill",
-        "swarm_hypothesis",
-        "swarm_propose",
-        "swarm_solidify",
-        "swarm_feedback",
-        "swarm_report",
-        "swarm_status",
-        "swarm_doctor",
-        "swarm_approvals",
-        "swarm_approval_resolve",
-        "swarm_supervise",
-        "swarm_hooks",
-        "swarm_hook_event",
-        "swarm_checkpoint_working",
-        "swarm_skills",
-        "swarm_workflow_run",
-        "swarm_workflow_act",
-        "swarm_workflow_status",
     }
 )
+
+MCP_IDLE_TOOL_NAMES: frozenset[str] = (
+    frozenset({"evolve_begin", "evolve_status"}) | MCP_READONLY_AUX_TOOL_NAMES
+)
+
+MCP_ACTIVE_TOOL_NAMES: frozenset[str] = (
+    frozenset({"run_lens", "evolve_settle", "evolve_status"}) | MCP_READONLY_AUX_TOOL_NAMES
+)
+
+MCP_ALL_TOOL_NAMES: frozenset[str] = MCP_IDLE_TOOL_NAMES | MCP_ACTIVE_TOOL_NAMES
+
+#: Default connect-time catalog when workspace is IDLE.
+MCP_TOOL_NAMES: frozenset[str] = MCP_IDLE_TOOL_NAMES
 
 MCP_PROMPT_NAMES: frozenset[str] = frozenset({"evolver_swarm"})
 

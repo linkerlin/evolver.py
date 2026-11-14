@@ -17,7 +17,7 @@ async def test_commercial_loop_buy_deliver_heartbeat(
     temp_workspace: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """Buyer places order → deliver submits proof → heartbeat confirms delivery."""
-    monkeypatch.setenv("EVOLVER_ATP_AUTOBUY", "1")
+    monkeypatch.setenv("EVOLVER_CONFIG", '{"atp_autobuy":"1"}')
     monkeypatch.setenv("EVOLVER_FF_ENABLE_AUTO_BUYER", "true")
     monkeypatch.setattr(auto_buyer, "get_memory_dir", lambda: temp_workspace)
 
@@ -71,15 +71,12 @@ async def test_commercial_loop_buy_deliver_heartbeat(
 async def test_post_cycle_wires_into_pipeline(
     temp_workspace: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    monkeypatch.setenv("EVOLVER_FF_ENABLE_AUTO_BUYER", "true")
-    monkeypatch.setenv("EVOLVER_ATP_AUTOBUY", "1")
-    monkeypatch.setattr(auto_buyer, "get_memory_dir", lambda: temp_workspace)
-    monkeypatch.setattr(auto_buyer, "place_order", AsyncMock(return_value={"ok": True, "data": {}}))
+    # round-121 P0-4: the auto-buyer post_cycle path is gone (dead flag); the
+    # task-pickup wiring remains the commercial loop's in-cycle surface.
     monkeypatch.setattr(
         "evolver.atp.atp_task_pickup.pick_one",
         AsyncMock(return_value="# spawn"),
     )
 
     ctx = await run_post_cycle_hooks({"signals": ["pytest failed"]})
-    assert "atp_auto_buyer" in ctx
     assert ctx.get("atp_spawn_instruction") == "# spawn"

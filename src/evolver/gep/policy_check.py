@@ -20,7 +20,6 @@ from __future__ import annotations
 import ast
 import contextlib
 import logging
-import os
 import re
 from collections.abc import Sequence
 from dataclasses import dataclass, field
@@ -668,7 +667,9 @@ def _check_rollback_safety(
     untracked: list[str],
     violations: list[PolicyViolation],
 ) -> None:
-    mode = os.environ.get("EVOLVER_ROLLBACK_MODE", "stash").lower().strip()
+    from evolver.config import get_config
+
+    mode = get_config().rollback_mode.lower().strip()
     if mode == "none":
         violations.append(
             PolicyViolation(

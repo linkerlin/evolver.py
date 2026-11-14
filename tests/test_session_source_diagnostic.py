@@ -53,7 +53,7 @@ def test_openclaw_source_missing_dir(tmp_path: Path) -> None:
         }
     )
     hint = "\n".join(diag["hints"])
-    assert "EVOLVER_SESSION_SOURCE=openclaw" in hint
+    assert "session_source=openclaw" in hint
     assert "does not exist" in hint
 
 
@@ -67,7 +67,7 @@ def test_cursor_source_missing_ide_dirs(tmp_path: Path) -> None:
         }
     )
     hint = "\n".join(diag["hints"])
-    assert "EVOLVER_SESSION_SOURCE=cursor" in hint
+    assert "session_source=cursor" in hint
     assert "~/.cursor" in hint or ".cursor" in hint
 
 
@@ -99,7 +99,7 @@ def test_cursor_transcripts_override(tmp_path: Path) -> None:
         }
     )
     hint = "\n".join(diag["hints"])
-    assert "EVOLVER_SESSION_SOURCE=cursor" not in hint
+    assert "session_source=cursor" not in hint
 
 
 def test_reset_session_source_warning(tmp_path: Path, monkeypatch) -> None:

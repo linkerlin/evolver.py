@@ -1,4 +1,9 @@
-"""Test that instrument prompt aligns with USABILITY_SOFT_REASONS for drop/flat/regression."""
+"""Test that instrument copy aligns with the v1.114.0 gate contract.
+
+Soft reasons are first-run environment gaps only (no_baseline/pack_absent/
+unmeasured); fitness verdicts are honest draft rejections (draft_preserved),
+and the instrument must not misrepresent either side.
+"""
 
 from __future__ import annotations
 
@@ -10,8 +15,9 @@ from evolver.swarm import build_instrument_prompt
 def test_instrument_does_not_hard_reject_drop_flat_regression():
     """Instrument must not claim drop/flat/regression are hard rejects.
 
-    Soft-default policy treats drop/flat/regression as soft-accept with warnings.
-    Hard blocks only: secrets/credentials, ~/.evolver/engine-protected paths, val_seal.
+    Fitness verdicts are honest draft rejections (draft_preserved — patch kept,
+    not rolled back), not hard blocks. Hard blocks only: secrets/credentials,
+    ~/.evolver/engine-protected paths, val_seal.
     """
     text = build_instrument_prompt(
         {
@@ -65,4 +71,8 @@ def test_instrument_mentions_soft_continue_for_usability_gaps():
     assert "soft" in text.lower(), "Instrument should mention soft-continue or soft-accept"
     assert "pack_absent" in text or "no_baseline" in text or "unmeasured" in text, (
         "Instrument should mention specific soft-accept conditions"
+    )
+    # v1.114.0: instrument must state the honest-reject contract for fitness verdicts
+    assert "draft_preserved" in text, (
+        "Instrument must tell hosts that fitness failures return draft_preserved"
     )

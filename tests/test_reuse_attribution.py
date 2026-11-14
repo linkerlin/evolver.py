@@ -29,8 +29,7 @@ def isolated_paths(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     monkeypatch.setenv("EVOLUTION_DIR", str(tmp_path))
     monkeypatch.setenv("EVOLVER_HOME", str(tmp_path / ".evomap"))
     monkeypatch.setenv("EVOLVER_NO_PARENT_GIT", "1")
-    monkeypatch.delenv("EVOLVER_REUSE_ATTRIBUTION", raising=False)
-    monkeypatch.delenv("EVOLVER_OUTCOME_REPORT", raising=False)
+    monkeypatch.setenv("EVOLVER_CONFIG", '{"quiet_legacy_warning":true}')
     monkeypatch.delenv("A2A_NODE_SECRET", raising=False)
     monkeypatch.delenv("EVOMAP_NODE_SECRET", raising=False)
     return tmp_path
@@ -68,22 +67,32 @@ class TestConfigFlags:
         self, isolated_paths: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         assert reuse_attribution_mode() == "off"
-        monkeypatch.setenv("EVOLVER_REUSE_ATTRIBUTION", "SHADOW")
+        monkeypatch.setenv(
+            "EVOLVER_CONFIG", '{"reuse_attribution":"SHADOW","quiet_legacy_warning":true}'
+        )
         assert reuse_attribution_mode() == "shadow"
-        monkeypatch.setenv("EVOLVER_REUSE_ATTRIBUTION", "enforce")
+        monkeypatch.setenv(
+            "EVOLVER_CONFIG", '{"reuse_attribution":"enforce","quiet_legacy_warning":true}'
+        )
         assert reuse_attribution_mode() == "off"
-        monkeypatch.setenv("EVOLVER_REUSE_ATTRIBUTION", "garbage")
+        monkeypatch.setenv(
+            "EVOLVER_CONFIG", '{"reuse_attribution":"garbage","quiet_legacy_warning":true}'
+        )
         assert reuse_attribution_mode() == "off"
 
     def test_outcome_report_on_aliases(
         self, isolated_paths: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         assert outcome_report_mode() == "off"
-        monkeypatch.setenv("EVOLVER_OUTCOME_REPORT", "on")
+        monkeypatch.setenv("EVOLVER_CONFIG", '{"outcome_report":"on","quiet_legacy_warning":true}')
         assert outcome_report_mode() == "on"
-        monkeypatch.setenv("EVOLVER_OUTCOME_REPORT", "true")
+        monkeypatch.setenv(
+            "EVOLVER_CONFIG", '{"outcome_report":"true","quiet_legacy_warning":true}'
+        )
         assert outcome_report_mode() == "on"
-        monkeypatch.setenv("EVOLVER_OUTCOME_REPORT", "nope")
+        monkeypatch.setenv(
+            "EVOLVER_CONFIG", '{"outcome_report":"nope","quiet_legacy_warning":true}'
+        )
         assert outcome_report_mode() == "off"
 
 
@@ -181,7 +190,7 @@ class TestRecordOutcomeFromState:
             },
         )
         _write_last_action(tmp)
-        monkeypatch.delenv("EVOLVER_REUSE_ATTRIBUTION", raising=False)
+        monkeypatch.setenv("EVOLVER_CONFIG", '{"quiet_legacy_warning":true}')
         ev = mg.record_outcome_from_state(signals=[], observations=None)
         assert ev is not None
         assert "reuse_attribution" not in ev
@@ -190,7 +199,9 @@ class TestRecordOutcomeFromState:
         self, isolated_paths: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         tmp = isolated_paths
-        monkeypatch.setenv("EVOLVER_REUSE_ATTRIBUTION", "shadow")
+        monkeypatch.setenv(
+            "EVOLVER_CONFIG", '{"reuse_attribution":"shadow","quiet_legacy_warning":true}'
+        )
         _write_run_state(
             tmp,
             {
@@ -214,7 +225,9 @@ class TestRecordOutcomeFromState:
         self, isolated_paths: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         tmp = isolated_paths
-        monkeypatch.setenv("EVOLVER_REUSE_ATTRIBUTION", "shadow")
+        monkeypatch.setenv(
+            "EVOLVER_CONFIG", '{"reuse_attribution":"shadow","quiet_legacy_warning":true}'
+        )
         (tmp / "evolution_solidify_state.json").write_text(
             json.dumps(
                 {
@@ -236,7 +249,9 @@ class TestRecordOutcomeFromState:
     def test_shadow_no_run_state_no_crash(
         self, isolated_paths: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        monkeypatch.setenv("EVOLVER_REUSE_ATTRIBUTION", "shadow")
+        monkeypatch.setenv(
+            "EVOLVER_CONFIG", '{"reuse_attribution":"shadow","quiet_legacy_warning":true}'
+        )
         _write_last_action(isolated_paths)
         ev = mg.record_outcome_from_state(signals=[], observations=None)
         assert ev is not None
@@ -353,7 +368,7 @@ class TestOutcomeReport:
     def test_payload_on_direct_reuse(
         self, isolated_paths: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        monkeypatch.setenv("EVOLVER_OUTCOME_REPORT", "on")
+        monkeypatch.setenv("EVOLVER_CONFIG", '{"outcome_report":"on","quiet_legacy_warning":true}')
         attr = {
             "schema": REUSE_ATTR_SCHEMA,
             "source_type": "reused",
@@ -377,7 +392,7 @@ class TestOutcomeReport:
     def test_reference_no_payload(
         self, isolated_paths: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        monkeypatch.setenv("EVOLVER_OUTCOME_REPORT", "on")
+        monkeypatch.setenv("EVOLVER_CONFIG", '{"outcome_report":"on","quiet_legacy_warning":true}')
         attr = {
             "schema": REUSE_ATTR_SCHEMA,
             "source_type": "reference",
@@ -399,8 +414,10 @@ class TestOutcomeReport:
     def test_record_outcome_posts_when_on(
         self, isolated_paths: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        monkeypatch.setenv("EVOLVER_REUSE_ATTRIBUTION", "shadow")
-        monkeypatch.setenv("EVOLVER_OUTCOME_REPORT", "on")
+        monkeypatch.setenv(
+            "EVOLVER_CONFIG",
+            '{"reuse_attribution":"shadow","outcome_report":"on","quiet_legacy_warning":true}',
+        )
         monkeypatch.setenv("A2A_HUB_URL", "http://localhost:19997")
         monkeypatch.setenv("EVOMAP_HUB_ALLOW_INSECURE", "1")
         monkeypatch.setenv("A2A_NODE_SECRET", "test_secret")
@@ -427,7 +444,9 @@ class TestOutcomeReport:
     def test_no_post_when_outcome_report_off(
         self, isolated_paths: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        monkeypatch.setenv("EVOLVER_REUSE_ATTRIBUTION", "shadow")
+        monkeypatch.setenv(
+            "EVOLVER_CONFIG", '{"reuse_attribution":"shadow","quiet_legacy_warning":true}'
+        )
         monkeypatch.setenv("A2A_HUB_URL", "http://localhost:19997")
         monkeypatch.setenv("EVOMAP_HUB_ALLOW_INSECURE", "1")
         route = respx.post("http://localhost:19997/a2a/memory/record").mock(

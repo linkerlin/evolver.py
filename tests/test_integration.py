@@ -178,7 +178,7 @@ class TestWebUIFullPipeline:
         self, client: TestClient, isolated_evolver_env: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         _init_git_repo(isolated_evolver_env)
-        monkeypatch.setenv("EVOLVER_SQLITE_STORE", "1")
+        monkeypatch.setenv("EVOLVER_CONFIG", '{"sqlite_store":true,"quiet_legacy_warning":true}')
         main(["run"])
         main(["solidify"])
         response = client.get("/events/replay?since_id=0&limit=100")
@@ -210,7 +210,7 @@ class TestSQLiteStoreFullPipeline:
         self, gated_evolver_env: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         _init_git_repo(gated_evolver_env)
-        monkeypatch.setenv("EVOLVER_SQLITE_STORE", "1")
+        monkeypatch.setenv("EVOLVER_CONFIG", '{"sqlite_store":true,"quiet_legacy_warning":true}')
         from evolver.ops import sqlite_store
 
         before = sqlite_store.event_count()
@@ -221,11 +221,12 @@ class TestSQLiteStoreFullPipeline:
         after = sqlite_store.event_count()
         assert after > before, "SQLite should contain events after solidify"
 
+    @pytest.mark.slow
     def test_sqlite_replay_after_run_and_solidify(
         self, isolated_evolver_env: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         _init_git_repo(isolated_evolver_env)
-        monkeypatch.setenv("EVOLVER_SQLITE_STORE", "1")
+        monkeypatch.setenv("EVOLVER_CONFIG", '{"sqlite_store":true,"quiet_legacy_warning":true}')
         from evolver.ops import sqlite_store
 
         main(["run"])
@@ -237,7 +238,7 @@ class TestSQLiteStoreFullPipeline:
     def test_sqlite_range_query(
         self, isolated_evolver_env: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        monkeypatch.setenv("EVOLVER_SQLITE_STORE", "1")
+        monkeypatch.setenv("EVOLVER_CONFIG", '{"sqlite_store":true,"quiet_legacy_warning":true}')
         from evolver.ops import sqlite_store
 
         sqlite_store.append_event({"id": "early", "timestamp": "2024-01-01T10:00:00Z"})
@@ -255,13 +256,13 @@ class TestSQLiteStoreFullPipeline:
         from evolver.gep.asset_store import append_event_jsonl, read_all_events
 
         # JSONL mode (default)
-        monkeypatch.setenv("EVOLVER_SQLITE_STORE", "0")
+        monkeypatch.setenv("EVOLVER_CONFIG", '{"sqlite_store":false,"quiet_legacy_warning":true}')
         append_event_jsonl({"id": "jsonl-event", "timestamp": "2024-01-01T00:00:00Z"})
         events_jsonl = read_all_events()
         assert any(e.get("id") == "jsonl-event" for e in events_jsonl)
 
         # SQLite mode
-        monkeypatch.setenv("EVOLVER_SQLITE_STORE", "1")
+        monkeypatch.setenv("EVOLVER_CONFIG", '{"sqlite_store":true,"quiet_legacy_warning":true}')
         from evolver.ops import sqlite_store
 
         sqlite_store.append_event({"id": "sqlite-event", "timestamp": "2024-01-01T00:00:00Z"})
@@ -476,7 +477,7 @@ class TestCrossSubsystemWorkflow:
     ) -> None:
         """Most comprehensive integration: run cycle → WebUI state → event replay → auth."""
         _init_git_repo(gated_evolver_env)
-        monkeypatch.setenv("EVOLVER_SQLITE_STORE", "1")
+        monkeypatch.setenv("EVOLVER_CONFIG", '{"sqlite_store":true,"quiet_legacy_warning":true}')
         # 1. Run + solidify cycle
         code = main(["run"])
         assert code == 0

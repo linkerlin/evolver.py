@@ -15,9 +15,9 @@ Lifecycle
 * ``stop()`` — signal shutdown, wait for inflight tasks.
 * ``is_running()`` — check daemon state.
 
-Environment
------------
-* ``EVOLVER_VALIDATOR_ENABLED`` — default ``1`` (ON).
+Configuration
+-------------
+* ``validator_enabled`` in ``EvolverConfig`` — default ``False``.
 * ``MAX_CONCURRENT_VALIDATIONS`` — default ``3``.
 
 Design notes
@@ -279,7 +279,7 @@ def start_validator() -> ValidatorDaemon | None:
     """Start the global validator daemon.
 
     Returns ``None`` (no-op) under solo mode — solo hard-cuts the validator
-    even when ``EVOLVER_VALIDATOR_ENABLED`` is on (the "no escape valve" rule).
+    even when ``validator_enabled`` is on (the "no escape valve" rule).
     """
     from evolver.solo.breaker import is_solo_active
 

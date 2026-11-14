@@ -33,8 +33,10 @@ GH_PR_319 = {
 
 @pytest.fixture(autouse=True)
 def _isolate_env(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.delenv("EVOLVER_WEBUI_GITHUB", raising=False)
-    monkeypatch.setenv("EVOLVER_GITHUB_REPO", "EvoMap/evolver-private-dev")
+    monkeypatch.setenv(
+        "EVOLVER_CONFIG",
+        '{"webui_github":true,"github_repo":"EvoMap/evolver-private-dev","quiet_legacy_warning":true}',
+    )
     monkeypatch.delenv("GITHUB_TOKEN", raising=False)
     monkeypatch.delenv("GH_TOKEN", raising=False)
     monkeypatch.delenv("GITHUB_PAT", raising=False)
@@ -116,7 +118,10 @@ class TestGhPath:
         run.assert_not_called()
 
     def test_feature_disabled(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        monkeypatch.setenv("EVOLVER_WEBUI_GITHUB", "0")
+        monkeypatch.setenv(
+            "EVOLVER_CONFIG",
+            '{"webui_github":false,"github_repo":"EvoMap/evolver-private-dev","quiet_legacy_warning":true}',
+        )
         with patch("subprocess.run") as run:
             res = gh.get_pr_status(319)
         assert res["available"] is False
@@ -235,7 +240,10 @@ class TestRestFallback:
 
 class TestApiRoutes:
     def test_github_routes(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        monkeypatch.setenv("EVOLVER_GITHUB_REPO", "EvoMap/evolver-private-dev")
+        monkeypatch.setenv(
+            "EVOLVER_CONFIG",
+            '{"webui_github":true,"github_repo":"EvoMap/evolver-private-dev","quiet_legacy_warning":true}',
+        )
         gh.reset_for_testing()
         app = FastAPI()
         app.include_router(router)

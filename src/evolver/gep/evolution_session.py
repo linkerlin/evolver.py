@@ -462,14 +462,16 @@ class EvolutionSession:
         """Accept the current Candidate: gate, publish, switch to accepted.
 
         Charter §5.2/§5.3 — a full Accept echoes an ``accept:true`` gate
-        record. Usability gaps (``no_baseline`` / ``pack_absent`` /
-        ``unmeasured`` / ``drop`` / ``flat`` / ``regression``) may soft-accept
-        with warnings + next_steps so a first-run host is not stuck;
-        soft-accept does not invent a Parent baseline. A bare accept with no
-        gate record is refused. Hard blocks only: secrets/credentials into
-        repo, mutations rewriting ~/.evolver/engine-protected paths, val_seal
-        breach. ``publish`` returns the published version id; without a
-        publisher the Candidate ref is kept.
+        record. First-run usability gaps (``no_baseline`` / ``pack_absent`` /
+        ``unmeasured``) may soft-accept with warnings + next_steps so a
+        first-run host is not stuck; soft-accept does not invent a Parent
+        baseline. Fitness verdicts (drop/flat/regression) are honest rejects
+        since v1.114.0 — the vault never sees a non-improvement. A bare
+        accept with no gate record is refused. Hard blocks only:
+        secrets/credentials into repo, mutations rewriting
+        ~/.evolver/engine-protected paths, val_seal breach. ``publish``
+        returns the published version id; without a publisher the Candidate
+        ref is kept.
         """
         from evolver.bench.frozen_gate import enrich_soft_accept, is_usability_soft_reason
 

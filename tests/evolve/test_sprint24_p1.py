@@ -20,34 +20,6 @@ class TestIdempotency:
         assert not idem.once("c1", "tick")
         assert idem.once("c2", "tick")  # different cycle → fires again
 
-    def test_post_cycle_without_identity_ungated(self, temp_workspace: Path) -> None:
-        """No cycle_id/run_id in ctx → tick must still run (no empty key)."""
-        from unittest.mock import AsyncMock
-
-        from evolver.atp import auto_buyer
-        from evolver.evolve.post_cycle import run_post_cycle_hooks
-        from evolver.gep.feature_flags import invalidate_cache, set_flag
-
-        set_flag("enable_auto_buyer", True)
-        invalidate_cache()
-        try:
-            run_tick = AsyncMock(return_value={"placed": 0})
-            get_consent = lambda: {"enabled": True}  # noqa: E731
-            orig_tick, orig_consent = auto_buyer.run_tick, auto_buyer.get_consent
-            auto_buyer.run_tick = run_tick  # type: ignore[method-assign]
-            auto_buyer.get_consent = get_consent  # type: ignore[method-assign]
-            try:
-                import asyncio
-
-                asyncio.run(run_post_cycle_hooks({"signals": ["log_error"]}))
-                assert run_tick.await_count == 1
-            finally:
-                auto_buyer.run_tick = orig_tick  # type: ignore[method-assign]
-                auto_buyer.get_consent = orig_consent  # type: ignore[method-assign]
-        finally:
-            set_flag("enable_auto_buyer", False)
-            invalidate_cache()
-
     def test_ttl_expiry(self) -> None:
         old = 0.0
         idem.mark_done("c1", "op", now=old)

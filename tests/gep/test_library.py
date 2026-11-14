@@ -186,9 +186,21 @@ def test_reestablishing_different_content_moves_the_pointer_and_reports_previous
     library_env: Path,
 ) -> None:
     first = library.establish_parent_library(PARENT)
-    second = library.establish_parent_library(CHILD)
+    # Pointer moves are a human CLI decision — explicit opt-in required.
+    second = library.establish_parent_library(CHILD, allow_move=True)
     assert second["previous"] == first["snapshot"]
-    assert library.parent_snapshot_id() == library.snapshot_id(CHILD)
+
+
+def test_automatic_surface_cannot_move_the_parent_pointer(library_env: Path) -> None:
+    """Round-121 review pin: ``evolver init`` / tool calls must never move an
+    established Parent pointer — re-establishing with different content is a
+    human CLI decision (``--allow-move``)."""
+    first = library.establish_parent_library(PARENT)
+    refused = library.establish_parent_library(CHILD)  # default: no move
+    assert refused["ok"] is False
+    assert refused["reason"] == "parent_pointer_move_refused"
+    # The pointer stays on the original content.
+    assert library.parent_snapshot_id() == first["snapshot"]
     # versions are never deleted: the old snapshot stays loadable by id
     assert library.load_version(first["snapshot"]) == PARENT
 
@@ -227,3 +239,26 @@ def test_render_prompt_block_truncates_past_the_budget(library_env: Path) -> Non
     big = {"genes": [{"id": f"g{i}", "strategy": ["x" * 200]} for i in range(100)]}
     block = library.render_prompt_block("sha256:big", big)
     assert "truncated" in block
+
+
+def test_establish_parent_library_is_confined_to_declared_surfaces() -> None:
+    """Call-graph pin (round-121 review): ``establish_parent_library`` is
+    reachable only from the human CLI and the init bootstrap — never from
+    ``solidify`` or the evolve pipeline."""
+    repo = Path(__file__).resolve().parents[2]
+    src = repo / "src" / "evolver"
+    allowed = {
+        "cli.py",
+        "ops/init_bootstrap.py",
+        "gep/library.py",  # the definition itself
+    }
+    found: set[str] = set()
+    for path in sorted(src.rglob("*.py")):
+        if "establish_parent_library(" in path.read_text(encoding="utf-8"):
+            found.add(path.relative_to(src).as_posix())
+    assert found, "scan found no establish call sites — the pin is blind"
+    stray = found - allowed
+    assert not stray, (
+        f"establish_parent_library referenced outside the declared surfaces: "
+        f"{sorted(stray)} — the Parent first-write/move must stay human-held"
+    )

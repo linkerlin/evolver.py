@@ -34,21 +34,15 @@ EVOMAP_FEATURE_FLAGS_PATH_ENV = "EVOMAP_FEATURE_FLAGS_PATH"
 # Default flags — shared by GEP cognition and proxy route gating
 DEFAULT_FLAGS: dict[str, bool] = {
     "enable_llm_review": True,
-    "enable_auto_buyer": False,
     "enable_validator": True,
     "enable_recall_inject": True,
     "enable_reflection": True,
     "enable_auto_distill": True,
-    "enable_curriculum": False,
-    "enable_explore": False,
     "enable_idle_scheduler": True,
     "enable_local_state_awareness": True,
     "enable_policy_check": True,
     "enable_secret_sanitize": True,
     "enable_memory_graph": True,
-    # Self-Harness enhancement layer (Sprint B1+; opt-in, off by default).
-    "enable_diagnosis": False,
-    "enable_diagnosis_cluster": False,
     # S26 promotion (演进方案_wikiskill对照版.md §S26.3): the T0 acceptance gate
     # is now ON by default, paired with ACCEPTANCE_SHADOW=True so verdicts are
     # measured (shadow markers on events) but never enforced during the soak
@@ -59,13 +53,7 @@ DEFAULT_FLAGS: dict[str, bool] = {
     # back to live cwd with dirty runtime checks (and strict mode via
     # EVOLVER_EVAL_WORKTREE_STRICT=1).
     "enable_eval_worktree": True,
-    "enable_surface_decouple": False,
-    "enable_constrained_genes": False,
     "enable_llm_template": False,
-    # Sprint 22.1 open-loop closures (methodology audit, off by default; see 演进方案.md §13.3).
-    "enable_event_history": False,
-    "enable_gap_outcome_inference": False,
-    "enable_windows_load_guard": False,
     # S26 promotion (演进方案_wikiskill对照版.md §S26.2): quantitative fitness
     # is now the DEFAULT path — engine-owned validation cascade (ruff → mypy →
     # pytest), outcome score = cascade progress (see solidify._cascade_score).
@@ -73,41 +61,9 @@ DEFAULT_FLAGS: dict[str, bool] = {
     # get_fitness_cascade_commands) so non-Python workspaces degrade to the
     # legacy path instead of failing every cycle.
     "enable_fitness_cascade": True,
-    # Sprint 22.3 bandit selection (演进方案.md §13.5 P1-5): UCB1-sampled parent
-    # choice instead of argmax; --review keeps deterministic selection.
-    "enable_bandit_selection": False,
-    # Sprint 22.4 niche archive (演进方案.md §13.5 P1-6): per-signal top-k
-    # preferred genes + 30-day ban probation instead of permanent bans.
-    "enable_niche_topk": False,
-    # Sprint 22.6 lineage lessons (演进方案.md §13.5 P2-8, GEPA ancestry):
-    # parent_event_id on events + selected-gene failure lineage in the prompt.
-    "enable_lineage_lessons": False,
-    # Sprint 23.1 pre-evaluation novelty gate (P2-9, ShinkaEvolve rejection
-    # sampling): reject near-duplicate diffs BEFORE running the cascade.
-    "enable_novelty_gate": False,
-    # Sprint 23.2 operator bandit (P2-10, AOS/FRRMAB): mutation category
-    # sampled by UCB1 over graded outcomes instead of keyword argmax.
-    "enable_operator_bandit": False,
-    # Sprint 23.3 ATP spawn bridge (P2-11 minimal): print sessions_spawn for
-    # picked-up ATP tasks when bridge mode is active.
-    "enable_atp_spawn_bridge": False,
-    # Sprint 24.1 event projection (演进方案.md §9 概念收割 #3): operator-bandit
-    # category stats derive from the shared replay projector instead of an
-    # inline scan; ``evolver rebuild-views`` persists derived views.
-    "enable_event_projection": False,
-    # Sprint 24.4 trigger budget (概念收割 — Node v2 trigger/budget.js):
-    # preflight enforces daily cycle caps (trigger engine budget).
-    "enable_trigger_budget": False,
     # S26 promotion: terminal failures always land an event — silence is not
     # an honest outcome (wikiskill honest-negative principle).
     "enable_failure_events": True,
-    # Sprint 24.8 material substrate (概念收割 #6 — Node v2 material/*):
-    # collect phase feeds session logs through the watermarked incremental
-    # store with consumer groups instead of whole-file rescans.
-    "enable_material_ingest": False,
-    # Sprint 24.12 personality v2 (概念收割 #12 — Node v2 personality/*):
-    # five-axis vector + bucketed Laplace stats + natural-selection nudge.
-    "enable_personality_v2": False,
     # Proxy-only routes (also readable via ``EVOLVER_FF_*``)
     "enable_skill_auto_update": False,
     "enable_trace_upload": False,

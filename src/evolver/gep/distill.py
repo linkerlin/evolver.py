@@ -156,11 +156,24 @@ def install_distilled(
     errors: list[str] = []
     skipped_genes: list[dict[str, Any]] = list(filtered.get("skipped_genes", []))
 
+    # Tag distilled assets with the pending run so a draft_preserved settle
+    # can retract them (支柱一 vault freeze — round-121 review pin).
+    pending_run_id = ""
+    try:
+        from evolver.gep.solidify import _read_solidify_state
+
+        state = _read_solidify_state() or {}
+        pending_run_id = str((state.get("last_run") or {}).get("run_id") or "")
+    except Exception:
+        pending_run_id = ""
+
     for gene in filtered.get("genes", []):
         if dry_run:
             installed.append({"id": gene.get("id"), "type": "Gene", "action": "would_install"})
             continue
         try:
+            if pending_run_id:
+                gene["distilled_run_id"] = pending_run_id
             gene["asset_id"] = compute_asset_id(gene)
             upsert_gene(gene)
             installed.append({"id": gene["id"], "type": "Gene", "asset_id": gene["asset_id"]})
@@ -172,6 +185,8 @@ def install_distilled(
             installed.append({"id": cap.get("id"), "type": "Capsule", "action": "would_install"})
             continue
         try:
+            if pending_run_id:
+                cap["distilled_run_id"] = pending_run_id
             cap["asset_id"] = compute_asset_id(cap)
             append_capsule(cap)
             installed.append({"id": cap["id"], "type": "Capsule", "asset_id": cap["asset_id"]})

@@ -18,7 +18,9 @@ _WARNED_LEGACY_PATHS: set[str] = set()
 
 
 def _warn_legacy_once(key: str, message: str) -> None:
-    if os.environ.get("EVOLVER_QUIET_LEGACY_WARNING") == "1":
+    from evolver.config import get_config
+
+    if get_config().quiet_legacy_warning:
         return
     if key in _WARNED_LEGACY_PATHS:
         return

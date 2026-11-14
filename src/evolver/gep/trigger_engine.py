@@ -137,21 +137,18 @@ class DailyBudget:
         max_tokens_per_day: int | None = None,
         per_pattern_cap: int | None = None,
     ) -> None:
+        from evolver.config import get_config
+
+        cfg = get_config()
         self.path = path or (_budget_dir() / BUDGET_FILENAME)
         self.max_cycles = (
-            max_cycles_per_day
-            if max_cycles_per_day is not None
-            else _env_int("EVOLVER_TRIGGER_MAX_CYCLES_PER_DAY", 0)
+            max_cycles_per_day if max_cycles_per_day is not None else cfg.trigger_max_cycles_per_day
         )
         self.max_tokens = (
-            max_tokens_per_day
-            if max_tokens_per_day is not None
-            else _env_int("EVOLVER_TRIGGER_MAX_TOKENS_PER_DAY", 0)
+            max_tokens_per_day if max_tokens_per_day is not None else cfg.trigger_max_tokens_per_day
         )
         self.per_pattern_cap = (
-            per_pattern_cap
-            if per_pattern_cap is not None
-            else _env_int("EVOLVER_TRIGGER_PER_PATTERN_CAP", 0)
+            per_pattern_cap if per_pattern_cap is not None else cfg.trigger_per_pattern_cap
         )
         self._state: dict[str, Any] = {"date": "", "cycles": 0, "tokens": 0, "patterns": {}}
         self._load()

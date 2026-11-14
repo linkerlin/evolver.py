@@ -1,15 +1,9 @@
-"""Tests for soft-continue solidify bugs (MCP acceptance run findings).
+"""Workbench-draft split (算子即基因 v1.114.0, 支柱一) solidify tests.
 
-Bug 1: Cascade soft-continue falls through into legacy hard-fail rollback path.
-Bug 2: Success path produces empty episode diffs after legacy rollback wipes working tree.
-
-Both bugs are caused by the same root issue: when validation soft-fails, the code
-sets validation_soft_failed=True but then falls through to execute the legacy
-hard-fail rollback block (lines 2087-2137), which rolls back the working tree
-even though we decided to soft-continue.
-
-Fix: Wrap the legacy rollback block in `if not validation_soft_failed:` so it only
-executes when we did NOT soft-continue.
+A red validation is an honest ``ok=False, outcome=draft_preserved``: the
+patch stays in the worktree, a ``rejected_stashes/<run_id>`` backup runs
+first, and the return carries a 3-line ``actionable_fix``. Hard blocks
+(secrets/protected state) still roll back.
 """
 
 from __future__ import annotations
@@ -20,15 +14,11 @@ from pathlib import Path
 from unittest.mock import patch
 
 
-def test_soft_continue_does_not_rollback(tmp_path: Path, monkeypatch):
-    """Bug 1: Soft-continue validation failure must not rollback working tree.
+def test_validation_failure_is_draft_preserved(tmp_path: Path, monkeypatch):
+    """支柱一: validation failure returns ok=False/draft_preserved, keeps patch.
 
-    Symptom: After cascade soft-continue set validation_soft_failed for existing
-    ruff failures (~178), the next event was still failed/validation_failed and
-    solidify hard-rejected — soft-continue appeared to fall through into legacy
-    hard-fail/rollback path.
-
-    Expected: Soft-continue returns ok=True, severity="soft", working tree untouched.
+    The worktree is never destroyed (no rollback), a stash backup runs, and
+    the 3-line actionable_fix names the first failing file:line.
     """
     from evolver.gep.solidify import _handle_cascade_validation_failure
 
@@ -71,6 +61,7 @@ def test_soft_continue_does_not_rollback(tmp_path: Path, monkeypatch):
     monkeypatch.setattr("evolver.gep.solidify.rollback_new_untracked_files", lambda *a, **k: None)
     monkeypatch.setattr("evolver.gep.solidify.record_solidify_failure", lambda *a, **k: None)
     monkeypatch.setattr("evolver.gep.solidify._wiki_rejection", lambda *a, **k: None)
+    monkeypatch.setattr("evolver.gep.solidify._maybe_record_variant", lambda *a, **k: None)
     monkeypatch.setattr("evolver.gep.solidify.append_event_jsonl", lambda e: None)
     monkeypatch.setattr("evolver.gep.solidify._remember_failure_scene", lambda *a, **k: "evt_123")
 
@@ -84,17 +75,25 @@ def test_soft_continue_does_not_rollback(tmp_path: Path, monkeypatch):
         eval_meta=None,
     )
 
-    # Verify Bug 1 fix: soft-continue does NOT call rollback
-    assert result.get("ok") is True, f"Expected ok=True, got {result}"
-    assert result.get("severity") == "soft", f"Expected severity=soft, got {result}"
-    assert result.get("validation_soft_failed") is True
+    # Honest draft verdict — never ok=True, never vault material.
+    assert result.get("ok") is False, f"Expected ok=False, got {result}"
+    assert result.get("outcome") == "draft_preserved", f"Got {result}"
+    assert result.get("error") == "validation_failed"
     assert len(result.get("warnings", [])) > 0, "Expected validation warnings"
 
-    # CRITICAL: rollback_tracked must NOT have been called for soft-continue
+    # CRITICAL: rollback_tracked must NOT have been called — the patch stays.
     assert len(rollback_called) == 0, (
-        f"Bug 1 not fixed: rollback_tracked was called {len(rollback_called)} times "
-        f"even though soft-continue was decided. Calls: {rollback_called}"
+        f"Working tree was destroyed: rollback_tracked called {len(rollback_called)} "
+        f"times on a draft-preserved failure. Calls: {rollback_called}"
     )
+    # 防丢 backup ran exactly once.
+    assert len(snapshot_called) == 1, "Expected one rejected_stash backup"
+
+    # Exactly three human fix lines with file:line precision.
+    fix = result.get("actionable_fix") or []
+    assert len(fix) == 3, f"Expected 3 fix lines, got {fix}"
+    assert any("src/test.py:1" in line for line in fix), f"No file:line in {fix}"
+    assert any("preserved in place" in line for line in fix), f"No preservation line in {fix}"
 
 
 def test_soft_continue_preserves_working_tree_for_episode(tmp_path: Path, monkeypatch):
@@ -251,3 +250,34 @@ def test_hard_block_still_rollsback(tmp_path: Path, monkeypatch):
     assert "hard" in result.get("error", "").lower() or result.get("block_reason")
     assert len(rollback_called) > 0, "Hard block must call rollback"
     assert len(snapshot_called) > 0, "Hard block must snapshot before rollback"
+
+
+def test_actionable_fix_always_three_lines_and_traceback_aware() -> None:
+    """Round-121 review pins: (1) a silent failing stage still yields exactly
+    three lines; (2) Python-traceback frames locate file:line."""
+    from evolver.gep.solidify import _actionable_fix_from_validation
+
+    silent = _actionable_fix_from_validation(
+        {"results": [{"ok": False, "command": "pytest", "stdout": "", "stderr": ""}]},
+        "run-x",
+    )
+    assert len(silent) == 3
+
+    tb = _actionable_fix_from_validation(
+        {
+            "results": [
+                {
+                    "ok": False,
+                    "command": "pytest",
+                    "stdout": "",
+                    "stderr": (
+                        'Traceback (most recent call last):\n  File "src/calc.py", line 42, '
+                        "in apply_discount\nValueError: bad rate\n"
+                    ),
+                }
+            ]
+        },
+        "run-y",
+    )
+    assert len(tb) == 3
+    assert "src/calc.py:42" in tb[0]

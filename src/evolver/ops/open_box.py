@@ -96,7 +96,7 @@ def next_steps_for(error: str, *, context: dict[str, Any] | None = None) -> dict
                 "val secrets in the candidate conversation.",
                 "Measure Parent: `evolver bench baseline` (soft-accept will NOT invent this).",
                 (
-                    "Continue swarm_tick / swarm_solidify / session accept; "
+                    "Continue via evolve_begin / evolve_settle (or `evolver up`); "
                     "warnings stay until baseline exists."
                 ),
             ],
@@ -137,7 +137,7 @@ def next_steps_for(error: str, *, context: dict[str, Any] | None = None) -> dict
                 "In another context, solve pending val tasks into sandboxes/r1 and sandboxes/r2.",
                 "Do NOT open sealed val material in the candidate-writing dialogue.",
                 (
-                    "Re-run swarm_solidify after sandboxes are filled; soft-accept allowed "
+                    "Re-run evolve_settle after sandboxes are filled; soft-accept allowed "
                     "before that."
                 ),
             ],
@@ -169,9 +169,9 @@ def next_steps_for(error: str, *, context: dict[str, Any] | None = None) -> dict
                 "injects repair bias until the blocker is cleared."
             ),
             "next_steps": [
-                "Read abort reason from the tick result / autopoiesis_preflight_abort.json.",
+                "Read abort reason from the cycle result / autopoiesis_preflight_abort.json.",
                 "If reason is user lock: follow user_lock next steps.",
-                "Clear the blocker, then swarm_tick again (or `evolver run`).",
+                "Clear the blocker, then call evolve_begin again (or `evolver run`).",
                 "Run `evolver doctor` to confirm gate and lock health.",
             ],
             "commands": [
@@ -367,11 +367,16 @@ def diagnose(*, project: str | Path | None = None) -> dict[str, Any]:
             payload["error"] = c.get("error")
         return payload
 
-    state = {
+    from evolver.ops.init_bootstrap import load_native_baseline
+
+    state: dict[str, Any] = {
         # ok tracks soft-continue (hosts may proceed); loop_ready stays honest.
         "ok": soft_continue,
         "soft_continue": soft_continue,
         "loop_ready": bool(loop_ready and lock_ok),
+        # 支柱 0.2: the init bootstrap's Project Native Baseline, read for the
+        # ready story (round-121 review: an artifact nobody reads is dead weight).
+        "native_baseline": load_native_baseline(proj if proj is None else repo_root),
         "repo_root": repo_root,
         "workspace_id": compute_workspace_id(repo_root) if repo_root else None,
         "state_root": str(
@@ -382,15 +387,14 @@ def diagnose(*, project: str | Path | None = None) -> dict[str, Any]:
         "recommendations": [_enrich(c) for c in soft_gap_checks if c.get("error")],
         "auto_evolution": {
             "when_ready": (
-                "MCP: swarm_boot → swarm_tick → execute → swarm_distill → "
-                "swarm_hypothesis → swarm_solidify → swarm_feedback"
+                "MCP: evolve_begin(hypothesis) → [run_lens + edit] → evolve_settle(summary)"
             ),
             "cli_demo": "uv run python examples/swarm-quickstart/demo_swarm_loop.py",
             "host_round": "evolver round --host",
             "note": (
-                "Mutate/execute is host-side. Engine tools cover tick/distill/"
-                "hypothesis/solidify/feedback. Do not solve val in the candidate chat. "
-                "Missing pack/baseline: soft-continue with warnings (not a hard stop)."
+                "Mutate/execute is host-side. Engine tools cover evolve_begin / "
+                "run_lens / evolve_settle / evolve_status. Do not solve val in the "
+                "candidate chat. Missing pack/baseline: soft-continue with warnings."
             ),
         },
     }
@@ -486,7 +490,7 @@ def apply_soft_gap(result: dict[str, Any], gap: str) -> dict[str, Any]:
 
     Hosts that stop solely when ``error`` is set must continue. Soft gaps
     expose ``gap`` / ``gate_gap`` / ``reason`` / ``severity=soft`` /
-    ``gate_soft_continue`` / ``warning`` / ``next_steps`` / ``commands``.
+    ``warning`` / ``next_steps`` / ``commands``.
     Dangerous gates keep using ``attach_next_steps`` with ``error``.
     """
     code = str(gap or "").strip()
@@ -510,7 +514,6 @@ def apply_soft_gap(result: dict[str, Any], gap: str) -> dict[str, Any]:
     out["gate_gap"] = code
     out["reason"] = code
     out["severity"] = "soft"
-    out["gate_soft_continue"] = True
     out["gate_ready"] = False
     warning = str(steps.get("message") or f"soft-continue ({code})")
     out["warning"] = warning

@@ -50,7 +50,14 @@ def build_hooks_json(evolver_root: Path, is_user_level: bool) -> dict[str, Any]:
     }
 
 
-def install(*, config_root: Path, evolver_root: Path, force: bool = False) -> dict[str, Any]:
+def install(
+    *,
+    config_root: Path,
+    evolver_root: Path,
+    force: bool = False,
+    inject_docs: bool = True,
+) -> dict[str, Any]:
+    _ = inject_docs
     is_user_level = config_root == Path.home()
     cursor_dir = config_root / ".cursor"
     hooks_json_path = cursor_dir / "hooks.json"

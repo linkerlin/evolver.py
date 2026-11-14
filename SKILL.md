@@ -12,11 +12,11 @@ This skill enables an agent to:
 
 ## Current stage
 
-Charter: `演进方案.md`（经验即证据）. Work list: `TODO.md`. Version **1.113.0**. The paired-session gate closed 2026-09-27 (8 sessions, 16 rejects, 0 accepts). Library-as-ruler is archived in `演进方案_库即尺子.md`; its unfinished items stay on the TODO carry-over table.
+Charter: `演进方案.md`（算子即基因 — Zero-Touch Self-Evolution: Operators as Genes, Replay as Adjudication）. Work list: `TODO.md`. Version **1.114.0**. Experience-as-Evidence closed at round-119 and is archived in `演进方案_经验即证据.md` and `TODO_经验即证据.md`; Library-as-ruler is archived in `演进方案_库即尺子.md`.
 
-Do this: follow the charter §5 and §0. The exit is one with/without-record ablation on an engine-recorded episode. Point-ruling 1 is decided: process metrics only, no test split. A run with fewer than 30 tasks per arm is indicative only, for both signal and no_signal, and does not judge the stage failed. Synthetic record context does not close the exit. Keep `EVOLVER_ACCEPTANCE_SHADOW` on.
+Do this: follow the charter §1–§4 and `TODO.md` Phase 0–3. Deliver a zero-touch autopilot experience (`evolver init` / `up` / `status`, automatic IDE MCP wiring, clean-subprocess native baseline bootstrap with zero manual `val` solving), split Workbench drafts (`ok=False`, patch preserved) from the Promoted Vault (`ok=True` only on clean net-gain validation), switch one-step to the FSM 3-tool MCP protocol (`evolve_begin` / `run_lens` / `evolve_settle`), synthesize executable operator genes (`lens` + `codemod` + `invariant`), and adjudicate stage exit via `--stage-exit v2` paired code-repair replay over $N \ge 30$ dual-source real bugs (`DEBUG.md` self-history + external open-source Python micro-bugs). Keep `val_seal`, out-of-tree `anchor`, and `EVOLVER_ACCEPTANCE_SHADOW` intact.
 
-Do not: treat an instrument-only or test-only round as stage progress, port an ontology, add an LLM judge, open bandit or niche, rewrite the validator, build ATP commerce, or publish to PyPI. `RSI演进对照.md` and `演进方案_wikiskill对照版.md` are archives.
+Do not: require users to hand-edit `.mcp.json` or solve `val` sandboxes across chat windows, allow failed or regressed runs into the positive gene vault (`soft-accept` pollution), keep the 6-step legacy MCP flag soup, embed a hidden black-box LLM loop that edits user code behind the host's back, add an ungrounded LLM judge, or fabricate toy tasks. `演进方案_经验即证据.md`, `演进方案_库即尺子.md`, `RSI演进对照.md`, and `演进方案_wikiskill对照版.md` are archives.
 
 ## Installation
 
@@ -34,6 +34,9 @@ pip install -e .
 
 | Command | Description | Status |
 |---|---|---|
+| `evolver init [--yes] [--host <name>] [--no-hosts]` | Zero-pollution onboarding (`< 3s`): detect IDEs, wire MCP + hooks, record local configs in `.git/info/exclude`, and spawn clean background native baseline + Anchor bootstrap | ✅ |
+| `evolver up` / `evolver auto` (`[--once] [--project <dir>]`) | Zero-touch autopilot daemon (adaptive sliding sessions + 3-round dormancy) | ✅ |
+| `evolver status [--json]` | Plain-language status lamp (ready lamp, promoted fixes, `saved_validation_seconds`, vault operators, workbench drafts) | ✅ |
 | `evolver` / `evolver run` | Run a single evolution cycle | ✅ |
 | `evolver --loop` / `--mad-dog` | Daemon mode: continuous cycles | ✅ |
 | `evolver --review` | Global flag: pause for human review | ✅ |
@@ -63,7 +66,7 @@ pip install -e .
 | `evolver supervise status\|pause\|resume\|direct\|veto\|unveto` | HOTL supervision (veto/pause wrap CLI and loop) | ✅ |
 | `evolver gene-lifecycle list\|evaluate\|reinstate` | Gene lifecycle governance (RSI P1-5) | ✅ |
 | `evolver soak setup\|exports\|status` | Out-of-tree runtime state (`$EVOLVER_HOME/evolver.py-soak`; never commit `memory/`) | ✅ |
-| `evolver mcp` | stdio MCP server — the swarm evolution entry (host-takeover protocol) | ✅ |
+| `evolver mcp` | stdio MCP server — FSM 3-tool host-takeover surface (`IDLE`: `evolve_begin` + `evolve_status`; `ACTIVE_RUN`: `run_lens` + `evolve_settle` + `evolve_status`) | ✅ |
 | `evolver skills list\|scan\|sync [--dry-run]` / `workflow …` | Skill ecosystem bridge; persistent workflow engine (WAL + approvals) | ✅ |
 | `evolver experiment --ablation --tasks <file> [--from-episodes] [--placebo]` | Controlled ablation adjudication: with/without records over frozen tasks with placebo control | ✅ |
 | `evolver experiment --ablation --stage-exit --from-episodes --placebo --output <report>` | Machine-enforced stage exit: seeded AB/BA interleave, per-call records, paired test; ineligible setups exit 2 | ✅ |
@@ -262,11 +265,9 @@ Env: `EVOLVER_FF_<NAME>=1|0`. Disk layers (low → high): defaults → `evolver/
 | `ENABLE_AUTO_DISTILL` | `true` | enrich distill | — |
 | `ENABLE_MEMORY_GRAPH` | `true` | outcome / advice | — |
 | `ENABLE_LLM_REVIEW` | `true` | LLM review | `llm_messages` |
-| `ENABLE_AUTO_BUYER` | `false` | post_cycle buyer | `atp_order` |
 | `ENABLE_VALIDATOR` | `true` | validator daemon | `validator_tasks` |
 | `ENABLE_SKILL_AUTO_UPDATE` | `false` | — | `skill_update` loop |
 | `ENABLE_TRACE_UPLOAD` | `false` | — | `trace_upload` |
-| `ENABLE_EXPLORE` / `ENABLE_CURRICULUM` | `false` | optional cognition | — |
 
 ### ATP Marketplace
 
@@ -291,39 +292,42 @@ Env: `EVOLVER_FF_<NAME>=1|0`. Disk layers (low → high): defaults → `evolver/
 - `examples/hub-publish-flow/` — Distill→reuse→publish lifecycle
 - `examples/skill2recipe/` — Skill→Recipe composition
 - `examples/atp-quickstart/` — ATP loop demo
-- `演进方案.md` — current charter (经验即证据)
+- `演进方案.md` — current charter (算子即基因: Zero-Touch Autopilot, Executable Operator Genes & Time-Capsule Replay)
 - `TODO.md` — the work list for that charter
+- `演进方案_经验即证据.md` / `TODO_经验即证据.md` — archived v1.113.0 Experience-as-Evidence charter & list
+- `演进方案_库即尺子.md` / `TODO_库即尺子.md` — archived Library-as-Ruler charter & list
 - `演进方案_wikiskill对照版.md` — archived 2026-09-01 audit
 - `RSI演进对照.md` — archived paper comparison and effective-L5 log
 
-## Environment Variables
+## Environment Variables & `EvolverConfig`
+
+Low-frequency thresholds and operational knobs are consolidated in `~/.evolver/config.json` (or `EVOLVER_CONFIG` JSON/file path via `EvolverConfig`), keeping total `EVOLVER_*` environment variables across `src/` strictly `<= 35` (verified by `evolver charter-check`):
 
 | Variable | Default | Description |
 |---|---|---|
+| `EVOLVER_REPO_ROOT` | auto via `.git` | Repository root override |
+| `EVOLVER_STATE_ROOT` | `~/.evolver` | Out-of-tree workspace state root (`workspaces/<id>/`) |
+| `EVOLVER_HOME` | `~/.evomap` | Per-user anchor & global metadata directory |
+| `EVOLVER_CONFIG` | `~/.evolver/config.json` | Inline JSON or path to nested `EvolverConfig` overrides |
 | `A2A_NODE_ID` | auto-generated | EvoMap node identity |
 | `A2A_HUB_URL` | `https://evomap.ai` | Hub URL (used by Proxy) |
-| `EVOMAP_PROXY` | `1` | Enable local Proxy |
 | `EVOLVER_PROXY_PORT` / `EVOMAP_PROXY_PORT` | `8081` | Local proxy listen port |
 | `EVOLVE_STRATEGY` | `balanced` | Evolution strategy |
-| `EVOLVER_ROLLBACK_MODE` | `stash` | Rollback on solidify failure |
-| `EVOLVER_VALIDATOR_ENABLED` | `true` | Enable validator daemon |
-| `EVOLVER_SKILL_UPDATE_INTERVAL_SEC` | `300` | Skill updater poll interval |
-| `EVOLVER_PROXY_LIFECYCLE` | `1` | Start Hub hello + heartbeat loop with proxy |
-| `EVOLVER_ATP_AUTODELIVER` | `1` | Auto-deliver loop (set `0` to disable) |
-| `EVOLVER_SANDBOX_STRICT` | — | Block network imports in validator scripts |
-| `EVOLVER_SANDBOX_NETWORK` | — | Linux: attempt `unshare(CLONE_NEWNET)` in sandbox |
+| `EVOLVER_ROLLBACK_MODE` | `stash` | Rollback mode for hard security blocks |
 | `GITHUB_TOKEN` | (none) | GitHub API token |
 
-## GEP Protocol (Auditable Evolution)
+## GEP Protocol (Auditable Out-of-Tree Evolution)
 
-Local asset store:
-- `.evolver/gep/genes.json` — reusable Gene definitions
-- `.evolver/gep/capsules.json` — success capsules
-- `.evolver/gep/events.jsonl` — append-only evolution events
+Workspace runtime state (`~/.evolver/workspaces/<id>/`):
+- `index.sqlite` — WAL-mode unified read index (signals, operator hit rates, 4-way attribution, episode headers, daily budget)
+- `gep/genes.json` + `gep/genes.jsonl` — reusable Gene definitions (overlay semantics)
+- `gep/capsules.json` + `gep/capsules.jsonl` — verified capsules
+- `gep/events.jsonl` — append-only evolution events
+- `evolution/episodes/` — content-addressed immutable Episode Records & blackbox telemetry
 
 ## Safety
 
-- **Rollback**: Failed evolutions are rolled back via git (`stash` or `hard`)
+- **Dual-Track Settlement**: Ordinary check failures and non-improving fitness verdicts (`drop`/`flat`/`regression`) return `ok=False, outcome="draft_preserved"` — keeping workspace edits intact in place with a 3-line `actionable_fix` while freezing positive vault writes (`+0`). Hard security blocks (secrets, `~/.evolver/`, `val_seal`) immediately roll back.
 - **Review mode**: `--review` for human-in-the-loop
 - **Proxy isolation**: Agent never touches Hub auth directly
 - **Local mailbox**: All interactions logged in JSONL for audit

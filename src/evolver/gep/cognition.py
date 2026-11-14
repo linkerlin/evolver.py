@@ -78,39 +78,6 @@ def flatten_recall_events(events: list[dict[str, Any]]) -> list[dict[str, Any]]:
     return flat
 
 
-def augment_signals(signals: list[str], *, max_explore_tasks: int = 5) -> list[str]:
-    """Add exploration and curriculum signals when feature flags allow."""
-    merged = list(signals)
-
-    if is_enabled("enable_explore"):
-        try:
-            from evolver.gep.explore import top_exploration_signals
-
-            exploration = top_exploration_signals(max_tasks=max_explore_tasks)
-            if is_enabled("enable_curriculum"):
-                from evolver.gep.curriculum import ingest_exploration_tasks, next_tasks
-
-                ingest_exploration_tasks(exploration)
-                for task in next_tasks(count=2):
-                    token = f"curriculum_target:{task.task_id}"
-                    if token not in merged:
-                        merged.append(token)
-            for sig in exploration:
-                token = (
-                    f"explore:{sig.get('task_type', 'task')}:"
-                    f"{sig.get('file_path', '')}:{sig.get('line', 0)}"
-                )
-                if token not in merged:
-                    merged.append(token)
-                desc = sig.get("description", "")
-                if desc and desc not in merged:
-                    merged.append(desc[:120])
-        except Exception as exc:
-            logger.debug("[Cognition] explore augmentation skipped: %s", exc)
-
-    return merged
-
-
 def build_recall_section(signals: list[str]) -> str:
     """Build verified recall markdown for the GEP prompt."""
     if not is_enabled("enable_recall_inject"):
@@ -176,17 +143,6 @@ def post_solidify_hooks(
             hooks["memory_outcome"] = True
         except Exception as exc:
             hooks["memory_outcome_error"] = str(exc)
-
-    task_id = last_run.get("curriculum_task_id")
-    if task_id and is_enabled("enable_curriculum"):
-        try:
-            from evolver.gep.curriculum import advance_level
-            from evolver.gep.curriculum import record_attempt as curriculum_record
-
-            curriculum_record(str(task_id), success=outcome.get("status") == "success")
-            hooks["curriculum_level"] = advance_level()
-        except Exception as exc:
-            hooks["curriculum_error"] = str(exc)
 
     if is_enabled("enable_reflection"):
         try:
@@ -322,7 +278,6 @@ def record_solidify_failure(
 
 __all__ = [
     "as_recall_attempt",
-    "augment_signals",
     "build_recall_section",
     "enrich_cycle_context",
     "flatten_recall_events",

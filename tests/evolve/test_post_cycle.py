@@ -19,28 +19,6 @@ async def test_post_cycle_skips_without_signals() -> None:
 
 
 @pytest.mark.asyncio
-async def test_post_cycle_runs_auto_buyer_when_enabled(
-    temp_workspace: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    from evolver.atp import auto_buyer
-
-    monkeypatch.setenv("EVOLVER_FF_ENABLE_AUTO_BUYER", "true")
-    monkeypatch.setenv("EVOLVER_ATP_AUTOBUY", "1")
-    monkeypatch.setattr(auto_buyer, "get_memory_dir", lambda: temp_workspace)
-    mock_tick = AsyncMock(return_value={"ok": True, "placed": 1, "orders": []})
-    monkeypatch.setattr(auto_buyer, "run_tick", mock_tick)
-    monkeypatch.setattr(
-        "evolver.atp.atp_task_pickup.pick_one",
-        AsyncMock(return_value=None),
-    )
-
-    ctx = {"signals": ["TypeError in module"]}
-    result = await run_post_cycle_hooks(ctx)
-    assert result["atp_auto_buyer"]["placed"] == 1
-    mock_tick.assert_called_once_with(["TypeError in module"])
-
-
-@pytest.mark.asyncio
 async def test_post_cycle_issue_reporter(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(
         "evolver.atp.atp_task_pickup.pick_one",

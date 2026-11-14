@@ -6,7 +6,7 @@ Ports Node ``index.js`` helpers for Issue #19 (hard timeout) and #528
 * :class:`CycleTimeoutError` — structured timeout with ``code=CYCLE_TIMEOUT``
 * :func:`write_cycle_progress_atomic` — tmp+rename progress file
 * :func:`spawn_replacement_process` — Windows skips detached spawn by default
-* :func:`handle_cycle_timeout` — continue vs respawn policy (``EVOLVER_SUICIDE``)
+* :func:`handle_cycle_timeout` — continue vs respawn policy (``EvolverConfig.suicide``)
 """
 
 from __future__ import annotations
@@ -73,18 +73,24 @@ def cycle_timeout_enabled() -> bool:
 
 
 def cycle_timeout_ms() -> int:
-    return parse_ms_env(os.environ.get("EVOLVER_CYCLE_TIMEOUT_MS"), DEFAULT_CYCLE_TIMEOUT_MS)
+    from evolver.config import get_config
+
+    return get_config().cycle_timeout_ms
 
 
 def progress_update_ms() -> int:
-    from evolver.config import PROGRESS_UPDATE_MS
+    from evolver.config import PROGRESS_UPDATE_MS, get_config
 
-    return PROGRESS_UPDATE_MS
+    if PROGRESS_UPDATE_MS != DEFAULT_PROGRESS_UPDATE_MS:
+        return PROGRESS_UPDATE_MS
+    return get_config().progress_update_ms
 
 
 def suicide_enabled() -> bool:
-    """Whether timeout/max-cycles should respawn (``EVOLVER_SUICIDE``, default true)."""
-    return parse_bool_env(os.environ.get("EVOLVER_SUICIDE"), True)
+    """Whether timeout/max-cycles should respawn (``EvolverConfig.suicide``, default true)."""
+    from evolver.config import get_config
+
+    return get_config().suicide
 
 
 def write_cycle_progress_atomic(
@@ -115,15 +121,17 @@ def spawn_replacement_process(
     """Spawn a replacement daemon process (or skip on Windows by default).
 
     Returns ``{spawned, reason?, error?}``. On Windows without
-    ``EVOLVER_SUICIDE_WINDOWS=true``, returns ``windows_default_skip`` so an
+    ``suicide_windows=true`` in ``EVOLVER_CONFIG``, returns ``windows_default_skip`` so an
     external supervisor can restart on exit code 1 (Issue #528).
     """
+    from evolver.config import get_config
+
     is_windows = (platform or sys.platform).startswith("win")
-    allow_on_windows = parse_bool_env(os.environ.get("EVOLVER_SUICIDE_WINDOWS"), False)
+    allow_on_windows = get_config().suicide_windows
     if is_windows and not allow_on_windows:
         logger.info(
             "[Daemon] Skipping in-process respawn on Windows (%s). "
-            "Set EVOLVER_SUICIDE_WINDOWS=true to opt in. "
+            "Set suicide_windows=true in EVOLVER_CONFIG to opt in. "
             "Recommended: external supervisor (NSSM, pm2-windows, etc.).",
             reason,
         )
@@ -195,7 +203,7 @@ def handle_cycle_timeout(
     enabled = suicide_enabled() if suicide_enabled_flag is None else suicide_enabled_flag
     if not enabled:
         print(
-            "[Daemon] Cycle hard-timeout treated as non-fatal because EVOLVER_SUICIDE=false.",
+            "[Daemon] Cycle hard-timeout treated as non-fatal because suicide=false.",
             file=sys.stderr,
         )
         write_cycle_progress_atomic(

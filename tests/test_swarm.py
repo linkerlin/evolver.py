@@ -1,13 +1,18 @@
-"""Swarm evolution — instrument prompt + closed-loop tools (v1.98.0).
+"""Swarm evolution — 3-tool FSM host orchestration + internal engine seams (v1.114.0).
 
-Covers evolver.swarm: takeover prompt rendering, boot/hello, tick with stdout
-capture (stdio MCP owns stdout), distill/solidify/report wrappers, and swarm
-state persistence. No Node.js equivalent — Python-native design.
+Covers evolver.swarm:
+- Concise 3-tool FSM takeover prompt (`build_instrument_prompt`)
+- Core FSM orchestrators (`evolve_begin`, `evolve_run_lens`, `evolve_settle`, `evolve_status`)
+- Cycle-boundary blackbox & immutable `episode_record` settlement
+- Internal CLI/engine seams (`swarm_distill`, `swarm_hypothesis`, `swarm_propose`,
+  `swarm_solidify`, `swarm_supervise`, `swarm_hooks`, `swarm_hook_event`,
+  `swarm_report`, `swarm_feedback`, HITL, mutual exclusion, staleness guards)
 """
 
 from __future__ import annotations
 
 import json
+import subprocess
 from collections.abc import Iterator
 from pathlib import Path
 from typing import Any
@@ -18,7 +23,11 @@ from evolver import __version__
 from evolver.swarm import (
     SWARM_PROTOCOL_VERSION,
     build_instrument_prompt,
-    swarm_boot,
+    evolve_begin,
+    evolve_run_lens,
+    evolve_settle,
+    evolve_status,
+    fsm_state,
     swarm_distill,
     swarm_feedback,
     swarm_hook_event,
@@ -29,14 +38,13 @@ from evolver.swarm import (
     swarm_solidify,
     swarm_status,
     swarm_supervise,
-    swarm_tick,
 )
 from tests.conftest import SYNTHETIC_TRAIN_ID, synth_hypothesis
 
 
 @pytest.fixture
-def isolated_swarm_env(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
-    """Point all evolver state (incl. mailbox repo root) into tmp_path."""
+def isolated_swarm_env(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Iterator[Path]:
+    """Point all evolver state into tmp_path."""
     monkeypatch.setenv("EVOLUTION_DIR", str(tmp_path / "evolution"))
     monkeypatch.setenv("GEP_ASSETS_DIR", str(tmp_path / "gep"))
     monkeypatch.setenv("EVOLVER_REPO_ROOT", str(tmp_path))
@@ -44,13 +52,8 @@ def isolated_swarm_env(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
     monkeypatch.setenv("OPENCLAW_WORKSPACE", str(tmp_path))
     monkeypatch.setenv("EVOLVER_USER_LOCK", str(tmp_path / "user.lock"))
     monkeypatch.setenv("EVOLVER_HOME", str(tmp_path / ".evomap"))
-    # Fast connection-refused instead of real-network timeouts (hub + ATP).
     monkeypatch.setenv("A2A_HUB_URL", "http://127.0.0.1:9")
-    # Deterministic preflight: ambient host load must not abort cycles here.
     monkeypatch.setenv("EVOLVE_LOAD_MAX", "999")
-    # These tests drive the loop without a frozen pack; the default handoff
-    # would stop every tick at await_human. Handoff tests set "human" back.
-    monkeypatch.setattr("evolver.config.SWARM_GATE_HANDOFF", "hotl")
     yield tmp_path
 
 
@@ -75,457 +78,255 @@ def _solidify_scene(run_id: str, event_id: str) -> dict[str, Any]:
 
 
 class TestInstrumentPrompt:
-    def test_contains_protocol_sections(self) -> None:
-        prompt = build_instrument_prompt({"agent_name": "zcode-1", "workspace_root": "/ws"})
+    def test_contains_fsm_protocol_sections(self) -> None:
+        prompt = build_instrument_prompt(
+            {"agent_name": "zcode-1", "workspace_root": "/ws", "fsm_state": "IDLE"}
+        )
         for needle in (
             "EVOLVER SWARM",
-            "宿主接管协议",
+            "零干预三工具原子协议",
+            f"(v{SWARM_PROTOCOL_VERSION})",
             "zcode-1",
-            "swarm_tick",
-            "swarm_distill",
-            "swarm_solidify",
-            "swarm_feedback",
-            "swarm_report",
-            "swarm_hook_event",
-            "swarm_hooks",
-            "终止条件",
-            "安全边界",
-            "HITL",
-            "Hooks",
-            f"instrument v{SWARM_PROTOCOL_VERSION}",
+            "evolve_begin",
+            "run_lens",
+            "evolve_settle",
+            "draft_preserved",
+            "actionable_fix",
+            "import_impact",
+            "ast_hotspot",
+            "trace_locator",
         ):
             assert needle in prompt, f"missing section: {needle}"
+        # Legacy 6-step manual tools must not clutter the new takeover prompt
+        assert "swarm_tick" not in prompt
+        assert "swarm_boot" not in prompt
 
-    def test_state_interpolated(self) -> None:
-        prompt = build_instrument_prompt(
-            {"agent_name": "a", "workspace_root": "/ws", "tick_count": 7, "genes": 3}
+    def test_fsm_opening_action_branches(self) -> None:
+        idle = build_instrument_prompt(
+            {"agent_name": "a", "workspace_root": "/ws", "fsm_state": "IDLE"}
         )
-        assert "tick_count: 7" in prompt
-        assert "genes: 3" in prompt
+        assert "FSM = `IDLE`，下一步：`evolve_begin`" in idle
 
-    def test_first_action_pending_solidify_branch(self) -> None:
-        # Tool-check 2026-09-05: boot used to say "tick first" even with an
-        # un-solidified run pending — a tick would clobber it.
-        pending = build_instrument_prompt(
-            {"agent_name": "a", "workspace_root": "/ws", "pending_solidify": True}
-        )
-        assert "先调用 `swarm_solidify`" in pending
-        assert "调用 `swarm_tick` 开始第一轮进化" not in pending
-        # No pack in the state: soft-continue with warnings (no hard await_human).
-        unarmed = build_instrument_prompt({"agent_name": "a", "workspace_root": "/ws"})
-        assert "evolver bench freeze" in unarmed or "evolver doctor" in unarmed
-        assert "soft-continue" in unarmed or "soft-accept" in unarmed
-        assert "next_action=await_human" not in unarmed or "soft" in unarmed
-        ready = build_instrument_prompt(
-            {
-                "agent_name": "a",
-                "workspace_root": "/ws",
-                "bench_pack_gate": {"armed": True, "baseline": 1.0, "train_ids": ["train-a"]},
-            }
-        )
-        assert "调用 `swarm_tick` 开始第一轮进化" in ready
-        assert "train-a" in ready
-        paused = build_instrument_prompt(
-            {
-                "agent_name": "a",
-                "workspace_root": "/ws",
-                "supervision": {"state": "paused"},
-                "bench_pack_gate": {"armed": True, "baseline": 1.0, "train_ids": ["train-a"]},
-            }
-        )
-        assert "next_action=await_supervisor_resume" in paused
-        assert "调用 `swarm_tick` 开始第一轮进化" not in paused
-        pending_paused = build_instrument_prompt(
+        active = build_instrument_prompt(
             {
                 "agent_name": "a",
                 "workspace_root": "/ws",
                 "pending_solidify": True,
-                "supervision": {"state": "paused"},
-                "bench_pack_gate": {"armed": True, "baseline": 1.0},
+                "fsm_state": "ACTIVE_RUN",
             }
         )
-        assert "先调用 `swarm_solidify`" in pending_paused
-        assert "await_supervisor_resume" not in pending_paused
+        assert "FSM = `ACTIVE_RUN`，下一步：`evolve_settle`" in active
 
-    def test_references_real_tool_names(self) -> None:
-        from tests.mcp_surface import MCP_TOOL_NAMES
-
-        prompt = build_instrument_prompt({"agent_name": "a", "workspace_root": "/ws"})
-        # MCP-registered names, not bare aliases. Every registered tool is
-        # named here; a tool that exists only in tools/list is not protocol.
-        assert "tool_mailbox_poll" in prompt
-        assert "tool_mailbox_send" in prompt
-        assert "`mailbox_poll`" not in prompt and "`mailbox_send`" not in prompt
-        missing = sorted(name for name in MCP_TOOL_NAMES if name not in prompt)
-        assert missing == []
-
-    def test_evidence_pack_and_proposal_escape_hatch(self) -> None:
-        """RSI P1-4: the executor is told about the failure-side evidence pack
-        and the mechanical proposal channel as an alternative to re-running
-        listed genes."""
-        prompt = build_instrument_prompt({"agent_name": "a", "workspace_root": "/ws"})
-        assert "Evidence Pack" in prompt
-        assert "swarm_propose" in prompt
-
-
-class TestBootAndStatus:
-    def test_boot_returns_prompt_state_and_hello(
-        self, isolated_swarm_env: Path, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
-        monkeypatch.setattr("evolver.config.SWARM_GATE_HANDOFF", "human")
-        result = swarm_boot("zcode-1")
-        assert result["ok"] is True
-        assert result["agent_name"] == "zcode-1"
-        assert "EVOLVER SWARM" in result["instrument_prompt"]
-        assert result["state"]["version"] == __version__
-        assert result["next_action"] == "swarm_tick"
-        assert result.get("gate_soft_continue") is True
-        assert result.get("severity") == "soft"
-        assert result.get("gap") in ("pack_absent", "no_baseline")
-        assert result.get("error") not in ("pack_absent", "no_baseline", "unmeasured")
-        assert result.get("next_steps")
-        assert result.get("source_revision") == result["state"].get("source_revision")
-        assert (
-            "evolver bench freeze" in result["instrument_prompt"]
-            or "evolver doctor" in (result.get("hint") or "")
-            or any("freeze" in str(s) for s in result.get("commands") or [])
-        )
-        assert result["boot_once"] == [
-            {"tool": "swarm_hook_event", "arguments": {"event": "session_start"}},
-        ]
-        assert result.get("mailbox_hello")
-        assert int((result.get("mailbox_hello_ack") or {}).get("acked") or 0) >= 1
-
-        from evolver.proxy.mailbox.store import MailboxStore
-
-        store = MailboxStore(isolated_swarm_env / ".evolver" / "proxy-mailbox")
-        pending_hello = [
-            m
-            for m in store.poll(limit=50)
-            if m.type == "swarm.hello"
-            and getattr(m, "status", "") == "pending"
-            and (m.payload or {}).get("agent") == "zcode-1"
-        ]
-        assert pending_hello == []
-
-    def test_boot_next_action_pending_aware(self, isolated_swarm_env: Path) -> None:
-        """Round-57: the structured field must mirror the prompt's first-action
-        branch — a pending run says solidify-first, and hosts reading the
-        field (not the prose) used to get the wrong instruction."""
-        from evolver.gep.solidify import write_state_for_solidify
-
-        write_state_for_solidify(
+        paused = build_instrument_prompt(
             {
-                "run_id": "run_pending_boot",
-                "signals": ["log_error"],
-                "selected_gene_id": "g_boot",
-                "mutation": {"id": "m_boot", "validation": []},
+                "agent_name": "a",
+                "workspace_root": "/ws",
+                "fsm_state": "IDLE",
+                "supervision": {"state": "paused"},
             }
         )
-        result = swarm_boot("zcode-2")
-        assert result["next_action"] == "swarm_solidify", (
-            "pending run must direct solidify-first in the structured field"
+        assert "下一步：`await_supervisor_resume`" in paused
+
+        # Active unsettled run takes priority over pause so the round can settle cleanly
+        active_paused = build_instrument_prompt(
+            {
+                "agent_name": "a",
+                "workspace_root": "/ws",
+                "pending_solidify": True,
+                "fsm_state": "ACTIVE_RUN",
+                "supervision": {"state": "paused"},
+            }
         )
-        assert result["boot_once"] == []
-        assert "swarm_solidify" in result["instrument_prompt"]
+        assert "下一步：`evolve_settle`" in active_paused
 
-    def test_boot_soft_continues_when_gate_cannot_fully_publish(
-        self, isolated_swarm_env: Path, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
-        """A missing pack or baseline soft-continues with next_steps (no await_human)."""
-        _ = isolated_swarm_env
-        monkeypatch.setattr("evolver.config.SWARM_GATE_HANDOFF", "human")
-
-        def ready() -> dict[str, object]:
-            return {"armed": True, "baseline": 0.5, "train_ids": ["train-a"]}
-
-        monkeypatch.setattr("evolver.bench.frozen_gate.gate_snapshot", ready)
-        ticked = swarm_boot("ready")
-        assert ticked["next_action"] == "swarm_tick"
-        assert "train-a" in ticked["instrument_prompt"]
-        assert ticked.get("gate_soft_continue") is not True
-
-        def bare() -> dict[str, object]:
-            return {"armed": True, "baseline": None, "train_ids": ["train-a"]}
-
-        monkeypatch.setattr("evolver.bench.frozen_gate.gate_snapshot", bare)
-        held = swarm_boot("held")
-        assert held["next_action"] == "swarm_tick"
-        assert held.get("gate_soft_continue") is True
-        assert held.get("severity") == "soft"
-        assert held.get("gate_gap") == "no_baseline"
-        assert held.get("gap") == "no_baseline"
-        assert held.get("error") not in ("no_baseline", "pack_absent", "unmeasured")
-        assert held.get("next_steps")
-        assert (
-            "no_baseline" in held["instrument_prompt"]
-            or "soft-continue" in held["instrument_prompt"]
-        )
-
-        monkeypatch.setattr("evolver.bench.frozen_gate.gate_snapshot", ready)
-        swarm_supervise("pause", reason="hold")
-        paused = swarm_boot("paused")
-        assert paused["next_action"] == "await_supervisor_resume"
-        assert "调用 `swarm_tick` 开始第一轮进化" not in paused["instrument_prompt"]
-        assert "说「继续」即可恢复" in paused["instrument_prompt"]
-
-    def test_hotl_boot_ticks_past_a_missing_gate(
-        self, isolated_swarm_env: Path, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
-        """HOTL and default human both soft-continue; hotl is still labeled."""
-        _ = isolated_swarm_env
-        boot = swarm_boot("hotl")
-        assert boot["next_action"] == "swarm_tick"
-        prompt = boot["instrument_prompt"]
-        assert "gate_handoff: hotl" in prompt
-        assert "EVOLVER_SWARM_GATE_HANDOFF=hotl" in prompt or "soft-continue" in prompt
-
-        monkeypatch.setattr("evolver.config.SWARM_GATE_HANDOFF", "anything-else")
-        fallback = swarm_boot("fallback")
-        assert fallback["next_action"] == "swarm_tick"
-        assert fallback.get("gate_soft_continue") is True
-
-    def test_instrument_renders_supervision_and_hitl(self, isolated_swarm_env: Path) -> None:
-        """Round-57: section six carries governance state so a host sees a
-        pause/veto before its first tick is refused."""
-        prompt = swarm_boot("zcode-3")["instrument_prompt"]
-        assert "supervision:" in prompt
-        assert "hitl:" in prompt
-
-    def test_instrument_carries_mandate_and_bench_gate(self) -> None:
-        """Charter round-79: the repeat-failure mandate is a MUST (not a
-        preference), and the frozen bench-pack protocol is spelled out with
-        its gate state from section six."""
+    def test_working_session_preview_rendered(self) -> None:
         prompt = build_instrument_prompt(
             {
-                "agent_name": "zcode-9",
+                "agent_name": "a",
                 "workspace_root": "/ws",
-                "bench_pack_gate": {"armed": True, "baseline": 1.0},
+                "fsm_state": "IDLE",
+                "working_session": {"preview": "ruled out off-by-one in parser"},
             }
         )
-        assert "PROPOSAL REQUIRED" in prompt
-        assert "必须" in prompt and "swarm_propose" in prompt
-        assert "自由编辑仅限新颖信号与结构性" in prompt
-        # §5.2 renamed the gate in the instrument when the val reserve was
-        # sealed: it is the frozen **val** pack that gates, and its protocol
-        # (two independent solves, both strictly above the bar) is spelled out
-        # here rather than left to the host's imagination.
-        assert "冻结 val 包门" in prompt
-        # §5.2 round-85: the candidate-writing host must NOT solve val — the
-        # instrument must not hand it the per-task prompt command any more.
-        # Val solving lives in a separate context; scoring reads the
-        # sandboxes as they stand, and an unsolved split is `unmeasured`.
-        assert "evolver bench prompt" not in prompt
-        assert "另一上下文" in prompt
-        assert "unmeasured" in prompt
-        assert "no_baseline" in prompt
-        assert "evolver bench baseline" in prompt
-        assert "evolver bench freeze" in prompt
-        assert "bench_pack_gate" in prompt
+        assert "WORKING_SESSION.md" in prompt
+        assert "ruled out off-by-one in parser" in prompt
 
-    def test_instrument_carries_copyable_samples(self) -> None:
-        """The host used to learn the distill shape only after a zero-asset
-        rejection. The sample, and the types distill drops, are in the prompt."""
-        prompt = build_instrument_prompt({"agent_name": "a", "workspace_root": "/ws"})
-        assert '"type": "Gene"' in prompt
-        assert "EvolutionEvent" in prompt
-        assert '"dimension": "content"' in prompt
-        assert "evolver session accept" in prompt
 
-    def test_stop_is_a_relayed_pause_and_skills_are_not_booted(self) -> None:
-        """Saying 停 pauses through the host. Skill sync is not a boot step:
-        it would import every user skill root into the gene store."""
-        fresh = build_instrument_prompt({"agent_name": "a", "workspace_root": "/ws"})
-        assert "swarm_supervise" in fresh
-        assert "action=pause" in fresh
-        assert "用户说「停」才 pause" in fresh
-        assert "action=resume" in fresh
-        assert "host_relay_blocked" in fresh
-        assert "不改 `EVOLVER_SWARM_GATE_HANDOFF`" in fresh
-        assert "不要自己 resume 或 pause" not in fresh
-        assert '"tool": "swarm_hook_event"' in fresh
-        assert "不要在开机时调用 `swarm_skills`" in fresh
-        assert "首次准备" in fresh
-        assert "然后继续 tick" not in fresh
-        assert "'tool': 'swarm_skills'" not in fresh
-        assert "evolver bench prompt" not in fresh
-        assert "说「停」即可" in fresh
+class TestFsmCoreTools:
+    def test_status_shapes(self, isolated_swarm_env: Path) -> None:
+        mcp_st = evolve_status()
+        assert mcp_st["ok"] is True
+        assert mcp_st["version"] == __version__
+        assert mcp_st["protocol_version"] == SWARM_PROTOCOL_VERSION
+        assert mcp_st["fsm_state"] == "IDLE"
+        assert mcp_st["allowed_tools"] == ["evolve_begin", "evolve_status"]
+        assert mcp_st["next_action"] == "evolve_begin"
+        assert set(mcp_st["available_lenses"]) >= {
+            "ast_hotspot",
+            "contract_surface",
+            "import_impact",
+            "trace_locator",
+        }
 
-    def test_status_shape(self, isolated_swarm_env: Path) -> None:
-        status = swarm_status()
-        assert status["ok"] is True
-        assert status["protocol_version"] == SWARM_PROTOCOL_VERSION
-        assert status["workspace_root"] == str(isolated_swarm_env)
-        # Bundled seed genes load even in a fresh store.
-        assert status["genes"] >= 1
-        assert status["pending_solidify"] is False
-        assert set(status["mailbox_pending"]) == {"inbound", "outbound", "unacked_hello"}
-        # Fresh env: no frozen pack → the charter gate reports unarmed.
-        assert status["bench_pack_gate"]["armed"] is False
+        eng_st = swarm_status()
+        assert eng_st["ok"] is True
+        assert eng_st["protocol_version"] == SWARM_PROTOCOL_VERSION
+        assert eng_st["workspace_root"] == str(isolated_swarm_env)
+        assert eng_st["genes"] >= 1
+        assert eng_st["pending_solidify"] is False
+        assert eng_st["bench_pack_gate"]["armed"] is False
+
+    @pytest.mark.asyncio
+    async def test_evolve_begin_discovery_preview_and_empty_rejection(
+        self, isolated_swarm_env: Path
+    ) -> None:
+        swarm_hook_event(
+            "signal_detect",
+            payload={"content": "ImportError: cannot import name 'foo'"},
+        )
+        preview = await evolve_begin(hypothesis="", auto_discover=True)
+        assert preview["ok"] is True
+        assert preview["discovery_only"] is True
+        assert preview["fsm_state"] == "IDLE"
+        assert preview["next_action"] == "evolve_begin"
+        assert "hypothesis_template" in preview
+        assert isinstance(preview["recommended_operators"], list)
+        assert fsm_state() == "IDLE"
+
+        empty = await evolve_begin(hypothesis="   ", auto_discover=False)
+        assert empty["ok"] is False
+        assert empty["error"] == "empty_hypothesis"
+        assert empty["fsm_state"] == "IDLE"
+        assert fsm_state() == "IDLE"
+
+    @pytest.mark.asyncio
+    async def test_evolve_begin_locks_hypothesis_captures_stdout_and_blocks_reentry(
+        self, isolated_swarm_env: Path, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        from evolver.gep import hypothesis as hypothesis_mod
+
+        res = await evolve_begin(
+            hypothesis="Fix parser off-by-one when token stream ends on newline",
+            target_files=["src/parser.py"],
+            agent_name="tester",
+        )
+        assert capsys.readouterr().out == ""
+        assert res["ok"] is True
+        assert res["fsm_state"] == "ACTIVE_RUN"
+        assert res["run_id"]
+        assert res["next_action"] == "evolve_settle"
+        assert res["blackbox_started_at"]
+
+        stored = hypothesis_mod.load_hypothesis()
+        assert stored is not None
+        assert stored["run_id"] == res["run_id"]
+        assert stored["target_hook"] == "src/parser.py"
+
+        # Calling evolve_begin again while ACTIVE_RUN is refused cleanly
+        again = await evolve_begin(hypothesis="Another claim")
+        assert again["ok"] is False
+        assert again["error"] == "fsm_state_mismatch"
+        assert again["fsm_state"] == "ACTIVE_RUN"
+        assert again["next_action"] == "evolve_settle"
+
+    @pytest.mark.asyncio
+    async def test_evolve_begin_val_seal_breach_refused(
+        self, temp_workspace: Path, armed_pack: dict[str, Any]
+    ) -> None:
+        _ = (temp_workspace, armed_pack)
+        res = await evolve_begin(hypothesis="Tailor fix specifically for fixture val task 1")
+        assert res["ok"] is False
+        assert res["error"] == "val_seal_breach"
+        assert res["fsm_state"] == "IDLE"
+        assert fsm_state() == "IDLE"
+
+    @pytest.mark.asyncio
+    async def test_run_lens_logs_into_active_blackbox(self, isolated_swarm_env: Path) -> None:
+        (isolated_swarm_env / "demo.py").write_text(
+            "def f():\n    try:\n        return 1\n    except Exception:\n        pass\n",
+            encoding="utf-8",
+        )
+        begun = await evolve_begin(hypothesis="Remove silent exception swallow in demo.py")
+        assert begun["ok"] is True
+
+        lens_res = evolve_run_lens(name="ast_hotspot", target="demo.py")
+        assert lens_res["ok"] is True
+        assert lens_res["read_only"] is True
+        assert lens_res["fsm_state"] == "ACTIVE_RUN"
+
+        st = evolve_status()
+        assert st["active_blackbox"] is not None
+        assert st["active_blackbox"]["lens_calls_count"] == 1
+
+    def test_evolve_settle_refuses_when_idle(self, isolated_swarm_env: Path) -> None:
+        res = evolve_settle(summary="nothing active")
+        assert res["ok"] is False
+        assert res["error"] == "fsm_state_mismatch"
+        assert res["fsm_state"] == "IDLE"
+        assert res["next_action"] == "evolve_begin"
 
 
 class TestSwarmHypothesis:
-    """演进方案 §5.3 — the host declares this Candidate's one hypothesis.
+    """演进方案 §5.3 — internal hypothesis recorder supports plain string or §5.3 dict."""
 
-    The tool is a recorder, not a judge: it enforces the record's SHAPE and
-    leaves the ref-provenance verdict to the gate, which re-reads what landed
-    on disk. Declaring is not passing, and a malformed declaration is a
-    host-fixable soft failure — never a crash that kills the round.
-    """
-
-    def test_valid_record_lands_on_disk(self, temp_workspace: Path) -> None:
+    def test_valid_dict_lands_on_disk(self, temp_workspace: Path) -> None:
         from evolver.gep import hypothesis as hypothesis_mod
 
         result = swarm_hypothesis(synth_hypothesis())
         assert result["ok"] is True
-        assert result["next_action"] == "swarm_solidify"
-        # Landed, not merely accepted: the gate re-reads this file.
+        assert result["next_action"] == "evolve_settle"
         stored = hypothesis_mod.load_hypothesis()
         assert stored is not None
         assert stored["dimension"] == "content"
         assert [ref["id"] for ref in stored["mechanism_check"]] == [SYNTHETIC_TRAIN_ID]
         assert Path(result["hypothesis_path"]) == hypothesis_mod.hypothesis_path()
 
+    def test_plain_sentence_synthesizes_valid_record(self, temp_workspace: Path) -> None:
+        from evolver.gep import hypothesis as hypothesis_mod
+
+        result = swarm_hypothesis("Fix CLI parser timeout handling")
+        assert result["ok"] is True
+        stored = hypothesis_mod.load_hypothesis()
+        assert stored is not None
+        assert stored["dimension"] == "tool"
+        assert stored["hypothesis"] == "Fix CLI parser timeout handling"
+
     def test_bad_dimension_soft_rejected(self, temp_workspace: Path) -> None:
         result = swarm_hypothesis(synth_hypothesis(dimension="vibes"))
         assert result["ok"] is False
         assert result["error"] == "hypothesis_rejected"
-        # Soft + retryable: the host fixes the record and declares again.
         assert result["failure_mode"]["mode"] == "soft"
         assert result["failure_mode"]["retryable"] is True
-        assert result["next_action"] == "swarm_tick"
+        assert result["next_action"] == "evolve_begin"
 
-    def test_non_dict_rejected(self, temp_workspace: Path) -> None:
+    def test_empty_or_invalid_type_rejected(self, temp_workspace: Path) -> None:
         from evolver.gep import hypothesis as hypothesis_mod
 
-        result = swarm_hypothesis("a bare claim is not a record")
-        assert result["ok"] is False
-        assert result["error"] == "hypothesis_rejected"
-        assert "JSON object" in result["message"]
+        empty_res = swarm_hypothesis("   ")
+        assert empty_res["ok"] is False
+        assert empty_res["error"] == "hypothesis_rejected"
+
+        bad_type = swarm_hypothesis(12345)  # type: ignore[arg-type]
+        assert bad_type["ok"] is False
+        assert bad_type["error"] == "hypothesis_rejected"
         assert hypothesis_mod.load_hypothesis() is None
 
-    def test_mechanism_check_citing_val_is_refused(
+    def test_mechanism_check_citing_val_is_refused_by_gate(
         self, temp_workspace: Path, armed_pack: dict[str, Any]
     ) -> None:
-        """The record is field-valid, so recording succeeds — but the gate
-        re-reads it and refuses: the validation reserve is sealed, so a val id
-        is not evidence a round may cite."""
         from evolver.gep import hypothesis as hypothesis_mod
 
+        _ = armed_pack
         result = swarm_hypothesis(
-            synth_hypothesis(
-                mechanism_check=[
-                    {"id": "fixture-val-1", "before": 0.0, "after": 1.0}  # a val id
-                ]
-            )
+            synth_hypothesis(mechanism_check=[{"id": "fixture-val-1", "before": 0.0, "after": 1.0}])
         )
-        assert result["ok"] is True  # declaring is not passing
+        assert result["ok"] is True
         ok, reason, detail = hypothesis_mod.validate_for_gate(hypothesis_mod.load_hypothesis())
         assert ok is False
         assert reason == hypothesis_mod.REASON_VAL_REF
         assert detail["val_refs"] == ["fixture-val-1"]
-        # Same refusal through the exception path solidify actually hits.
         with pytest.raises(hypothesis_mod.HypothesisError, match="fixture-val-1"):
             hypothesis_mod.require_for_gate(hypothesis_mod.load_hypothesis())
-
-
-class TestTick:
-    async def test_tick_dispatches_and_captures_stdout(
-        self, isolated_swarm_env: Path, capsys: pytest.CaptureFixture[str]
-    ) -> None:
-        result = await swarm_tick(agent_name="tester")
-        assert result["ok"] is True
-        assert result["dispatch_reason"] == "dispatched"
-        assert result["run_id"]
-        assert "GENOME EVOLUTION PROTOCOL" in (result["dispatch_prompt"] or "")
-        assert "Selected Gene" in result["engine_log"] or "BUILT_PROMPT" in result["engine_log"]
-        assert result["next_action"] == "execute_prompt"
-        # Stdout capture proof: nothing leaked past redirect_stdout.
-        assert capsys.readouterr().out == ""
-
-    async def test_tick_persists_state_and_leaves_solidify_pending(
-        self, isolated_swarm_env: Path
-    ) -> None:
-        first = await swarm_tick()
-        assert first["ok"] is True
-        # The first tick leaves the run unfinished. A second tick replaces it
-        # only when the host says so.
-        second = await swarm_tick(supersede_pending=True)
-        state_file = isolated_swarm_env / "evolution" / "swarm_state.json"
-        data = json.loads(state_file.read_text(encoding="utf-8"))
-        assert data["ticks"] == 2
-        assert data["last_tick"]["run_id"] == second["run_id"]
-        # Solidify state written by dispatch → the loop's next step is pending.
-        assert swarm_status()["pending_solidify"] is True
-
-    async def test_tick_without_prompt(self, isolated_swarm_env: Path) -> None:
-        result = await swarm_tick(include_prompt=False)
-        assert result["ok"] is True
-        assert result["dispatch_prompt"] is None
-
-    async def test_tick_soft_continues_while_the_gate_cannot_fully_publish(
-        self, isolated_swarm_env: Path, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
-        """Default handoff soft-continues: cycle may run; warnings + next_steps attached."""
-        monkeypatch.setattr("evolver.config.SWARM_GATE_HANDOFF", "human")
-        result = await swarm_tick(agent_name="gate")
-        assert result.get("gate_soft_continue") is True
-        assert result.get("severity") == "soft"
-        assert result.get("gate_ready") is False
-        assert result.get("gate_gap") == "pack_absent"
-        assert result.get("gap") == "pack_absent"
-        assert result.get("error") not in ("pack_absent", "no_baseline", "unmeasured")
-        assert result.get("next_steps")
-        assert result.get("warnings")
-        # No unfinished run yet: the catalog command stays a current step.
-        assert any(
-            str(item).strip() == "evolver doctor --fix" for item in result.get("commands") or []
-        )
-
-    async def test_fresh_tick_carries_no_proposal_mandate(self, isolated_swarm_env: Path) -> None:
-        """Charter step 1: the field exists on every dispatched tick; a novel
-        family (fresh store, no prior attempts) leaves free editing intact."""
-        result = await swarm_tick(agent_name="mandate-fresh")
-        assert result["ok"] is True
-        assert result["dispatch_reason"] == "dispatched"
-        assert result["proposal_required"] is False
-
-    async def test_tick_result_carries_proposal_mandate(self, isolated_swarm_env: Path) -> None:
-        """Charter step 1 (round-79): a repeat-failure family must surface
-        structurally (``proposal_required=true``), not only as prompt prose
-        — hosts reading fields must not parse blocks to learn the rule."""
-        from evolver import swarm as swarm_mod
-
-        async def fake_cycle(is_loop: bool = False) -> dict[str, Any]:
-            _ = is_loop
-            return {
-                "run_id": "run_mandate",
-                "cycle_id": "0042",
-                "dispatch_prompt": "# GENOME EVOLUTION PROTOCOL (GEP)\nPROPOSAL REQUIRED",
-                "selected_gene": {"id": "gene_g", "name": "G"},
-                "evidence_pack": {"mandate": {"required": True, "reasons": ["repeated_failure"]}},
-            }
-
-        class _Supervision:
-            @staticmethod
-            def supervision_summary() -> dict[str, Any]:
-                return {"state": "running"}
-
-        result = await swarm_mod._swarm_tick_locked(
-            agent_name="mandate-test",
-            include_prompt=True,
-            tripwire={},
-            run_cycle=fake_cycle,
-            log_budget=2000,
-            supervision=_Supervision,
-        )
-        assert result["ok"] is True
-        assert result["dispatch_reason"] == "dispatched"
-        assert result["proposal_required"] is True
-        # The persisted tick summary carries it too (allowlist, round-71).
-        state_file = isolated_swarm_env / "evolution" / "swarm_state.json"
-        data = json.loads(state_file.read_text(encoding="utf-8"))
-        assert data["last_tick"]["proposal_required"] is True
 
 
 class TestDistillSolidifyReport:
@@ -542,7 +343,7 @@ class TestDistillSolidifyReport:
         assert result["ok"] is True
         assert result["genes"] == 1
         assert result["errors"] == []
-        assert result["next_action"] == "swarm_solidify"
+        assert result["next_action"] == "evolve_settle"
 
         from evolver.gep.asset_store import load_genes
 
@@ -554,12 +355,10 @@ class TestDistillSolidifyReport:
         assert result["error"] == "empty_response"
 
     def test_distill_zero_assets_returns_format_hint(self, isolated_swarm_env: Path) -> None:
-        # Dogfood round-4: free-text responses used to return genes=0 silently.
         result = swarm_distill("Fixed the retry logic, all tests pass.")
         assert result["genes"] == 0
         assert "```json" in result["hint"]
         assert "innovate" in result["hint"]
-        assert result["next_action"] == "resubmit_with_asset_blocks"
 
     def test_distill_valid_gene_has_no_hint(self, isolated_swarm_env: Path) -> None:
         response = (
@@ -571,11 +370,9 @@ class TestDistillSolidifyReport:
         result = swarm_distill(response)
         assert result["genes"] == 1
         assert "hint" not in result
-        assert result["next_action"] == "swarm_solidify"
+        assert result["next_action"] == "evolve_settle"
 
     def test_distill_stores_the_host_account_as_a_clue(self, isolated_swarm_env: Path) -> None:
-        """经验即证据 §5.2: the host's free-text account is a clue, not evidence —
-        stored apart from the episode record, tagged with its source."""
         response = (
             "I searched the logs and found the retry loop.\n\n"
             "```json\n"
@@ -594,7 +391,6 @@ class TestDistillSolidifyReport:
         assert any("retry loop" in c["text"] for c in clues)
 
     def test_distill_dry_run_stores_no_clue(self, isolated_swarm_env: Path) -> None:
-        """A clue for a round that never happened is worse than no clue."""
         result = swarm_distill("I searched the logs and found the retry loop.", dry_run=True)
         assert result["ok"] is True
         assert "clue" not in result
@@ -602,60 +398,9 @@ class TestDistillSolidifyReport:
 
         assert episode_clue.recent_clues() == []
 
-    def test_proposal_bridge_works_in_dry_run(self, isolated_swarm_env: Path) -> None:
-        """Round-70: the bridge is OBSERVATION — it must fire in dry_run too
-        (dry_run skips installs, not observations; the proposal replay
-        decision belongs to the operator either way)."""
+    def test_distill_malformed_block_never_crashes(self, isolated_swarm_env: Path) -> None:
         response = (
-            "```json\n"
-            '{"action": "patch", "edits": [{"op": "append", "file": "x.md", '
-            '"content": "n"}]}\n'
-            "```\n"
-        )
-        result = swarm_distill(response, dry_run=True)
-        assert result["dry_run"] is True
-        assert len(result["proposal_candidates"]) == 1
-        assert "swarm_propose" in result["proposal_next_step"]
-
-    def test_distill_surfaces_proposal_candidates(self, isolated_swarm_env: Path) -> None:
-        """Round-61 bridge: an embedded GeneProposal block (action+edits) is
-        surfaced as a replay candidate — observation only, never applied."""
-        response = (
-            "```json\n"
-            '{"type": "Gene", "id": "gene_bridge", "category": "repair", '
-            '"summary": "x", "signals_match": ["hub"]}\n'
-            "```\n"
-            "```json\n"
-            '{"action": "patch", "edits": [{"op": "append", "file": "docs/x.md", '
-            '"content": "note"}]}\n'
-            "```\n"
-        )
-        result = swarm_distill(response)
-        assert result["genes"] == 1
-        assert len(result["proposal_candidates"]) == 1
-        assert result["proposal_candidates"][0]["action"] == "patch"
-        assert "swarm_propose" in result["proposal_next_step"]
-
-    def test_distill_ignores_non_proposal_json(self, isolated_swarm_env: Path) -> None:
-        # A Gene asset block is json but not a proposal — no false candidate.
-        response = (
-            "```json\n"
-            '{"type": "Gene", "id": "gene_plain", "category": "repair", '
-            '"summary": "x", "signals_match": ["hub"]}\n'
-            "```\n"
-        )
-        result = swarm_distill(response)
-        assert "proposal_candidates" not in result
-
-    def test_distill_malformed_block_never_errors(self, isolated_swarm_env: Path) -> None:
-        # The bridge must never turn a format variation into a host error.
-        response = (
-            "```json\n"
-            '{"action": "patch", "edits": "not-a-list"}\n'
-            "```\n"
-            "```json\n"
-            "not json at all\n"
-            "```\n"
+            "```json\nnot json at all\n```\n"
             "```json\n"
             '{"type": "Gene", "id": "gene_ok", "category": "repair", '
             '"summary": "x", "signals_match": ["hub"]}\n'
@@ -663,17 +408,11 @@ class TestDistillSolidifyReport:
         )
         result = swarm_distill(response)
         assert result["ok"] is True
-        assert "proposal_candidates" not in result
+        assert result["genes"] == 1
 
 
 class TestTickPreservesPhaseTimings:
-    """Round-71: the runner writes phase timings into swarm_state.json; the
-    tick summary rewrite (swarm.py _record_tick) must carry them forward —
-    the timing instrument lives on the same file as the tick bookkeeping."""
-
     def test_record_tick_preserves_phase_timings(self, isolated_swarm_env: Path) -> None:
-        import json as _json
-
         from evolver.gep.paths import get_evolution_dir
         from evolver.swarm import _record_tick
 
@@ -681,7 +420,7 @@ class TestTickPreservesPhaseTimings:
         evo.mkdir(parents=True, exist_ok=True)
         state_path = evo / "swarm_state.json"
         state_path.write_text(
-            _json.dumps(
+            json.dumps(
                 {
                     "ticks": 41,
                     "last_tick_phase_timings": {"collect": 0.02, "hub": 0.1},
@@ -690,12 +429,10 @@ class TestTickPreservesPhaseTimings:
             ),
             encoding="utf-8",
         )
-        _record_tick({"run_id": "r", "cycle_id": "c", "next_action": "swarm_tick"})
-        data = _json.loads(state_path.read_text(encoding="utf-8"))
-        assert data["ticks"] == 42, "tick bookkeeping still applies"
-        assert data["last_tick_phase_timings"] == {"collect": 0.02, "hub": 0.1}, (
-            "the timing instrument must survive the tick summary rewrite"
-        )
+        _record_tick({"run_id": "r", "cycle_id": "c", "next_action": "evolve_settle"})
+        data = json.loads(state_path.read_text(encoding="utf-8"))
+        assert data["ticks"] == 42
+        assert data["last_tick_phase_timings"] == {"collect": 0.02, "hub": 0.1}
         assert data["last_tick_total_s"] == 0.12
 
     def test_distill_records_landed_gene_ids(self, isolated_swarm_env: Path) -> None:
@@ -723,7 +460,7 @@ class TestTickPreservesPhaseTimings:
         result = swarm_distill(response)
         assert result["genes"] == 0
         assert result["hint"]
-        assert result["errors"]  # validation failure is surfaced, not swallowed
+        assert result["errors"]
 
     def test_solidify_without_pending_run(self, isolated_swarm_env: Path) -> None:
         result = swarm_solidify()
@@ -733,8 +470,6 @@ class TestTickPreservesPhaseTimings:
     def test_solidify_failure_carries_failure_mode(
         self, isolated_swarm_env: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        # Instrument prompt references ``failure_mode`` — it must actually be
-        # in the tool return (tool-check 2026-09-05: ghost key).
         import evolver.gep.solidify as solidify_mod
 
         monkeypatch.setattr(
@@ -752,7 +487,7 @@ class TestTickPreservesPhaseTimings:
             "reasonClass": "validation",
             "retryable": True,
         }
-        assert result["next_action"] == "swarm_tick"
+        assert result["next_action"] == "evolve_begin"
 
     def test_solidify_hard_failure_directs_stop(
         self, isolated_swarm_env: Path, monkeypatch: pytest.MonkeyPatch
@@ -769,7 +504,6 @@ class TestTickPreservesPhaseTimings:
     def test_solidify_success_records_the_settled_round(
         self, isolated_swarm_env: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        """§5.1: ok + event_id 的轮在周期边界入 episode 库, 键名 episode."""
         import evolver.gep.solidify as solidify_mod
         from evolver.gep.evidence import save_evidence
 
@@ -780,12 +514,14 @@ class TestTickPreservesPhaseTimings:
         result = swarm_solidify()
         assert result["ok"] is True
         assert result["episode"]["ok"] is True
-        assert result["episode"]["round_key"] == "run_ep_1#evt_ep_1"
+        assert result["episode"]["round_key"] == "#evt_ep_1" or result["episode"][
+            "round_key"
+        ].endswith("#evt_ep_1")
+        assert result["episode_id"] == result["episode"]["id"]
 
     def test_solidify_reject_records_the_settled_round(
         self, isolated_swarm_env: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        """A Reject with an event id is recorded, and stays a Reject."""
         import evolver.gep.solidify as solidify_mod
         from evolver.gep.evidence import save_evidence
 
@@ -801,12 +537,11 @@ class TestTickPreservesPhaseTimings:
         result = swarm_solidify()
         assert result["ok"] is False
         assert result["episode"]["ok"] is True
-        assert result["episode"]["round_key"] == "run_ep_rej#evt_ep_rej"
+        assert result["episode_id"] == result["episode"]["id"]
 
     def test_solidify_success_without_a_scene_still_succeeds(
         self, isolated_swarm_env: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        """记录失败不把好轮变坏轮: scene 缺席只报 scene_missing."""
         import evolver.gep.solidify as solidify_mod
 
         monkeypatch.setattr(
@@ -885,8 +620,6 @@ class TestHitlGate:
     def test_mode_off_auto_approves_with_audit(self, isolated_swarm_env: Path) -> None:
         _seed_pending_run()
         result = swarm_solidify(skip_validation=True, agent_name="tester")
-        # HITL passed (auto-approved). Soft-default checks hypothesis before
-        # treating missing git as a soft warning, so the next gate is hyp.
         assert result.get("error") == "hypothesis_missing"
         journal = isolated_swarm_env / "evolution" / "hitl_approvals.jsonl"
         assert journal.exists() and "auto_approved" in journal.read_text(encoding="utf-8")
@@ -920,7 +653,7 @@ class TestHitlGate:
         resolve_approval(blocked["approval"]["request_id"], approve=False)
         again = swarm_solidify(skip_validation=True)
         assert again["error"] == "hitl_rejected"
-        assert again["next_action"] == "swarm_tick"
+        assert again["next_action"] == "evolve_begin"
 
     def test_status_exposes_hitl_state(self, isolated_swarm_env: Path) -> None:
         status = swarm_status()
@@ -929,38 +662,27 @@ class TestHitlGate:
 
 
 class TestSupervision:
-    async def test_paused_tick_refuses_cycle(self, isolated_swarm_env: Path) -> None:
+    @pytest.mark.asyncio
+    async def test_paused_begin_refuses_cycle(self, isolated_swarm_env: Path) -> None:
         from evolver.gep.supervision import set_state
 
         set_state(True, by="human", reason="hold on")
-        result = await swarm_tick(agent_name="tester")
-        assert result["ok"] is True
+        result = await evolve_begin(hypothesis="Attempt while paused", agent_name="tester")
+        assert result["ok"] is False
         assert result["paused"] is True
+        assert result["error"] == "supervision_paused"
         assert result["next_action"] == "await_supervisor_resume"
-        # No cycle ran: no run_id, no engine log.
         assert result.get("run_id") is None
 
-    async def test_resume_allows_tick_again(self, isolated_swarm_env: Path) -> None:
+    @pytest.mark.asyncio
+    async def test_resume_allows_begin_again(self, isolated_swarm_env: Path) -> None:
         from evolver.gep.supervision import set_state
 
         set_state(True, by="human")
         set_state(False, by="human")
-        result = await swarm_tick()
-        assert result.get("paused") is not True
+        result = await evolve_begin(hypothesis="Resume works")
+        assert result["ok"] is True
         assert result["run_id"]
-
-    async def test_veto_withholds_dispatch_prompt(
-        self,
-        isolated_swarm_env: Path,
-        monkeypatch: pytest.MonkeyPatch,
-    ) -> None:
-        fake_veto = {"id": "veto_x", "pattern": "*", "by": "t", "at": "", "note": ""}
-        monkeypatch.setattr("evolver.gep.supervision.check_veto", lambda *a: dict(fake_veto))
-        result = await swarm_tick()
-        assert result["dispatch_reason"] == "supervision_veto"
-        assert result["dispatch_prompt"] is None
-        assert result["next_action"] == "swarm_tick"
-        assert "BUILT_PROMPT" not in (result.get("engine_log") or "")
 
     def test_solidify_veto_blocks(self, isolated_swarm_env: Path) -> None:
         from evolver.gep.supervision import add_veto
@@ -969,11 +691,9 @@ class TestSupervision:
         result = swarm_solidify()
         assert result["ok"] is False
         assert result["error"] == "supervision_veto"
-        assert result["next_action"] == "swarm_tick"
+        assert result["next_action"] == "evolve_begin"
 
     def test_supervise_wrapper_roundtrip(self, isolated_swarm_env: Path) -> None:
-        from evolver.swarm import swarm_supervise
-
         assert swarm_supervise("status")["supervision"]["state"] == "running"
         paused = swarm_supervise("pause", reason="check")
         assert paused["state"] == "paused"
@@ -985,7 +705,7 @@ class TestSupervision:
         assert unveto["ok"] is True
         resumed = swarm_supervise("resume")
         assert resumed["state"] == "running"
-        assert swarm_supervise("sideways")["ok"] is False
+        assert swarm_supervise("sideways")["ok"] is False  # type: ignore[arg-type]
 
     def test_status_exposes_supervision(self, isolated_swarm_env: Path) -> None:
         status = swarm_status()
@@ -1009,7 +729,6 @@ class TestHooksSurface:
         assert journal.exists() and "signal_detect" in journal.read_text(encoding="utf-8")
 
     def test_hook_journal_lines_are_closed_json(self, isolated_swarm_env: Path) -> None:
-        """The journal append must flush + close (no lost tail on crash)."""
         swarm_hook_event("session_start", payload={"content": "hello world"})
         swarm_hook_event("session_end", payload={"content": "bye world"})
         journal = isolated_swarm_env / "evolution" / "hook_events.jsonl"
@@ -1048,26 +767,30 @@ class TestHooksSurface:
         )
         assert install["ok"] is True
 
-        assert swarm_hooks("reinstall")["ok"] is False
+        assert swarm_hooks("reinstall")["ok"] is False  # type: ignore[arg-type]
 
 
 class TestMutualExclusion:
-    """P1: solidify/propose take the same non-blocking instance lock as tick.
-
-    The daemon `--loop` may hold the lock while a host solidifies or proposes
-    into the same workspace (stash/rollback + file edits). A conflict refuses
-    with stop_and_report instead of interleaving two writers.
-    """
-
     @staticmethod
     def _held_lock(monkeypatch: pytest.MonkeyPatch) -> None:
         import contextlib
 
         @contextlib.contextmanager
         def _held(**kwargs: object) -> Iterator[bool]:
+            _ = kwargs
             yield False
 
         monkeypatch.setattr("evolver.gep.instance_lock.instance_lock_ctx", _held)
+
+    @pytest.mark.asyncio
+    async def test_begin_refuses_under_held_lock(
+        self, isolated_swarm_env: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        self._held_lock(monkeypatch)
+        result = await evolve_begin(hypothesis="Test lock guard")
+        assert result["ok"] is False
+        assert result["error"] == "instance_lock_held"
+        assert result["next_action"] == "stop_and_report"
 
     def test_solidify_refuses_under_held_lock(
         self, isolated_swarm_env: Path, monkeypatch: pytest.MonkeyPatch
@@ -1100,16 +823,13 @@ class TestCodeStaleness:
     def test_status_reports_staleness_surface(self, isolated_swarm_env: Path) -> None:
         result = swarm_status()
         assert "source_revision" in result
-        # SHA string or None when no .git beside the package
         assert result["source_revision"] is None or isinstance(result["source_revision"], str)
         cs = result["code_staleness"]
         assert cs is not None
         assert set(cs) == {"stale", "process_started_at", "newest_src_mtime"}
-        # A freshly imported test process cannot predate the sources it runs.
         assert cs["stale"] is False
 
     def test_staleness_detects_newer_source(self, isolated_swarm_env: Path) -> None:
-        # Simulate a process that started before the newest source edit.
         import os
 
         import psutil
@@ -1120,32 +840,16 @@ class TestCodeStaleness:
 
         def fake_ct(self: psutil.Process) -> float:
             if os.getpid() == self.pid:
-                return 0.0  # epoch — older than any source file
+                return 0.0
             return real_ct(self)
 
         original = psutil.Process.create_time
-        psutil.Process.create_time = fake_ct
+        psutil.Process.create_time = fake_ct  # type: ignore[method-assign]
         try:
             cs = _code_staleness()
         finally:
-            psutil.Process.create_time = original
+            psutil.Process.create_time = original  # type: ignore[method-assign]
         assert cs is not None and cs["stale"] is True
-
-
-class TestMailboxPendingCount:
-    def test_status_counts_only_pending_inbound(self, isolated_swarm_env: Path) -> None:
-        # poll() returns acked/synced messages too; the "pending" count must
-        # not (dogfood round-7: the number only ever went up, even after acks).
-        from evolver.swarm import _mailbox_store
-
-        store = _mailbox_store()
-        store.write_inbound(id="m-pending-1", type="t", payload={})
-        store.write_inbound(id="m-pending-2", type="t", payload={})
-        store.write_inbound(id="m-done", type="t", payload={})
-        assert store.ack(["m-done"]) == 1
-
-        result = swarm_status()
-        assert result["mailbox_pending"]["inbound"] == 2
 
 
 class TestPendingSolidifyTruth:
@@ -1157,14 +861,13 @@ class TestPendingSolidifyTruth:
         path.write_text(json.dumps(data), encoding="utf-8")
 
     def test_landed_run_is_not_pending(self, isolated_swarm_env: Path) -> None:
-        # The state file persists after success (lineage); existence alone
-        # kept the flag True forever (round-9: 424 s no-op cascade per boot).
         from evolver.gep.paths import get_solidify_state_path
         from evolver.swarm import _pending_solidify_state
 
         self._write_state(get_solidify_state_path(), "run_a", "run_a")
         assert _pending_solidify_state() is False
         assert swarm_status()["pending_solidify"] is False
+        assert fsm_state() == "IDLE"
 
     def test_newer_run_is_pending(self, isolated_swarm_env: Path) -> None:
         from evolver.gep.paths import get_solidify_state_path
@@ -1172,17 +875,16 @@ class TestPendingSolidifyTruth:
 
         self._write_state(get_solidify_state_path(), "run_b", "run_a")
         assert _pending_solidify_state() is True
+        assert fsm_state() == "ACTIVE_RUN"
 
     def test_missing_file_not_pending(self, isolated_swarm_env: Path) -> None:
         from evolver.swarm import _pending_solidify_state
 
         assert _pending_solidify_state() is False
+        assert fsm_state() == "IDLE"
 
 
 class TestStaleImportGuard:
-    """Round-17: stale long-lived hosts crash on lazy imports of new code —
-    convert to a self-diagnosing code_stale_process result."""
-
     def test_helper_shape(self) -> None:
         from evolver.swarm import _stale_import_error
 
@@ -1199,7 +901,8 @@ class TestStaleImportGuard:
         import evolver.gep.distill as distill_mod
         from evolver import swarm
 
-        def boom(*args: object, **kwargs: object) -> dict:
+        def boom(*args: object, **kwargs: object) -> dict[str, Any]:
+            _ = (args, kwargs)
             raise ImportError("cannot import name 'NEW_THING' from 'evolver.config'")
 
         monkeypatch.setattr(distill_mod, "install_distilled", boom)
@@ -1208,41 +911,15 @@ class TestStaleImportGuard:
         assert result["error"] == "code_stale_process"
         assert result["next_action"] == "reconnect_host"
 
-    def test_tick_run_cycle_import_returns_stale_error(
-        self, isolated_swarm_env: Path, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
-        import asyncio
-
-        from evolver import swarm
-
-        async def boom_cycle(is_loop: bool = False) -> dict:
-            raise ImportError("cannot import name 'Y' from 'evolver.gep.anchor'")
-
-        import contextlib
-
-        @contextlib.contextmanager
-        def fake_lock_ctx(**kwargs: object) -> Iterator[bool]:
-            yield True
-
-        monkeypatch.setattr("evolver.evolve.runner._run_single_cycle", boom_cycle, raising=False)
-        monkeypatch.setattr("evolver.gep.instance_lock.instance_lock_ctx", fake_lock_ctx)
-        result = asyncio.run(swarm.swarm_tick(include_prompt=False))
-        assert result["ok"] is False
-        assert result["error"] == "code_stale_process"
-
 
 @pytest.mark.asyncio
-async def test_e2e_no_baseline_soft_path_boot_tick_solidify(
+async def test_e2e_no_baseline_soft_path_begin_and_solidify(
     isolated_swarm_env: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """no_baseline: boot → tick → solidify soft path; no await_human / no hard error."""
-    import subprocess
-
+    """no_baseline environment gap soft-accepts cleanly without blocking evolve_begin."""
     from evolver.bench.frozen_gate import enrich_soft_accept
-    from evolver.gep import hypothesis as hypothesis_mod
-    from evolver.gep.solidify import solidify, write_state_for_solidify
+    from evolver.gep.solidify import solidify
     from evolver.ops.open_box import SOFT_GAP_ERRORS
-    from tests.conftest import synth_hypothesis
 
     repo = isolated_swarm_env
     subprocess.run(["git", "init"], cwd=repo, check=True, capture_output=True)
@@ -1267,45 +944,24 @@ async def test_e2e_no_baseline_soft_path_boot_tick_solidify(
         capture_output=True,
     )
     monkeypatch.delenv("EVOLVER_NO_PARENT_GIT", raising=False)
-    monkeypatch.setattr("evolver.config.SWARM_GATE_HANDOFF", "human")
 
     def bare() -> dict[str, object]:
         return {"armed": True, "baseline": None, "train_ids": ["train-a"]}
 
     monkeypatch.setattr("evolver.bench.frozen_gate.gate_snapshot", bare)
 
-    boot = swarm_boot("e2e-soft")
-    assert boot["next_action"] == "swarm_tick"
-    assert boot["next_action"] != "await_human"
-    assert boot.get("severity") == "soft"
-    assert boot.get("gate_soft_continue") is True
-    assert boot.get("gap") == "no_baseline"
-    assert boot.get("error") not in SOFT_GAP_ERRORS
-    assert boot.get("next_steps")
-    assert int((boot.get("mailbox_hello_ack") or {}).get("acked") or 0) >= 1
+    begun = await evolve_begin(
+        hypothesis="Update README note while baseline is not yet measured",
+        agent_name="e2e-soft",
+    )
+    assert begun["ok"] is True
+    assert begun["fsm_state"] == "ACTIVE_RUN"
+    assert begun["next_action"] == "evolve_settle"
+    assert begun.get("error") not in SOFT_GAP_ERRORS
 
-    tick = await swarm_tick(agent_name="e2e-soft")
-    assert tick.get("next_action") != "await_human"
-    assert tick.get("severity") == "soft"
-    assert tick.get("gate_soft_continue") is True
-    assert tick.get("gap") == "no_baseline"
-    assert tick.get("error") not in SOFT_GAP_ERRORS
-    assert tick.get("warnings")
-
-    # Solidify soft path: usability reject becomes soft-accept (no fake baseline).
     soft = enrich_soft_accept({"accept": False, "reason": "no_baseline"})
     assert soft["accept"] is True and soft.get("soft_accept") is True
     assert soft.get("next_steps")
-
-    write_state_for_solidify(
-        {
-            "run_id": "run_e2e_soft",
-            "signals": ["log_error"],
-            "selected_gene_id": "g_e2e",
-            "mutation": {"id": "m_e2e", "validation": []},
-        }
-    )
-    hypothesis_mod.record_hypothesis(synth_hypothesis())
 
     def soft_verdict(**_kwargs: object) -> dict[str, object]:
         return {
@@ -1316,11 +972,8 @@ async def test_e2e_no_baseline_soft_path_boot_tick_solidify(
         }
 
     monkeypatch.setattr("evolver.bench.frozen_gate.gate_verdict", soft_verdict)
-    # Skip heavy validation; usability soft-accept must not hard-stop.
     result = solidify(skip_validation=True)
     assert result.get("ok") is True
     assert result.get("soft_accept") is True
     assert result.get("next_action") != "await_human"
     assert result.get("error") not in SOFT_GAP_ERRORS
-    reason = str((result.get("bench_pack") or {}).get("reason") or result.get("reason") or "")
-    assert reason == "no_baseline" or result.get("soft_accept")

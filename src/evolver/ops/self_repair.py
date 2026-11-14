@@ -21,7 +21,6 @@ Design notes (Pythonic)
 from __future__ import annotations
 
 import logging
-import os
 import time
 from collections.abc import Sequence
 from dataclasses import dataclass, field
@@ -67,7 +66,7 @@ def repair(
         Repository root. Defaults to ``get_workspace_root()``.
     force_reset:
         When ``True``, performs a hard reset to ``origin/main``.
-        When ``None`` (default), reads ``EVOLVER_SELF_REPAIR_HARD_RESET``.
+        When ``None`` (default), reads ``EvolverConfig.self_repair_hard_reset``.
     """
     root = Path(git_root) if git_root else get_workspace_root()
     report = RepairReport()
@@ -101,8 +100,9 @@ def repair(
 
 
 def _env_force_reset() -> bool:
-    raw = os.environ.get("EVOLVER_SELF_REPAIR_HARD_RESET", "").lower().strip()
-    return raw in ("1", "true", "yes", "on")
+    from evolver.config import get_config
+
+    return get_config().self_repair_hard_reset
 
 
 def _try_git(
@@ -156,7 +156,7 @@ def _remove_stale_lock(root: Path, report: RepairReport) -> None:
 
 def _hard_reset(root: Path, report: RepairReport) -> None:
     logger.warning(
-        "[SelfRepair] Performing HARD reset to origin/main (EVOLVER_SELF_REPAIR_HARD_RESET is set)."
+        "[SelfRepair] Performing HARD reset to origin/main (self_repair_hard_reset is set)."
     )
 
     # Safety: stash any local changes before the hard reset.

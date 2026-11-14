@@ -6,7 +6,6 @@ Equivalent to evolver/src/gep/gitOps.js.
 from __future__ import annotations
 
 import json
-import os
 import subprocess
 import time
 from collections.abc import Sequence
@@ -47,6 +46,11 @@ def run_cmd(
         check=True,
     )
     return result.stdout.strip()
+
+
+def git_head(cwd: Path | str | None = None) -> str:
+    """HEAD commit id, or ``""`` outside a repo / on git trouble."""
+    return try_run_cmd(["rev-parse", "HEAD"], cwd=cwd, timeout=30).strip()
 
 
 def try_run_cmd(
@@ -274,7 +278,7 @@ def rollback_tracked(
     include_untracked: bool = True,
     run_id: str | None = None,
 ) -> dict[str, Any]:
-    """Roll back tracked changes according to EVOLVER_ROLLBACK_MODE.
+    """Roll back tracked changes according to ``EvolverConfig.rollback_mode``.
 
     ``include_untracked=False`` (Sprint 23): stash tracked changes only —
     untracked disposal is the caller's business (the fitness-cascade /
@@ -282,7 +286,9 @@ def rollback_tracked(
     that the workspace does not gitignore survive the rollback).
     """
     if mode is None:
-        mode = os.environ.get("EVOLVER_ROLLBACK_MODE", "stash").lower().strip()
+        from evolver.config import get_config
+
+        mode = get_config().rollback_mode.lower().strip()
 
     stash_msg = f"evolver: rejected {run_id}" if run_id else "evolver: rejected"
     result: dict[str, Any] = {

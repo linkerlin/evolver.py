@@ -1,6 +1,6 @@
 """SQLite-backed event store — drop-in replacement for JSONL event storage.
 
-Enabled via ``EVOLVER_SQLITE_STORE=1``.
+Enabled via ``sqlite_store=true`` in ``EVOLVER_CONFIG``.
 Schema: a single ``events`` table with id/timestamp/data columns.
 """
 

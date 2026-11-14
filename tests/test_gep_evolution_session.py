@@ -269,19 +269,18 @@ def test_soft_accept_allows_pack_absent_and_unmeasured(session: EvolutionSession
 
 
 @pytest.mark.parametrize("reason", ["drop", "flat", "regression"])
-def test_soft_accept_allows_fitness_soft_reasons(session: EvolutionSession, reason: str) -> None:
-    """Fitness soft reasons (drop/flat/regression) now soft-accept with warnings."""
+def test_fitness_verdicts_are_binding_refusals(session: EvolutionSession, reason: str) -> None:
+    """Fitness verdicts (drop/flat/regression) are honest rejects since v1.114.0.
+
+    Only first-run environment gaps (no_baseline/pack_absent/unmeasured)
+    soft-accept; a fitness refusal is binding — the session cannot Accept
+    and stays RUNNING for the human to resolve.
+    """
     session.begin_round("h", f"cand-{reason}")
     session.record_gate_decision({"accept": False, "reason": reason})
-    published = session.accept()
-    assert published == f"cand-{reason}"
-    assert session.status == ACCEPTED
-    gate = session.run["gate"]
-    assert gate["soft_accept"] is True
-    assert gate["accept"] is True
-    assert gate["reason"] == reason
-    assert gate.get("warnings")
-    assert gate.get("next_steps")
+    with pytest.raises(EvolutionError, match="did not pass the publication gate"):
+        session.accept()
+    assert session.status == RUNNING
 
 
 def test_bare_accept_is_refused_without_a_gate_record(session: EvolutionSession) -> None:

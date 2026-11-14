@@ -57,11 +57,13 @@ def test_voided_designs_are_not_re_dispatched() -> None:
 def test_the_stage_name_is_present_in_the_stage_files() -> None:
     """The live stage name must survive in the four files that direct work.
 
-    The marker moved with the stage: 库即尺子 is archived prose, 经验即证据
-    is what the next agent should follow. A file that only names the
-    archived stage fails this pin.
+    The marker moved with the stage: 库即尺子 and 经验即证据 are archived in
+    their own files, while 算子即基因 is what the next agent should follow.
+    A file that only names an archived stage fails this pin.
     """
     for name in ["演进方案.md", "TODO.md", "AGENTS.md", "SKILL.md"]:
-        assert "经验即证据" in (REPO / name).read_text(encoding="utf-8"), (
-            f"{name} lost the live stage marker '经验即证据'"
+        assert "算子即基因" in (REPO / name).read_text(encoding="utf-8"), (
+            f"{name} lost the live stage marker '算子即基因'"
         )
+    for archived in ["演进方案_经验即证据.md", "TODO_经验即证据.md"]:
+        assert (REPO / archived).is_file(), f"missing archived stage doc {archived}"

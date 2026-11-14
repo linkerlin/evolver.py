@@ -70,19 +70,19 @@ BASELINE_FORMAT: Final = "evolver.bench_pack_baseline.v1"
 #: The gate only gates on the val split (S26.4: gate ONLY on val).
 GATE_SPLIT: Final = "val"
 
-#: Usability gaps + soft-default UX (2026-10-31): measurement still records
-#: the outcome (honest bar), but solidify / swarm / session Accept soft-accept
-#: with warnings + next_steps so hosts can complete the loop and write experience.
+#: First-run usability gaps only (算子即基因 v1.114.0 — 支柱一): measurement
+#: still records the honest bar, but a missing pack/baseline is an
+#: environment gap ``evolver init`` auto-fills, not a Candidate verdict —
+#: those three keep soft-continuing so a first-run host is not stuck.
 #: Soft-accept MUST NOT call save_baseline / establish a fake Parent bar.
-#: Only hard blocks remain: secrets and protected state paths.
+#: Fitness verdicts (``drop`` / ``flat`` / ``regression`` / confounded) are
+#: NO LONGER soft-accepted: they return ``ok=False, outcome=draft_preserved``
+#: with the patch preserved in place — the vault never sees a non-improvement.
 USABILITY_SOFT_REASONS: Final = frozenset(
     {
         "no_baseline",
         "pack_absent",
         "unmeasured",
-        "drop",
-        "flat",
-        "regression",
     }
 )
 
@@ -93,15 +93,19 @@ def is_usability_soft_reason(reason: str | None) -> bool:
 
 
 def enrich_soft_accept(verdict: dict[str, Any]) -> dict[str, Any]:
-    """Turn a usability reject into a soft-accept payload (no baseline write).
+    """Turn a usability gap into a soft-accept payload (no baseline write).
 
     Keeps the original ``reason`` (no_baseline / pack_absent / unmeasured) so
     next_steps stay actionable. Sets ``accept=True`` + ``soft_accept=True`` +
     ``verdict=soft_accept`` and attaches warnings / next_steps / commands.
+    A fitness verdict (drop/flat/regression/…) is returned UNCHANGED —
+    v1.114.0 (支柱一) never mints a non-improvement into an accept.
     """
     reason = str(verdict.get("soft_reason") or verdict.get("reason") or "").strip()
     if not is_usability_soft_reason(reason):
-        reason = str(verdict.get("reason") or "no_baseline").strip()
+        out = dict(verdict)
+        out["accept"] = False
+        return out
     from evolver.ops.open_box import next_steps_for
 
     steps = next_steps_for(reason, context=verdict)

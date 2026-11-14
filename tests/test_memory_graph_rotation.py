@@ -22,17 +22,14 @@ def _archives(tmp_dir: Path) -> list[str]:
 
 @pytest.fixture
 def rotate_env(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
-    """Isolate rotation env vars into a temp dir (Node beforeEach equivalent)."""
+    """Isolate rotation config into a temp dir (Node beforeEach equivalent)."""
     for key in (
-        "EVOLVER_MEMORY_GRAPH_AUTO_ROTATE",
-        "EVOLVER_MEMORY_GRAPH_MAX_SIZE_MB",
-        "EVOLVER_MEMORY_GRAPH_RETENTION_COUNT",
-        "EVOLVER_ROTATE_GZIP_MAX_MB",
         "MEMORY_GRAPH_PATH",
         "MEMORY_DIR",
         "EVOLUTION_DIR",
     ):
         monkeypatch.delenv(key, raising=False)
+    monkeypatch.setenv("EVOLVER_CONFIG", '{"quiet_legacy_warning":true}')
     monkeypatch.setenv("MEMORY_GRAPH_PATH", str(tmp_path / "memory_graph.jsonl"))
     monkeypatch.setenv("EVOLUTION_DIR", str(tmp_path))
     # Reset throttle counters between tests.
@@ -44,7 +41,9 @@ def rotate_env(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
 def test_rotates_when_active_file_exceeds_max_size(
     rotate_env: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    monkeypatch.setenv("EVOLVER_MEMORY_GRAPH_MAX_SIZE_MB", "0.01")  # 10 KB
+    monkeypatch.setenv(
+        "EVOLVER_CONFIG", '{"memory_graph_max_size_mb":0.01,"quiet_legacy_warning":true}'
+    )  # 10 KB
     active_path = Path(rotate_env / "memory_graph.jsonl")
     active_path.write_bytes(b"x" * (20 * 1024))
 
@@ -63,7 +62,9 @@ def test_rotates_when_active_file_exceeds_max_size(
 def test_rotates_oversized_file_at_startup(
     rotate_env: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    monkeypatch.setenv("EVOLVER_MEMORY_GRAPH_MAX_SIZE_MB", "0.01")
+    monkeypatch.setenv(
+        "EVOLVER_CONFIG", '{"memory_graph_max_size_mb":0.01,"quiet_legacy_warning":true}'
+    )
     active_path = Path(rotate_env / "memory_graph.jsonl")
     active_path.write_bytes(b"x" * (20 * 1024))
 
@@ -78,7 +79,9 @@ def test_rotates_oversized_file_at_startup(
 def test_does_not_rotate_when_file_below_threshold(
     rotate_env: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    monkeypatch.setenv("EVOLVER_MEMORY_GRAPH_MAX_SIZE_MB", "100")
+    monkeypatch.setenv(
+        "EVOLVER_CONFIG", '{"memory_graph_max_size_mb":100,"quiet_legacy_warning":true}'
+    )
     active_path = Path(rotate_env / "memory_graph.jsonl")
     active_path.write_bytes(b"x" * 1024)
 
@@ -90,8 +93,10 @@ def test_does_not_rotate_when_file_below_threshold(
 
 
 def test_respects_auto_rotate_opt_out(rotate_env: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setenv("EVOLVER_MEMORY_GRAPH_AUTO_ROTATE", "false")
-    monkeypatch.setenv("EVOLVER_MEMORY_GRAPH_MAX_SIZE_MB", "0.001")
+    monkeypatch.setenv(
+        "EVOLVER_CONFIG",
+        '{"memory_graph_auto_rotate":false,"memory_graph_max_size_mb":0.001,"quiet_legacy_warning":true}',
+    )
     active_path = Path(rotate_env / "memory_graph.jsonl")
     active_path.write_bytes(b"x" * (10 * 1024))
 
@@ -104,7 +109,6 @@ def test_respects_auto_rotate_opt_out(rotate_env: Path, monkeypatch: pytest.Monk
 def test_prunes_rotated_archives_beyond_retention(
     rotate_env: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    monkeypatch.setenv("EVOLVER_MEMORY_GRAPH_RETENTION_COUNT", "2")
     active_path = Path(rotate_env / "memory_graph.jsonl")
     for ts in (
         "20260401000000",
@@ -115,7 +119,10 @@ def test_prunes_rotated_archives_beyond_retention(
     ):
         (rotate_env / f"memory_graph.jsonl.{ts}.gz").write_text("archive", encoding="utf-8")
 
-    monkeypatch.setenv("EVOLVER_MEMORY_GRAPH_MAX_SIZE_MB", "0.001")
+    monkeypatch.setenv(
+        "EVOLVER_CONFIG",
+        '{"memory_graph_retention_count":2,"memory_graph_max_size_mb":0.001,"quiet_legacy_warning":true}',
+    )
     active_path.write_bytes(b"x" * (10 * 1024))
     mg.maybe_rotate_memory_graph(active_path, force=True)
 
@@ -127,8 +134,10 @@ def test_exposes_config_helpers_that_read_current_env(
     rotate_env: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     _ = rotate_env
-    monkeypatch.setenv("EVOLVER_MEMORY_GRAPH_MAX_SIZE_MB", "42")
-    monkeypatch.setenv("EVOLVER_MEMORY_GRAPH_RETENTION_COUNT", "3")
+    monkeypatch.setenv(
+        "EVOLVER_CONFIG",
+        '{"memory_graph_max_size_mb":42,"memory_graph_retention_count":3,"quiet_legacy_warning":true}',
+    )
     assert mg.rotation_max_size_bytes() == 42 * 1024 * 1024
     assert mg.rotation_retention_count() == 3
     assert mg.rotation_enabled() is True
@@ -141,8 +150,10 @@ def test_uses_sane_defaults_when_env_absent_or_invalid(
     assert mg.rotation_max_size_bytes() == 100 * 1024 * 1024
     assert mg.rotation_retention_count() == 7
 
-    monkeypatch.setenv("EVOLVER_MEMORY_GRAPH_MAX_SIZE_MB", "not-a-number")
-    monkeypatch.setenv("EVOLVER_MEMORY_GRAPH_RETENTION_COUNT", "-1")
+    monkeypatch.setenv(
+        "EVOLVER_CONFIG",
+        '{"memory_graph_max_size_mb":"not-a-number","memory_graph_retention_count":-1,"quiet_legacy_warning":true}',
+    )
     assert mg.rotation_max_size_bytes() == 100 * 1024 * 1024
     assert mg.rotation_retention_count() == 7
 
@@ -150,14 +161,16 @@ def test_uses_sane_defaults_when_env_absent_or_invalid(
 def test_accepts_zero_as_retention_delete_all(
     rotate_env: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    monkeypatch.setenv("EVOLVER_MEMORY_GRAPH_RETENTION_COUNT", "0")
+    monkeypatch.setenv(
+        "EVOLVER_CONFIG",
+        '{"memory_graph_retention_count":0,"memory_graph_max_size_mb":0.001,"quiet_legacy_warning":true}',
+    )
     assert mg.rotation_retention_count() == 0
 
     active_path = Path(rotate_env / "memory_graph.jsonl")
     (rotate_env / "memory_graph.jsonl.20260401000000.gz").write_text("a", encoding="utf-8")
     (rotate_env / "memory_graph.jsonl.20260402000000.gz").write_text("b", encoding="utf-8")
 
-    monkeypatch.setenv("EVOLVER_MEMORY_GRAPH_MAX_SIZE_MB", "0.001")
     active_path.write_bytes(b"x" * (10 * 1024))
     mg.maybe_rotate_memory_graph(active_path, force=True)
 

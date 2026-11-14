@@ -1,11 +1,4 @@
-"""P2 MCP host usability: honest project binding and one error envelope.
-
-``swarm_boot(project=...)`` must not hide a ``workspace_root != repo_root``
-split, and a free-text label must not invent a workspace. Tool exceptions
-that the MCP SDK used to stringify as ``Error executing tool ...`` return
-``{ok: false, error, message, next_steps}``. Soft-accept dicts that already
-use that shape stay as the tool returned them.
-"""
+"""P2 MCP host usability: honest project binding and structured error envelope."""
 
 from __future__ import annotations
 
@@ -47,11 +40,6 @@ def _init_git_repo(repo: Path) -> Path:
 
 
 def _track_env(monkeypatch: pytest.MonkeyPatch, key: str) -> None:
-    """Remember ``key`` so a later ``os.environ`` write is undone.
-
-    ``monkeypatch.delenv`` records nothing when the key is already absent, so
-    ``swarm_boot`` assigning it would leak into the next test.
-    """
     if key not in os.environ:
         monkeypatch.setenv(key, "")
     monkeypatch.delenv(key, raising=False)
@@ -83,7 +71,7 @@ class TestProjectBindingHonesty:
     def test_subdir_keeps_repo_root_and_warns(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        from evolver.swarm import swarm_boot, swarm_status
+        from evolver.swarm import evolve_status
 
         _isolate(tmp_path, monkeypatch)
         repo = _init_git_repo(tmp_path / "repo")
@@ -93,34 +81,21 @@ class TestProjectBindingHonesty:
         elsewhere.mkdir()
         monkeypatch.chdir(elsewhere)
 
-        boot = swarm_boot("host", project=str(sub))
-        bound = boot["bound_paths"]
+        st = evolve_status(project=str(sub))
+        bound = st["bound_paths"]
 
-        assert boot["ok"] is True
-        assert boot.get("error") is None
-        assert boot["next_action"] != "stop_and_report"
+        assert st["ok"] is True
         assert Path(bound["repo_root"]).resolve() == repo.resolve()
         assert Path(bound["workspace_root"]).resolve() == sub.resolve()
         assert Path(bound["code_root"]).resolve() == repo.resolve()
         assert bound["differ"] is True
         assert bound["project_applied"] is True
-        assert "repo_root" in bound["semantics"]
-        assert "workspace_root" in bound["semantics"]
-        assert "soft-continue" in bound["semantics"]
         assert bound["warning"]
-        assert bound["next_steps"]
-        assert any("workspace_root" in str(item) for item in boot.get("warnings") or [])
-        assert boot.get("severity") == "soft"
-
-        status = swarm_status()
-        assert status["bound_paths"]["differ"] is True
-        assert status["ok"] is True
-        assert status.get("error") is None
 
     def test_free_text_label_does_not_invent_a_workspace(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        from evolver.swarm import swarm_boot
+        from evolver.swarm import evolve_status
 
         _isolate(tmp_path, monkeypatch)
         repo = _init_git_repo(tmp_path / "repo")
@@ -128,11 +103,10 @@ class TestProjectBindingHonesty:
         monkeypatch.setenv("OPENCLAW_WORKSPACE", str(repo))
         monkeypatch.chdir(tmp_path)
 
-        boot = swarm_boot("host", project="just-a-label")
-        bound = boot["bound_paths"]
+        st = evolve_status(project="just-a-label")
+        bound = st["bound_paths"]
 
-        assert boot["ok"] is True
-        assert boot.get("error") is None
+        assert st["ok"] is True
         assert os.environ["EVOLVER_REPO_ROOT"] == str(repo)
         assert os.environ["OPENCLAW_WORKSPACE"] == str(repo)
         assert not (tmp_path / "just-a-label").exists()
@@ -142,18 +116,14 @@ class TestProjectBindingHonesty:
         assert bound["project_applied"] is False
         assert bound["project_reason"] == "not_a_directory"
         assert bound["warning"]
-        assert bound["next_steps"]
-        assert boot["next_action"] != "stop_and_report"
 
     def test_git_root_project_has_no_mismatch_warning(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        from evolver.gep.supervision import set_state
         from evolver.swarm import swarm_host_round
 
         _isolate(tmp_path, monkeypatch)
         repo = _init_git_repo(tmp_path / "repo")
-        set_state(True, by="test", reason="skip tick")
 
         result = asyncio.run(swarm_host_round(agent_name="host", project=str(repo)))
         bound = result["bound_paths"]
@@ -164,7 +134,6 @@ class TestProjectBindingHonesty:
         assert bound["differ"] is False
         assert bound["project_applied"] is True
         assert "warning" not in bound
-        assert "semantics" in bound
 
 
 class TestToolErrorEnvelope:
@@ -188,16 +157,21 @@ class TestToolErrorEnvelope:
         assert echoed["error"] == "not_found"
         assert not result.content[0].text.startswith("Error executing tool")
 
-    def test_invalid_enum_and_asset_get_share_the_envelope(self) -> None:
+    def test_invalid_enum_and_asset_get_share_the_envelope(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        from evolver.gep.solidify import write_state_for_solidify
         from evolver.mcp_server import build_server
 
+        _isolate(tmp_path, monkeypatch)
+        write_state_for_solidify({"run_id": "run_enum_check", "signals": []})
         server = build_server()
-        enum_result = _call(server, "swarm_hook_event", {"event": "bogus"})
+        enum_result = _call(server, "evolve_settle", {"validation_scope": "bogus"})
         enum_body = enum_result.structured_content
         assert enum_result.is_error is True
         assert enum_body["ok"] is False
         assert enum_body["error"] == "invalid_arguments"
-        assert enum_body["tool"] == "swarm_hook_event"
+        assert enum_body["tool"] == "evolve_settle"
         assert enum_body["message"]
         assert enum_body["next_steps"]
 
@@ -238,17 +212,20 @@ class TestToolErrorEnvelope:
         assert result.structured_content["run_id"] == "run_p2"
         assert result.structured_content.get("ok") is not False
 
-    def test_soft_failure_dict_is_not_rewrapped(
+    def test_domain_failure_dict_is_not_rewrapped(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         from evolver.mcp_server import build_server
 
         _isolate(tmp_path, monkeypatch)
-        result = _call(build_server(), "swarm_hypothesis", {"hypothesis": {}})
+        result = _call(
+            build_server(),
+            "evolve_begin",
+            {"hypothesis": "", "auto_discover": False},
+        )
         body = result.structured_content
 
         assert result.is_error is False
         assert body["ok"] is False
-        assert body["error"] == "hypothesis_rejected"
+        assert body["error"] == "empty_hypothesis"
         assert "tool" not in body
-        assert body["failure_mode"]["retryable"] is True

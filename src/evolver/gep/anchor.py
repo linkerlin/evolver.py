@@ -115,7 +115,7 @@ def run_anchor_suite(*, only: set[str] | None = None) -> dict[str, Any]:
             "finished_at": time.time() * 1000.0,
         }
     env = dict(validation_env())
-    env["EVOLVER_ANCHOR_PROBE"] = "1"
+    env["ANCHOR_PROBE_ACTIVE"] = "1"
     for case in cases:
         probe = Path(str(case["_dir"])) / "probe.py"
         result: dict[str, Any] = {

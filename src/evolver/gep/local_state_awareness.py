@@ -104,14 +104,17 @@ def _capture_git_status(root: Path) -> dict[str, list[str]]:
 
 def _capture_env_vars() -> dict[str, str]:
     """Capture a curated subset of environment variables."""
+    from evolver.config import get_config
+
     keys = [
         "A2A_NODE_ID",
-        "EVOLVER_ROLLBACK_MODE",
         "HOME",
         "USER",
         "PYTHONPATH",
     ]
-    return {k: os.environ.get(k, "") for k in keys}
+    out = {k: os.environ.get(k, "") for k in keys}
+    out["rollback_mode"] = get_config().rollback_mode
+    return out
 
 
 def _capture_recent_signals(limit: int = 5) -> list[dict[str, Any]]:

@@ -98,16 +98,14 @@ def build_md_section() -> str:
     return f"""{SECTION_MARKER}
 ## Evolution Memory (Evolver)
 
-This project uses evolver for self-evolution. Hooks automatically:
+This project uses `evolver` for zero-touch self-evolution. Hooks automatically:
 1. Inject recent evolution memory at session start
 2. Detect evolution signals during file edits
-3. Record outcomes at session end
-4. (Opt-in) Surface matching distilled capabilities for each prompt —
-   shadow mode to preview, enforce to inject (default off).
+3. Record outcomes and compact working drafts at session boundaries
 
-For substantive tasks, call `gep_recall` before work and `gep_record_outcome` after.
-Signals: log_error, perf_bottleneck, user_feature_request, capability_gap,
-deployment_issue, test_failure."""
+When driving self-evolution via MCP, follow the 3-tool atomic cycle:
+`evolve_begin` (lock hypothesis) -> `run_lens` / edit code -> `evolve_settle` (lightning check).
+CLI dashboard: `evolver status` | Autopilot daemon: `evolver up`."""
 
 
 def install(
@@ -115,6 +113,7 @@ def install(
     config_root: Path,
     evolver_root: Path,
     force: bool = False,
+    inject_docs: bool = True,
 ) -> dict[str, Any]:
     claude_dir = config_root / ".claude"
     settings_path = claude_dir / "settings.json"
@@ -140,18 +139,21 @@ def install(
     copied = copy_hook_scripts(hooks_dir, evolver_root)
     print(f"[claude-code] Copied {len(copied)} hook scripts to {hooks_dir}")
 
-    from evolver.adapters.hook_adapter import append_section_to_file
+    files = [str(settings_path)] + [str(c) for c in copied]
+    if inject_docs:
+        from evolver.adapters.hook_adapter import append_section_to_file
 
-    injected = append_section_to_file(claude_md_path, SECTION_MARKER, build_md_section())
-    if injected:
-        print(f"[claude-code] Injected evolution section into {claude_md_path}")
+        injected = append_section_to_file(claude_md_path, SECTION_MARKER, build_md_section())
+        if injected:
+            print(f"[claude-code] Injected evolution section into {claude_md_path}")
+        files.insert(1, str(claude_md_path))
 
     print("[claude-code] Installation complete.")
 
     return {
         "ok": True,
         "platform": "claude-code",
-        "files": [str(settings_path), str(claude_md_path)] + [str(c) for c in copied],
+        "files": files,
     }
 
 
@@ -199,6 +201,7 @@ def uninstall(
                                         "evolver-session" in h["command"]
                                         or "evolver-signal" in h["command"]
                                         or "evolver-task-recall" in h["command"]
+                                        or "evolver.adapters.scripts." in h["command"]
                                     )
                                 )
                             ]

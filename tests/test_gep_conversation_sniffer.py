@@ -105,13 +105,17 @@ class TestConvertToSignals:
 
 class TestTrySniffModes:
     def test_off_mode_no_signals(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        monkeypatch.setenv("EVOLVER_CONV_SNIFF_ENABLED", "off")
+        monkeypatch.setenv(
+            "EVOLVER_CONFIG", '{"conv_sniff_mode":"off","quiet_legacy_warning":true}'
+        )
         r = cs.try_sniff("lark-cli published successfully", {"seen": {}, "last_sniff_ts": 0})
         assert r["mode"] == "off"
         assert r["signals"] == []
 
     def test_shadow_mode_surfaces_but_no_signals(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        monkeypatch.setenv("EVOLVER_CONV_SNIFF_ENABLED", "shadow")
+        monkeypatch.setenv(
+            "EVOLVER_CONFIG", '{"conv_sniff_mode":"shadow","quiet_legacy_warning":true}'
+        )
         r = cs.try_sniff(
             "lark-cli docs +create published the doc successfully",
             {"seen": {}, "last_sniff_ts": 0},
@@ -121,7 +125,9 @@ class TestTrySniffModes:
         assert r["signals"] == []
 
     def test_enforce_mode_injects_signals(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        monkeypatch.setenv("EVOLVER_CONV_SNIFF_ENABLED", "enforce")
+        monkeypatch.setenv(
+            "EVOLVER_CONFIG", '{"conv_sniff_mode":"enforce","quiet_legacy_warning":true}'
+        )
         r = cs.try_sniff(
             "lark-cli docs +create published the doc successfully",
             {"seen": {}, "last_sniff_ts": 0},
@@ -131,7 +137,9 @@ class TestTrySniffModes:
         assert "conv_capability:publish-feishu-doc" in r["signals"]
 
     def test_cooldown_gates_second_sniff(self, monkeypatch: pytest.MonkeyPatch, tmp_path) -> None:
-        monkeypatch.setenv("EVOLVER_CONV_SNIFF_ENABLED", "enforce")
+        monkeypatch.setenv(
+            "EVOLVER_CONFIG", '{"conv_sniff_mode":"enforce","quiet_legacy_warning":true}'
+        )
         monkeypatch.setenv("EVOLVER_REPO_ROOT", str(tmp_path))
         # Force the state path into isolation.
         import evolver.gep.conversation_sniffer as cs_mod
@@ -146,7 +154,9 @@ class TestTrySniffModes:
         assert second["signals"] == []
 
     def test_empty_sniff_no_cooldown(self, monkeypatch: pytest.MonkeyPatch, tmp_path) -> None:
-        monkeypatch.setenv("EVOLVER_CONV_SNIFF_ENABLED", "enforce")
+        monkeypatch.setenv(
+            "EVOLVER_CONFIG", '{"conv_sniff_mode":"enforce","quiet_legacy_warning":true}'
+        )
         monkeypatch.setenv("EVOLVER_REPO_ROOT", str(tmp_path))
         import evolver.gep.conversation_sniffer as cs_mod
 

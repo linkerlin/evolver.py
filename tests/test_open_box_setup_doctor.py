@@ -137,29 +137,30 @@ def test_cli_setup_and_doctor_help() -> None:
     assert ns2.command == "setup"
 
 
-def test_swarm_tick_gate_gap_includes_next_steps(
+def test_evolve_begin_cold_workspace_enters_active_run_without_val_unlock(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     import asyncio
 
-    from evolver.swarm import swarm_tick
+    from evolver.swarm import evolve_begin
 
     repo = _init_git_repo(tmp_path / "repo")
     monkeypatch.chdir(repo)
     monkeypatch.setenv("EVOLVER_REPO_ROOT", str(repo))
     monkeypatch.setenv("EVOLVER_HOME", str(tmp_path / "evomap_home"))
     monkeypatch.setenv("EVOLVER_STATE_ROOT", str(tmp_path / "state"))
-    monkeypatch.delenv("EVOLVER_SWARM_GATE_HANDOFF", raising=False)
+    monkeypatch.setenv("A2A_HUB_URL", "http://127.0.0.1:9")
+    monkeypatch.setenv("EVOLVER_CONFIG", '{"quiet_legacy_warning":true}')
 
-    result = asyncio.run(swarm_tick(agent_name="test-host"))
-    assert result.get("gate_soft_continue") is True
-    assert result.get("severity") == "soft"
-    assert result.get("gate_gap") in ("pack_absent", "no_baseline")
-    assert result.get("gap") in ("pack_absent", "no_baseline")
-    assert result.get("error") not in ("pack_absent", "no_baseline", "unmeasured")
-    assert result.get("next_steps")
-    assert result.get("commands")
-    assert result.get("warnings")
+    result = asyncio.run(
+        evolve_begin(
+            hypothesis="Improve README formatting in cold repo",
+            agent_name="test-host",
+        )
+    )
+    assert result["ok"] is True
+    assert result["fsm_state"] == "ACTIVE_RUN"
+    assert result["next_action"] == "evolve_settle"
     blob = json.dumps(result, ensure_ascii=False).lower()
     assert "decrypt" not in blob
     assert "please unlock val" not in blob

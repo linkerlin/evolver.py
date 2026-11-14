@@ -9,7 +9,6 @@ from pathlib import Path
 import pytest
 
 from evolver.gep.cognition import (
-    augment_signals,
     build_recall_section,
     flatten_recall_events,
     post_solidify_hooks,
@@ -94,13 +93,6 @@ class TestBuildRecallSection:
         assert "gene_fixture" in section
 
 
-class TestAugmentSignals:
-    def test_explore_disabled_by_default(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        monkeypatch.delenv("EVOLVER_FF_ENABLE_EXPLORE", raising=False)
-        base = ["log_error"]
-        assert augment_signals(base) == base
-
-
 class TestPostSolidifyHooks:
     @pytest.mark.usefixtures("temp_workspace")
     def test_records_memory_outcome(self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
@@ -128,7 +120,12 @@ class TestRecordSolidifyFailure:
     def test_innovation_failure_outcome_recorded(
         self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
     ) -> None:
-        monkeypatch.setenv("EVOLVER_INNOVATION_LOG_PATH", str(tmp_path / "innovation_log.jsonl"))
+        import json
+
+        monkeypatch.setenv(
+            "EVOLVER_CONFIG",
+            json.dumps({"innovation_log_path": str(tmp_path / "innovation_log.jsonl")}),
+        )
         from evolver.gep.cognition import record_solidify_failure
         from evolver.ops.innovation import _read_innovation_events
 
@@ -151,7 +148,12 @@ class TestRecordSolidifyFailure:
     def test_no_innovation_outcome_for_repair_failure(
         self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
     ) -> None:
-        monkeypatch.setenv("EVOLVER_INNOVATION_LOG_PATH", str(tmp_path / "innovation_log.jsonl"))
+        import json
+
+        monkeypatch.setenv(
+            "EVOLVER_CONFIG",
+            json.dumps({"innovation_log_path": str(tmp_path / "innovation_log.jsonl")}),
+        )
         from evolver.gep.cognition import record_solidify_failure
         from evolver.ops.innovation import _read_innovation_events
 

@@ -54,7 +54,7 @@ def render_working_clue(max_chars: int = WORKING_CLUE_MAX_CHARS) -> str:
     """One ``[host_working]`` clue line for the dispatch prompt, or ``""``.
 
     Bounded below the prompt budget; the omitted tail stays readable through
-    ``swarm_boot``.
+    ``evolve_status``.
     """
     text = read_working().strip()
     if not text:
@@ -62,7 +62,8 @@ def render_working_clue(max_chars: int = WORKING_CLUE_MAX_CHARS) -> str:
     if len(text) > max_chars:
         omitted = len(text) - max_chars
         text = (
-            f"{text[:max_chars]}\n... (+{omitted} chars omitted; swarm_boot returns the full text)"
+            f"{text[:max_chars]}\n... (+{omitted} chars omitted; "
+            "evolve_status returns the full preview)"
         )
     return f"- [host_working] {text}"
 

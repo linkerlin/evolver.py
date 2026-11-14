@@ -5,7 +5,6 @@ Equivalent to evolver/src/gep/executionTrace.js.
 
 from __future__ import annotations
 
-import os
 import re
 from pathlib import Path
 from typing import Any, Literal
@@ -14,7 +13,9 @@ TraceLevel = Literal["none", "minimal", "full"]
 
 
 def get_trace_level() -> TraceLevel:
-    raw = os.environ.get("EVOLVER_TRACE_LEVEL", "minimal").lower().strip()
+    from evolver.config import get_config
+
+    raw = get_config().trace_level.lower().strip()
     if raw in ("none", "minimal", "full"):
         return raw  # type: ignore[return-value]
     return "minimal"

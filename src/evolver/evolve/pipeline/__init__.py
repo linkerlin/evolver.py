@@ -2,7 +2,6 @@
 
 from evolver.evolve.pipeline.autopoiesis import autopoiesis_phase
 from evolver.evolve.pipeline.collect import collect_phase
-from evolver.evolve.pipeline.diagnosis import diagnosis_phase
 from evolver.evolve.pipeline.dispatch import (
     dispatch_multi_propose_phase,
     dispatch_phase,
@@ -15,7 +14,6 @@ from evolver.evolve.pipeline.signals import signals_phase
 __all__ = [
     "autopoiesis_phase",
     "collect_phase",
-    "diagnosis_phase",
     "dispatch_multi_propose_phase",
     "dispatch_phase",
     "enrich_phase",

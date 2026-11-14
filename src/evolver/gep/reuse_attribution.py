@@ -5,9 +5,9 @@ Equivalent to the reuse-attribution / outcome-report wiring in Node
 
 Money-adjacent safety:
 - Client never emits ``source_node_id`` (anti-sybil: hub resolves payee).
-- Attribution only when ``EVOLVER_REUSE_ATTRIBUTION=shadow`` and a real
+- Attribution only when ``reuse_attribution=shadow`` and a real
   reuse/reference occurred in the *same* cycle as the outcome attempt.
-- Hub POST only when ``EVOLVER_OUTCOME_REPORT=on`` and source_type is direct
+- Hub POST only when ``outcome_report=on`` and source_type is direct
   ``reused`` (not weaker ``reference``).
 """
 

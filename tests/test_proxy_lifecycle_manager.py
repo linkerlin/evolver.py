@@ -333,7 +333,10 @@ def test_force_update_cooldown_default(manager: LifecycleManager) -> None:
 def test_force_update_cooldown_env_override(
     monkeypatch: pytest.MonkeyPatch, manager: LifecycleManager
 ) -> None:
-    monkeypatch.setenv("EVOLVER_FORCE_UPDATE_RETRY_COOLDOWN_MS", "120000")
+    monkeypatch.setenv(
+        "EVOLVER_CONFIG",
+        '{"force_update_retry_cooldown_ms":120000,"quiet_legacy_warning":true}',
+    )
     assert manager._get_force_update_retry_cooldown_ms() == 120_000
 
 

@@ -202,8 +202,9 @@ def test_solidify_shadow_rejection_lands_impact_entry(
     armed_pack: dict[str, Any],
     declared_hypothesis: dict[str, Any],
 ) -> None:
-    """Shadow-rejected (no_improvement) mutations land wiki evidence even
-    though solidify itself returns ok (shadow period)."""
+    """No-improvement mutations land wiki evidence while the round still
+    settles ok — the cascade ledger records the verdict but never rejects
+    (round-121 review: saturated score is a floor, not a bar)."""
     from evolver.gep.feature_flags import set_flag
     from evolver.gep.fitness_state import record_measurement
     from evolver.gep.solidify import solidify, write_state_for_solidify
@@ -248,7 +249,7 @@ def test_solidify_shadow_rejection_lands_impact_entry(
             "mutation": {"type": "Mutation", "id": "m1", "category": "repair", "validation": []},
         }
     )
-    assert solidify()["ok"] is True  # shadow: still ok
+    assert solidify()["ok"] is True  # recorded, not rejected
     impact = (wiki.wiki_dir() / "skill-impact.md").read_text(encoding="utf-8")
     assert "no_improvement: gene-wiki" in impact
     assert "Do not repeat" in impact

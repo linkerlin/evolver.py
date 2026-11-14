@@ -37,13 +37,12 @@ from evolver.gep.solidify import (
     write_state_for_solidify,
 )
 from evolver.swarm import (
-    swarm_boot,
+    evolve_begin,
+    evolve_settle,
     swarm_distill,
     swarm_feedback,
     swarm_host_round,
-    swarm_solidify,
     swarm_status,
-    swarm_tick,
 )
 from tests.conftest import SYNTHETIC_VAL_PACK, synth_hypothesis
 
@@ -174,7 +173,7 @@ def test_u3_phase1_legacy_read_fallback_and_warning(
     state_root = tmp_path / "evolver_home"
     monkeypatch.setenv("EVOLVER_STATE_ROOT", str(state_root))
     monkeypatch.setenv("WORKSPACE_DIR", str(repo))
-    monkeypatch.delenv("EVOLVER_QUIET_LEGACY_WARNING", raising=False)
+    monkeypatch.delenv("EVOLVER_CONFIG", raising=False)
 
     legacy_evo = repo / "memory" / "evolution"
     legacy_evo.mkdir(parents=True)
@@ -282,17 +281,23 @@ def test_u4_u5_rejected_mutation_stashed_restorable_and_hypothesis_preserved(
     (repo / "src" / "app.py").write_text("def add(a, b):\n    return a + b + 0\n", encoding="utf-8")
     (repo / "src" / "helper.py").write_text("HELPER = True\n", encoding="utf-8")
 
-    # Soft-default: failing related validation soft-continues (no rollback/stash).
+    # Draft contract (v1.114.0): failing related validation → an honest
+    # ok=False; the patch stays in place, the snapshot is restorable, and the
+    # hypothesis survives for the retry (U-5).
     res_soft = solidify(
         validation_scope="related",
         related_commands=[[sys.executable, "-c", "import sys; sys.exit(1)"]],
     )
-    assert res_soft["ok"] is True
-    assert res_soft.get("severity") == "soft" or res_soft.get("validation_soft_failed") is True
+    assert res_soft["ok"] is False
+    assert res_soft["outcome"] == "draft_preserved"
     assert "return a + b + 0" in (repo / "src" / "app.py").read_text(encoding="utf-8")
     assert (repo / "src" / "helper.py").exists()
-    # Soft success consumes hypothesis (ok == True path).
-    assert not hypothesis_path().exists()
+    # U-4: the rejected patch is restorable from the snapshot backup.
+    from evolver.gep.paths import get_evolution_dir
+
+    assert (get_evolution_dir() / "rejected_stashes" / f"{run_id}.json").is_file()
+    # U-5: hypothesis preserved by the failure (not consumed).
+    assert hypothesis_path().is_file()
 
 
 # ---------------------------------------------------------------------------
@@ -432,7 +437,7 @@ def test_u10_u11_migrate_state_and_swarm_status_health(
     assert health["all_aligned"] is True
 
 
-async def test_u12_u13_swarm_host_round_and_tick_checklist(
+async def test_u12_u13_swarm_host_round_and_fsm_binding(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     repo = _init_git_repo(tmp_path / "repo")
@@ -449,9 +454,8 @@ async def test_u12_u13_swarm_host_round_and_tick_checklist(
     assert res["ok"] is True
     assert Path(res["repo_root"]).resolve() == repo.resolve()
     assert res["workspace_id"] == compute_workspace_id(repo)
-    assert isinstance(res["checklist"], dict)
-    assert len(res["checklist"]["steps"]) == 5
-    assert "## Host Execution Checklist" in (res.get("tick") or {}).get("dispatch_prompt", "")
+    assert res["fsm_state"] == "IDLE"
+    assert res["next_action"] == "evolve_begin"
 
 
 # ---------------------------------------------------------------------------
@@ -462,9 +466,8 @@ async def test_u12_u13_swarm_host_round_and_tick_checklist(
 async def test_full_e2e_loop_from_non_git_host_cwd(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """Verify: boot(project=repo) -> tick -> edit -> distill -> hypothesis ->
-    soft-continue solidify on validation warnings -> feedback,
-    all while host cwd is an unrelated non-git directory.
+    """Verify: evolve_begin(project=repo) -> edit -> draft-preserved evolve_settle
+    on validation failure -> feedback, all while host cwd is an unrelated non-git dir.
     """
     host_cwd = tmp_path / "mcp_host_scratch"
     host_cwd.mkdir()
@@ -486,20 +489,20 @@ async def test_full_e2e_loop_from_non_git_host_cwd(
         monkeypatch.delenv(k, raising=False)
     monkeypatch.chdir(host_cwd)
 
-    # 1. Boot with explicit project path while cwd is host_cwd
-    boot_res = swarm_boot(agent_name="e2e-agent", project=str(repo))
-    assert boot_res["ok"] is True
-    assert Path(boot_res["repo_root"]).resolve() == repo.resolve()
+    # 1. Start atomic run with explicit project path while cwd is host_cwd
+    began = await evolve_begin(
+        hypothesis="Add multiply helper to src/app.py",
+        project=str(repo),
+        agent_name="e2e-agent",
+    )
+    assert began["ok"] is True
+    assert began["fsm_state"] == "ACTIVE_RUN"
+    assert Path(began["repo_root"]).resolve() == repo.resolve()
 
     # Arm synthetic pack now that project is bound to repo's workspace_id
     _arm_synthetic_pack()
 
-    # 2. Tick generates prompt + checklist and records pending run state in external state root
-    tick_res = await swarm_tick()
-    assert tick_res["ok"] is True
-    assert "## Host Execution Checklist" in tick_res["dispatch_prompt"]
-
-    # 3. Distill a gene
+    # 2. Distill a gene (staged until settle passes)
     llm_resp = """```json
 {
   "type": "Gene",
@@ -515,33 +518,31 @@ async def test_full_e2e_loop_from_non_git_host_cwd(
     distill_res = swarm_distill(response_text=llm_resp)
     assert distill_res["ok"] is True
 
-    # 4. Edit code in target repo
+    # 3. Edit code in target repo
     (repo / "src" / "app.py").write_text(
         "def add(a, b):\n    return a + b\n\ndef mul(a, b):\n    return a * b\n",
         encoding="utf-8",
     )
 
-    # 5. Record hypothesis
+    # 4. Re-record hypothesis against the armed pack's train split
     state_data = _read_solidify_state() or {}
     run_id = str((state_data.get("last_run") or {}).get("run_id") or "")
     record_hypothesis(synth_hypothesis(run_id=run_id))
 
-    # 6. Soft-default: failing related validation soft-continues (worktree kept).
-    fail_solidify = swarm_solidify(
+    # 5. Draft contract (v1.114.0): failing related validation -> honest
+    # ok=False; worktree kept, hypothesis preserved for the retry, FSM returns to IDLE.
+    fail_settle = evolve_settle(
+        summary="Added mul helper",
         validation_scope="related",
         related_commands=[[sys.executable, "-c", "import sys; sys.exit(1)"]],
     )
-    assert fail_solidify["ok"] is True
-    assert (
-        fail_solidify.get("severity") == "soft"
-        or fail_solidify.get("validation_soft_failed") is True
-    )
+    assert fail_settle["ok"] is False
+    assert fail_settle["outcome"] == "draft_preserved"
+    assert fail_settle["fsm_state"] == "IDLE"
     assert "def mul(a, b):" in (repo / "src" / "app.py").read_text(encoding="utf-8")
-    # Soft success consumes hypothesis.
-    assert not hypothesis_path().exists()
+    assert hypothesis_path().is_file()
 
-    # 9. Submit feedback
-    # 9. Submit feedback
+    # 6. Submit feedback
     fb_res = swarm_feedback(
         primary_score=0.95,
         metrics={"latency_ms": 12.0},

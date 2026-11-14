@@ -156,79 +156,13 @@ class TestSummarizeAcceptance:
         assert m["false_kill_risk"] == 0.5
 
 
-class TestLineageLessons:
-    def test_builder_collects_failures_newest_first(self) -> None:
-        from evolver.evolve.pipeline.dispatch import _build_lineage_lessons
-
-        events = [
-            {
-                "gene_id": "g1",
-                "outcome": {"status": "success", "score": 1.0},
-                "mutation": {"category": "repair"},
-            },
-            {
-                "gene_id": "g1",
-                "outcome": {"status": "failed", "error": "validation_failed"},
-                "mutation": {"category": "repair"},
-                "blast_radius": {"files": 2, "lines": 30},
-                "signals": ["log_error"],
-            },
-            {
-                "gene_id": "g2",
-                "outcome": {"status": "failed", "error": "other_gene"},
-                "mutation": {"category": "optimize"},
-            },
-            {
-                "gene_id": "g1",
-                "outcome": {"status": "failed", "error": "T0_frozen_regressed"},
-                "mutation": {"category": "innovate"},
-                "blast_radius": {"files": 1, "lines": 5},
-                "signals": ["capability_gap"],
-            },
-        ]
-        block = _build_lineage_lessons("g1", events)
-        assert "Lineage Lessons" in block
-        assert "T0_frozen_regressed" in block  # newest first
-        assert "other_gene" not in block  # other genes excluded
-        assert "innovate" in block and "repair" in block
-
-    def test_builder_no_failures_returns_empty(self) -> None:
-        from evolver.evolve.pipeline.dispatch import _build_lineage_lessons
-
-        assert _build_lineage_lessons("g1", [{"gene_id": "g1", "outcome": {}}]) == ""
-        assert _build_lineage_lessons("", [{"gene_id": "g1"}]) == ""
-
-    def test_event_carries_parent_event_id_when_enabled(
-        self,
-        git_ws: Path,
-        armed_pack: dict[str, Any],
-        declared_hypothesis: dict[str, Any],
-        monkeypatch: pytest.MonkeyPatch,
-    ) -> None:
-        monkeypatch.setenv("EVOLVER_FF_ENABLE_LINEAGE_LESSONS", "true")
-        write_state_for_solidify(_last_run())
-        solidify(skip_validation=True)
-        first = read_all_events()[-1]
-        # Production lineage chains across runs: every tick writes a fresh
-        # run_id, and the duplicate-solidify guard refuses a re-solidify of
-        # the same run — so the chained event comes from a new run.
-        # The pack gate publishes only on a strict improvement, so the first
-        # publish raised the bar to 1.0; re-arm the fixture's 0.0 bar to let
-        # the second round publish too (§5.2 — two runs, two bars). The
-        # hypothesis gate consumed the first record, so round two must
-        # re-declare its own claim (§5.3 — one Candidate, one hypothesis).
-        declared_hypothesis["redeclare"]()
-        armed_pack["rearm"]()
-        second_run = dict(_last_run(), run_id="run_shadow_2")
-        write_state_for_solidify(second_run)
-        solidify(skip_validation=True)
-        second = read_all_events()[-1]
-        assert "parent_event_id" not in first  # no predecessor
-        assert second["parent_event_id"] == first["id"]
-
-    def test_event_has_no_parent_when_disabled(
+class TestLineageSlot:
+    def test_event_has_no_parent_slot_filled(
         self, git_ws: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
+        """round-121 P0-4: lineage lessons machinery removed; the
+        parent_event_id slot stays permanently empty until a scheduled
+        feature fills it."""
         monkeypatch.delenv("EVOLVER_FF_ENABLE_LINEAGE_LESSONS", raising=False)
         write_state_for_solidify(_last_run())
         solidify(skip_validation=True)

@@ -224,7 +224,7 @@ def test_dispatch_carries_working_scratch_as_a_clue_after_evidence(
         "dispatch_prompt"
     ]
     assert "- [host_working] ruled out: retry loop" in prompt
-    assert "swarm_boot returns the full text" in prompt
+    assert "evolve_status returns the full preview" in prompt
     assert prompt.index("## Evidence Pack") < prompt.index("## Host Clues")
     assert prompt.index("## Host Clues") < prompt.index("[host_working]")
     capsys.readouterr()

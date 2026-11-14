@@ -12,10 +12,11 @@ from evolver.atp.auto_buyer import get_consent, set_consent
 
 def classify() -> str:
     """Determine prompt eligibility."""
+    from evolver.config import get_config
+
     if not sys.stdin.isatty():
         return "non_tty"
-    env = __import__("os").environ.get("EVOLVER_ATP_AUTOBUY", "").strip()
-    if env:
+    if get_config().atp_autobuy.strip():
         return "env_set"
     ack = get_consent()
     if ack is not None:

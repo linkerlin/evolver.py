@@ -9,30 +9,16 @@ import json
 from typing import Any
 
 from evolver import config as config_mod
-from evolver.gep.asset_store import get_last_event_id
 from evolver.gep.bridge import render_sessions_spawn_call, write_prompt_artifact
 from evolver.gep.feature_flags import is_enabled
-from evolver.gep.hooks.taxonomy import (
-    hook_belongs_to_family,
-    hooks_for_family,
-    known_family,
-)
 from evolver.gep.memory_bridge import serialize_memory_advice
 from evolver.gep.multi_proposer import (
     MultiProposerRequest,
     build_multi_proposer_prompt,
 )
-from evolver.gep.paths import get_gep_assets_dir, get_workspace_root
 from evolver.gep.prompt import build_gep_prompt
 from evolver.gep.reuse_attribution import utc_now_iso
 from evolver.gep.solidify import write_state_for_solidify
-from evolver.gep.surface import (
-    capture_surface,
-    load_snapshot,
-    render_surface_block,
-    save_snapshot,
-    surface_delta,
-)
 
 
 def _write_solidify_state(ctx: dict[str, Any]) -> None:
@@ -74,7 +60,6 @@ def _write_solidify_state(ctx: dict[str, Any]) -> None:
         "selected_capsule_id": ctx.get("selected_capsule_id"),
         # Self-Harness C-1: cross-process ref for the solidify acceptance gate
         # (B1 causal artifact persisted by diagnosis_phase).
-        "diagnosis_ref": ctx.get("causal_analyses_ref"),
         "mutation": ctx.get("mutation"),
         "personality_state": ctx.get("personality_state"),
         "parent_event_id": ctx.get("parent_event_id"),
@@ -101,118 +86,20 @@ def _write_solidify_state(ctx: dict[str, Any]) -> None:
     write_state_for_solidify(last_run)
 
 
-def _anchor_proposer_surface(ctx: dict[str, Any]) -> None:
-    """Self-Harness A2: anchor the proposer to a stable baseline surface.
-
-    Opt-in via ``enable_surface_decouple`` + ``ctx["surface_files"]`` (list of
-    relative paths). The baseline snapshot is loaded from disk when present
-    (stable across cycles); otherwise captured now and persisted. The rendered
-    block (baseline id + eval drift) feeds the GEP prompt via
-    ``ctx["proposer_surface_block"]``.
-    """
-    if not is_enabled("enable_surface_decouple"):
-        return
-    surface_files = ctx.get("surface_files")
-    if not isinstance(surface_files, list) or not surface_files:
-        return
-
-    root = get_workspace_root()
-    paths = [root / rel for rel in surface_files]
-    baseline_path = get_gep_assets_dir() / "surfaces" / "baseline.json"
-
-    baseline = load_snapshot(baseline_path)
-    if baseline is None:
-        baseline = capture_surface(paths, root=root)
-        save_snapshot(baseline, baseline_path)
-
-    eval_snap = capture_surface(paths, root=root)
-    delta = surface_delta(baseline, eval_snap)
-    ctx["proposer_surface_snapshot"] = baseline.model_dump()
-    ctx["proposer_surface_block"] = render_surface_block(baseline, delta)
-
-
-def _anchor_constrained_hook(ctx: dict[str, Any]) -> None:
-    """Self-Harness C1: constrain the proposer to a closed hook vocabulary.
-
-    Opt-in via ``enable_constrained_genes``. When the selected gene declares
-    ``mechanism_family`` + ``target_hook``, a constraint block is injected
-    telling the proposer it may ONLY edit that hook within that family.
-    """
-    if not is_enabled("enable_constrained_genes"):
-        return
-    gene = ctx.get("selected_gene")
-    if not isinstance(gene, dict):
-        return
-    family = gene.get("mechanism_family")
-    hook = gene.get("target_hook")
-    if not isinstance(family, str) or not family:
-        return
-    if not isinstance(hook, str) or not hook:
-        return
-    if not known_family(family):
-        return
-    if not hook_belongs_to_family(family, hook):
-        return
-    allowed = ", ".join(hooks_for_family(family))
-    ctx["constrained_hook_block"] = (
-        "# CONSTRAINED EDIT MODE (closed vocabulary — safety enforced)\n"
-        f"- mechanism_family: {family}\n"
-        f"- target_hook: {hook} (the ONLY editable hook)\n"
-        f"- family hooks: {allowed}\n"
-        "- Do NOT propose changes to any other hook or file."
-    )
-
-
 def _format_preview(items: list[dict[str, Any]]) -> str:
     return "```json\n" + json.dumps(items, indent=2, ensure_ascii=False) + "\n```"
 
 
-def _build_lineage_lessons(
-    gene_id: str,
-    events: list[dict[str, Any]],
-    *,
-    limit: int = 3,
-) -> str:
-    """Sprint 22.6 (GEPA ancestry): the selected gene's recent failures,
-    compacted into prompt lessons so candidates inherit their lineage's
-    learning signals instead of rediscovering them."""
-    if not gene_id or not events:
-        return ""
-    lessons: list[str] = []
-    for evt in reversed(events):  # newest first
-        if evt.get("gene_id") != gene_id:
-            continue
-        outcome = evt.get("outcome") or {}
-        if outcome.get("status") != "failed":
-            continue
-        reason = (
-            outcome.get("error") or (evt.get("acceptance_result") or {}).get("reason") or "unknown"
-        )
-        br = evt.get("blast_radius") or {}
-        signals = ", ".join(str(s) for s in (evt.get("signals") or [])[:3])
-        category = (evt.get("mutation") or {}).get("category") or "?"
-        lessons.append(
-            f"- [{category}] {reason} "
-            f"(blast {br.get('files', '?')}f/{br.get('lines', '?')}l; signals: {signals})"
-        )
-        if len(lessons) >= limit:
-            break
-    if not lessons:
-        return ""
-    header = "## Lineage Lessons (GEPA ancestry)"
-    return f"{header}\nGene `{gene_id}` failed before with:\n" + "\n".join(lessons)
-
-
 async def dispatch_phase(ctx: dict[str, Any]) -> dict[str, Any]:
     _write_solidify_state(ctx)
-    _anchor_proposer_surface(ctx)
-    _anchor_constrained_hook(ctx)
 
     if is_enabled("enable_idle_scheduler"):
         import os
 
+        from evolver.config import get_config
+
         override = os.environ.get("IDLE_OVERRIDE", "").strip().lower()
-        enforce = os.environ.get("EVOLVER_ENFORCE_IDLE_SCHEDULER", "").strip() == "1"
+        enforce = get_config().enforce_idle_scheduler
         intensity = str(ctx.get("evolution_intensity") or "")
         if override == "signal_only" or (enforce and intensity == "signal_only"):
             ctx["skip_mutation_signal_only"] = True
@@ -238,18 +125,7 @@ async def dispatch_phase(ctx: dict[str, Any]) -> dict[str, Any]:
     genes_preview = _format_preview(ctx.get("genes", [])[:10])
     capsules_preview = _format_preview(ctx.get("capsules", [])[:10])
 
-    # Sprint 22.6 (enable_lineage_lessons, GEPA ancestry): fill the prompt's
-    # existing parent_event_id slot and inject the selected gene's failure
-    # lineage as lessons.
     parent_event_id = ctx.get("parent_event_id")
-    lineage_block = ""
-    if is_enabled("enable_lineage_lessons"):
-        if parent_event_id is None:
-            parent_event_id = get_last_event_id()
-        lineage_block = _build_lineage_lessons(
-            str(gene.get("id") or ""),
-            ctx.get("recent_events") or [],
-        )
 
     context_parts = [
         ctx.get("mutation_directive", ""),
@@ -260,7 +136,6 @@ async def dispatch_phase(ctx: dict[str, Any]) -> dict[str, Any]:
         ctx.get("proposer_surface_block", ""),  # Self-Harness A2
         ctx.get("constrained_hook_block", ""),  # Self-Harness C1
         ctx.get("library_block", ""),  # Charter §5.4 in-cycle consultation
-        lineage_block,  # Sprint 22.6
     ]
 
     # RSI P1-4: failure-side evidence pack — what THIS signal family already

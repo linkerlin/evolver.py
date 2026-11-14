@@ -125,7 +125,9 @@ def test_equals_form_and_resolve(tmp_path: Path) -> None:
 def test_proxy_help_lists_path_flags() -> None:
     from evolver.cli import _build_parser
 
-    parser = _build_parser()
+    # Expert subcommands (proxy among them) live in the full parser since the
+    # 3-verb root surface (v1.114.0); pass hide_expert_listing=False to see them.
+    parser = _build_parser(hide_expert_listing=False)
     help_text = ""
     for action in parser._subparsers._group_actions:  # type: ignore[attr-defined]
         for name, sub in getattr(action, "choices", {}).items():

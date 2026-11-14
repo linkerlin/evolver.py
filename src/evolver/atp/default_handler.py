@@ -72,8 +72,18 @@ def resolve_atp_services(
 
 def get_atp_mode(env: dict[str, str] | None = None) -> str:
     """Return the ATP mode: 'on', 'off', or 'auto'."""
-    effective_env = env if env is not None else dict(os.environ)
-    raw = effective_env.get("EVOLVER_ATP", "auto").lower().strip()
+    from evolver.config import EvolverConfig, get_config, parse_config_payload
+    from evolver.solo.breaker import is_solo_active
+
+    if env is None and is_solo_active():
+        return "off"
+    if env is not None:
+        if env.get("EVOLVER_SOLO") == "1":
+            return "off"
+        payload = parse_config_payload(env.get("EVOLVER_CONFIG"))
+        raw = EvolverConfig.from_mapping(payload).atp.lower().strip()
+    else:
+        raw = get_config().atp.lower().strip()
     if raw in ("off", "false", "0"):
         return "off"
     if raw in ("on", "true", "1"):

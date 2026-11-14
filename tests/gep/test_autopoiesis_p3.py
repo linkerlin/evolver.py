@@ -63,7 +63,7 @@ def test_selector_prefers_non_penalized_gene():
 
 
 def test_preflight_abort_self_report_no_write(temp_workspace, monkeypatch):
-    monkeypatch.setenv("EVOLVER_AUTOPOIESIS_WRITE", "0")
+    monkeypatch.setenv("EVOLVER_CONFIG", '{"autopoiesis_write":false}')
     data = run_preflight_abort_self_report("system load too high")
     assert data["friction_summary"]["total"] == 1
     assert not (temp_workspace / "memory" / "evolution" / "self_report.json").exists()
@@ -76,8 +76,7 @@ def test_preflight_abort_self_report_no_write(temp_workspace, monkeypatch):
 
 
 def test_capture_solidify_success_writes_lessons(temp_workspace, monkeypatch):
-    monkeypatch.setenv("EVOLVER_AUTOPOIESIS", "1")
-    monkeypatch.setenv("EVOLVER_AUTOPOIESIS_WRITE", "1")
+    monkeypatch.setenv("EVOLVER_CONFIG", '{"autopoiesis":true,"autopoiesis_write":true}')
     (temp_workspace / "memory" / "evolution").mkdir(parents=True, exist_ok=True)
     (temp_workspace / ".evolver" / "gep").mkdir(parents=True, exist_ok=True)
     signals = ["error_timeout"]
@@ -97,8 +96,7 @@ def test_capture_solidify_success_writes_lessons(temp_workspace, monkeypatch):
 
 
 def test_post_solidify_hooks_calls_autopoiesis_success(temp_workspace, monkeypatch):
-    monkeypatch.setenv("EVOLVER_AUTOPOIESIS", "1")
-    monkeypatch.setenv("EVOLVER_AUTOPOIESIS_WRITE", "1")
+    monkeypatch.setenv("EVOLVER_CONFIG", '{"autopoiesis":true,"autopoiesis_write":true}')
     (temp_workspace / "memory" / "evolution").mkdir(parents=True, exist_ok=True)
     (temp_workspace / ".evolver" / "gep").mkdir(parents=True, exist_ok=True)
     hooks = post_solidify_hooks(
@@ -116,8 +114,7 @@ async def test_runner_preflight_abort_attaches_report(temp_workspace, monkeypatc
         return PreflightResult(abort=True, reason="test abort")
 
     monkeypatch.setattr("evolver.evolve.guards.run_preflight_checks", _abort_preflight)
-    monkeypatch.setenv("EVOLVER_AUTOPOIESIS", "1")
-    monkeypatch.setenv("EVOLVER_AUTOPOIESIS_WRITE", "0")
+    monkeypatch.setenv("EVOLVER_CONFIG", '{"autopoiesis":true,"autopoiesis_write":false}')
     ctx = await _run_single_cycle()
     assert "autopoiesis_preflight_abort" in ctx
     assert ctx["autopoiesis_preflight_abort"]["friction_summary"]["total"] == 1
@@ -135,7 +132,7 @@ async def test_runner_preflight_abort_attaches_report(temp_workspace, monkeypatc
 def test_repair_loop_hard_abort_when_degraded_off(tmp_path, monkeypatch):
     monkeypatch.setenv("EVOLUTION_DIR", str(tmp_path))
     monkeypatch.setenv("GEP_ASSETS_DIR", str(tmp_path / "gep"))
-    monkeypatch.setenv("EVOLVER_REPAIR_LOOP_DEGRADED", "0")
+    monkeypatch.setenv("EVOLVER_CONFIG", '{"repair_loop_degraded":false}')
     from evolver.gep.asset_store import append_event_jsonl
     from evolver.gep.paths import get_gep_assets_dir
 

@@ -3,21 +3,16 @@
 from __future__ import annotations
 
 import logging
-import os
 
 from evolver.atp.auto_deliver import AutoDeliver
 from evolver.atp.heartbeat_signals_handler import bind_auto_deliver
+from evolver.config import get_config
 
 logger = logging.getLogger(__name__)
 
 
 def _enabled() -> bool:
-    return os.environ.get("EVOLVER_ATP_AUTODELIVER", "1").strip().lower() not in (
-        "0",
-        "false",
-        "no",
-        "off",
-    )
+    return get_config().atp_autodeliver
 
 
 class AtpDeliverLoop:
