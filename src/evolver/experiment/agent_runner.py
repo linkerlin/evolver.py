@@ -33,6 +33,9 @@ class TaskResult:
     #: Server-reported usage split (0 when the agent only reports a total).
     prompt_tokens: int = 0
     output_tokens: int = 0
+    #: Compute tier and tier-weighted token cost from Gene.routing_hint (S-8a).
+    routing_tier: str = "mid"
+    weighted_cost: float = 0.0
 
 
 def run_task(
@@ -54,10 +57,17 @@ def run_task(
     task_id = task.get("id", "unknown")
     prompt = task.get("prompt", "")
 
-    # Build context from genes.
+    # Build context from genes and resolve tier weighting (S-8a).
+    from evolver.gep.router import TIER_COST_WEIGHTS, compute_routing_advice
+
     context_parts: list[str] = []
     gene_ids: list[str] = []
+    tier_weight = TIER_COST_WEIGHTS["mid"]
+    routing_tier = "mid"
     if genes:
+        advice = compute_routing_advice(genes[0])
+        routing_tier = str(advice["tier"])
+        tier_weight = float(advice["tier_weight"])
         for gene in genes:
             gid = gene.get("id", "")
             gene_ids.append(gid)
@@ -83,6 +93,8 @@ def run_task(
                 tokens_used=tokens,
                 latency_s=round(latency, 2),
                 gene_ids=gene_ids,
+                routing_tier=routing_tier,
+                weighted_cost=round(float(tokens) * tier_weight, 4),
             )
         except Exception as exc:
             return TaskResult(

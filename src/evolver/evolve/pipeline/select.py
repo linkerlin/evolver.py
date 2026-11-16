@@ -178,6 +178,7 @@ async def select_phase(ctx: dict[str, Any]) -> dict[str, Any]:
 
     ctx["selected_gene"] = selected_gene
     ctx["selected_capsule_id"] = selected_capsule.get("id") if selected_capsule else None
+    ctx["inspiration_operators"] = selection.get("inspiration") or []
     ctx["strategy_policy"] = policy
     ctx["personality_selection"] = personality_to_strategy_bias(personality)
     ctx["personality_state"] = personality

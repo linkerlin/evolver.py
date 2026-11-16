@@ -260,6 +260,85 @@ def _diff_line_stats(diff_text: str) -> dict[str, int]:
     return {"lines_added": added, "lines_removed": removed}
 
 
+def classify_patch_mechanisms(
+    diff_text: str,
+    ast_delta: dict[str, Any] | None = None,
+) -> list[str]:
+    """Classify diff + AST delta into canonical mutation mechanism labels (S-7)."""
+    added_lines = [
+        ln[1:]
+        for ln in (diff_text or "").splitlines()
+        if ln.startswith("+") and not ln.startswith("+++")
+    ]
+    added_blob = "\n".join(added_lines)
+    touched_headers = [
+        ln[4:].strip() for ln in (diff_text or "").splitlines() if ln.startswith("+++ ")
+    ]
+    mechs: list[str] = []
+
+    if "try:" in added_blob or "except " in added_blob or "except:" in added_blob:
+        mechs.append("try/except wrapping")
+    if "if " in added_blob and (
+        "return " in added_blob or "is None" in added_blob or "isinstance(" in added_blob
+    ):
+        mechs.append("guard/early-return")
+    if "re.compile" in added_blob or ".replace(" in added_blob or "re.search" in added_blob:
+        mechs.append("regex/string patch")
+    if any(ln.lstrip().startswith("def ") for ln in added_lines):
+        mechs.append("signature/default tweak")
+    if any(ln.lstrip().startswith(("import ", "from ")) for ln in added_lines):
+        mechs.append("import/routing change")
+    if touched_headers and all("test_" in h or "/tests/" in h for h in touched_headers):
+        mechs.append("test-only edit")
+    if not mechs and (
+        added_lines or (isinstance(ast_delta, dict) and ast_delta.get("modified_count"))
+    ):
+        mechs.append("general logic edit")
+    return mechs or ["noop/empty"]
+
+
+def render_mutation_structure_mirror(
+    evolution_dir: Path | None = None,
+    *,
+    window: int = 5,
+    min_unsettled: int = 2,
+) -> str:
+    """Return a 1-line mirror summarizing recent unsettled draft patterns (S-7)."""
+    rows = load_blackbox_telemetry(evolution_dir)
+    if not rows:
+        return ""
+    recent = rows[-max(1, int(window)) :]
+    trailing_unsettled: list[dict[str, Any]] = []
+    for row in reversed(recent):
+        if row.get("outcome_ok") is True or row.get("outcome_label") == "promoted":
+            break
+        trailing_unsettled.append(row)
+    if len(trailing_unsettled) < min_unsettled:
+        return ""
+
+    counts: dict[str, int] = {}
+    for row in trailing_unsettled:
+        mechs = row.get("mechanisms")
+        label = (
+            str(mechs[0])
+            if isinstance(mechs, list) and mechs
+            else (
+                "ast-edit"
+                if isinstance(row.get("ast_delta"), dict) and row["ast_delta"].get("modified_count")
+                else "non-ast-edit"
+            )
+        )
+        counts[label] = counts.get(label, 0) + 1
+
+    summary = ", ".join(
+        f"{n} {k}" for k, n in sorted(counts.items(), key=lambda kv: (-kv[1], kv[0]))
+    )
+    return (
+        f"Mirror — Your last {len(trailing_unsettled)} unsettled draft(s) in this workspace: "
+        f"{summary} (0 promoted). Your next hypothesis MUST try a structurally distinct mechanism."
+    )
+
+
 def settle_blackbox(
     cwd: Path,
     *,
@@ -268,6 +347,7 @@ def settle_blackbox(
     outcome_ok: bool,
     outcome_label: str = "",
     validation_result: dict[str, Any] | None = None,
+    diff_text: str | None = None,
     evolution_dir: Path | None = None,
     clear_active: bool = True,
 ) -> dict[str, Any]:
@@ -287,7 +367,7 @@ def settle_blackbox(
     raw_before = active.get("before_ast")
     before_ast: dict[str, dict[str, str]] = raw_before if isinstance(raw_before, dict) else {}
     ast_delta = compute_ast_delta(cwd, before_ast, after_files)
-    diff_snap = capture_diff_snapshot(cwd, max_chars=2000)
+    diff_snap = diff_text if diff_text is not None else capture_diff_snapshot(cwd, max_chars=2000)
     diff_stats = _diff_line_stats(diff_snap)
 
     raw_lenses = active.get("lens_calls")
@@ -322,6 +402,7 @@ def settle_blackbox(
         "touched_files": after_files[:30],
         "diff_stats": diff_stats,
         "ast_delta": ast_delta,
+        "mechanisms": classify_patch_mechanisms(diff_snap, ast_delta),
         "lens_calls_count": len(lens_calls),
         "lens_names": sorted({str(c.get("lens") or "") for c in lens_calls if c.get("lens")}),
         "lens_calls": lens_calls[:16],
@@ -399,11 +480,13 @@ __all__ = [
     "active_blackbox_path",
     "begin_blackbox",
     "blackbox_telemetry_path",
+    "classify_patch_mechanisms",
     "clear_active_blackbox",
     "compute_ast_delta",
     "find_blackbox_for_round",
     "load_active_blackbox",
     "load_blackbox_telemetry",
     "record_lens_call",
+    "render_mutation_structure_mirror",
     "settle_blackbox",
 ]

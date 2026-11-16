@@ -69,8 +69,8 @@ _FAMILY_TEMPLATES: list[dict[str, Any]] = [
             "delta with any residual irreducible context cost",
         ],
         "validation": [
-            "node --test test/contextSchemaRoutingGene.test.js",
-            "node scripts/validate-modules.js ./src/gep/signals ./src/gep/contextRoutingGene",
+            "python -m pytest tests/gep/test_context_routing_gene.py -x -q",
+            "python -m ruff check src/evolver/gep/signals.py src/evolver/gep/context_routing_gene.py",
         ],
         "constraints": {"max_files": 8, "forbidden_paths": [".git", "node_modules"]},
         "summary": "Diagnose context explosions with a prompt-budget ledger before deciding whether to "
@@ -124,12 +124,8 @@ _FAMILY_TEMPLATES: list[dict[str, Any]] = [
             "an approved runtime loader can still provide the exact schema when needed",
         ],
         "validation": [
-            "node --test test/contextSchemaRoutingGene.test.js test/recallInject.test.js "
-            "test/selector.test.js",
-            "node scripts/validate-modules.js ./src/gep/assetStore ./src/gep/recallInject "
-            "./src/gep/selector ./src/gep/signals ./src/gep/contextRoutingGene "
-            "./src/gep/schemas/gene",
-            "node scripts/validate-suite.js",
+            "python -m pytest tests/gep/test_context_routing_gene.py tests/test_selector.py -x -q",
+            "python -m ruff check src/evolver/gep/asset_store.py src/evolver/gep/selector.py src/evolver/gep/context_routing_gene.py",
         ],
         "constraints": {"max_files": 8, "forbidden_paths": [".git", "node_modules"]},
         "summary": "Dispatch Claude Code context-bloat work to specialized Genes while retaining "
@@ -183,9 +179,8 @@ _FAMILY_TEMPLATES: list[dict[str, Any]] = [
             "compression cannot pass by merely hiding unavailable tools",
         ],
         "validation": [
-            "node --test test/contextSchemaRoutingGene.test.js test/recallInject.test.js",
-            "node scripts/validate-modules.js ./src/gep/signals ./src/gep/recallInject "
-            "./src/gep/contextRoutingGene",
+            "python -m pytest tests/gep/test_context_routing_gene.py tests/test_selector.py -x -q",
+            "python -m ruff check src/evolver/gep/signals.py src/evolver/gep/recall_inject.py src/evolver/gep/context_routing_gene.py",
         ],
         "constraints": {"max_files": 12, "forbidden_paths": [".git", "node_modules"]},
         "summary": "Shrink always-on tool/MCP schema context by routing through compact tool-family "
@@ -234,8 +229,8 @@ _FAMILY_TEMPLATES: list[dict[str, Any]] = [
             "the right card while unrelated cards remain compressed",
         ],
         "validation": [
-            "node --test test/contextSchemaRoutingGene.test.js",
-            "node scripts/validate-modules.js ./src/gep/signals ./src/gep/contextRoutingGene",
+            "python -m pytest tests/gep/test_context_routing_gene.py -x -q",
+            "python -m ruff check src/evolver/gep/signals.py src/evolver/gep/context_routing_gene.py",
         ],
         "constraints": {"max_files": 12, "forbidden_paths": [".git", "node_modules"]},
         "summary": "Compress large skill, agent-type, and MCP instruction lists into route cards, "
@@ -284,8 +279,8 @@ _FAMILY_TEMPLATES: list[dict[str, Any]] = [
             "packet without reading the original full transcript",
         ],
         "validation": [
-            "node --test test/contextSchemaRoutingGene.test.js",
-            "node scripts/validate-modules.js ./src/gep/signals ./src/gep/contextRoutingGene",
+            "python -m pytest tests/gep/test_context_routing_gene.py -x -q",
+            "python -m ruff check src/evolver/gep/signals.py src/evolver/gep/context_routing_gene.py",
         ],
         "constraints": {"max_files": 8, "forbidden_paths": [".git", "node_modules"]},
         "summary": "Turn bulky pasted transcripts into compact handoff packets that preserve "
@@ -337,8 +332,8 @@ _FAMILY_TEMPLATES: list[dict[str, Any]] = [
             "context savings do not hide important project constraints",
         ],
         "validation": [
-            "node --test test/contextSchemaRoutingGene.test.js",
-            "node scripts/validate-modules.js ./src/gep/signals ./src/gep/contextRoutingGene",
+            "python -m pytest tests/gep/test_context_routing_gene.py -x -q",
+            "python -m ruff check src/evolver/gep/signals.py src/evolver/gep/context_routing_gene.py",
         ],
         "constraints": {"max_files": 8, "forbidden_paths": [".git", "node_modules"]},
         "summary": "Control memory context cost by keeping MEMORY.md as a lean index and relying on "

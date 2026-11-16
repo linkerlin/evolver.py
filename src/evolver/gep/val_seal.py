@@ -101,6 +101,58 @@ def _task_strings(task: dict[str, Any]) -> set[str]:
     return found
 
 
+def _time_capsule_strings(task: dict[str, Any]) -> set[str]:
+    """Sealed identifying strings for a time-capsule task (whole files & titles)."""
+    found: set[str] = set()
+    title = task.get("title")
+    if isinstance(title, str) and title.strip():
+        found.add(title.strip())
+    for key in ("test_files", "reference_fix_files"):
+        files = task.get(key)
+        if isinstance(files, dict):
+            for body in files.values():
+                if isinstance(body, str) and body.strip():
+                    found.add(body.strip())
+    return found
+
+
+def _time_capsule_sealed_secrets() -> list[dict[str, Any]]:
+    """Extract sealed secrets from installed out-of-repo time_capsule splits."""
+    try:
+        from evolver.experiment.time_capsule import load_time_capsule
+
+        pack = load_time_capsule()
+    except Exception:
+        return []
+    if not isinstance(pack, dict):
+        return []
+
+    tc_tasks = [t for t in (pack.get("tasks") or []) if isinstance(t, dict)]
+    dev_tasks = [t for t in tc_tasks if str(t.get("split") or "") == "dev_feedback"]
+    sealed_tasks = [
+        t for t in tc_tasks if str(t.get("split") or "") in ("hidden_select", "sealed_test")
+    ]
+    if not sealed_tasks:
+        return []
+
+    tc_public: set[str] = set()
+    for task in dev_tasks:
+        tc_public |= _time_capsule_strings(task)
+
+    entries: list[dict[str, Any]] = []
+    for task in sealed_tasks:
+        tid = str(task.get("id") or "")
+        for text in _time_capsule_strings(task) - tc_public:
+            entries.append(
+                {
+                    "value": text,
+                    "source": tid,
+                    "signal": "weak" if len(text) < MIN_SECRET_LEN else "strong",
+                }
+            )
+    return entries
+
+
 def sealed_secrets() -> list[dict[str, Any]]:
     """Val-only identifying strings, longest first.
 
@@ -109,16 +161,17 @@ def sealed_secrets() -> list[dict[str, Any]]:
     short to trust).
     """
     tasks = _pack_tasks()
+    tc_secrets = _time_capsule_sealed_secrets()
     trains = [t for t in tasks if str(t.get("split")) == "train"]
     vals = [t for t in tasks if str(t.get("split")) == "val"]
-    if not vals:
+    if not vals and not tc_secrets:
         return []
 
     public: set[str] = set()
     for task in trains:
         public |= _task_strings(task)
 
-    secrets: list[dict[str, Any]] = []
+    secrets: list[dict[str, Any]] = list(tc_secrets)
     for task in vals:
         tid = str(task.get("id") or "")
         for text in _task_strings(task) - public:

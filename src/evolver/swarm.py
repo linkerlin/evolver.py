@@ -897,6 +897,8 @@ async def evolve_begin(
             if isinstance(gene, dict)
             else None
         ),
+        "routing_advice": _compute_round_routing_advice(gene),
+        "structure_mirror": _safe_structure_mirror(),
         "signals": signals[:12],
         "available_lenses": sorted(BUILTIN_LENSES),
         "blackbox_started_at": bb.get("started_at"),
@@ -936,6 +938,52 @@ def evolve_run_lens(
     )
     res["fsm_state"] = fsm_state()
     return res
+
+
+def _compute_round_routing_advice(gene: dict[str, Any] | None) -> dict[str, Any]:
+    try:
+        from evolver.gep.blackbox import load_blackbox_telemetry
+        from evolver.gep.router import compute_routing_advice
+
+        consec = 0
+        for row in reversed(load_blackbox_telemetry()[-5:]):
+            if row.get("outcome_ok") is True or row.get("outcome_label") == "promoted":
+                break
+            consec += 1
+        return compute_routing_advice(gene, consecutive_failures=consec)
+    except Exception:
+        return {"tier": "mid", "reasoning_level": "medium", "tier_weight": 2.83, "escalated": False}
+
+
+def _safe_structure_mirror() -> str:
+    try:
+        from evolver.gep.blackbox import render_mutation_structure_mirror
+
+        return render_mutation_structure_mirror()
+    except Exception:
+        return ""
+
+
+def _attach_host_direction(result: dict[str, Any]) -> None:
+    """Apply S-6 directional feedback masking on the MCP host-facing bench_pack envelope."""
+    bp = result.get("bench_pack")
+    if not isinstance(bp, dict):
+        return
+    try:
+        from evolver.bench.frozen_gate import direction_envelope_for_host
+
+        val_dur = result.get("validation_duration_ms")
+        dir_env = direction_envelope_for_host(
+            bp,
+            duration_ms=int(val_dur) if isinstance(val_dur, (int, float)) else None,
+        )
+        result["gate_direction"] = dir_env
+        masked = {k: v for k, v in bp.items() if k not in ("score", "baseline", "delta")}
+        masked["val_direction"] = dir_env["val_direction"]
+        masked["cost_direction"] = dir_env["cost_direction"]
+        result["bench_pack"] = masked
+    except Exception:
+        pass
 
 
 def evolve_settle(
@@ -989,6 +1037,7 @@ def evolve_settle(
     cur_fsm = fsm_state()
     result["fsm_state"] = cur_fsm
     result["repo_root"] = str((get_repo_root(_quiet=True) or get_workspace_root()).resolve())
+    _attach_host_direction(result)
     if result.get("ok") is True:
         result["next_action"] = "evolve_begin"
         result.setdefault(
@@ -1575,6 +1624,51 @@ def _swarm_solidify_locked(
         except Exception as exc:
             result["episode"] = {"ok": False, "error": f"episode_record_failed: {exc}"}
 
+        # P2-2: Zero-human OperatorGene synthesis on helped, all-green rounds.
+        if result.get("ok") is True and event_id_str:
+            with contextlib.suppress(Exception):
+                from evolver.gep.evidence import load_evidence
+                from evolver.gep.git_ops import capture_diff_snapshot
+                from evolver.gep.operator_synthesizer import synthesize_operator_from_fix
+
+                ep_id_str = str(result.get("episode_id") or "")
+                ep_body = episode_record.load_episode(ep_id_str) if ep_id_str else None
+                ep_gates = ep_body.get("gates") if isinstance(ep_body, dict) else {}
+                ep_attr = (
+                    ep_gates.get("attribution")
+                    if isinstance(ep_gates, dict) and isinstance(ep_gates.get("attribution"), dict)
+                    else None
+                )
+                cwd = (get_repo_root(_quiet=True) or get_workspace_root()).resolve()
+                scene = load_evidence(str(run_id or ""), event_id_str)
+                ev_obj = scene.get("event") if isinstance(scene, dict) else {}
+                diff_txt = (
+                    str(ev_obj.get("diff_snapshot") or "") if isinstance(ev_obj, dict) else ""
+                )
+                if not diff_txt:
+                    diff_txt = capture_diff_snapshot(cwd, max_chars=8000)
+                synth = synthesize_operator_from_fix(
+                    cwd=cwd,
+                    run_id=str(run_id or ""),
+                    signals=list(ev_obj.get("signals") or []) if isinstance(ev_obj, dict) else [],
+                    diff_text=diff_txt,
+                    ast_delta=(
+                        (result.get("blackbox") or {}).get("ast_delta")
+                        if isinstance(result.get("blackbox"), dict)
+                        else None
+                    ),
+                    attribution=ep_attr,
+                    validation_ok=True,
+                )
+                if synth.get("ok"):
+                    result["operator_synthesis"] = synth
+                    if isinstance(result.get("experience_written"), dict) and synth.get(
+                        "operator_id"
+                    ):
+                        result["experience_written"].setdefault("operators", []).append(
+                            str(synth["operator_id"])
+                        )
+
     if isinstance(result, dict):
         with contextlib.suppress(Exception):
             from evolver.gep.compact_gate import note_outcome
@@ -1584,6 +1678,11 @@ def _swarm_solidify_locked(
             from evolver.gep.index_db import sync_index_db
 
             sync_index_db()
+        with contextlib.suppress(Exception):
+            from evolver.gep.asset_store import read_all_events
+            from evolver.gep.gene_lifecycle import evaluate_and_apply
+
+            evaluate_and_apply(read_all_events())
     return result
 
 

@@ -12,7 +12,7 @@
 
 [`演进方案_经验即证据.md`](演进方案_经验即证据.md)、[`TODO_经验即证据.md`](TODO_经验即证据.md)、[`演进方案_库即尺子.md`](演进方案_库即尺子.md)、[`TODO_库即尺子.md`](TODO_库即尺子.md)、[`RSI演进对照.md`](RSI演进对照.md) 与 [`演进方案_wikiskill对照版.md`](演进方案_wikiskill对照版.md) 是史料。史料里的「下一步」不得当作当前排期。
 
-并行补充方案（不改章程、不另开出口）：[`VISTA演进方案.md`](VISTA演进方案.md)——零参数机械套具，Tier 1–3 八项与评审六条已于 2026-10-18 合入主干，落地清单 [`TODO_VISTA.md`](TODO_VISTA.md)；[`Harness2演进方案.md`](Harness2演进方案.md)——对照 arXiv:2610.14224v1 之双层递归与对比合成机械套具，Tier 1–3 六项 `H2-1`..`H2-6` 已于 2026-10-26 合入主干，落地清单 [`TODO_HARNESS2.md`](TODO_HARNESS2.md)；[`易用性演进方案.md`](易用性演进方案.md)——运行时数据外置（`~/.evolver/workspaces/<id>/`）与非标准宿主恢复机制，P0–P2 十四项 `U-1`..`U-14` 已于 2026-10-27 合入主干，落地清单 [`TODO_USABILITY.md`](TODO_USABILITY.md)；[`Schema演进方案.md`](Schema演进方案.md)——只取思想，除一句提示词外未排期。（VISTA / Harness2 / 易用性方案与 [`设计方案.md`](设计方案.md) 是本地私有文档，`.gitignore` `*方案*.md` 规则不入库；设计方案正文停在 2026-07-31，现行模块清单以本文件源码布局为准。）
+并行补充方案（不改章程、不另开出口）：[`VISTA演进方案.md`](VISTA演进方案.md)——零参数机械套具，Tier 1–3 八项与评审六条已于 2026-10-18 合入主干，落地清单 [`TODO_VISTA.md`](TODO_VISTA.md)；[`Harness2演进方案.md`](Harness2演进方案.md)——对照 arXiv:2610.14224v1 之双层递归与对比合成机械套具，Tier 1–3 六项 `H2-1`..`H2-6` 已于 2026-10-26 合入主干，落地清单 [`TODO_HARNESS2.md`](TODO_HARNESS2.md)；[`易用性演进方案.md`](易用性演进方案.md)——运行时数据外置（`~/.evolver/workspaces/<id>/`）与非标准宿主恢复机制，P0–P2 十四项 `U-1`..`U-14` 已于 2026-10-27 合入主干，落地清单 [`TODO_USABILITY.md`](TODO_USABILITY.md)；[`Strategist演进方案.md`](Strategist演进方案.md)——对照 arXiv:2611.03618v1 之 AST 结构去重/槽位解耦/DAG 组合/双视图混合检索/动态测量卡/帕累托裁决/分档路由/时间胶囊（`S-1`..`S-8` + `P2-1`..`P3-2`），已于 2026-11-16 合入工作区，落地清单 [`TODO_STRATEGIST.md`](TODO_STRATEGIST.md)；[`Schema演进方案.md`](Schema演进方案.md)——只取思想，除一句提示词外未排期。（VISTA / Harness2 / 易用性方案与 [`设计方案.md`](设计方案.md) 是本地私有文档，`.gitignore` `*方案*.md` 规则不入库；设计方案正文停在 2026-07-31，现行模块清单以本文件源码布局为准。）
 
 ## 命令篇
 
@@ -91,10 +91,10 @@ uv_runtime.py       uv/uvx/python 启动器解析（spawn evolver 进程用）
 solo/               单人离线模式（--solo / Mad Dog）：受限野生运行 + 断路器 + git 守卫
 recipe/             Recipe Hub 客户端与缓存（skill2recipe 的发布/应用面）
 experiment/         受控实验与消融裁决（经验即证据 §5.8/§5.9）：ablation / ablation_llm /
-                    cli / stats / metrics / comparison / llm；--placebo 等长中性占位；
-                    --stage-exit 机器契约（种子交错/逐调用记录/配对检验/eligibility 门）；
-                    agent_runner（单 agent 单题执行）、trigger_shift（触发漂移离线复评）；
-                    全仓调用图钉白名单隔离
+                    cli / stats / metrics / comparison / llm / time_capsule；--placebo
+                    等长中性占位；--stage-exit 机器契约与 --stage-exit-v2 双源 36 题
+                    Pytest 盲测帕累托裁决；agent_runner（单 agent 单题含路由权重）、
+                    trigger_shift（触发漂移离线复评）；全仓调用图钉白名单隔离
 swarm.py            蜂群进化核心：FSM 三工具状态机（evolve_begin / evolve_run_lens /
                     evolve_settle / evolve_status）+ 仪器提示词 + 引擎内部闭环原语，stdout 全捕获
 mcp_server.py       MCP stdio server（FSM 动态门控三工具面）：`IDLE` 态暴露
@@ -107,9 +107,13 @@ gep/                GEP（基因组进化协议）核心。150+ 模块，下按�
                     承重模块，完整清单以目录为准
   schemas/          Pydantic 模型：Gene、Capsule、Task、Protocol
 
-  ── 记录·透镜·黑匣子与经验源（算子即基因 + 经验即证据 + VISTA）────────
-  lenses.py         只读诊断透镜（P1-1）：`ast_hotspot`、`import_impact`、
-                    `trace_locator`、`contract_surface`；输出自动经 `val_seal` 脱敏
+  ── 记录·透镜·黑匣子与经验源（算子即基因 + 经验即证据 + VISTA + Strategist）──
+  lenses.py         只读诊断透镜（P1-1 + S-2 + S-4）：`ast_hotspot`、`import_impact`、
+                    `trace_locator`、`contract_surface`、`card` 及 `OperatorGene.v1` DAG 组合执行；输出自动经 `val_seal` 脱敏
+  operator_slots.py / operator_sandbox.py / operator_synthesizer.py / operator_cards.py / hybrid_retrieval.py
+                    ——EOG 核心五件套：AST 结构去重与槽位解耦（S-1）、零网络受控沙盒与 DAG
+                    审计（P2-1/S-2）、红转绿算子自动合成（P2-2）、动态测量卡增量去重（S-4）、
+                    双视图 IDF+经验混合检索与邻域灵感（S-3）
   blackbox.py       周期边界带内黑匣子（P1-2）：在 `evolve_begin` ↔ `evolve_settle`
                     自动采集前后 AST 符号增量、透镜调用栈、diff 行数与墙钟耗时（无需
                     本地 HTTP 代理即达 100% 过程遥测覆盖）

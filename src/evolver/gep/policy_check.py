@@ -153,6 +153,7 @@ def check_policy(
     check_template_braces: bool = False,
     require_skill_trigger: bool = False,
     max_always_on_growth_chars: int = MAX_ALWAYS_ON_NET_GROWTH_CHARS,
+    check_anti_cheat: bool = False,
 ) -> PolicyReport:
     """Run the full policy-check suite.
 
@@ -204,6 +205,10 @@ def check_policy(
             max_always_on_growth_chars=max_always_on_growth_chars,
         )
         violations.extend(integrity["violations"])
+
+    # 6. Optional Strategist S-8b anti-cheat fig-leaf static gate
+    if check_anti_cheat:
+        violations.extend(detect_anti_cheat_violations(cwd, all_files, diff_text=diff_text))
 
     report = PolicyReport(
         ok=not any(v.severity == "critical" for v in violations), violations=violations
@@ -701,3 +706,151 @@ def _check_rollback_safety(
                     message=f"Rollback may revert changes in protected file: {rel}",
                 )
             )
+
+
+_TEST_SKIP_XFAIL_RE: Final = re.compile(
+    r"(?:@\s*pytest\.mark\.(?:skip|xfail)\b|\bpytest\.(?:skip|xfail)\s*\()"
+)
+_TEST_DEF_RE: Final = re.compile(r"def\s+(test_[A-Za-z0-9_]+)\s*\(")
+_EQ_ASSERT_RE: Final = re.compile(r"\bassert\s+.+\s*(?:==|!=|in\b|is\b|<|>)")
+_TRIVIAL_ASSERT_RE: Final = re.compile(r"^\s*(?:assert\s+True\b|pass\b)")
+_HARDCODED_ID_RE: Final = re.compile(
+    r"""['"](?:time_capsule|sealed_test|case-[a-z0-9-]+|tc-(?:in|ext)-\d+)['"]"""
+)
+_HARDCODED_TASK_KEY_RE: Final = re.compile(
+    r"""\b(?:if|elif)\b[^\n]*==\s*['"][^'"]{8,120}['"]\s*:\s*return\b"""
+)
+
+
+def _is_test_path(rel: str) -> bool:
+    norm = rel.replace("\\", "/").lstrip("./")
+    name = Path(norm).name
+    return (
+        norm.startswith("tests/")
+        or "/tests/" in norm
+        or name.startswith("test_")
+        or name.endswith("_test.py")
+    )
+
+
+def _split_diff_by_file(diff_text: str) -> dict[str, list[str]]:
+    per_file: dict[str, list[str]] = {}
+    current = ""
+    for line in diff_text.splitlines():
+        if line.startswith("diff --git "):
+            parts = line.split()
+            current = parts[-1][2:] if parts and parts[-1].startswith("b/") else ""
+            if current:
+                per_file.setdefault(current, [])
+            continue
+        if line.startswith("+++ "):
+            target = line[4:].strip()
+            if target.startswith("b/"):
+                target = target[2:]
+            if target != "/dev/null":
+                current = target
+                per_file.setdefault(current, [])
+            continue
+        if current:
+            per_file.setdefault(current, []).append(line)
+    return per_file
+
+
+def detect_anti_cheat_violations(
+    root: Path,
+    changed_files: Sequence[str],
+    *,
+    diff_text: str | None = None,
+) -> list[PolicyViolation]:
+    """Detect test weakening and hardcoded benchmark/task lookup fig-leaf patches (S-8b)."""
+    effective_diff = diff_text
+    if effective_diff is None and (root / ".git").exists():
+        from evolver.gep.git_ops import try_run_cmd
+
+        with contextlib.suppress(Exception):
+            effective_diff = try_run_cmd(["diff", "HEAD"], cwd=root)
+    if not effective_diff or not effective_diff.strip():
+        return []
+
+    violations: list[PolicyViolation] = []
+    by_file = _split_diff_by_file(effective_diff)
+    norm_changed = [str(f).replace("\\", "/").lstrip("./") for f in changed_files if str(f).strip()]
+    src_modified = any(
+        (f.startswith("src/") or f.endswith(".py")) and not _is_test_path(f)
+        for f in (norm_changed or list(by_file.keys()))
+    )
+
+    for rel, lines in by_file.items():
+        norm_rel = rel.replace("\\", "/").lstrip("./")
+        added_lines = [ln[1:] for ln in lines if ln.startswith("+") and not ln.startswith("+++")]
+        removed_lines = [ln[1:] for ln in lines if ln.startswith("-") and not ln.startswith("---")]
+
+        if _is_test_path(norm_rel):
+            for added in added_lines:
+                if _TEST_SKIP_XFAIL_RE.search(added):
+                    snippet = added.strip()[:80]
+                    violations.append(
+                        PolicyViolation(
+                            rule="anti_cheat_test_skip",
+                            severity="critical",
+                            message=f"Added skip/xfail in test file {norm_rel}: {snippet}",
+                        )
+                    )
+                    break
+
+            added_tests = {m.group(1) for ln in added_lines for m in [_TEST_DEF_RE.search(ln)] if m}
+            removed_tests = {
+                m.group(1) for ln in removed_lines for m in [_TEST_DEF_RE.search(ln)] if m
+            }
+            dropped = sorted(removed_tests - added_tests)
+            if dropped and src_modified:
+                violations.append(
+                    PolicyViolation(
+                        rule="anti_cheat_deleted_test",
+                        severity="critical",
+                        message=f"Deleted tests {dropped[:3]} in {norm_rel} alongside src edits",
+                    )
+                )
+
+            had_eq_assert = any(_EQ_ASSERT_RE.search(ln) for ln in removed_lines)
+            added_trivial = any(_TRIVIAL_ASSERT_RE.search(ln) for ln in added_lines)
+            if (
+                had_eq_assert
+                and added_trivial
+                and not any(_EQ_ASSERT_RE.search(ln) for ln in added_lines)
+            ):
+                violations.append(
+                    PolicyViolation(
+                        rule="anti_cheat_weakened_assert",
+                        severity="critical",
+                        message=f"Weakened assertion to assert True/pass in {norm_rel}",
+                    )
+                )
+        elif norm_rel.endswith(".py"):
+            for added in added_lines:
+                if _HARDCODED_ID_RE.search(added) or _HARDCODED_TASK_KEY_RE.search(added):
+                    snippet = added.strip()[:80]
+                    violations.append(
+                        PolicyViolation(
+                            rule="anti_cheat_hardcoded_lookup",
+                            severity="critical",
+                            message=f"Hardcoded task/benchmark literal in {norm_rel}: {snippet}",
+                        )
+                    )
+                    break
+
+    return violations
+
+
+__all__ = [
+    "ALWAYS_ON_FILENAMES",
+    "COMPONENT_COST_HIERARCHY",
+    "DELIVERABLE_CONFORMANCE_AXES",
+    "MAX_ALWAYS_ON_NET_GROWTH_CHARS",
+    "PolicyReport",
+    "PolicyViolation",
+    "check_policy",
+    "detect_anti_cheat_violations",
+    "is_validation_command_allowed",
+    "validate_harness_component_integrity",
+]

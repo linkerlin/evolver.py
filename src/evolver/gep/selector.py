@@ -45,7 +45,7 @@ def tokenize(text: str) -> list[str]:
         # Lowercase ASCII only
         lowered = ""
         for ch in t:
-            lowered += ch.lower() if "a" <= ch <= "z" else ch
+            lowered += ch.lower() if "A" <= ch <= "Z" else ch
         out.append(lowered)
     return out
 
@@ -64,7 +64,12 @@ def _match_pattern_to_signals(pattern: str, signals: list[str]) -> bool:
     return False
 
 
-def _score_gene(gene: dict[str, Any], signals: list[str]) -> float:
+def _score_gene(
+    gene: dict[str, Any],
+    signals: list[str],
+    *,
+    idf_weights: dict[str, float] | None = None,
+) -> float:
     # RSI P1-5: declared signal-family applicability is a hard gate — a gene
     # that says "I only apply to log_error|mypy_error" must not be retrieved
     # for unrelated signals even when `signals_match` scans broadly.
@@ -80,13 +85,16 @@ def _score_gene(gene: dict[str, Any], signals: list[str]) -> float:
         if _match_pattern_to_signals(pattern, signals):
             score += 1.0
 
-    # Boost for derived learning tags (simple keyword overlap)
-    summary = gene.get("summary", "")
+    # Boost for derived learning tags (IDF-weighted when pool vocab is available)
+    summary = str(gene.get("summary", "") or "")
+    when_to_use = str(gene.get("when_to_use", "") or "")
+    text_blob = f"{summary} {when_to_use}".lower()
     for signal in signals:
         tokens = tokenize(signal)
         for tok in tokens:
-            if len(tok) > 2 and tok.lower() in summary.lower():
-                score += 0.1
+            if len(tok) > 2 and tok.lower() in text_blob:
+                weight = float(idf_weights.get(tok.lower(), 1.0)) if idf_weights else 1.0
+                score += 0.1 * weight
 
     # Downweight anti-patterns
     anti_patterns = gene.get("anti_patterns") or []
@@ -168,6 +176,17 @@ def select_gene(
         memory_evidence=memory_evidence,
     )
 
+    from evolver.gep.hybrid_retrieval import compute_idf_weights, retrieve_operators_and_inspiration
+
+    pool_docs = {
+        str(
+            g.get("id") or i
+        ): f"{g.get('id', '')} {g.get('summary', '')} {g.get('when_to_use', '')}"
+        for i, g in enumerate(genes)
+        if isinstance(g, dict)
+    }
+    idf_weights = compute_idf_weights(pool_docs) if len(pool_docs) > 1 else None
+
     candidates: list[dict[str, Any]] = []
     for gene in genes:
         gid = gene.get("id")
@@ -177,7 +196,7 @@ def select_gene(
             continue
         if is_epigenetically_suppressed(gene):
             continue
-        score = _score_gene(gene, signals)
+        score = _score_gene(gene, signals, idf_weights=idf_weights)
         if living_memory_hints:
             score += living_memory_score_adjustment(
                 gene,
@@ -246,6 +265,7 @@ def select_gene(
                 break
 
     alternatives = [c["gene"] for c in candidates if c["gene"] is not selected][:3]
+    _ = retrieve_operators_and_inspiration  # imported above for caller convenience
     return {
         "selected": selected,
         "alternatives": alternatives,
@@ -415,6 +435,32 @@ def select_gene_and_capsule(ctx: dict[str, Any]) -> dict[str, Any]:
     if selected_gene:
         selected_capsule = select_capsule(capsules, signals)
 
+    inspiration: list[dict[str, Any]] = []
+    try:
+        from evolver.gep.hybrid_retrieval import retrieve_operators_and_inspiration
+
+        excluded = set(banned) | set(retired_ids)
+        if isinstance(selected_gene, dict) and selected_gene.get("id"):
+            excluded.add(str(selected_gene["id"]))
+        ret = retrieve_operators_and_inspiration(
+            genes,
+            signals,
+            k_relevant=3,
+            k_inspiration=2,
+            excluded_ids=excluded,
+        )
+        inspiration = [
+            {
+                "id": item["id"],
+                "summary": str(item["gene"].get("summary") or "")[:120],
+                "family": item["family"],
+                "score": item["score"],
+            }
+            for item in ret.get("inspiration") or []
+        ]
+    except Exception:
+        inspiration = []
+
     memory_used = bool(preferred or banned)
     memory_evidence_count = memory_advice.get("totalAttempts", 0)
 
@@ -422,6 +468,7 @@ def select_gene_and_capsule(ctx: dict[str, Any]) -> dict[str, Any]:
         "selectedGene": selected_gene,
         "selectedCapsule": selected_capsule,
         "selector": selector,
+        "inspiration": inspiration,
         "selectionPath": selector.get("driftMode", "score_ranked"),
         "memoryUsed": memory_used,
         "memoryEvidence": memory_evidence_count,

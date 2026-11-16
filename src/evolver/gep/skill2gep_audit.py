@@ -311,7 +311,8 @@ _WORKSPACE_FACT_PATTERNS: tuple[tuple[str, re.Pattern[str]], ...] = (
 
 _COMPONENT_LESSON_RE = re.compile(
     r"(?:\b(?:skill|script|hook|plugin|subagent|guardrail|prompt|validator|gate|"
-    r"selector|proposer|composer|distill|solidify|episode|memory|workflow|tool)\b"
+    r"selector|proposer|composer|distill|solidify|episode|memory|workflow|tool|"
+    r"operator|lens|codemod|invariant)\b"
     r"|skills/|scripts/|plugin/)",
     re.IGNORECASE,
 )

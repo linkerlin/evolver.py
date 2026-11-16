@@ -25,7 +25,7 @@ def _load_json(path: str) -> Any:
 def main(argv: Sequence[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Run a controlled evolution experiment")
     parser.add_argument(
-        "--tasks", required=True, help="Path to tasks JSON file (list of task dicts)"
+        "--tasks", default=None, help="Path to tasks JSON file (list of task dicts)"
     )
     parser.add_argument(
         "--genes", default=None, help="Path to genes JSON file (list of gene dicts)"
@@ -83,6 +83,31 @@ def main(argv: Sequence[str] | None = None) -> int:
         "and a paired verdict. Ineligible setups exit 2 instead of reporting.",
     )
     parser.add_argument(
+        "--install-time-capsule",
+        action="store_true",
+        help="Install the frozen out-of-repo dual-source time-capsule pack (P3-1)",
+    )
+    parser.add_argument(
+        "--stage-exit-v2",
+        action="store_true",
+        help="Run Time-Capsule paired code-fix blind eval with Pareto adjudication (P3-2)",
+    )
+    parser.add_argument(
+        "--capsule-path",
+        default=None,
+        help="Optional override path for capsule_v2.json",
+    )
+    parser.add_argument(
+        "--per-task-output",
+        default=None,
+        help="Optional path for per-task paired results JSONL (--stage-exit-v2)",
+    )
+    parser.add_argument(
+        "--force-install",
+        action="store_true",
+        help="Overwrite an existing capsule_v2.json when used with --install-time-capsule",
+    )
+    parser.add_argument(
         "--order-seed",
         type=int,
         default=0,
@@ -118,6 +143,24 @@ def main(argv: Sequence[str] | None = None) -> int:
         "--max-tokens", type=int, default=16384, help="Per-call token budget (default: 16384)"
     )
     args = parser.parse_args(argv)
+
+    if args.install_time_capsule:
+        from evolver.experiment.time_capsule import install_time_capsule
+
+        capsule_dest = Path(args.capsule_path) if args.capsule_path else None
+        receipt = install_time_capsule(path=capsule_dest, force=bool(args.force_install))
+        out_json = json.dumps(receipt, indent=2, ensure_ascii=False)
+        if args.output:
+            Path(args.output).write_text(out_json + "\n", encoding="utf-8")
+        else:
+            print(out_json)
+        return 0
+
+    if args.stage_exit_v2:
+        return _main_stage_exit_v2(args)
+
+    if not args.tasks:
+        parser.error("the following arguments are required: --tasks")
 
     tasks = _load_json(args.tasks)
     if not isinstance(tasks, list):
@@ -458,6 +501,43 @@ def _main_stage_exit(
     output_json = json.dumps(result, indent=2, default=str)
     Path(str(args.output)).write_text(output_json, encoding="utf-8")
     print(f"Results written to {args.output}", file=sys.stderr)
+    return 0
+
+
+def _main_stage_exit_v2(args: argparse.Namespace) -> int:
+    from evolver.experiment.time_capsule import run_time_capsule_paired_eval
+
+    genes = None
+    if args.genes:
+        genes = _load_json(args.genes)
+        if not isinstance(genes, list):
+            print("Genes file must be a JSON list", file=sys.stderr)
+            return 1
+
+    output_report_path = Path(args.output) if args.output else None
+    per_task_jsonl_path = (
+        Path(args.per_task_output)
+        if args.per_task_output
+        else (
+            output_report_path.with_name("per_task_results.jsonl") if output_report_path else None
+        )
+    )
+    capsule_path = Path(args.capsule_path) if args.capsule_path else None
+
+    report = run_time_capsule_paired_eval(
+        capsule_path=capsule_path,
+        genes=genes,
+        order_seed=int(args.order_seed),
+        output_report_path=output_report_path,
+        per_task_jsonl_path=per_task_jsonl_path,
+    )
+    print(
+        f"stage-exit-v2: n={report['n_tasks']} verdict={report['verdict']} "
+        f"passed={report['stage_exit_passed']}",
+        file=sys.stderr,
+    )
+    if not args.output:
+        print(json.dumps(report, indent=2, ensure_ascii=False))
     return 0
 
 

@@ -35,6 +35,7 @@ _GENE_ARRAY_FIELDS = (
     "preconditions",
     "anti_patterns",
     "postconditions",
+    "builds_on",
 )
 
 _GENE_OPTIONAL_SCALAR = (
@@ -46,6 +47,9 @@ _GENE_OPTIONAL_SCALAR = (
     "failure_reason",
     "model_name",
     "domain",
+    "operator_kind",
+    "when_to_use",
+    "structural_hash",
 )
 
 _GENE_OPTIONAL_OBJECT = (
@@ -59,6 +63,8 @@ _GENE_OPTIONAL_OBJECT = (
 _GENE_OPTIONAL_LIST_OF_OBJ = (
     "epigenetic_marks",
     "learning_history",
+    "slot_specs",
+    "slot_bindings",
 )
 
 _CAPSULE_COPY_FIELDS = (
@@ -263,6 +269,10 @@ def _prepare_gene(payload: dict[str, Any], ctx: dict[str, Any]) -> dict[str, Any
             result[field] = payload[field]
 
     for field in _GENE_OPTIONAL_LIST_OF_OBJ:
+        if field in payload and payload[field] is not None:
+            result[field] = payload[field]
+
+    for field in ("lens", "codemod", "invariant"):
         if field in payload and payload[field] is not None:
             result[field] = payload[field]
 

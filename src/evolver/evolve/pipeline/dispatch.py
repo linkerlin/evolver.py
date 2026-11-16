@@ -90,6 +90,69 @@ def _format_preview(items: list[dict[str, Any]]) -> str:
     return "```json\n" + json.dumps(items, indent=2, ensure_ascii=False) + "\n```"
 
 
+def _build_operator_cards_block(ctx: dict[str, Any], gene: dict[str, Any] | None) -> str:
+    try:
+        from evolver.gep.index_db import query_operator_stats
+        from evolver.gep.operator_cards import (
+            _load_seen_cards_from_state,
+            _save_seen_cards_to_state,
+            dedupe_seen_cards,
+            render_operator_card,
+        )
+
+        genes = [g for g in (ctx.get("genes") or []) if isinstance(g, dict) and g.get("id")]
+        candidates: list[dict[str, Any]] = []
+        seen_ids: set[str] = set()
+        if isinstance(gene, dict) and gene.get("id"):
+            candidates.append(gene)
+            seen_ids.add(str(gene["id"]))
+        for g in genes:
+            gid = str(g["id"])
+            if gid not in seen_ids and (g.get("lens") is not None or len(candidates) < 3):
+                candidates.append(g)
+                seen_ids.add(gid)
+            if len(candidates) >= 3:
+                break
+        if not candidates:
+            return ""
+        stats_rows = {
+            str(r.get("gene_id") or ""): r
+            for r in query_operator_stats(limit=50, auto_sync=False)
+            if r.get("gene_id")
+        }
+        cards_map = {
+            str(g["id"]): render_operator_card(g, stats_rows.get(str(g["id"]))) for g in candidates
+        }
+        rendered, updated = dedupe_seen_cards(cards_map, _load_seen_cards_from_state())
+        _save_seen_cards_to_state(updated)
+        return rendered
+    except Exception:
+        return ""
+
+
+def _build_inspiration_block(ctx: dict[str, Any]) -> str:
+    items = ctx.get("inspiration_operators") or []
+    if not isinstance(items, list) or not items:
+        return ""
+    lines = []
+    for item in items[:2]:
+        if isinstance(item, dict) and item.get("id"):
+            lines.append(
+                f"- `{item['id']}` (family={item.get('family', 'general')}): "
+                f"{str(item.get('summary') or '')[:100]}"
+            )
+    return "\n".join(lines)
+
+
+def _build_structure_mirror_line() -> str:
+    try:
+        from evolver.gep.blackbox import render_mutation_structure_mirror
+
+        return render_mutation_structure_mirror()
+    except Exception:
+        return ""
+
+
 async def dispatch_phase(ctx: dict[str, Any]) -> dict[str, Any]:
     _write_solidify_state(ctx)
 
@@ -228,6 +291,9 @@ async def dispatch_phase(ctx: dict[str, Any]) -> dict[str, Any]:
         evidence_pack=evidence_pack_block,
         episode_block=episode_block,
         clue_block=clue_block,
+        operator_cards_block=_build_operator_cards_block(ctx, gene),
+        adjacent_inspiration_block=_build_inspiration_block(ctx),
+        structure_mirror_line=_build_structure_mirror_line(),
     )
 
     # Expose the assembled prompt to in-process callers (MCP swarm_tick) so the

@@ -294,6 +294,9 @@ def build_gep_prompt(
     evidence_pack: str = "",
     episode_block: str = "",
     clue_block: str = "",
+    operator_cards_block: str = "",
+    adjacent_inspiration_block: str = "",
+    structure_mirror_line: str = "",
     max_chars: int = PROMPT_DEFAULT_MAX_CHARS,
 ) -> str:
     _ = (capsule_candidates, initial_user_prompt)
@@ -385,6 +388,14 @@ def build_gep_prompt(
         sections.append(PromptSection(name="Evidence Pack", text=f"{evidence_pack}\n", pinned=True))
     if clue_block:
         sections.append(PromptSection(name="Host Clues", text=f"{clue_block}\n", pinned=True))
+    if structure_mirror_line:
+        sections.append(
+            PromptSection(
+                name="Mutation Structure Mirror",
+                text=f"## Mutation Structure Mirror\n{structure_mirror_line}\n",
+                pinned=True,
+            )
+        )
 
     sections.append(
         PromptSection(
@@ -393,6 +404,25 @@ def build_gep_prompt(
             pinned=True,
         )
     )
+
+    if operator_cards_block:
+        sections.append(
+            PromptSection(
+                name="Operator Cards",
+                text=f"## Operator Cards\n{operator_cards_block}\n",
+                utility=3.9 + _signal_relevance_boost(operator_cards_block, signals),
+                pinned=False,
+            )
+        )
+    if adjacent_inspiration_block:
+        sections.append(
+            PromptSection(
+                name="Adjacent Inspiration",
+                text=f"## Adjacent Inspiration\n{adjacent_inspiration_block}\n",
+                utility=3.4,
+                pinned=False,
+            )
+        )
 
     if wiki_block:
         sections.append(

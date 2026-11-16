@@ -740,6 +740,70 @@ def gate_snapshot() -> dict[str, Any]:
     }
 
 
+def direction_envelope_for_host(
+    verdict: dict[str, Any],
+    *,
+    duration_ms: int | None = None,
+    baseline_duration_ms: int | None = None,
+    tie_pp: float = 0.02,
+    tie_cost: float = 0.02,
+) -> dict[str, Any]:
+    """Return a coarse-grained directional envelope to prevent Goodhart overfitting (S-6).
+
+    Replaces 4-decimal raw floats with noise-banded direction labels while keeping
+    verdict/reason/actionable guidance intact.
+    """
+    if not verdict.get("armed"):
+        val_dir = "unarmed"
+    else:
+        score = verdict.get("score")
+        baseline = verdict.get("baseline")
+        if isinstance(score, (int, float)) and isinstance(baseline, (int, float)):
+            diff = float(score) - float(baseline)
+            if diff > tie_pp:
+                val_dir = "improved"
+            elif diff < -tie_pp:
+                val_dir = "regressed"
+            else:
+                val_dir = "within_noise_or_flat"
+        else:
+            reason = str(verdict.get("reason") or "")
+            if reason in ("strict_improvement", "paired_improvement"):
+                val_dir = "improved"
+            elif reason in ("drop", "parent_better", "regression"):
+                val_dir = "regressed"
+            elif reason in ("flat", "no_significant_difference", "not_enough_discordant"):
+                val_dir = "within_noise_or_flat"
+            else:
+                val_dir = "unmeasured"
+
+    if (
+        isinstance(duration_ms, (int, float))
+        and isinstance(baseline_duration_ms, (int, float))
+        and baseline_duration_ms > 0
+    ):
+        rho = float(duration_ms) / float(baseline_duration_ms)
+        if rho < 1.0 - tie_cost:
+            cost_dir = "lower"
+        elif rho > 1.0 + tie_cost:
+            cost_dir = "higher"
+        else:
+            cost_dir = "about_the_same"
+    else:
+        cost_dir = "unmeasured"
+
+    return {
+        "val_direction": val_dir,
+        "cost_direction": cost_dir,
+        "verdict": verdict.get("verdict"),
+        "reason": verdict.get("reason"),
+        "accept": bool(verdict.get("accept")),
+        "soft_accept": bool(verdict.get("soft_accept")),
+        "tie_pp": tie_pp,
+        "tie_cost": tie_cost,
+    }
+
+
 __all__ = [
     "BASELINE_FORMAT",
     "CHARTER_PACK_FILENAME",
@@ -749,6 +813,7 @@ __all__ = [
     "GATE_SPLIT",
     "USABILITY_SOFT_REASONS",
     "baseline_path",
+    "direction_envelope_for_host",
     "enrich_soft_accept",
     "establish_parent_baseline",
     "freeze_charter_pack",

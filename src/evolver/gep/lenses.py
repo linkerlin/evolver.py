@@ -26,6 +26,7 @@ from evolver.gep.paths import get_repo_root, get_workspace_root
 
 BUILTIN_LENSES: Final[dict[str, str]] = {
     "list": "List built-in read-only lenses and active operator genes with lens specs.",
+    "card": "Render Operator Card(s) with engine-measured stats & notes, marking them seen.",
     "ast_hotspot": (
         "Rank Python functions/classes by branching complexity and flag swallowed exceptions."
     ),
@@ -370,21 +371,143 @@ def _redact_payload(obj: Any) -> Any:
     return obj
 
 
-def run_lens(
+def _lens_card(root: Path, target: str, args: dict[str, Any]) -> dict[str, Any]:
+    from evolver.gep.operator_cards import render_cards_for_lens
+
+    return render_cards_for_lens(target, args, repo_root=root)
+
+
+def _active_operator_maps() -> tuple[dict[str, dict[str, Any]], dict[str, list[str]], set[str]]:
+    from evolver.gep.asset_store import load_genes
+    from evolver.gep.gene_lifecycle import load_lifecycle_sets
+
+    retired_ids, _under_review = load_lifecycle_sets()
+    by_id: dict[str, dict[str, Any]] = {}
+    dep_graph: dict[str, list[str]] = {}
+    for g in load_genes():
+        if not isinstance(g, dict):
+            continue
+        gid = str(g.get("id") or "").strip()
+        if not gid:
+            continue
+        by_id[gid] = g
+        deps = [
+            str(d).strip()
+            for d in (g.get("builds_on") or g.get("dependencies") or [])
+            if str(d).strip()
+        ]
+        if deps:
+            dep_graph[gid] = deps
+    return by_id, dep_graph, set(retired_ids)
+
+
+def _execute_operator_lens(
+    root: Path,
+    matched: dict[str, Any],
+    lens_spec: Any,
+    target: str,
+    extra: dict[str, Any],
+    *,
+    depth: int,
+) -> dict[str, Any]:
+    if isinstance(lens_spec, dict) and str(lens_spec.get("builtin") or "") in BUILTIN_LENSES:
+        delegated = str(lens_spec["builtin"])
+        return _run_lens_inner(
+            delegated,
+            target=target or str(lens_spec.get("default_target") or "."),
+            args={**(lens_spec.get("args") or {}), **extra},
+            repo_root=root,
+            depth=depth + 1,
+        )
+
+    code = (
+        lens_spec
+        if isinstance(lens_spec, str)
+        else (str(lens_spec.get("code") or "") if isinstance(lens_spec, dict) else "")
+    )
+    if not code.strip():
+        return {
+            "ok": False,
+            "error": "empty_operator_lens",
+            "summary": f"Operator {matched.get('id')!r} defines no executable lens code.",
+            "items": [],
+        }
+
+    from evolver.gep.operator_sandbox import SandboxLensContext, run_lens_code_sandboxed
+
+    by_id, dep_graph, retired_ids = _active_operator_maps()
+    known_lenses = set(BUILTIN_LENSES) | set(by_id)
+    declared_deps = [
+        str(d).strip()
+        for d in (matched.get("builds_on") or matched.get("dependencies") or [])
+        if str(d).strip()
+    ]
+    raw_slots = extra.get("slots")
+    slot_overrides = (
+        {str(k): str(v) for k, v in raw_slots.items()} if isinstance(raw_slots, dict) else None
+    )
+
+    def _nested_call(
+        dep_name: str,
+        dep_target: str = ".",
+        dep_args: dict[str, Any] | None = None,
+        next_depth: int = 1,
+    ) -> dict[str, Any]:
+        return _run_lens_inner(
+            dep_name,
+            target=dep_target,
+            args=dep_args,
+            repo_root=root,
+            depth=next_depth,
+        )
+
+    ctx = SandboxLensContext(root, call_lens_fn=_nested_call, depth=depth)
+    return run_lens_code_sandboxed(
+        code,
+        ctx=ctx,
+        target=target,
+        args=extra,
+        slot_overrides=slot_overrides,
+        operator_id=str(matched.get("id") or ""),
+        operator_kind=(str(matched.get("operator_kind")) if matched.get("operator_kind") else None),
+        declared_deps=declared_deps,
+        known_lenses=known_lenses,
+        retired_ids=retired_ids,
+        dep_graph=dep_graph,
+    )
+
+
+def _run_lens_inner(
     name: str = "list",
     target: str = ".",
     args: dict[str, Any] | None = None,
     *,
     repo_root: Path | None = None,
+    depth: int = 0,
 ) -> dict[str, Any]:
-    """Execute a read-only diagnostic lens and return a bounded JSON envelope."""
+    from evolver.gep.operator_sandbox import MAX_COMPOSITION_DEPTH
+
     t0 = time.monotonic()
     lens_name = (name or "list").strip()
     extra = dict(args) if isinstance(args, dict) else {}
     root = _resolve_root(repo_root)
 
+    if depth > MAX_COMPOSITION_DEPTH:
+        return {
+            "ok": False,
+            "read_only": True,
+            "error": "composition_depth_exceeded",
+            "lens": lens_name,
+            "target": target,
+            "duration_ms": 0,
+            "summary": f"Lens composition depth exceeded {MAX_COMPOSITION_DEPTH}.",
+            "items": [],
+        }
+
     if lens_name == "list":
         body = _lens_list()
+    elif lens_name == "card":
+        body = _lens_card(root, target, extra)
     elif lens_name == "ast_hotspot":
         body = _lens_ast_hotspot(root, target)
     elif lens_name == "import_impact":
@@ -394,7 +517,6 @@ def run_lens(
     elif lens_name == "contract_surface":
         body = _lens_contract_surface(root, target)
     else:
-        # Check if lens_name matches an active operator gene with a declarative lens spec
         from evolver.gep.asset_store import load_genes
 
         matched = next(
@@ -402,27 +524,22 @@ def run_lens(
             None,
         )
         lens_spec = matched.get("lens") if isinstance(matched, dict) else None
-        if isinstance(lens_spec, dict) and str(lens_spec.get("builtin") or "") in BUILTIN_LENSES:
-            delegated = str(lens_spec["builtin"])
-            return run_lens(
-                delegated,
-                target=target or str(lens_spec.get("default_target") or "."),
-                args={**(lens_spec.get("args") or {}), **extra},
-                repo_root=root,
-            )
-        duration_ms = round((time.monotonic() - t0) * 1000)
-        avail_str = ", ".join(sorted(BUILTIN_LENSES))
-        return {
-            "ok": False,
-            "read_only": True,
-            "error": "unknown_lens",
-            "lens": lens_name,
-            "target": target,
-            "duration_ms": duration_ms,
-            "available_lenses": sorted(BUILTIN_LENSES),
-            "summary": f"Unknown lens {lens_name!r}. Choose from: {avail_str}.",
-            "items": [],
-        }
+        if isinstance(matched, dict) and lens_spec is not None:
+            body = _execute_operator_lens(root, matched, lens_spec, target, extra, depth=depth)
+        else:
+            duration_ms = round((time.monotonic() - t0) * 1000)
+            avail_str = ", ".join(sorted(BUILTIN_LENSES))
+            return {
+                "ok": False,
+                "read_only": True,
+                "error": "unknown_lens",
+                "lens": lens_name,
+                "target": target,
+                "duration_ms": duration_ms,
+                "available_lenses": sorted(BUILTIN_LENSES),
+                "summary": f"Unknown lens {lens_name!r}. Choose from: {avail_str}.",
+                "items": [],
+            }
 
     duration_ms = round((time.monotonic() - t0) * 1000)
     ok = bool(body.get("ok", True))
@@ -436,6 +553,17 @@ def run_lens(
     }
     res: dict[str, Any] = _redact_payload(envelope)
     return res
+
+
+def run_lens(
+    name: str = "list",
+    target: str = ".",
+    args: dict[str, Any] | None = None,
+    *,
+    repo_root: Path | None = None,
+) -> dict[str, Any]:
+    """Execute a read-only diagnostic lens and return a bounded JSON envelope."""
+    return _run_lens_inner(name=name, target=target, args=args, repo_root=repo_root, depth=0)
 
 
 __all__ = ["BUILTIN_LENSES", "run_lens"]

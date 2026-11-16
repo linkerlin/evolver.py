@@ -155,7 +155,8 @@
         "tier": "mid",
         "reasoning_level": "medium"
       },
-      "asset_id": "sha256:450dd8ff77883627cebec662a84c6c2894ec648522c210de08e3f457e2a2bf70"
+      "asset_id": "sha256:ef7d2b5c0a909328b3419faeed8380130da90cabc625a8934fedb9e5694f3c96",
+      "when_to_use": "Optimize tool execution patterns by reducing redundant calls, improving tool selection strategy, and enforcing tool-use constraints to prevent bypass."
     },
     {
       "type": "Gene",
@@ -201,7 +202,8 @@
         "skill_name": "env-vars",
         "skill_platform": "vercel"
       },
-      "asset_id": "sha256:cef756bccc132d7871948aaee66f9694f06288a47111e9af742b898cdccc7a18"
+      "asset_id": "sha256:8c990d90411e253d850ecdf27c9ef4461ad10cb91b5e8022aa40dbc63f5d5c18",
+      "when_to_use": "Vercel environment variable expert guidance. Use when working with .env files, vercel env commands, OIDC tokens, or managing environment-specific configuration."
     },
     {
       "type": "Gene",
@@ -293,7 +295,8 @@
         "passing long markdown inline (shell-escaping corrupts it) instead of --content @file",
         "overwriting ~/.lark-cli/config.json (holds the app secret and tokens)"
       ],
-      "asset_id": "sha256:f8a972e5dcc4ec9a2197b282e3caf9b5ed65126f250beb3ee53188f43ee2c73e"
+      "asset_id": "sha256:8b30f56c914a5902007d1763eb5e1fe4a9dc73fc1b2aae9b9a7419fae51635e0",
+      "when_to_use": "Publish Markdown content as a Feishu/Lark document via the official lark-cli (Docs v2). Use --as user for human-owned docs and @file content for long bodies; return the resulting document URL."
     },
     {
       "type": "Gene",
@@ -338,7 +341,8 @@
         "amending or force-pushing to bypass a failing hook",
         "past-tense or vague messages like \"updated stuff\""
       ],
-      "asset_id": "sha256:cbbb4e39e083673b84cac42e8d6b683b6de35e0db730208ce319ef233c1b9bd9"
+      "asset_id": "sha256:e2a7e31796e80e2d5908841bfbff5a4e77445609323194f8ddb063c80841eaac",
+      "when_to_use": "Create a Conventional Commits-style git commit: analyze the diff to pick type/scope, stage logical groups (never secrets), and write an imperative <72-char message."
     },
     {
       "type": "Gene",
@@ -383,7 +387,8 @@
         "filtering comments on \"cursor\" instead of \"cursor[bot]\"",
         "auto-merging without explicit authorization or with CI red"
       ],
-      "asset_id": "sha256:7e9a9b2d51b54adb349930caee22977c8796c93e17c561c3ff57c41b554bc4db"
+      "asset_id": "sha256:1fbc7e68b625b77f6a50e43055a813e8957a029cb4fc3f3f05d3aa8fffc79723",
+      "when_to_use": "Wait for Cursor Bugbot on a GitHub PR, then gate on the conclusion: SUCCESS may merge, NEUTRAL/FAILURE always pauses to surface inline findings."
     },
     {
       "type": "Gene",
@@ -428,7 +433,8 @@
         "serial retries instead of parallel decomposition",
         "surfacing the timeout as a hard failure before recovering"
       ],
-      "asset_id": "sha256:14110b6d87a9fbc73e60cf4abd3b1aae9f7134bb80ba2e47c5452547ded2db8a"
+      "asset_id": "sha256:450c2e5cf1d1fd263bf61aed01fedba52fe93a2acc999c038fcddf5442133b31",
+      "when_to_use": "Recover from a gateway/upstream timeout: retry the same call once, and if it still times out, decompose the work into parallel subagents and merge — never loop the monolithic call."
     },
     {
       "type": "Gene",
@@ -471,7 +477,8 @@
         "trusting the webhook payload without HMAC validation and PR re-fetch",
         "execing or deserializing anything from the payload"
       ],
-      "asset_id": "sha256:7591c6a1b162291a31d3e930bc1e28b98d6e781b9f60870cbc7d7c36d9db842a"
+      "asset_id": "sha256:d5aa06de3fb21165ab29b5dbf56b823355a418e4d2bb8145970588dec3894e7a",
+      "when_to_use": "Deploy a per-developer GitHub webhook listener (HMAC-validated, cloudflared tunnel, systemd-kept) that drops PR/Bugbot events into an inbox for the next session to surface."
     },
     {
       "type": "Gene",
@@ -506,8 +513,8 @@
         "After changes, re-run the same ledger measurement and report the before/after delta with any residual irreducible context cost"
       ],
       "validation": [
-        "node --test test/contextSchemaRoutingGene.test.js",
-        "node scripts/validate-modules.js ./src/gep/signals ./src/gep/contextRoutingGene"
+        "python -m pytest tests/gep/test_context_routing_gene.py -x -q",
+        "python -m ruff check src/evolver/gep/signals.py src/evolver/gep/context_routing_gene.py"
       ],
       "constraints": {
         "max_files": 8,
@@ -522,7 +529,7 @@
         "optimizing a small memory index while ignoring much larger always-on tool schemas",
         "reporting a context fix without before/after numbers and a runtime verification target"
       ],
-      "asset_id": "sha256:d5f2bffabeac6076ed455b057d0de57c197f2d257bff4ce1c4efa0ad7f16b48a"
+      "asset_id": "sha256:6a727f7294b983cfd04652dafd0964608230d4ae6fe39fac325a271285f13e2c"
     },
     {
       "type": "Gene",
@@ -557,9 +564,8 @@
         "Validate the routed path by proving the selected Gene appears through selector or recall injection, the rendered hint stays under the injection ceiling, and an approved runtime loader can still provide the exact schema when needed"
       ],
       "validation": [
-        "node --test test/contextSchemaRoutingGene.test.js test/recallInject.test.js test/selector.test.js",
-        "node scripts/validate-modules.js ./src/gep/assetStore ./src/gep/recallInject ./src/gep/selector ./src/gep/signals ./src/gep/contextRoutingGene ./src/gep/schemas/gene",
-        "node scripts/validate-suite.js"
+        "python -m pytest tests/gep/test_context_routing_gene.py tests/test_selector.py -x -q",
+        "python -m ruff check src/evolver/gep/asset_store.py src/evolver/gep/selector.py src/evolver/gep/context_routing_gene.py"
       ],
       "constraints": {
         "max_files": 8,
@@ -575,7 +581,7 @@
         "removing user-preference, approval-gate, validation, or signature requirements merely to save tokens",
         "treating lazy loading as a substitute for the runtime loader and its authoritative parameter contract"
       ],
-      "asset_id": "sha256:6a74dc27cf91a6c3ac802851a974a7dd86d658bb34fa9b1647a7756a797e3161"
+      "asset_id": "sha256:56420be5d5a606e40dbc4904af6d43c5fcee860f5f18851f31081f8c48fb23aa"
     },
     {
       "type": "Gene",
@@ -610,8 +616,8 @@
         "Regression-test at least one real tool call per lazy-loaded family so the compression cannot pass by merely hiding unavailable tools"
       ],
       "validation": [
-        "node --test test/contextSchemaRoutingGene.test.js test/recallInject.test.js",
-        "node scripts/validate-modules.js ./src/gep/signals ./src/gep/recallInject ./src/gep/contextRoutingGene"
+        "python -m pytest tests/gep/test_context_routing_gene.py tests/test_selector.py -x -q",
+        "python -m ruff check src/evolver/gep/signals.py src/evolver/gep/recall_inject.py src/evolver/gep/context_routing_gene.py"
       ],
       "constraints": {
         "max_files": 12,
@@ -626,7 +632,7 @@
         "dropping enum constraints, required fields, or permission prompts from the runtime boundary",
         "claiming savings without a before/after token measurement and one real tool-call regression"
       ],
-      "asset_id": "sha256:84fe72cb104f2806d68c0289663350252ee4ce5c1c752468eddc43ef95bbf326"
+      "asset_id": "sha256:b931deb4732c253d94f49e3ec5137e733ed7db5fd0442e554ee79011b10d5e74"
     },
     {
       "type": "Gene",
@@ -661,8 +667,8 @@
         "Add tests that route a representative Lark/Pencil/Browser/Claude-API task to the right card while unrelated cards remain compressed"
       ],
       "validation": [
-        "node --test test/contextSchemaRoutingGene.test.js",
-        "node scripts/validate-modules.js ./src/gep/signals ./src/gep/contextRoutingGene"
+        "python -m pytest tests/gep/test_context_routing_gene.py -x -q",
+        "python -m ruff check src/evolver/gep/signals.py src/evolver/gep/context_routing_gene.py"
       ],
       "constraints": {
         "max_files": 12,
@@ -677,7 +683,7 @@
         "inventing skill names or aliases not present in the runtime registry",
         "moving cross-cutting safety policy behind an optional skill loader"
       ],
-      "asset_id": "sha256:5d698cd132f4a9b32cc2e042de6131d8d175766acda50e8455d12358f1a5760c"
+      "asset_id": "sha256:8974ae32a6c6ca1ca50b219cf6360c00c9f9e3ff2da8ef8e627df7713697c35a"
     },
     {
       "type": "Gene",
@@ -712,8 +718,8 @@
         "Verify the handoff by asking whether an isolated agent can continue from the packet without reading the original full transcript"
       ],
       "validation": [
-        "node --test test/contextSchemaRoutingGene.test.js",
-        "node scripts/validate-modules.js ./src/gep/signals ./src/gep/contextRoutingGene"
+        "python -m pytest tests/gep/test_context_routing_gene.py -x -q",
+        "python -m ruff check src/evolver/gep/signals.py src/evolver/gep/context_routing_gene.py"
       ],
       "constraints": {
         "max_files": 8,
@@ -728,7 +734,7 @@
         "dropping exact failing output or branch/worktree state needed to continue safely",
         "saving ephemeral conversation detail as durable memory"
       ],
-      "asset_id": "sha256:32903bb5e4813856091738d4bd99c1579843b5eccaa7661ab028ce010423cfcc"
+      "asset_id": "sha256:f34bce48759b030b9b96a4e06eaa2906604219518869c6688e4a0c8650e7f89c"
     },
     {
       "type": "Gene",
@@ -767,8 +773,8 @@
         "Validate recall quality with representative prompts before and after pruning so context savings do not hide important project constraints"
       ],
       "validation": [
-        "node --test test/contextSchemaRoutingGene.test.js",
-        "node scripts/validate-modules.js ./src/gep/signals ./src/gep/contextRoutingGene"
+        "python -m pytest tests/gep/test_context_routing_gene.py -x -q",
+        "python -m ruff check src/evolver/gep/signals.py src/evolver/gep/context_routing_gene.py"
       ],
       "constraints": {
         "max_files": 8,
@@ -783,9 +789,8 @@
         "injecting every memory body into every session",
         "deleting durable user/project constraints just to make the index look smaller"
       ],
-      "asset_id": "sha256:c85f323d8e5f982c5d551409a9f9782a235e3e23ad16d035329b0a7446dd1884"
-    }
-,
+      "asset_id": "sha256:78a0a7903295e241dd025dabdb1715d88ca3b7f1b2e84451d8ead370fe1b5eb0"
+    },
     {
       "type": "Gene",
       "id": "gene_improver_bounded_text_search",
@@ -826,7 +831,8 @@
       "target_hook": "improver_tool",
       "mechanism_family": "improver_tools",
       "schema_version": "1.8.0",
-      "asset_id": "sha256:a9597a47d17dfc63762fdc6c7e83675f1f7c28b8755f1a0bc44bb5695db1d111"
+      "asset_id": "sha256:1dbc1b6130dfd1669f91243641d44f77a3e6af2cb912a884f9845d01a03c6f4b",
+      "when_to_use": "Bounded text search: cap output lines/bytes and center excerpts on the match so long records stay readable."
     },
     {
       "type": "Gene",
@@ -866,7 +872,8 @@
       "target_hook": "improver_tool",
       "mechanism_family": "improver_tools",
       "schema_version": "1.8.0",
-      "asset_id": "sha256:70d61e2444b625172e2cd520fe274149d0721cb66b1ad45158c159491cecbaa5"
+      "asset_id": "sha256:e789b363a5334ed69a5b7093f4710bb657f625d96fb2164fcabc73d369517ea8",
+      "when_to_use": "Line-range file viewing: read a file by line range instead of whole-file, preserving tabs and line endings."
     },
     {
       "type": "Gene",
@@ -907,7 +914,656 @@
       "target_hook": "improver_tool",
       "mechanism_family": "improver_tools",
       "schema_version": "1.8.0",
-      "asset_id": "sha256:609f9699d5c16b18b1de21e42ba766223009157a10ea460f500897bd2a2b7915"
+      "asset_id": "sha256:f42ec5c019ad17f27f324061b3389597c72accaf8b7c95b43770428bb9b0d820",
+      "when_to_use": "Trajectory reader: inspect previous episode records and tool results, linking each result to the call that produced it."
+    },
+    {
+      "type": "Gene",
+      "id": "op_unguarded_subscript",
+      "category": "repair",
+      "schema_version": "1.8.0",
+      "summary": "Locate unsafe subscripting on unguarded .get()/json.loads() payloads that may return empty or non-dict values.",
+      "when_to_use": "Use when JSON/dict decoding raises TypeError or AttributeError due to missing/list or unexpected scalar payloads.",
+      "signals_match": [
+        "TypeError",
+        "AttributeError",
+        "subscript",
+        "isinstance",
+        "dict_guard",
+        "json_loads"
+      ],
+      "preconditions": [
+        "When TypeError, AttributeError, or KeyError hits dict/JSON decoding (DEBUG #53)."
+      ],
+      "strategy": [
+        "Run read-only lens op_unguarded_subscript before editing",
+        "Check return type with isinstance(val, dict) or fallback default before subscripting",
+        "Keep behavior lossless for valid dicts; reject invalid types with clear fallback or error"
+      ],
+      "validation": [
+        "python -m pytest tests/ -x -q -m \"not slow\""
+      ],
+      "constraints": {
+        "max_files": 8,
+        "forbidden_paths": [
+          ".git",
+          "node_modules",
+          ".venv"
+        ]
+      },
+      "routing_hint": {
+        "tier": "cheap",
+        "reasoning_level": "low"
+      },
+      "operator_kind": "seed",
+      "builds_on": [],
+      "dependencies": [],
+      "lens": "def lens(ctx, target=\".\", args=None):\n    import ast\n    risky_call = \"loads\"\n    items = []\n    for rel in ctx.iter_py_files(target):\n        src = ctx.read_text(rel)\n        if not src:\n            continue\n        try:\n            tree = ast.parse(src)\n        except SyntaxError:\n            continue\n        for node in ast.walk(tree):\n            if isinstance(node, ast.Subscript) and isinstance(node.value, ast.Call):\n                fn = node.value.func\n                if isinstance(fn, ast.Attribute) and fn.attr in (\"get\", risky_call):\n                    items.append({\"location\": f\"{rel}:{node.lineno}\", \"issue\": f\"unguarded_{fn.attr}_subscript\"})\n    return {\"summary\": f\"Found {len(items)} unguarded .{risky_call}/get subscript(s).\", \"items\": items[:15]}\n",
+      "invariant": "import json; obj = json.loads(\"null\"); assert not isinstance(obj, dict)",
+      "structural_hash": "a16c80ac9b6e77124acc26df46113b26cfd7bb5c98bb0cbe5ae8ff593daf6d87",
+      "slot_specs": [
+        {
+          "id": "s1",
+          "default": "loads",
+          "fstring": false,
+          "placeholders": [],
+          "line": 3
+        },
+        {
+          "id": "s2",
+          "default": "unguarded_{fn.attr}_subscript",
+          "fstring": true,
+          "placeholders": [
+            "fn.attr"
+          ],
+          "line": 17
+        },
+        {
+          "id": "s3",
+          "default": "Found {len(items)} unguarded .{risky_call}/get subscript(s).",
+          "fstring": true,
+          "placeholders": [
+            "len(items)",
+            "risky_call"
+          ],
+          "line": 18
+        }
+      ],
+      "slot_bindings": [],
+      "asset_id": "sha256:ac6c1339f3ac2637af12563c4579ae655829d392638c4f18809d2be175c388f6"
+    },
+    {
+      "type": "Gene",
+      "id": "op_swallowed_exception_audit",
+      "category": "repair",
+      "schema_version": "1.8.0",
+      "summary": "Find bare or swallowing except blocks that silently drop errors during critical state transitions.",
+      "when_to_use": "When silent failures or missing logs mask root-cause errors in Python modules.",
+      "signals_match": [
+        "silent_failure",
+        "except",
+        "swallowed",
+        "log_error",
+        "test_failure"
+      ],
+      "preconditions": [
+        "When silent failures or missing logs mask root-cause errors in Python modules."
+      ],
+      "strategy": [
+        "Run read-only lens op_swallowed_exception_audit before editing",
+        "Apply minimal targeted fix consistent with invariant probe",
+        "Re-run impacted L0 tests and settle cleanly"
+      ],
+      "validation": [
+        "python -m pytest tests/ -x -q -m \"not slow\""
+      ],
+      "constraints": {
+        "max_files": 8,
+        "forbidden_paths": [
+          ".git",
+          "node_modules",
+          ".venv"
+        ]
+      },
+      "routing_hint": {
+        "tier": "cheap",
+        "reasoning_level": "low"
+      },
+      "operator_kind": "seed",
+      "builds_on": [],
+      "dependencies": [],
+      "lens": "def lens(ctx, target=\".\", args=None):\n    import ast\n    marker = \"bare_except\"\n    items = []\n    for rel in ctx.iter_py_files(target):\n        src = ctx.read_text(rel)\n        if not src:\n            continue\n        try:\n            tree = ast.parse(src)\n        except SyntaxError:\n            continue\n        for node in ast.walk(tree):\n            if isinstance(node, ast.ExceptHandler):\n                body = node.body or []\n                is_pass = len(body) == 1 and isinstance(body[0], ast.Pass)\n                if not body or is_pass:\n                    kind = ast.unparse(node.type) if node.type is not None else marker\n                    items.append({\"location\": f\"{rel}:{node.lineno}\", \"exception\": kind})\n    return {\"summary\": f\"Detected {len(items)} swallowed exception handler(s).\", \"items\": items[:15]}\n",
+      "invariant": "assert True",
+      "structural_hash": "e51b49fccaafe45c8cb8f8354d87372e8a8ac4d18db3d1a4ce807b2292ef879a",
+      "slot_specs": [
+        {
+          "id": "s1",
+          "default": "bare_except",
+          "fstring": false,
+          "placeholders": [],
+          "line": 3
+        },
+        {
+          "id": "s2",
+          "default": "Detected {len(items)} swallowed exception handler(s).",
+          "fstring": true,
+          "placeholders": [
+            "len(items)"
+          ],
+          "line": 20
+        }
+      ],
+      "slot_bindings": [],
+      "asset_id": "sha256:ccbff80825049c9aba28e6ad517a6cad16e4ee49c52c928ff314a7d7dea0c8cc"
+    },
+    {
+      "type": "Gene",
+      "id": "op_platform_path_audit",
+      "category": "repair",
+      "schema_version": "1.8.0",
+      "summary": "Detect raw backslash splitting or Unix-only fcntl imports that break on Windows paths or locks.",
+      "when_to_use": "When path normalization, file locks, or cross-platform tests fail on Windows (DEBUG #54).",
+      "signals_match": [
+        "WindowsError",
+        "PermissionError",
+        "FileNotFoundError",
+        "path",
+        "fcntl",
+        "sep"
+      ],
+      "preconditions": [
+        "When path normalization, file locks, or cross-platform tests fail on Windows (DEBUG #54)."
+      ],
+      "strategy": [
+        "Run read-only lens op_platform_path_audit before editing",
+        "Apply minimal targeted fix consistent with invariant probe",
+        "Re-run impacted L0 tests and settle cleanly"
+      ],
+      "validation": [
+        "python -m pytest tests/ -x -q -m \"not slow\""
+      ],
+      "constraints": {
+        "max_files": 8,
+        "forbidden_paths": [
+          ".git",
+          "node_modules",
+          ".venv"
+        ]
+      },
+      "routing_hint": {
+        "tier": "cheap",
+        "reasoning_level": "low"
+      },
+      "operator_kind": "seed",
+      "builds_on": [],
+      "dependencies": [],
+      "lens": "def lens(ctx, target=\".\", args=None):\n    import ast\n    unix_mod = \"fcntl\"\n    items = []\n    for rel in ctx.iter_py_files(target):\n        src = ctx.read_text(rel)\n        if not src:\n            continue\n        try:\n            tree = ast.parse(src)\n        except SyntaxError:\n            continue\n        for node in ast.walk(tree):\n            if isinstance(node, ast.Import) and any(a.name == unix_mod for a in node.names):\n                items.append({\"location\": f\"{rel}:{node.lineno}\", \"issue\": f\"unix_only_{unix_mod}\"})\n    return {\"summary\": f\"Found {len(items)} {unix_mod}/platform hazard(s).\", \"items\": items[:15]}\n",
+      "invariant": "from pathlib import Path; assert Path(\"a/b\").as_posix() == \"a/b\"",
+      "structural_hash": "9dc4355236fd298e32662fe7868d95ccbcc4b40de421439433d943e232dd9d70",
+      "slot_specs": [
+        {
+          "id": "s1",
+          "default": "fcntl",
+          "fstring": false,
+          "placeholders": [],
+          "line": 3
+        },
+        {
+          "id": "s2",
+          "default": "unix_only_{unix_mod}",
+          "fstring": true,
+          "placeholders": [
+            "unix_mod"
+          ],
+          "line": 15
+        },
+        {
+          "id": "s3",
+          "default": "Found {len(items)} {unix_mod}/platform hazard(s).",
+          "fstring": true,
+          "placeholders": [
+            "len(items)",
+            "unix_mod"
+          ],
+          "line": 16
+        }
+      ],
+      "slot_bindings": [],
+      "asset_id": "sha256:9d106d5972a81d1419e35b1a635d4a5411c09f914a4e0b5d1c04165f9ea0e0b5"
+    },
+    {
+      "type": "Gene",
+      "id": "op_atomic_write_audit",
+      "category": "optimize",
+      "schema_version": "1.8.0",
+      "summary": "Locate direct write_text/json.dump overwrites on shared state files missing atomic tmp+replace.",
+      "when_to_use": "When concurrent reads observe truncated JSON or race lost-update bugs.",
+      "signals_match": [
+        "JSONDecodeError",
+        "race",
+        "concurrent",
+        "corrupt",
+        "write_text",
+        "state"
+      ],
+      "preconditions": [
+        "When concurrent reads observe truncated JSON or race lost-update bugs."
+      ],
+      "strategy": [
+        "Run read-only lens op_atomic_write_audit before editing",
+        "Apply minimal targeted fix consistent with invariant probe",
+        "Re-run impacted L0 tests and settle cleanly"
+      ],
+      "validation": [
+        "python -m pytest tests/ -x -q -m \"not slow\""
+      ],
+      "constraints": {
+        "max_files": 8,
+        "forbidden_paths": [
+          ".git",
+          "node_modules",
+          ".venv"
+        ]
+      },
+      "routing_hint": {
+        "tier": "mid",
+        "reasoning_level": "medium"
+      },
+      "operator_kind": "seed",
+      "builds_on": [],
+      "dependencies": [],
+      "lens": "def lens(ctx, target=\".\", args=None):\n    import ast\n    target_suffix = \".json\"\n    items = []\n    for rel in ctx.iter_py_files(target):\n        src = ctx.read_text(rel)\n        if not src:\n            continue\n        try:\n            tree = ast.parse(src)\n        except SyntaxError:\n            continue\n        for node in ast.walk(tree):\n            if isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute) and node.func.attr == \"write_text\":\n                line_txt = ast.unparse(node)\n                if target_suffix in line_txt or \"json.dumps\" in line_txt:\n                    items.append({\"location\": f\"{rel}:{node.lineno}\", \"call\": \"direct_write_text_json\"})\n    return {\"summary\": f\"Found {len(items)} direct {target_suffix} overwrite call(s).\", \"items\": items[:15]}\n",
+      "invariant": "import json; assert json.loads(\"{}\") == {}",
+      "structural_hash": "b1cfbf6121697c54c224e32de5c27a476ab6694cea1c822b7d428b642c6db3db",
+      "slot_specs": [
+        {
+          "id": "s1",
+          "default": ".json",
+          "fstring": false,
+          "placeholders": [],
+          "line": 3
+        },
+        {
+          "id": "s2",
+          "default": "write_text",
+          "fstring": false,
+          "placeholders": [],
+          "line": 14
+        },
+        {
+          "id": "s3",
+          "default": "json.dumps",
+          "fstring": false,
+          "placeholders": [],
+          "line": 16
+        },
+        {
+          "id": "s4",
+          "default": "direct_write_text_json",
+          "fstring": false,
+          "placeholders": [],
+          "line": 17
+        },
+        {
+          "id": "s5",
+          "default": "Found {len(items)} direct {target_suffix} overwrite call(s).",
+          "fstring": true,
+          "placeholders": [
+            "len(items)",
+            "target_suffix"
+          ],
+          "line": 18
+        }
+      ],
+      "slot_bindings": [],
+      "asset_id": "sha256:60a262ed7152e5ed915b9bd4314ad41965003910ca628545e39b57362e88087d"
+    },
+    {
+      "type": "Gene",
+      "id": "op_subprocess_timeout_audit",
+      "category": "repair",
+      "schema_version": "1.8.0",
+      "summary": "Flag subprocess invocations missing explicit timeout bounds or using shell=True.",
+      "when_to_use": "When hung subprocesses, deadlocks, or shell escaping errors occur.",
+      "signals_match": [
+        "TimeoutExpired",
+        "subprocess",
+        "hang",
+        "shell",
+        "timeout"
+      ],
+      "preconditions": [
+        "When hung subprocesses, deadlocks, or shell escaping errors occur."
+      ],
+      "strategy": [
+        "Run read-only lens op_subprocess_timeout_audit before editing",
+        "Apply minimal targeted fix consistent with invariant probe",
+        "Re-run impacted L0 tests and settle cleanly"
+      ],
+      "validation": [
+        "python -m pytest tests/ -x -q -m \"not slow\""
+      ],
+      "constraints": {
+        "max_files": 8,
+        "forbidden_paths": [
+          ".git",
+          "node_modules",
+          ".venv"
+        ]
+      },
+      "routing_hint": {
+        "tier": "cheap",
+        "reasoning_level": "low"
+      },
+      "operator_kind": "seed",
+      "builds_on": [],
+      "dependencies": [],
+      "lens": "def lens(ctx, target=\".\", args=None):\n    import ast\n    runner = \"subprocess\"\n    items = []\n    for rel in ctx.iter_py_files(target):\n        src = ctx.read_text(rel)\n        if not src:\n            continue\n        try:\n            tree = ast.parse(src)\n        except SyntaxError:\n            continue\n        for node in ast.walk(tree):\n            if isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute):\n                if isinstance(node.func.value, ast.Name) and node.func.value.id == runner and node.func.attr == \"run\":\n                    kw_names = {kw.arg for kw in node.keywords}\n                    if \"timeout\" not in kw_names:\n                        items.append({\"location\": f\"{rel}:{node.lineno}\", \"issue\": \"missing_timeout\"})\n    return {\"summary\": f\"Found {len(items)} {runner}.run call(s) without timeout.\", \"items\": items[:15]}\n",
+      "invariant": "assert True",
+      "structural_hash": "4d2ac7346bfcd69b7eaa3b2cc3eb323bad84c77ae4d48619ee65714b7345ea6b",
+      "slot_specs": [
+        {
+          "id": "s1",
+          "default": "subprocess",
+          "fstring": false,
+          "placeholders": [],
+          "line": 3
+        },
+        {
+          "id": "s2",
+          "default": "timeout",
+          "fstring": false,
+          "placeholders": [],
+          "line": 17
+        },
+        {
+          "id": "s3",
+          "default": "missing_timeout",
+          "fstring": false,
+          "placeholders": [],
+          "line": 18
+        },
+        {
+          "id": "s4",
+          "default": "Found {len(items)} {runner}.run call(s) without timeout.",
+          "fstring": true,
+          "placeholders": [
+            "len(items)",
+            "runner"
+          ],
+          "line": 19
+        }
+      ],
+      "slot_bindings": [],
+      "asset_id": "sha256:b1a394a0a12e67c8f8b5c6b2a87e352f50462126c855244a4cdc4ef30911c3a7"
+    },
+    {
+      "type": "Gene",
+      "id": "op_sqlite_handle_leak_audit",
+      "category": "repair",
+      "schema_version": "1.8.0",
+      "summary": "Check sqlite3.connect call sites for explicit connection closing or context wrapping (Windows lock safety).",
+      "when_to_use": "When TemporaryDirectory cleanup raises PermissionError or sqlite OperationalError locked occurs.",
+      "signals_match": [
+        "sqlite3",
+        "OperationalError",
+        "PermissionError",
+        "database is locked",
+        "WAL"
+      ],
+      "preconditions": [
+        "When TemporaryDirectory cleanup raises PermissionError or sqlite OperationalError locked occurs."
+      ],
+      "strategy": [
+        "Run read-only lens op_sqlite_handle_leak_audit before editing",
+        "Apply minimal targeted fix consistent with invariant probe",
+        "Re-run impacted L0 tests and settle cleanly"
+      ],
+      "validation": [
+        "python -m pytest tests/ -x -q -m \"not slow\""
+      ],
+      "constraints": {
+        "max_files": 8,
+        "forbidden_paths": [
+          ".git",
+          "node_modules",
+          ".venv"
+        ]
+      },
+      "routing_hint": {
+        "tier": "mid",
+        "reasoning_level": "low"
+      },
+      "operator_kind": "seed",
+      "builds_on": [],
+      "dependencies": [],
+      "lens": "def lens(ctx, target=\".\", args=None):\n    import ast\n    db_mod = \"sqlite3\"\n    items = []\n    for rel in ctx.iter_py_files(target):\n        src = ctx.read_text(rel)\n        if not src or db_mod not in src:\n            continue\n        try:\n            tree = ast.parse(src)\n        except SyntaxError:\n            continue\n        has_close = \".close(\" in src\n        for node in ast.walk(tree):\n            if isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute):\n                if node.func.attr == \"connect\" and not has_close:\n                    items.append({\"location\": f\"{rel}:{node.lineno}\", \"issue\": \"connect_without_close\"})\n    return {\"summary\": f\"Scanned {db_mod}; found {len(items)} potential unclosed handle(s).\", \"items\": items[:15]}\n",
+      "invariant": "import sqlite3; c = sqlite3.connect(\":memory:\"); c.close()",
+      "structural_hash": "63c0f23f5efd69606b1d02a0f72a4e9c328bcd8f7eafc96705de6402232c9def",
+      "slot_specs": [
+        {
+          "id": "s1",
+          "default": "sqlite3",
+          "fstring": false,
+          "placeholders": [],
+          "line": 3
+        },
+        {
+          "id": "s2",
+          "default": ".close(",
+          "fstring": false,
+          "placeholders": [],
+          "line": 13
+        },
+        {
+          "id": "s3",
+          "default": "connect",
+          "fstring": false,
+          "placeholders": [],
+          "line": 16
+        },
+        {
+          "id": "s4",
+          "default": "connect_without_close",
+          "fstring": false,
+          "placeholders": [],
+          "line": 17
+        },
+        {
+          "id": "s5",
+          "default": "Scanned {db_mod}; found {len(items)} potential unclosed handle(s).",
+          "fstring": true,
+          "placeholders": [
+            "db_mod",
+            "len(items)"
+          ],
+          "line": 18
+        }
+      ],
+      "slot_bindings": [],
+      "asset_id": "sha256:767bdfe9de9d4f989cd679d37d779acb2aa030654db91a27cc8fc53b0465ea33"
+    },
+    {
+      "type": "Gene",
+      "id": "op_boundary_clamp_audit",
+      "category": "repair",
+      "schema_version": "1.8.0",
+      "summary": "Locate empty-sequence indexing or division sites without length/zero guards.",
+      "when_to_use": "When IndexError, ZeroDivisionError, or slice boundary regressions appear.",
+      "signals_match": [
+        "IndexError",
+        "ZeroDivisionError",
+        "ValueError",
+        "empty",
+        "boundary",
+        "clamp"
+      ],
+      "preconditions": [
+        "When IndexError, ZeroDivisionError, or slice boundary regressions appear."
+      ],
+      "strategy": [
+        "Run read-only lens op_boundary_clamp_audit before editing",
+        "Apply minimal targeted fix consistent with invariant probe",
+        "Re-run impacted L0 tests and settle cleanly"
+      ],
+      "validation": [
+        "python -m pytest tests/ -x -q -m \"not slow\""
+      ],
+      "constraints": {
+        "max_files": 8,
+        "forbidden_paths": [
+          ".git",
+          "node_modules",
+          ".venv"
+        ]
+      },
+      "routing_hint": {
+        "tier": "cheap",
+        "reasoning_level": "low"
+      },
+      "operator_kind": "seed",
+      "builds_on": [],
+      "dependencies": [],
+      "lens": "def lens(ctx, target=\".\", args=None):\n    import ast\n    divisor_note = \"unclamped_div\"\n    items = []\n    for rel in ctx.iter_py_files(target):\n        src = ctx.read_text(rel)\n        if not src:\n            continue\n        try:\n            tree = ast.parse(src)\n        except SyntaxError:\n            continue\n        for node in ast.walk(tree):\n            if isinstance(node, ast.BinOp) and isinstance(node.op, ast.Div):\n                if isinstance(node.right, ast.Call) and isinstance(node.right.func, ast.Name) and node.right.func.id == \"len\":\n                    items.append({\"location\": f\"{rel}:{node.lineno}\", \"issue\": divisor_note})\n    return {\"summary\": f\"Found {len(items)} raw /len(...) divisor site(s).\", \"items\": items[:15]}\n",
+      "invariant": "assert 1 / max(1, len([])) == 1.0",
+      "structural_hash": "f4660720d38a64f4e8d0941dd5a1c3e000f748e6f61ad7f492f7649a8232ddff",
+      "slot_specs": [
+        {
+          "id": "s1",
+          "default": "unclamped_div",
+          "fstring": false,
+          "placeholders": [],
+          "line": 3
+        },
+        {
+          "id": "s2",
+          "default": "Found {len(items)} raw /len(...) divisor site(s).",
+          "fstring": true,
+          "placeholders": [
+            "len(items)"
+          ],
+          "line": 17
+        }
+      ],
+      "slot_bindings": [],
+      "asset_id": "sha256:d1851343e515799d49d859c42bf4a86eb5fedff9e96bf6a12fd1745193f018c7"
+    },
+    {
+      "type": "Gene",
+      "id": "op_traceback_blast_audit",
+      "category": "repair",
+      "schema_version": "1.8.0",
+      "summary": "Composed triage DAG: map traceback frames, inspect AST hotspots, and find minimal impacted pytest slice.",
+      "when_to_use": "When a failing pytest run spans multiple modules and you need root frames + hotspots + minimal tests in one call.",
+      "signals_match": [
+        "test_failure",
+        "pytest",
+        "traceback",
+        "regression",
+        "AssertionError",
+        "error"
+      ],
+      "preconditions": [
+        "When a failing pytest run spans multiple modules and you need root frames + hotspots + minimal tests in one call."
+      ],
+      "strategy": [
+        "Run read-only lens op_traceback_blast_audit before editing",
+        "Apply minimal targeted fix consistent with invariant probe",
+        "Re-run impacted L0 tests and settle cleanly"
+      ],
+      "validation": [
+        "python -m pytest tests/ -x -q -m \"not slow\""
+      ],
+      "constraints": {
+        "max_files": 8,
+        "forbidden_paths": [
+          ".git",
+          "node_modules",
+          ".venv"
+        ]
+      },
+      "routing_hint": {
+        "tier": "mid",
+        "reasoning_level": "medium"
+      },
+      "operator_kind": "composed",
+      "builds_on": [
+        "trace_locator",
+        "ast_hotspot",
+        "import_impact"
+      ],
+      "dependencies": [
+        "trace_locator",
+        "ast_hotspot",
+        "import_impact"
+      ],
+      "lens": "def lens(ctx, target=\".\", args=None):\n    trace_res = ctx.call_lens(\"trace_locator\", target=target, args=args)\n    hotspot_res = ctx.call_lens(\"ast_hotspot\", target=target, args=args)\n    impact_res = ctx.call_lens(\"import_impact\", target=target, args=args)\n    frames = trace_res.get(\"items\") or []\n    spots = (hotspot_res.get(\"items\") or [])[:5]\n    tests = impact_res.get(\"impacted_tests\") or []\n    summary = f\"Triage DAG: {len(frames)} frame(s), {len(spots)} top hotspot(s), {len(tests)} impacted test(s).\"\n    return {\n        \"summary\": summary,\n        \"frames\": frames,\n        \"hotspots\": spots,\n        \"impacted_tests\": tests,\n        \"tier\": impact_res.get(\"tier\", \"L0\"),\n        \"items\": frames or spots,\n    }\n",
+      "invariant": "assert True",
+      "structural_hash": "463554379070e81229cdda0718f1ec2ad2688fe4f1f69dccdaf575a3ecbf31d3",
+      "slot_specs": [
+        {
+          "id": "s1",
+          "default": "trace_locator",
+          "fstring": false,
+          "placeholders": [],
+          "line": 2
+        },
+        {
+          "id": "s2",
+          "default": "ast_hotspot",
+          "fstring": false,
+          "placeholders": [],
+          "line": 3
+        },
+        {
+          "id": "s3",
+          "default": "import_impact",
+          "fstring": false,
+          "placeholders": [],
+          "line": 4
+        },
+        {
+          "id": "s4",
+          "default": "items",
+          "fstring": false,
+          "placeholders": [],
+          "line": 5
+        },
+        {
+          "id": "s5",
+          "default": "items",
+          "fstring": false,
+          "placeholders": [],
+          "line": 6
+        },
+        {
+          "id": "s6",
+          "default": "impacted_tests",
+          "fstring": false,
+          "placeholders": [],
+          "line": 7
+        },
+        {
+          "id": "s7",
+          "default": "Triage DAG: {len(frames)} frame(s), {len(spots)} top hotspot(s), {len(tests)} impacted test(s).",
+          "fstring": true,
+          "placeholders": [
+            "len(frames)",
+            "len(spots)",
+            "len(tests)"
+          ],
+          "line": 8
+        },
+        {
+          "id": "s8",
+          "default": "tier",
+          "fstring": false,
+          "placeholders": [],
+          "line": 14
+        }
+      ],
+      "slot_bindings": [],
+      "asset_id": "sha256:62f886ad26e8a939ea9bfa29ebe6ffefcc3368d1df8a0cd6046b62260320f4f7"
     }
   ]
 }

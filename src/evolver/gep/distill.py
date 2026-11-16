@@ -172,8 +172,35 @@ def install_distilled(
             installed.append({"id": gene.get("id"), "type": "Gene", "action": "would_install"})
             continue
         try:
+            from evolver.gep.asset_store import load_genes
+            from evolver.gep.operator_slots import (
+                deduplicate_or_bind_operator,
+                extract_operator_code,
+            )
+
             if pending_run_id:
                 gene["distilled_run_id"] = pending_run_id
+            if extract_operator_code(gene):
+                dedup = deduplicate_or_bind_operator(
+                    gene,
+                    load_genes(),
+                    run_id=pending_run_id,
+                    signals=list(gene.get("signals_match") or []),
+                )
+                if dedup["duplicate"]:
+                    merged = dict(dedup["merged_gene"])
+                    merged["asset_id"] = compute_asset_id(merged)
+                    upsert_gene(merged)
+                    installed.append(
+                        {
+                            "id": merged["id"],
+                            "type": "Gene",
+                            "action": "merged_slot_binding",
+                            "asset_id": merged["asset_id"],
+                        }
+                    )
+                    continue
+                gene = dict(dedup["gene"])
             gene["asset_id"] = compute_asset_id(gene)
             upsert_gene(gene)
             installed.append({"id": gene["id"], "type": "Gene", "asset_id": gene["asset_id"]})

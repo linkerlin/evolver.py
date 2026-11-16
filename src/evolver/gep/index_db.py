@@ -379,14 +379,25 @@ def query_operator_stats(
     with _connect(path) as conn:
         if gene_id:
             rows = conn.execute(
-                "SELECT * FROM operator_stats WHERE gene_id = ?",
+                """
+                SELECT o.*,
+                       (SELECT ROUND(AVG(e.wall_time_ms), 1)
+                        FROM episode_index e
+                        WHERE e.gene_id = o.gene_id AND e.wall_time_ms IS NOT NULL) AS avg_wall_ms
+                FROM operator_stats o
+                WHERE o.gene_id = ?
+                """,
                 (gene_id,),
             ).fetchall()
         else:
             rows = conn.execute(
                 """
-                SELECT * FROM operator_stats
-                ORDER BY helped DESC, promoted DESC, dispatches DESC, gene_id ASC
+                SELECT o.*,
+                       (SELECT ROUND(AVG(e.wall_time_ms), 1)
+                        FROM episode_index e
+                        WHERE e.gene_id = o.gene_id AND e.wall_time_ms IS NOT NULL) AS avg_wall_ms
+                FROM operator_stats o
+                ORDER BY o.helped DESC, o.promoted DESC, o.dispatches DESC, o.gene_id ASC
                 LIMIT ?
                 """,
                 (max(1, int(limit)),),

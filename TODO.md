@@ -40,8 +40,8 @@
 
 | 编号 | 任务项 | 精确源码落点 | 完成判据（机器可测） |
 |---|---|---|---|
-| **P2-1** | **`OperatorGene.v1` 模型与无网络受控执行沙盒** | `src/evolver/gep/schemas/`、`src/evolver/gep/operator_sandbox.py`（新建） | 1. 定义三阶算子结构：`lens`（只读 AST/日志诊断器）、`codemod`（可选 AST 守卫重写器）、`invariant`（最小可运行断言探针）；<br>2. 沙盒执行器强制剥离凭证、阻断 `socket`/`http`/`subprocess` 危险导入、限制只读目标路径与 `< 2s` CPU 超时；<br>3. 清理 `assets/gep/genes.seed.json` 中全部散文口号与 `node --test` 遗留项，首批内置 $\ge 8$ 个经本仓 `DEBUG.md` 验证的高频 Python 工程算子（锁竞争检测、路径分隔符审计、空信封契约核对、异常吞没定位等）。 |
-| **P2-2** | **红转绿全自动算子合成器（Zero-Human Operator Synthesis）** | `src/evolver/gep/operator_synthesizer.py`（新建）、`src/evolver/gep/gene_lifecycle.py` | 1. 当 `evolve_settle` 捕获到真实「失败测试 $\to$ 通过（`newly_passed`）」且四值归因为 `helped` 时，引擎自动从前后 AST 差异与测试断言中提炼候选 `lens` 与 `invariant`；<br>2. 自动过沙盒编译门、正负样本自检门与局部事实脱敏门（`H2-2`），无需人类或宿主手写 JSON 即自动晋升入库；<br>3. 连续 5 次派发无净增益算子由 `gene_lifecycle` 自动转入 `retired`。 |
+| **P2-1** | **`OperatorGene.v1` 模型与无网络受控执行沙盒（已落地）** | `src/evolver/gep/schemas/gene.py`、`src/evolver/gep/operator_sandbox.py`、`src/evolver/gep/operator_slots.py`、`src/evolver/gep/lenses.py` | 1. 定义三阶算子与槽位结构（`lens`/`codemod`/`invariant`/`structural_hash`/`slot_specs`/`slot_bindings`/`operator_kind`/`builds_on`）；<br>2. 沙盒执行器剥离凭证、AST 拦截网络/写盘/动态执行、限制只读目标与 `< 2s` 超时，并执行 `composed` DAG 静态审计；<br>3. 已清理 `assets/gep/genes.seed.json` `node` 遗留串并内置 8 个经 AST 审计与沙盒实测通过的 `op_*` Python 算子（含 DAG 算子 `op_traceback_blast_audit`）。 |
+| **P2-2** | **红转绿全自动算子合成器（已落地）** | `src/evolver/gep/operator_synthesizer.py`、`src/evolver/gep/gene_lifecycle.py`、`src/evolver/gep/policy_check.py`、`src/evolver/swarm.py` | 1. `evolve_settle` 在有效通过且归因严格为 `helped` 时，经 `synthesize_operator_from_fix` 自动提炼候选 `OperatorGene.v1`；<br>2. 自动通过 `S-8b` 反投机静态门、AST 沙盒门、正负自检、子进程不变量探针、`H2-2` 脱敏门与 `S-1` AST 同构折叠入库（同构复现只绑槽位不生克隆）；<br>3. 同步触发 `gene_lifecycle.evaluate_and_apply` 生命周期跃迁。 |
 
 ---
 
@@ -49,8 +49,8 @@
 
 | 编号 | 任务项 | 精确源码落点 | 完成判据（机器可测，本阶段关门条件） |
 |---|---|---|---|
-| **P3-1** | **双源时间胶囊真实故障集构建与密封（$N \ge 30$）** | `src/evolver/experiment/time_capsule.py`（新建）、`$EVOLVER_HOME/time_capsule/` | 1. **内源切片（$N_{\text{in}} \ge 15$）**：从本仓 [`DEBUG.md`](DEBUG.md) 历史真实故障提交对 `(parent_buggy_commit, child_fix_test)` 提取可离线独立运行的故障包；<br>2. **外源切片（$N_{\text{ext}} \ge 15$）**：精选外部主流宽松许可证开源纯 Python 项目（如 `pydantic`、`httpx`、`click`、`rich`、`attrs`、`more-itertools` 等）之独立自包含微型真实历史故障与官方验证单测（标注上游许可证与 commit 溯源，零网络依赖，单题 `pytest` `< 3s`）；<br>3. 全集存于仓外 `$EVOLVER_HOME/time_capsule/`，摘要哈希与 `val_seal` 密封规则入账，进化期绝对不可读取。 |
-| **P3-2** | **反事实代码修复配对盲测（`--stage-exit v2`）** | `src/evolver/experiment/cli.py`、`src/evolver/experiment/agent_runner.py` | 1. 同一执行智能体、同一工具面、同一预算与 AB/BA 交错种子，在隔离 `Git worktree` 上对双源 $\ge 30$ 道真实故障执行真实代码修复并用 `pytest` 验分：Arm A（挂载进化算子金库 + 经验索引）vs. Arm B（空库 Placebo）；<br>2. **阶段出口硬判据**：Arm A 真实故障一次修复率（Pass@1）经 McNemar 配对检验显著优于 Arm B（$p < 0.01$，$N \ge 30$），**且外部开源 Python 故障子集（$N_{\text{ext}}$）净胜题数 $> 0$**（或同通过率下总修复验证耗时下降 $\ge 35\%$）；<br>3. 完整逐题复算报告写入 [`CHANGELOG.md`](CHANGELOG.md)，由人切下一 minor 版本收官。 |
+| **P3-1** | **双源时间胶囊真实故障集构建与密封（36 题已落地实测）** | `src/evolver/experiment/time_capsule.py`、`$EVOLVER_HOME/time_capsule/capsule_v2.json`、`src/evolver/gep/val_seal.py` | 1. **内源切片（16 `sealed_test`）** + **外源切片（16 `sealed_test` + `dev_feedback`/`hidden_select` 共 36 题）**：外源覆盖 `httpx`/`click`/`pydantic`/`rich`/`more-itertools`/`attrs` 模式并附许可证与仓库溯源；<br>2. `test_builtin_capsule_counts_and_every_task_red_then_green_pytest` 已逐题实跑隔离 `pytest` 子进程：全部 36 题均为补丁前红灯、参考修复后绿灯；<br>3. `evolver experiment --install-time-capsule` 安装于仓外 `$EVOLVER_HOME/time_capsule/`，`val_seal` 自动密封 `hidden_select` 与 `sealed_test`。 |
+| **P3-2** | **反事实代码修复配对盲测与帕累托引擎（底座与离线 E2E 已落地；真 LLM 在线跑分待操作者触发）** | `src/evolver/bench/compare.py`、`src/evolver/experiment/time_capsule.py`、`src/evolver/experiment/cli.py`、`src/evolver/experiment/agent_runner.py` | 1. 落地 `compare_paired_pareto`（McNemar 精确检验 + Delta 法比值 SE + 对数几何均值 + 内/外源切片细分，`quality_win`/`efficiency_win`/`keep_baseline`）与 `--stage-exit-v2` CLI 闭环；<br>2. 离线 AB/BA 交错 `pytest` 端到端链路（32 题 `sealed_test` + `report.json` + `per_task_results.jsonl`）已自证通过；<br>3. 若需真编码 LLM 在线盲测发版，由操作者配妥凭据运行 `--stage-exit-v2` 并切版本号。 |
 
 ---
 

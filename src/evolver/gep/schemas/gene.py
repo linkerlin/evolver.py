@@ -72,6 +72,18 @@ class Gene(BaseModel):
     # computed on raw on-disk dicts).
     mechanism_family: str | None = None
     target_hook: str | None = None
+    # OperatorGene.v1 (算子即基因 P2-1 + Strategist S-1/S-2): executable
+    # read-only lenses, AST codemods, invariant probes, DAG composition, and
+    # parameterizable slot bindings. All optional for full backward parity.
+    operator_kind: Literal["seed", "new", "composed"] | None = None
+    builds_on: list[str] = Field(default_factory=list)
+    when_to_use: str = ""
+    lens: dict[str, Any] | str | None = None
+    codemod: dict[str, Any] | str | None = None
+    invariant: dict[str, Any] | str | None = None
+    structural_hash: str | None = None
+    slot_specs: list[dict[str, Any]] = Field(default_factory=list)
+    slot_bindings: list[dict[str, Any]] = Field(default_factory=list)
 
     @field_validator("category")
     @classmethod

@@ -29,6 +29,7 @@ def resolve_model(
     *,
     requested_model: str | None = None,
     tier_hint: str | None = None,
+    routing_hint: dict[str, Any] | None = None,
     feature_flags: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Resolve the final model and upstream to use.
@@ -37,18 +38,21 @@ def resolve_model(
     - upstream: "anthropic" | "bedrock"
     - model: canonical model name
     - tier: "cheap" | "mid" | "expensive"
+    - reasoning_level: resolved reasoning intensity
     - fallback_chain: list of fallback model names
     """
     feature_flags = feature_flags or {}
+    hint_dict = routing_hint if isinstance(routing_hint, dict) else {}
 
     upstream = get_upstream_preference()
     if feature_flags.get("force_upstream"):
         upstream = feature_flags["force_upstream"]
 
-    # Tier resolution
-    tier = tier_hint or "mid"
+    # Tier resolution (explicit tier_hint wins over Gene.routing_hint)
+    tier = tier_hint or hint_dict.get("tier") or "mid"
     if tier not in TIER_ORDER:
         tier = "mid"
+    reasoning_level = str(hint_dict.get("reasoning_level") or "medium")
 
     # Model resolution
     model = requested_model or "claude-3-5-sonnet"
@@ -72,6 +76,7 @@ def resolve_model(
         "upstream": upstream,
         "model": model,
         "tier": tier,
+        "reasoning_level": reasoning_level,
         "fallback_chain": fallback_chain,
     }
 

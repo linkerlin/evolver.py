@@ -10,6 +10,7 @@ from __future__ import annotations
 
 from typing import Any
 
+from evolver.bench.compare import compare_paired_pareto
 from evolver.experiment.agent_runner import run_task
 from evolver.experiment.metrics import compare_metrics, compute_metrics, format_report
 
@@ -49,6 +50,28 @@ def run_comparison(
         int(evolved_metrics.get("successes", 0)),
         int(evolved_metrics.get("total", 0)),
     )
+    pareto = compare_paired_pareto(
+        {
+            "per_task": [
+                {
+                    "id": r.task_id,
+                    "passed": r.success,
+                    "weighted_cost": r.weighted_cost or float(r.tokens_used),
+                }
+                for r in evolved_results
+            ]
+        },
+        {
+            "per_task": [
+                {
+                    "id": r.task_id,
+                    "passed": r.success,
+                    "weighted_cost": r.weighted_cost or float(r.tokens_used),
+                }
+                for r in baseline_results
+            ]
+        },
+    )
 
     return {
         "baseline_results": baseline_results,
@@ -57,6 +80,7 @@ def run_comparison(
         "evolved_metrics": evolved_metrics,
         "comparison": comparison,
         "thesis": thesis,
+        "pareto": pareto,
         "report": report,
     }
 

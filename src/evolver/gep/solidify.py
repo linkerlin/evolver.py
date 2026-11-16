@@ -2170,6 +2170,74 @@ def _solidify_cycle(
                     )
                 return legacy_result
 
+        # Strategist S-8b: Anti-cheat fig-leaf static gate — reject test-skipping,
+        # deleted tests, or hardcoded task/benchmark literals before promotion.
+        if not skip_validation and not no_git_repo:
+            from evolver.gep.policy_check import detect_anti_cheat_violations
+
+            anti_cheat_diff = capture_diff_snapshot(cwd, max_chars=32_000)
+            anti_cheat_hits = detect_anti_cheat_violations(
+                cwd,
+                changed_for_plan,
+                diff_text=anti_cheat_diff,
+            )
+            critical_cheats = [v for v in anti_cheat_hits if v.severity == "critical"]
+            if critical_cheats:
+                failed_blast = _compute_blast_radius()
+                diff_snapshot = _failure_diff(cwd)
+                run_id_ac = str(last_run.get("run_id") or "")
+                stash_info = snapshot_rejected_worktree(
+                    cwd,
+                    run_id=run_id_ac,
+                    disposable_untracked=_disposable_untracked(cwd),
+                    reason="anti_cheat_violation",
+                )
+                _retract_this_runs_distilled_assets(run_id_ac)
+                record_solidify_failure(last_run, error="anti_cheat_violation", score=0.0)
+                _wiki_rejection("anti_cheat_violation", last_run, score=0.0)
+                ac_event = _append_failure_event(
+                    last_run,
+                    cwd,
+                    blast_radius=failed_blast,
+                    error="anti_cheat_violation",
+                    validation_result=validation_result,
+                    eval_meta=eval_meta,
+                    diff_snapshot=diff_snapshot,
+                )
+                ac_out: dict[str, Any] = {
+                    "ok": False,
+                    "outcome": "draft_preserved",
+                    "error": "anti_cheat_violation",
+                    "stash": stash_info,
+                    "actionable_fix": [
+                        critical_cheats[0].message[:140],
+                        (
+                            "Restore real assertions or fix root cause without "
+                            "hardcoding/skipping tests."
+                        ),
+                        _workbench_preserved_line(run_id_ac),
+                    ],
+                    "failure_mode": {
+                        "mode": "soft",
+                        "reasonClass": "anti_cheat",
+                        "retryable": True,
+                    },
+                    "next_action": "evolve_begin",
+                    "details": {
+                        "anti_cheat_violations": [
+                            {"rule": v.rule, "severity": v.severity, "message": v.message}
+                            for v in critical_cheats
+                        ]
+                    },
+                }
+                if ac_event is not None:
+                    ac_out["event_id"] = _remember_failure_scene(
+                        ac_event, validation_result=validation_result
+                    )
+                if run_id_ac and ac_out.get("event_id"):
+                    _mark_run_settled(run_id_ac, "anti_cheat_violation")
+                return ac_out
+
         # RSI P0-1: anchor contracts for verifier-surface mutations.
         anchor_touched = touches_verifier_surface(
             [
