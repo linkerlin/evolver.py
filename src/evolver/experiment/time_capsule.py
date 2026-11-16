@@ -602,30 +602,44 @@ def evaluate_task_patch_with_pytest(
     }
 
 
-def _default_offline_patch_agent(
-    task: Mapping[str, Any],
-    context: str,
-    _root: Path,
-) -> dict[str, Any]:
+def _public_task_view(task: Mapping[str, Any]) -> dict[str, Any]:
+    """Strip reference fixes, tests, and split metadata before calling PatchAgentFn."""
+    return {
+        "id": task.get("id"),
+        "slice": task.get("slice"),
+        "title": task.get("title"),
+        "signal_hint": task.get("signal_hint"),
+        "buggy_files": dict(task.get("buggy_files") or {}),
+    }
+
+
+def _make_offline_stub_agent(
+    ref_lookup: Mapping[str, Mapping[str, str]],
+) -> PatchAgentFn:
     """Deterministic local reference/stub executor used for offline smoke tests.
 
-    Reads the operator/placebo context presence cleanly without using sealed
-    prompts; real model runs inject an external LLM patch callback.
+    Never reads reference solutions from the task argument; looks them up solely
+    from the harness-side private map so the PatchAgentFn contract stays blind.
     """
-    has_operator_context = "[Operator" in context or "Operator Cards" in context
-    if has_operator_context:
+
+    def _stub(task_view: Mapping[str, Any], context: str, _root: Path) -> dict[str, Any]:
+        has_operator_context = "[Operator" in context or "Operator Cards" in context
+        if has_operator_context:
+            tid = str(task_view.get("id") or "")
+            return {
+                "files": dict(ref_lookup.get(tid) or {}),
+                "tokens": 600,
+                "tier": "cheap",
+                "triage_ms": 150,
+            }
         return {
-            "files": dict(task.get("reference_fix_files") or {}),
-            "tokens": 600,
-            "tier": "cheap",
-            "triage_ms": 150,
+            "files": dict(task_view.get("buggy_files") or {}),
+            "tokens": 1800,
+            "tier": "mid",
+            "triage_ms": 950,
         }
-    return {
-        "files": dict(task.get("buggy_files") or {}),
-        "tokens": 1800,
-        "tier": "mid",
-        "triage_ms": 950,
-    }
+
+    return _stub
 
 
 def _build_operator_context(genes: Sequence[Mapping[str, Any]]) -> str:
@@ -675,7 +689,13 @@ def run_time_capsule_paired_eval(
     from evolver.experiment.ablation import make_placebo_context
 
     arm_b_ctx = make_placebo_context(arm_a_ctx)
-    agent = patch_agent_fn or _default_offline_patch_agent
+    is_stub = patch_agent_fn is None
+    agent_mode = "stub" if is_stub else "custom"
+    ref_lookup = {
+        str(t["id"]): {str(k): str(v) for k, v in (t.get("reference_fix_files") or {}).items()}
+        for t in tasks
+    }
+    agent = patch_agent_fn or _make_offline_stub_agent(ref_lookup)
 
     rng = random.Random(order_seed)
     arm_a_rows: list[dict[str, Any]] = []
@@ -683,6 +703,7 @@ def run_time_capsule_paired_eval(
     paired_log: list[dict[str, Any]] = []
 
     for task in tasks:
+        public_task = _public_task_view(task)
         order = ["A", "B"] if rng.random() < 0.5 else ["B", "A"]
         res_by_arm: dict[str, dict[str, Any]] = {}
         for arm in order:
@@ -694,7 +715,7 @@ def run_time_capsule_paired_eval(
                     fp.parent.mkdir(parents=True, exist_ok=True)
                     fp.write_text(str(body), encoding="utf-8")
                 t_agent0 = time.monotonic()
-                proposal = agent(task, ctx, work_path)
+                proposal = agent(public_task, ctx, work_path)
                 agent_ms = round((time.monotonic() - t_agent0) * 1000)
             patched = proposal.get("files") if isinstance(proposal, Mapping) else {}
             grade_res = evaluate_task_patch_with_pytest(
@@ -747,7 +768,7 @@ def run_time_capsule_paired_eval(
 
     n_tasks = len(tasks)
     ext_net = int(pareto_latency.get("external_net_wins") or 0)
-    passed_exit = (
+    statistical_pass = bool(
         n_tasks >= TIME_CAPSULE_MIN_SEALED_N
         and pareto_latency["verdict"] in ("quality_win", "efficiency_win")
         and ext_net >= (1 if pareto_latency["verdict"] == "quality_win" else 0)
@@ -755,6 +776,7 @@ def run_time_capsule_paired_eval(
 
     report = {
         "schema_version": "stage_exit_v2.report.v1",
+        "agent_mode": agent_mode,
         "split": split,
         "n_tasks": n_tasks,
         "order_seed": order_seed,
@@ -768,7 +790,8 @@ def run_time_capsule_paired_eval(
             "deploy_arm_a_tokens": sum(int(r["tokens_used"]) for r in arm_a_rows),
             "deploy_arm_b_tokens": sum(int(r["tokens_used"]) for r in arm_b_rows),
         },
-        "stage_exit_passed": bool(passed_exit),
+        "harness_smoke_ok": statistical_pass,
+        "stage_exit_passed": bool(statistical_pass and not is_stub),
         "verdict": pareto_latency["verdict"],
     }
 

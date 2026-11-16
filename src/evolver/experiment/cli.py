@@ -108,6 +108,11 @@ def main(argv: Sequence[str] | None = None) -> int:
         help="Overwrite an existing capsule_v2.json when used with --install-time-capsule",
     )
     parser.add_argument(
+        "--allow-stub",
+        action="store_true",
+        help="Allow --stage-exit-v2 offline smoke stub to exit 0 (stage_exit_passed stays False)",
+    )
+    parser.add_argument(
         "--order-seed",
         type=int,
         default=0,
@@ -532,13 +537,18 @@ def _main_stage_exit_v2(args: argparse.Namespace) -> int:
         per_task_jsonl_path=per_task_jsonl_path,
     )
     print(
-        f"stage-exit-v2: n={report['n_tasks']} verdict={report['verdict']} "
+        f"stage-exit-v2: n={report['n_tasks']} agent={report['agent_mode']} "
+        f"verdict={report['verdict']} smoke={report['harness_smoke_ok']} "
         f"passed={report['stage_exit_passed']}",
         file=sys.stderr,
     )
     if not args.output:
         print(json.dumps(report, indent=2, ensure_ascii=False))
-    return 0
+    if report["stage_exit_passed"]:
+        return 0
+    if bool(args.allow_stub) and report["agent_mode"] == "stub" and report["harness_smoke_ok"]:
+        return 0
+    return 2
 
 
 if __name__ == "__main__":

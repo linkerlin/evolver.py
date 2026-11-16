@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import subprocess
+import threading
 from pathlib import Path
 
 import pytest
@@ -296,10 +297,38 @@ class TestP21SeedsAndSandbox:
                 "def run(ctx, target='.', args=None):\n"
                 "    Path('x.txt').write_text('z')\n    return {'items': []}\n"
             ),
+            (
+                "def run(ctx, target='.', args=None):\n"
+                "    g = ctx.resolve_safe.__globals__\n"
+                "    return {'items': [list(g.keys())]}\n"
+            ),
+            (
+                "def run(ctx, target='.', args=None):\n"
+                "    subs = ().__class__.__bases__[0].__subclasses__()\n"
+                "    return {'items': [len(subs)]}\n"
+            ),
+            (
+                "def run(ctx, target='.', args=None):\n"
+                "    return ctx._call_lens_fn('ast_hotspot', '.', None, 0)\n"
+            ),
         ):
             res = run_lens_code_sandboxed(bad_code, ctx=object(), operator_id="bad_op")
             assert res["ok"] is False
             assert res["error"] == "sandbox_audit_failed"
+
+        # Daemon timeout stops blocking caller and never leaves non-daemon join hangs
+        loop_code = (
+            "def run(ctx, target='.', args=None):\n"
+            "    n = 0\n"
+            "    while n < 40_000_000:\n"
+            "        n += 1\n"
+            "    return {'items': [n]}\n"
+        )
+        t_res = run_lens_code_sandboxed(loop_code, ctx=object(), operator_id="hang", timeout_s=0.1)
+        assert t_res["ok"] is False
+        assert t_res["error"] == "operator_timeout"
+        hang_threads = [t for t in threading.enumerate() if t.name == "evolver-op-lens"]
+        assert all(t.daemon for t in hang_threads)
 
         scrubbed = scrub_operator_env(
             {
@@ -350,13 +379,17 @@ class TestS8bAntiCheatAndSolidify:
             )
         )
 
-        diff_hardcode = "+++ b/src/calc.py\n+if task_id == 'tc-in-01':\n+    return {'a': 1}\n"
+        diff_hardcode = "+++ b/src/calc.py\n+if task_id == 'tc-in-hid-1':\n+    return {'a': 1}\n"
         assert any(
-            v.rule == "anti_cheat_hardcoded_lookup"
+            v.rule == "anti_cheat_hardcoded_lookup" and v.severity == "critical"
             for v in detect_anti_cheat_violations(
                 tmp_path, ["src/calc.py"], diff_text=diff_hardcode
             )
         )
+
+        legit_guard = "+++ b/src/calc.py\n+if reason == 'unmeasured': return None\n"
+        legit_hits = detect_anti_cheat_violations(tmp_path, ["src/calc.py"], diff_text=legit_guard)
+        assert all(v.severity != "critical" for v in legit_hits)
 
         clean_diff = "+++ b/src/calc.py\n+if x is None:\n+    return {}\n"
         assert detect_anti_cheat_violations(tmp_path, ["src/calc.py"], diff_text=clean_diff) == []

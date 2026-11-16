@@ -715,7 +715,7 @@ _TEST_DEF_RE: Final = re.compile(r"def\s+(test_[A-Za-z0-9_]+)\s*\(")
 _EQ_ASSERT_RE: Final = re.compile(r"\bassert\s+.+\s*(?:==|!=|in\b|is\b|<|>)")
 _TRIVIAL_ASSERT_RE: Final = re.compile(r"^\s*(?:assert\s+True\b|pass\b)")
 _HARDCODED_ID_RE: Final = re.compile(
-    r"""['"](?:time_capsule|sealed_test|case-[a-z0-9-]+|tc-(?:in|ext)-\d+)['"]"""
+    r"""['"](?:time_capsule|sealed_test|case-[a-z0-9-]+|tc-(?:in|ext)-[a-z0-9-]+)['"]"""
 )
 _HARDCODED_TASK_KEY_RE: Final = re.compile(
     r"""\b(?:if|elif)\b[^\n]*==\s*['"][^'"]{8,120}['"]\s*:\s*return\b"""
@@ -828,13 +828,22 @@ def detect_anti_cheat_violations(
                 )
         elif norm_rel.endswith(".py"):
             for added in added_lines:
-                if _HARDCODED_ID_RE.search(added) or _HARDCODED_TASK_KEY_RE.search(added):
-                    snippet = added.strip()[:80]
+                snippet = added.strip()[:80]
+                if _HARDCODED_ID_RE.search(added):
                     violations.append(
                         PolicyViolation(
                             rule="anti_cheat_hardcoded_lookup",
                             severity="critical",
                             message=f"Hardcoded task/benchmark literal in {norm_rel}: {snippet}",
+                        )
+                    )
+                    break
+                if _HARDCODED_TASK_KEY_RE.search(added):
+                    violations.append(
+                        PolicyViolation(
+                            rule="anti_cheat_suspicious_guard",
+                            severity="warning",
+                            message=f"Suspicious string-literal guard in {norm_rel}: {snippet}",
                         )
                     )
                     break

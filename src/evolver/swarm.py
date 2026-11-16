@@ -964,6 +964,16 @@ def _safe_structure_mirror() -> str:
         return ""
 
 
+_RAW_BENCH_MASK_KEYS: Final[tuple[str, ...]] = (
+    "score",
+    "baseline",
+    "delta",
+    "per_task",
+    "rounds",
+    "previous_baseline",
+)
+
+
 def _attach_host_direction(result: dict[str, Any]) -> None:
     """Apply S-6 directional feedback masking on the MCP host-facing bench_pack envelope."""
     bp = result.get("bench_pack")
@@ -975,15 +985,19 @@ def _attach_host_direction(result: dict[str, Any]) -> None:
         val_dur = result.get("validation_duration_ms")
         dir_env = direction_envelope_for_host(
             bp,
-            duration_ms=int(val_dur) if isinstance(val_dur, (int, float)) else None,
+            duration_ms=int(val_dur) if isinstance(val_dur, int | float) else None,
         )
         result["gate_direction"] = dir_env
-        masked = {k: v for k, v in bp.items() if k not in ("score", "baseline", "delta")}
+        masked = {k: v for k, v in bp.items() if k not in _RAW_BENCH_MASK_KEYS}
         masked["val_direction"] = dir_env["val_direction"]
         masked["cost_direction"] = dir_env["cost_direction"]
         result["bench_pack"] = masked
     except Exception:
-        pass
+        # Fail-closed: strip raw float scores even if envelope formatting errors.
+        masked = {k: v for k, v in bp.items() if k not in _RAW_BENCH_MASK_KEYS}
+        masked["val_direction"] = "unmeasured"
+        masked["cost_direction"] = "unmeasured"
+        result["bench_pack"] = masked
 
 
 def evolve_settle(

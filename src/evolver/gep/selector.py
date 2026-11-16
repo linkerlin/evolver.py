@@ -176,7 +176,7 @@ def select_gene(
         memory_evidence=memory_evidence,
     )
 
-    from evolver.gep.hybrid_retrieval import compute_idf_weights, retrieve_operators_and_inspiration
+    from evolver.gep.hybrid_retrieval import compute_idf_weights
 
     pool_docs = {
         str(
@@ -265,7 +265,6 @@ def select_gene(
                 break
 
     alternatives = [c["gene"] for c in candidates if c["gene"] is not selected][:3]
-    _ = retrieve_operators_and_inspiration  # imported above for caller convenience
     return {
         "selected": selected,
         "alternatives": alternatives,

@@ -19,6 +19,7 @@ from evolver.experiment.time_capsule import (
     build_builtin_time_capsule,
     evaluate_task_patch_with_pytest,
     install_time_capsule,
+    run_time_capsule_paired_eval,
 )
 from evolver.gep import val_seal
 from evolver.gep.router import compute_routing_advice
@@ -134,7 +135,9 @@ class TestS5DualRouteParetoEngine:
 
 
 class TestS6DirectionFeedbackAndSeal:
-    def test_direction_envelope_and_swarm_mask_raw_floats(self) -> None:
+    def test_direction_envelope_and_swarm_mask_raw_floats(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
         env = direction_envelope_for_host(
             {
                 "armed": True,
@@ -160,16 +163,44 @@ class TestS6DirectionFeedbackAndSeal:
                 "score": 0.91,
                 "baseline": 0.80,
                 "delta": 0.11,
+                "per_task": [{"id": "t1", "score": 1.0}],
+                "rounds": [{"score": 0.91}],
                 "verdict": "accept",
                 "reason": "strict_improvement",
                 "accept": True,
+                "next_steps": ["keep iterating"],
+                "warnings": ["advisory only"],
             },
         }
         swarm._attach_host_direction(payload)
         bp = payload["bench_pack"]
         assert bp["val_direction"] == "improved"
         assert payload["gate_direction"]["val_direction"] == "improved"
-        assert "score" not in bp and "baseline" not in bp and "delta" not in bp
+        assert bp["next_steps"] == ["keep iterating"]
+        assert bp["warnings"] == ["advisory only"]
+        for secret_k in ("score", "baseline", "delta", "per_task", "rounds"):
+            assert secret_k not in bp
+
+        # Fail-closed when direction_envelope_for_host raises
+        monkeypatch.setattr(
+            "evolver.bench.frozen_gate.direction_envelope_for_host",
+            lambda *a, **kw: (_ for _ in ()).throw(RuntimeError("boom")),
+        )
+        fail_payload: dict[str, Any] = {
+            "ok": True,
+            "bench_pack": {
+                "armed": True,
+                "score": 0.91,
+                "baseline": 0.80,
+                "delta": 0.11,
+                "per_task": [{"id": "t1", "score": 1.0}],
+                "verdict": "accept",
+            },
+        }
+        swarm._attach_host_direction(fail_payload)
+        fbp = fail_payload["bench_pack"]
+        assert fbp["val_direction"] == "unmeasured"
+        assert "score" not in fbp and "per_task" not in fbp
 
     def test_val_seal_seals_time_capsule_hidden_and_test_only(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
@@ -292,9 +323,32 @@ class TestP31P32TimeCapsuleAndCLIV2:
 
         report_file = tmp_path / "stage_exit_v2_report.json"
         per_task_file = tmp_path / "per_task_results.jsonl"
+
+        # Without --allow-stub, stub smoke run must NOT pass gate (exit 2, stage_exit_passed=False)
+        rc_v2_blocked = exp_cli.main(
+            [
+                "--stage-exit-v2",
+                "--capsule-path",
+                str(capsule_file),
+                "--order-seed",
+                "7",
+                "--output",
+                str(report_file),
+                "--per-task-output",
+                str(per_task_file),
+            ]
+        )
+        assert rc_v2_blocked == 2
+        blocked_report = json.loads(report_file.read_text(encoding="utf-8"))
+        assert blocked_report["agent_mode"] == "stub"
+        assert blocked_report["harness_smoke_ok"] is True
+        assert blocked_report["stage_exit_passed"] is False
+
+        # With --allow-stub, offline smoke exits 0 while still marking stage_exit_passed=False
         rc_v2 = exp_cli.main(
             [
                 "--stage-exit-v2",
+                "--allow-stub",
                 "--capsule-path",
                 str(capsule_file),
                 "--order-seed",
@@ -308,11 +362,47 @@ class TestP31P32TimeCapsuleAndCLIV2:
         assert rc_v2 == 0
         report = json.loads(report_file.read_text(encoding="utf-8"))
         assert report["schema_version"] == "stage_exit_v2.report.v1"
+        assert report["agent_mode"] == "stub"
         assert report["n_tasks"] == 32
         assert report["order_seed"] == 7
-        assert report["stage_exit_passed"] is True
+        assert report["harness_smoke_ok"] is True
+        assert report["stage_exit_passed"] is False
         assert report["verdict"] == "quality_win"
         assert report["pareto_latency"]["external_net_wins"] > 0
+
+        # Custom agent receives blind view ONLY (zero reference_fix_files or test_files leaked)
+        pack = build_builtin_time_capsule()
+        private_refs = {
+            str(t["id"]): dict(t["reference_fix_files"])
+            for t in pack["tasks"]
+            if t["split"] == "sealed_test"
+        }
+        leaked_keys: list[set[str]] = []
+
+        def blind_custom_agent(task_view: dict[str, Any], ctx: str, _root: Path) -> dict[str, Any]:
+            leaked_keys.append(set(task_view.keys()) & {"reference_fix_files", "test_files"})
+            if "[Operator" in ctx or "Operator Cards" in ctx:
+                return {
+                    "files": private_refs[str(task_view["id"])],
+                    "tokens": 600,
+                    "tier": "cheap",
+                    "triage_ms": 120,
+                }
+            return {
+                "files": dict(task_view["buggy_files"]),
+                "tokens": 1800,
+                "tier": "mid",
+                "triage_ms": 950,
+            }
+
+        custom_report = run_time_capsule_paired_eval(
+            capsule_path=capsule_file,
+            patch_agent_fn=blind_custom_agent,
+            order_seed=7,
+        )
+        assert all(not ks for ks in leaked_keys)
+        assert custom_report["agent_mode"] == "custom"
+        assert custom_report["stage_exit_passed"] is True
 
         lines = [ln for ln in per_task_file.read_text(encoding="utf-8").splitlines() if ln.strip()]
         assert len(lines) == 32

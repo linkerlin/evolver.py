@@ -18,11 +18,10 @@ import os
 import re
 import subprocess
 import sys
+import threading
 import time
 from collections.abc import Callable, Mapping, Sequence
 from collections.abc import Set as AbstractSet
-from concurrent.futures import ThreadPoolExecutor
-from concurrent.futures import TimeoutError as FuturesTimeoutError
 from pathlib import Path
 from typing import Any, Final
 
@@ -216,6 +215,8 @@ def audit_operator_ast(
             mod = (node.module or "").split(".", 1)[0]
             if mod in FORBIDDEN_IMPORTS:
                 violations.append(f"forbidden import from `{node.module}`")
+        elif isinstance(node, ast.Attribute) and node.attr.startswith("_"):
+            violations.append(f"forbidden private/dunder attribute access `.{node.attr}`")
         elif isinstance(node, ast.Call):
             func = node.func
             if isinstance(func, ast.Name) and func.id in FORBIDDEN_CALL_NAMES:
@@ -478,26 +479,35 @@ def run_lens_code_sandboxed(
         }
 
     extra_args = dict(args or {})
-    pool = ThreadPoolExecutor(max_workers=1)
-    future = pool.submit(fn, ctx, target, extra_args)
-    try:
-        res = future.result(timeout=max(0.1, min(MAX_OPERATOR_TIMEOUT_S, float(timeout_s))))
-    except FuturesTimeoutError:
+    # shortcut: in-process AST sandbox blocks accidental/LLM escape chains;
+    # escalate to `subprocess -I` if adversarial untrusted code must be isolated.
+    box: dict[str, Any] = {}
+
+    def _worker() -> None:
+        try:
+            box["res"] = fn(ctx, target, extra_args)
+        except Exception as exc:
+            box["exc"] = exc
+
+    worker = threading.Thread(target=_worker, name="evolver-op-lens", daemon=True)
+    worker.start()
+    worker.join(timeout=max(0.1, min(MAX_OPERATOR_TIMEOUT_S, float(timeout_s))))
+    if worker.is_alive():
         return {
             "ok": False,
             "error": "operator_timeout",
             "summary": f"Operator lens exceeded {timeout_s:.1f}s timeout.",
             "items": [],
         }
-    except Exception as exc:
+    if "exc" in box:
+        runtime_exc = box["exc"]
         return {
             "ok": False,
             "error": "operator_runtime_error",
-            "summary": f"{type(exc).__name__}: {exc}",
+            "summary": f"{type(runtime_exc).__name__}: {runtime_exc}",
             "items": [],
         }
-    finally:
-        pool.shutdown(wait=False, cancel_futures=True)
+    res = box.get("res")
 
     if not isinstance(res, dict):
         return {
