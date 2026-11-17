@@ -667,7 +667,7 @@ def _hypothesis_rejection(
             # Same soft-failure contract as the pack gate: the round is over but
             # the loop keeps running with repair bias.
             "failure_mode": {"mode": "soft", "reasonClass": "hypothesis", "retryable": True},
-            "next_action": "swarm_tick",
+            "next_action": "evolve_begin",
             "details": {"hypothesis": reason},
         }
     )
@@ -1823,7 +1823,7 @@ def _solidify_cycle(
                 "ok": False,
                 "error": "val_seal_breach",
                 "failure_mode": {"mode": "soft", "reasonClass": "val_seal", "retryable": True},
-                "next_action": "swarm_tick",
+                "next_action": "evolve_begin",
                 "details": {"val_seal": {"where": "proposal_round", "detail": str(exc)}},
             }
 
@@ -1882,7 +1882,7 @@ def _solidify_cycle(
             "ok": False,
             "error": "already_solidified",
             "run_id": run_id_str,
-            "next_action": "swarm_tick",
+            "next_action": "evolve_begin",
         }
 
     from evolver.gep import supervision as supervision_mod
@@ -1990,7 +1990,7 @@ def _solidify_cycle(
                     "reasonClass": "validation_scope",
                     "retryable": True,
                 },
-                "next_action": "swarm_solidify",
+                "next_action": "evolve_settle",
             }
         cascade_mode = is_enabled("enable_fitness_cascade")
         validation_commands: list[Any] = normalized_rel
@@ -2379,7 +2379,16 @@ def _solidify_cycle(
         # per-task val scores the acceptance rested on (external fitness).
         event["bench_pack"] = {
             key: bench_pack_verdict.get(key)
-            for key in ("pack", "digest", "split", "score", "baseline", "verdict", "per_task")
+            for key in (
+                "pack",
+                "digest",
+                "split",
+                "score",
+                "baseline",
+                "verdict",
+                "soft_accept",
+                "per_task",
+            )
         }
     if eval_meta.get("reason") not in ("flag_off", "skipped"):
         event["eval_workspace"] = eval_meta

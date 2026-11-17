@@ -216,7 +216,7 @@ class TestHypothesisPrecedesPackGate:
         result = solidify(skip_validation=True)
         assert result["failure_mode"]["mode"] == "soft"
         assert result["failure_mode"]["reasonClass"] == "hypothesis"
-        assert result["next_action"] == "swarm_tick"
+        assert result["next_action"] == "evolve_begin"
 
 
 # ---------------------------------------------------------------------------

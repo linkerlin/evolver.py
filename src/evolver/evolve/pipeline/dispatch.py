@@ -153,6 +153,21 @@ def _build_structure_mirror_line() -> str:
         return ""
 
 
+def _format_hub_matched_block(hub_hit: Any) -> str:
+    """Sanitize Hub status for GEP prompts; omit noisy offline/404 failure blobs."""
+    if not isinstance(hub_hit, dict) or not hub_hit:
+        return ""
+    if hub_hit.get("reason") in (
+        "offline",
+        "hub_endpoint_missing",
+        "idle_skip",
+        "no_tasks",
+    ) and not hub_hit.get("id"):
+        return ""
+    sanitized = {k: v for k, v in hub_hit.items() if k != "error"}
+    return json.dumps(sanitized, ensure_ascii=False) if sanitized else ""
+
+
 async def dispatch_phase(ctx: dict[str, Any]) -> dict[str, Any]:
     _write_solidify_state(ctx)
 
@@ -281,7 +296,7 @@ async def dispatch_phase(ctx: dict[str, Any]) -> dict[str, Any]:
         capsules_preview=capsules_preview,
         capability_candidates_preview=ctx.get("capability_candidates_preview", "(none)"),
         external_candidates_preview=ctx.get("external_candidates_preview", "(none)"),
-        hub_matched_block=json.dumps(ctx.get("hub_hit", {}), ensure_ascii=False),
+        hub_matched_block=_format_hub_matched_block(ctx.get("hub_hit")),
         cycle_id=ctx.get("cycle_id", "0000"),
         recent_history="",
         failed_capsules=ctx.get("recent_failed_capsules", []),

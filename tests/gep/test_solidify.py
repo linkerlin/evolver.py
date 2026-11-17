@@ -710,7 +710,7 @@ def test_duplicate_solidify_refused(
     second = solidify(skip_validation=True)
     assert second["ok"] is False
     assert second["error"] == "already_solidified"
-    assert second["next_action"] == "swarm_tick"
+    assert second["next_action"] == "evolve_begin"
 
 
 def test_new_run_after_solidify_not_blocked(

@@ -92,3 +92,21 @@ class TestPromptArtifactFreshness:
         assert artifact.exists()
         assert "g1" in artifact.read_text(encoding="utf-8")  # selected gene id
         assert "BUILT_PROMPT" in capsys.readouterr().out
+
+    def test_offline_hub_404_error_is_not_leaked_into_dispatch_prompt(self, _ws: Path) -> None:
+        ctx = _ctx(None)
+        ctx["skip_hub_calls"] = False
+        ctx["bridge_enabled"] = False
+        ctx["genes"] = []
+        ctx["hub_hit"] = {
+            "reason": "offline",
+            "error": "HTTP 404 https://evomap.ai/v1/a2a/tasks",
+        }
+        ctx["hub_lessons"] = []
+        ctx["recent_events"] = []
+        ctx["cycle_id"] = "c-no-404-leak"
+
+        out = asyncio.run(dispatch_phase(ctx))
+        prompt = str(out.get("dispatch_prompt") or "")
+        assert "evomap.ai/v1/a2a/tasks" not in prompt
+        assert "HTTP 404" not in prompt

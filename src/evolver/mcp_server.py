@@ -248,9 +248,18 @@ def _fsm_mismatch_envelope(tool: str, current_state: str) -> dict[str, Any]:
             f"Tool `{tool}` is unavailable in FSM state `{current_state}`. "
             f"Allowed core tools now: {', '.join(allowed)}."
         ),
-        "next_steps": [
-            f"Refresh your tool list or call `{next_act}` directly.",
-        ],
+        "next_steps": (
+            [
+                "Refresh your tool list and call `evolve_settle` "
+                "(pass `hypothesis='...'` if missing, or `abandon=True` to close), "
+                "or call `evolve_begin(hypothesis='...', force_takeover=True)` to replace "
+                "a wedged run.",
+            ]
+            if current_state == "ACTIVE_RUN"
+            else [
+                f"Refresh your tool list or call `{next_act}` directly.",
+            ]
+        ),
     }
 
 
@@ -330,11 +339,19 @@ def build_server(*, lazy_bootstrap: bool = False) -> Any:
 
         async def _handle_call_tool(self, ctx: Any, params: Any) -> Any:
             tool_name = str(getattr(params, "name", "") or "")
+            args_dict = params.arguments or {}
             before = fsm_state()
 
-            # Hard FSM guard for stale client tool caches
-            if (before == "IDLE" and tool_name in ACTIVE_ONLY_TOOLS) or (
-                before == "ACTIVE_RUN" and tool_name in IDLE_ONLY_TOOLS
+            # Hard FSM guard for stale client tool caches; allow explicit
+            # force_takeover escape hatch on evolve_begin when a run is wedged.
+            allow_takeover = (
+                before == "ACTIVE_RUN"
+                and tool_name == "evolve_begin"
+                and bool(args_dict.get("force_takeover"))
+            )
+            if not allow_takeover and (
+                (before == "IDLE" and tool_name in ACTIVE_ONLY_TOOLS)
+                or (before == "ACTIVE_RUN" and tool_name in IDLE_ONLY_TOOLS)
             ):
                 mismatch = _fsm_mismatch_envelope(tool_name, before)
                 with contextlib.suppress(Exception):
@@ -402,6 +419,12 @@ def build_server(*, lazy_bootstrap: bool = False) -> Any:
             bool,
             Field(description="Revert uncommitted tracked draft edits before starting."),
         ] = False,
+        force_takeover: Annotated[
+            bool,
+            Field(
+                description=("Replace a wedged ACTIVE_RUN when paired with a non-empty hypothesis.")
+            ),
+        ] = False,
         project: Annotated[
             str | None,
             Field(description="Optional existing project directory path to bind."),
@@ -416,6 +439,7 @@ def build_server(*, lazy_bootstrap: bool = False) -> Any:
             target_files=target_files,
             auto_discover=auto_discover,
             discard_draft=discard_draft,
+            force_takeover=force_takeover,
             project=project,
             agent_name=agent_name,
         )
@@ -457,6 +481,24 @@ def build_server(*, lazy_bootstrap: bool = False) -> Any:
             str,
             Field(description="Concise summary of the change applied during this round."),
         ] = "",
+        hypothesis: Annotated[
+            str,
+            Field(
+                description=(
+                    "Optional one-sentence hypothesis to bind when settling an "
+                    "unhypothesized CLI run."
+                )
+            ),
+        ] = "",
+        abandon: Annotated[
+            bool,
+            Field(
+                description=(
+                    "Close the active run and return to IDLE without running validation, "
+                    "keeping workspace edits intact."
+                )
+            ),
+        ] = False,
         validation_scope: Annotated[
             Literal["auto", "lightning", "cascade", "related"],
             Field(
@@ -482,6 +524,8 @@ def build_server(*, lazy_bootstrap: bool = False) -> Any:
 
         return evolve_settle(
             summary=summary,
+            hypothesis=hypothesis,
+            abandon=abandon,
             validation_scope=validation_scope,
             related_commands=related_commands,
             restore_draft=restore_draft,

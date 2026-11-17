@@ -113,7 +113,10 @@ def test_attach_next_steps_on_hypothesis_and_git_errors() -> None:
 
     hyp = attach_next_steps({"ok": False, "error": "hypothesis_missing"})
     assert hyp["next_steps"]
-    assert any("swarm_hypothesis" in s for s in hyp["next_steps"])
+    assert any("evolve_begin" in s for s in hyp["next_steps"])
+    blob = json.dumps(hyp, ensure_ascii=False)
+    for legacy in ("swarm_hypothesis", "swarm_propose", "swarm_solidify"):
+        assert legacy not in blob
 
     git = attach_next_steps(
         {

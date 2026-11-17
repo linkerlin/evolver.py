@@ -60,7 +60,7 @@ def next_steps_for(error: str, *, context: dict[str, Any] | None = None) -> dict
                 "Run `evolver doctor` to list nearby git candidates.",
                 "Set EVOLVER_REPO_ROOT (or pass --project) to an existing git root.",
                 "Or run `git init` only if this directory is meant to be the repo.",
-                "Then re-run the failed command / swarm_solidify.",
+                "Then re-run the failed command or call `evolve_settle`.",
             ],
             "commands": [
                 "evolver doctor --json",
@@ -69,17 +69,24 @@ def next_steps_for(error: str, *, context: dict[str, Any] | None = None) -> dict
         },
         "hypothesis_missing": {
             "message": (
-                "Solidify refused: no hypothesis was declared for this candidate. "
-                "Call swarm_hypothesis (or pass hypothesis=) before swarm_solidify."
+                "Settlement refused: no hypothesis was declared for this run. "
+                "Lock a one-sentence hypothesis via evolve_begin(hypothesis='...') "
+                "(or pass hypothesis='...' to evolve_settle), then settle."
             ),
             "next_steps": [
-                "Call swarm_hypothesis with hypothesis, dimension, mechanism_family, "
-                "target_hook, and mechanism_check (train ids only — never val).",
-                "Or pass the same hypothesis object into swarm_propose / swarm_solidify.",
-                "Re-run swarm_solidify after ok=true from swarm_hypothesis.",
+                (
+                    "In MCP: call `evolve_begin(hypothesis='one-sentence falsifiable claim')` "
+                    "to lock the round (or pass `hypothesis='...'` to `evolve_settle`), "
+                    "then settle."
+                ),
+                (
+                    "In CLI: declare the round hypothesis via "
+                    "`evolver session hypothesize --json='...'` before `evolver solidify`."
+                ),
             ],
             "commands": [
-                "evolver session hypothesis --help",
+                "evolver session hypothesize --help",
+                "evolver status",
             ],
         },
         "no_baseline": {

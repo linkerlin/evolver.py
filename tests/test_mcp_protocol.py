@@ -256,6 +256,19 @@ class TestFsmThreeToolProtocol:
         assert dup.get("isError") is True
         assert json.loads(dup["content"][0]["text"])["error"] == "fsm_state_mismatch"
 
+        # 3b. Explicit force_takeover=True replaces the active run through MCP guard
+        taken = client.call_tool(
+            "evolve_begin",
+            {
+                "hypothesis": "Take over active run via explicit force_takeover",
+                "force_takeover": True,
+                "auto_discover": False,
+            },
+        )
+        assert taken["ok"] is True
+        assert taken["taken_over"] is True
+        assert taken["run_id"] != began["run_id"]
+
         # 4. Run lenses in ACTIVE_RUN -> recorded into active blackbox
         lens_res = client.call_tool("run_lens", {"name": "import_impact", "target": "service.py"})
         assert lens_res["ok"] is True

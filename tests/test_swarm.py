@@ -265,6 +265,137 @@ class TestFsmCoreTools:
         assert res["fsm_state"] == "IDLE"
         assert res["next_action"] == "evolve_begin"
 
+    def test_evolve_settle_orphan_cli_run_preserves_draft_and_returns_idle(
+        self, isolated_swarm_env: Path
+    ) -> None:
+        import subprocess
+
+        from evolver.gep.solidify import write_state_for_solidify
+
+        subprocess.run(["git", "init", "-q"], cwd=isolated_swarm_env, check=True)
+        subprocess.run(
+            ["git", "config", "user.email", "t@t.local"], cwd=isolated_swarm_env, check=True
+        )
+        subprocess.run(["git", "config", "user.name", "T"], cwd=isolated_swarm_env, check=True)
+        target = isolated_swarm_env / "demo.py"
+        target.write_text("def f() -> int:\n    return 1\n", encoding="utf-8")
+        subprocess.run(["git", "add", "."], cwd=isolated_swarm_env, check=True)
+        subprocess.run(
+            ["git", "-c", "commit.gpgsign=false", "commit", "-q", "-m", "init"],
+            cwd=isolated_swarm_env,
+            check=True,
+        )
+        # Edit tracked file without recording a hypothesis (simulates CLI `up --once`).
+        target.write_text("def f() -> int:\n    return 42\n", encoding="utf-8")
+        write_state_for_solidify(
+            {
+                "run_id": "run_cli_orphan",
+                "selected_gene_id": "g_orphan",
+                "mutation": {"id": "mut_orphan", "validation": []},
+            }
+        )
+        assert fsm_state() == "ACTIVE_RUN"
+
+        settled = evolve_settle(summary="Settle orphan CLI run")
+        assert settled["ok"] is False
+        assert settled["error"] == "hypothesis_missing"
+        assert settled["outcome"] == "draft_preserved"
+        assert settled["fsm_state"] == "IDLE"
+        assert fsm_state() == "IDLE"
+        assert "return 42" in target.read_text(encoding="utf-8")
+        blob = json.dumps(settled, ensure_ascii=False)
+        for legacy in ("swarm_hypothesis", "swarm_propose", "swarm_solidify", "swarm_tick"):
+            assert legacy not in blob
+
+    def test_evolve_settle_can_bind_hypothesis_or_abandon_orphan_run(
+        self, isolated_swarm_env: Path
+    ) -> None:
+        import subprocess
+
+        from evolver.gep.solidify import write_state_for_solidify
+
+        subprocess.run(["git", "init", "-q"], cwd=isolated_swarm_env, check=True)
+        subprocess.run(
+            ["git", "config", "user.email", "t@t.local"], cwd=isolated_swarm_env, check=True
+        )
+        subprocess.run(["git", "config", "user.name", "T"], cwd=isolated_swarm_env, check=True)
+        target = isolated_swarm_env / "demo.py"
+        target.write_text("def f() -> int:\n    return 1\n", encoding="utf-8")
+        subprocess.run(["git", "add", "."], cwd=isolated_swarm_env, check=True)
+        subprocess.run(
+            ["git", "-c", "commit.gpgsign=false", "commit", "-q", "-m", "init"],
+            cwd=isolated_swarm_env,
+            check=True,
+        )
+
+        # 1. Passing hypothesis=... settles the unhypothesized run directly
+        write_state_for_solidify(
+            {
+                "run_id": "run_bind_hyp",
+                "selected_gene_id": "g_bind",
+                "mutation": {"id": "mut_bind", "validation": []},
+            }
+        )
+        bound = evolve_settle(
+            summary="Bound hypothesis at settle",
+            hypothesis="Keep demo.f deterministic and return 1",
+        )
+        assert bound["ok"] is True
+        assert bound["fsm_state"] == "IDLE"
+
+        # 2. Passing abandon=True closes ACTIVE_RUN preserving edits without validating
+        target.write_text("def f() -> int:\n    return 99\n", encoding="utf-8")
+        write_state_for_solidify(
+            {
+                "run_id": "run_abandon_me",
+                "selected_gene_id": "g_ab",
+                "mutation": {"id": "mut_ab", "validation": []},
+            }
+        )
+        ab = evolve_settle(abandon=True)
+        assert ab["ok"] is True
+        assert ab["status"] == "abandoned"
+        assert ab["outcome"] == "draft_preserved"
+        assert ab["fsm_state"] == "IDLE"
+        assert "return 99" in target.read_text(encoding="utf-8")
+
+    @pytest.mark.asyncio
+    async def test_evolve_begin_force_takeover_and_corrupt_state_reset(
+        self, isolated_swarm_env: Path
+    ) -> None:
+        from evolver.gep.paths import get_solidify_state_path
+        from evolver.gep.solidify import write_state_for_solidify
+
+        write_state_for_solidify(
+            {
+                "run_id": "run_wedged",
+                "selected_gene_id": "g_wedged",
+                "mutation": {"id": "mut_wedged", "validation": []},
+            }
+        )
+        assert fsm_state() == "ACTIVE_RUN"
+
+        taken = await evolve_begin(
+            hypothesis="Force takeover of wedged run with explicit claim",
+            force_takeover=True,
+            auto_discover=False,
+        )
+        assert taken["ok"] is True
+        assert taken["taken_over"] is True
+        assert taken["fsm_state"] == "ACTIVE_RUN"
+        assert taken["run_id"] != "run_wedged"
+
+        # Corrupt solidify state fails safe to ACTIVE_RUN, then self-heals on settle
+        state_path = get_solidify_state_path()
+        state_path.write_text("{corrupt json", encoding="utf-8")
+        assert fsm_state() == "ACTIVE_RUN"
+
+        reset_res = evolve_settle()
+        assert reset_res["ok"] is False
+        assert reset_res["error"] == "corrupt_run_state_reset"
+        assert reset_res["fsm_state"] == "IDLE"
+        assert fsm_state() == "IDLE"
+
 
 class TestSwarmHypothesis:
     """演进方案 §5.3 — internal hypothesis recorder supports plain string or §5.3 dict."""

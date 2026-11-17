@@ -8,6 +8,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed — round-124（实测易用性审阅 6 项收口）
+- **清理旧 6 步工具幽灵指引与孤儿 `ACTIVE_RUN` 自愈接管（`ops/open_box.py`、`gep/solidify.py`、`swarm.py`、`mcp_server.py`）**：将 `open_box.py`（`not_a_git_repo` / `hypothesis_missing`）与 `solidify.py` 残留之 `swarm_hypothesis` / `swarm_propose` / `swarm_solidify` / `swarm_tick` 指引统一对齐至 `evolve_begin` / `evolve_settle`；MCP `evolve_settle` 新增 `hypothesis`（当场补锁未声明假说之 CLI 遗留轮）与 `abandon`（无损保草稿直接收口回 `IDLE`）参数，遇到无假说孤儿轮或损坏状态文件时自动切回 `IDLE` 且原位保留工作区修改；`evolve_begin` 新增 `force_takeover` 显式接管卡死轮次，并在 `fsm_state_mismatch` 提示中给出完整可用路径。
+- **修复 `evolver internal --help`、Windows UTF-8 控制台自适应与收敛 `up --once` 倾倒（`cli.py`）**：入口提前分流 `internal` 绕过 `argparse.REMAINDER` 吞吃 `--help` 缺陷；Windows 非 UTF-8 控制台自动 `reconfigure(encoding="utf-8", errors="replace")`；`evolver up --once` 默认打印 4 行单轮巡检摘要（`--verbose` 保留完整输出）。
+- **诚实面板剥离未验证 `soft_accept` 与脱敏 Hub 404 提示词噪音（`ops/status_human.py`、`gep/solidify.py`、`swarm.py`、`evolve/pipeline/dispatch.py`）**：`status` 将无测试套件且无基线之首轮 `soft_accept` 从 `promoted` 拆入 `soft_accepted`（「未验软放行」）；`dispatch_phase` 序列化 `hub_matched_block` 时省略离线/404 错误文本，避免泄露至提示词。
+
 ### Added — round-123（Strategist 演进方案 `S-1`..`S-8` 全系落地 + Phase 2–3 EOG 与双源时间胶囊，工作树未提交待裁）
 - **P2-1 & S-1/S-2 可执行算子基因 `OperatorGene.v1`、AST 去重槽位与 DAG 沙盒（`gep/schemas/gene.py`、`gep/operator_slots.py`、`gep/operator_sandbox.py`、`gep/lenses.py`、`assets/gep/genes.seed.json`、`gep/distill.py`）**：新增可选算子字段（`operator_kind`/`builds_on`/`when_to_use`/`lens`/`codemod`/`invariant`/`structural_hash`/`slot_specs`/`slot_bindings`）；实装 AST 结构哈希与 `s1..sk` 槽位覆写及 `deduplicate_or_bind_operator` 金库去重（并修复同 `id` 重复合成时跳过槽位合并的漏洞）；实装零网络 `< 2s` 沙盒、凭证剥离、DAG `builds_on` ↔ `ctx.call_lens` 静态审计与循环检测；清理种子库 `node` 遗留指令，新增 8 颗经审计的 `op_*` Python 算子（含组合算子 `op_traceback_blast_audit`）。
 - **P2-2 & S-8b 红转绿算子自动合成与反投机作弊门（`gep/operator_synthesizer.py`、`gep/policy_check.py`、`gep/solidify.py`、`gep/skill2gep_audit.py`、`swarm.py`）**：`detect_anti_cheat_violations` 静态拦截 `pytest.skip`/`xfail`、伴随源码改动的删测、断言弱化及任务字面量硬编码，接入 `solidify` 在验收前按 `draft_preserved` 软拦停；`synthesize_operator_from_fix` 在 `evolve_settle` 有效 `helped` 轮自动提炼算子并过沙盒/自检/`H2-2` 脱敏/`S-1` 去重后自动入库，同时联动 `gene_lifecycle.evaluate_and_apply`。

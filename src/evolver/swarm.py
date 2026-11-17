@@ -634,6 +634,7 @@ def evolve_status(project: str | Path | None = None) -> dict[str, Any]:
         "lamp": panel.get("lamp"),
         "headline": panel.get("headline"),
         "promoted": panel.get("promoted", 0),
+        "soft_accepted": panel.get("soft_accepted", 0),
         "intercepted": panel.get("intercepted", 0),
         "saved_validation_seconds": panel.get("saved_validation_seconds"),
         "vault_operators": panel.get("vault_operators", 0),
@@ -663,12 +664,35 @@ def evolve_status(project: str | Path | None = None) -> dict[str, Any]:
     return out
 
 
+def _has_valid_active_hypothesis() -> bool:
+    """True iff the current pending run already has a valid §5.3 hypothesis."""
+    if not _pending_solidify_state():
+        return False
+    run_id = _pending_solidify_meta().get("run_id") or ""
+    if not run_id:
+        return False
+    try:
+        from evolver.gep.hypothesis import load_hypothesis, require_for_gate
+        from evolver.gep.solidify import _session_round_scopes
+
+        declared = load_hypothesis()
+        require_for_gate(
+            declared,
+            run_id=run_id,
+            also_accept=_session_round_scopes(),
+        )
+        return True
+    except Exception:
+        return False
+
+
 async def evolve_begin(
     hypothesis: str = "",
     *,
     target_files: list[str] | None = None,
     auto_discover: bool = True,
     discard_draft: bool = False,
+    force_takeover: bool = False,
     project: str | Path | None = None,
     agent_name: str = "host-agent",
 ) -> dict[str, Any]:
@@ -689,7 +713,9 @@ async def evolve_begin(
     global _session_claim
     _session_claim = {"agent_name": str(agent_name or "host-agent")}
 
-    if _pending_solidify_state():
+    clean_hyp = (hypothesis or "").strip()
+    taking_over = bool(force_takeover and _pending_solidify_state())
+    if _pending_solidify_state() and not force_takeover:
         meta = _pending_solidify_meta()
         return {
             "ok": False,
@@ -699,8 +725,21 @@ async def evolve_begin(
             "allowed_tools": ["run_lens", "evolve_settle", "evolve_status"],
             "next_action": "evolve_settle",
             "message": (
-                "An evolution run is already active. Use `run_lens` or call "
-                "`evolve_settle` before starting a new run."
+                "An evolution run is already active. Call `evolve_settle` to validate/close it "
+                "(pass `hypothesis='...'` if the run came from CLI without one, or `abandon=True` "
+                "to close without validating), or call `evolve_begin(hypothesis='...', "
+                "force_takeover=True)` to replace a wedged run."
+            ),
+        }
+
+    if force_takeover and not clean_hyp:
+        return {
+            "ok": False,
+            "error": "empty_hypothesis",
+            "fsm_state": fsm_state(),
+            "next_action": "evolve_settle" if _pending_solidify_state() else "evolve_begin",
+            "message": (
+                "Pass a non-empty one-sentence `hypothesis` when using `force_takeover=True`."
             ),
         }
 
@@ -710,14 +749,13 @@ async def evolve_begin(
             "ok": False,
             "paused": True,
             "error": "supervision_paused",
-            "fsm_state": "IDLE",
+            "fsm_state": fsm_state(),
             "supervision": supervision.supervision_summary(),
             "tripwire": tripwire,
             "next_action": "await_supervisor_resume",
             "message": "Evolution loop is paused by human supervision.",
         }
 
-    clean_hyp = (hypothesis or "").strip()
     if not clean_hyp:
         sigs = _discover_workspace_signals()
         if auto_discover:
@@ -779,7 +817,7 @@ async def evolve_begin(
         return {
             "ok": False,
             "error": "val_seal_breach",
-            "fsm_state": "IDLE",
+            "fsm_state": fsm_state(),
             "message": str(exc),
             "next_action": "evolve_begin",
         }
@@ -796,7 +834,7 @@ async def evolve_begin(
             return {
                 "ok": False,
                 "error": "instance_lock_held",
-                "fsm_state": "IDLE",
+                "fsm_state": fsm_state(),
                 "next_action": "stop_and_report",
                 "message": "Another evolver process holds the workspace lock.",
             }
@@ -828,11 +866,14 @@ async def evolve_begin(
             else _discover_workspace_signals()
         )
 
-        # Guarantee deterministic transition to ACTIVE_RUN even on cold/idle repos
-        if not _pending_solidify_state():
-            run_id = str(ctx.get("run_id") or "") or (
-                f"run_{int(time.time() * 1000)}_{secrets.token_hex(3)}"
-            )
+        # Guarantee deterministic transition (or clean takeover) into ACTIVE_RUN
+        ctx_run_id = str(ctx.get("run_id") or "")
+        cur_meta = _pending_solidify_meta()
+        dispatched_fresh = bool(ctx_run_id) and cur_meta.get("run_id") == ctx_run_id
+        if dispatched_fresh:
+            run_id = ctx_run_id
+        elif taking_over or not _pending_solidify_state() or not cur_meta.get("run_id"):
+            run_id = f"run_{int(time.time() * 1000)}_{secrets.token_hex(3)}"
             write_state_for_solidify(
                 {
                     "run_id": run_id,
@@ -846,9 +887,9 @@ async def evolve_begin(
                 }
             )
         else:
-            run_id = _pending_solidify_meta()["run_id"]
+            run_id = cur_meta["run_id"]
             if not selected_gene_id:
-                selected_gene_id = _pending_solidify_meta()["gene_id"]
+                selected_gene_id = cur_meta["gene_id"]
 
         hyp_record = _synthesize_internal_hypothesis(
             clean_hyp,
@@ -882,7 +923,7 @@ async def evolve_begin(
         }
     )
 
-    return {
+    out: dict[str, Any] = {
         "ok": True,
         "fsm_state": "ACTIVE_RUN",
         "run_id": run_id,
@@ -911,6 +952,9 @@ async def evolve_begin(
             "or impacted tests, apply your focused edit, then call `evolve_settle`."
         ),
     }
+    if taking_over:
+        out["taken_over"] = True
+    return out
 
 
 def evolve_run_lens(
@@ -1003,6 +1047,8 @@ def _attach_host_direction(result: dict[str, Any]) -> None:
 def evolve_settle(
     summary: str = "",
     *,
+    hypothesis: str = "",
+    abandon: bool = False,
     validation_scope: str = "auto",
     related_commands: list[list[str]] | None = None,
     proposal: dict[str, Any] | None = None,
@@ -1012,7 +1058,8 @@ def evolve_settle(
 ) -> dict[str, Any]:
     """Validate, adjudicate, settle blackbox + episode record, and transition back to ``IDLE``."""
     from evolver.gep import episode_clue
-    from evolver.gep.paths import get_repo_root, get_workspace_root
+    from evolver.gep.blackbox import clear_active_blackbox
+    from evolver.gep.paths import get_repo_root, get_solidify_state_path, get_workspace_root
 
     if project:
         bind_project_directory(project)
@@ -1032,6 +1079,109 @@ def evolve_settle(
             "message": "No active evolution run to settle. Call `evolve_begin` first.",
         }
 
+    meta = _pending_solidify_meta()
+    run_id = meta.get("run_id") or ""
+    repo_str = str((get_repo_root(_quiet=True) or get_workspace_root()).resolve())
+
+    if not run_id:
+        with contextlib.suppress(OSError):
+            get_solidify_state_path().unlink()
+        with contextlib.suppress(Exception):
+            clear_active_blackbox()
+        return {
+            "ok": False,
+            "error": "corrupt_run_state_reset",
+            "fsm_state": fsm_state(),
+            "repo_root": repo_str,
+            "allowed_tools": ["evolve_begin", "evolve_status"],
+            "next_action": "evolve_begin",
+            "message": (
+                "Corrupt pending run state was reset cleanly. "
+                "Call `evolve_begin(hypothesis='...')` to start a fresh run."
+            ),
+        }
+
+    if abandon:
+        from evolver.gep.solidify import _mark_run_settled
+
+        _mark_run_settled(run_id, "abandoned_by_host")
+        with contextlib.suppress(Exception):
+            clear_active_blackbox()
+        return {
+            "ok": True,
+            "status": "abandoned",
+            "outcome": "draft_preserved",
+            "fsm_state": fsm_state(),
+            "run_id": run_id,
+            "repo_root": repo_str,
+            "allowed_tools": ["evolve_begin", "evolve_status"],
+            "next_action": "evolve_begin",
+            "message": (
+                "Active run closed without validation; workspace edits were preserved in place. "
+                "Call `evolve_begin(hypothesis='...')` when ready."
+            ),
+        }
+
+    clean_hyp = (hypothesis or "").strip()
+    if not _has_valid_active_hypothesis():
+        if clean_hyp:
+            from evolver.gep.hypothesis import HypothesisError, record_hypothesis
+            from evolver.gep.val_seal import ValSealBreachError
+
+            try:
+                hyp_record = _synthesize_internal_hypothesis(
+                    clean_hyp,
+                    run_id=run_id,
+                    selected_gene_id=meta.get("gene_id") or None,
+                )
+                record_hypothesis(hyp_record)
+            except (ValSealBreachError, HypothesisError) as exc:
+                return {
+                    "ok": False,
+                    "error": (
+                        "val_seal_breach"
+                        if isinstance(exc, ValSealBreachError)
+                        else "hypothesis_rejected"
+                    ),
+                    "fsm_state": fsm_state(),
+                    "run_id": run_id,
+                    "repo_root": repo_str,
+                    "allowed_tools": ["run_lens", "evolve_settle", "evolve_status"],
+                    "next_action": "evolve_settle",
+                    "message": str(exc),
+                }
+        else:
+            from evolver.gep.solidify import _mark_run_settled
+
+            _mark_run_settled(run_id, "hypothesis_missing")
+            with contextlib.suppress(Exception):
+                clear_active_blackbox()
+            return {
+                "ok": False,
+                "outcome": "draft_preserved",
+                "error": "hypothesis_missing",
+                "fsm_state": fsm_state(),
+                "run_id": run_id,
+                "repo_root": repo_str,
+                "allowed_tools": ["evolve_begin", "evolve_status"],
+                "next_action": "evolve_begin",
+                "message": (
+                    "This pending run had no locked hypothesis (left over from an unfinished "
+                    "CLI cycle). Your workspace edits were preserved in place and the orphan "
+                    "run is now closed."
+                ),
+                "actionable_fix": [
+                    "Call `evolve_begin(hypothesis='one-sentence falsifiable claim')` "
+                    "to lock your hypothesis.",
+                    "Keep or refine your preserved workspace edits.",
+                    "Call `evolve_settle(summary='...')` to validate and settle.",
+                ],
+                "next_steps": [
+                    "Call `evolve_begin(hypothesis='...')` to open a properly hypothesized round.",
+                    "Then call `evolve_settle(summary='...')` to validate your preserved edits.",
+                ],
+            }
+
     clean_summary = (summary or "").strip()
     if clean_summary:
         if "```json" in clean_summary:
@@ -1050,7 +1200,7 @@ def evolve_settle(
     )
     cur_fsm = fsm_state()
     result["fsm_state"] = cur_fsm
-    result["repo_root"] = str((get_repo_root(_quiet=True) or get_workspace_root()).resolve())
+    result["repo_root"] = repo_str
     _attach_host_direction(result)
     if result.get("ok") is True:
         result["next_action"] = "evolve_begin"

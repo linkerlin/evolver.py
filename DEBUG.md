@@ -67,6 +67,7 @@
 | 77 | 只认 `gate_soft_continue=true` 的宿主在 tick 与保险丝上再 tick | mcp/swarm | MCP 易用性 | 未发版 |
 | 78 | 软固化引导仍列出 `bench freeze` / `bench baseline` | mcp/swarm | MCP 易用性 | 未发版 |
 | 79 | 相同长度改写若 mtime 被还原，水印快跳过当成未改 | material | 水印 | 未发版 |
+| 82 | 跨端接缝 6 项：`internal --help` 吞参、旧 `swarm_*` 指引回流、无假说孤儿 `ACTIVE_RUN` 踢皮球、Windows GBK 乱码、`status` 软放行虚胖、Hub 404 裸错泄入提示词 | cli/swarm/mcp/ops | round-124 | v1.114.0 |
 
 ## 条目
 
@@ -1321,3 +1322,10 @@
 - **根因**：宿主配置必须落在工作区根目录才能被对应 IDE 识别，但它们属于本机开发工具接线而非业务源码；同时 `install_hooks` 历史上默认 `inject_docs=True`，直接向用户仓库已跟踪文档追加片段，且旧适配器模板里还残留了早已不存在的 `gep_recall` / `gep_record_outcome` 幻影工具名。
 - **修复**：`evolver init` 仅在新建/更新本机未跟踪 IDE 配置文件时将其路径幂等写入 `.git/info/exclude`（不篡改项目共享 `.gitignore`），已纳入 Git 跟踪的配置则保持不动；`init` 调用 `install_hooks(..., inject_docs=False)` 绝不触碰用户文档；全量清理 5 个 IDE 适配器中的幻影工具引用。
 - **经验**：**零干预开箱的第一铁律是不弄脏用户的 `git status`。** 本机 IDE 接线归 `.git/info/exclude`，引擎运行态归 `~/.evolver/workspaces/<id>/`，工作区源码树只留用户真正想提交的代码。
+
+### 82. 实测易用性审阅 6 项跨端接缝（CLI 三动词与 MCP 三工具状态机收口，已修）
+
+- **症状**：外部实测审阅揭露六处体验接缝：① `evolver internal --help` 因 `REMAINDER` 报 `unrecognized arguments: --help`；② `open_box.py` 与 `solidify.py` 仍向智能体建议已删除的 `swarm_hypothesis` / `swarm_propose` / `swarm_solidify` / `swarm_tick`；③ `evolver up --once` 既向终端倾倒 4k token `BUILT_PROMPT`，又留下无假说之 `last_run`，致随后 MCP 调 `evolve_begin` 与 `evolve_settle` 循环踢皮球；④ `status` 将无测试且无基线的 `soft_accept` 轮次计入「已晋升修复」；⑤ `evomap.ai/v1/a2a/tasks` 404 裸错串泄入提示词；⑥ Windows 默认 CP936/GBK 控制台输出中文与状态图标乱码。
+- **根因**：`round-120..122` 切完三动词 CLI 与 FSM 三工具 MCP 后，旧报错目录、`argparse` `REMAINDER`、CLI 与 MCP 共用 `evolution_solidify_state.json` 边界、Windows 标准流编码自适应及离线 Hub 提示词序列化尚未做端到端人类视角收口。
+- **修复**：① `cli.py` 入口在 `REMAINDER` 解析前提前分流 `internal` 子树，并为 Windows 非 UTF-8 标准流自适应 `reconfigure(encoding="utf-8", errors="replace")`；`up --once` 默认收敛为 4 行人话摘要（`-v` 仍印完整引擎输出）；② `open_box.py` 与 `solidify.py` 清除全部旧 `swarm_*` MCP 工具引用；③ `swarm.py` 与 `mcp_server.py` 为孤儿/损坏 `ACTIVE_RUN` 打通 `evolve_settle` 无损保草稿收口、`evolve_settle(hypothesis=..., abandon=True)` 及 `evolve_begin(force_takeover=True)` 显式接管；④ `status_human.py` 将未跑测试套件的首轮 `soft_accept` 单独拆为「未验软放行（`soft_accepted`）」；⑤ `dispatch.py` 对离线/404 `hub_hit` 脱敏省略。
+- **经验**：**新旧协议切换完毕后，必须用全新用户的双端视角（CLI $\leftrightarrow$ MCP 交叉操作、无测试空仓、Windows GBK 终端、断网离线）重走一遍失败路径与边界转场。** 错误文案里的幽灵工具名与跨端遗留的半成品状态，是智能体真实作业时最易踩中的隐性炸弹。

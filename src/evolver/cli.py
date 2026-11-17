@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 import asyncio
 import contextlib
+import io
 import json
 import os
 import sys
@@ -122,7 +123,8 @@ class _RootParser(argparse.ArgumentParser):
             "  up        一键自动驾驶守护 (别名 auto; 无进展自动休眠)\n"
             "  status    纯人话健康与收益面板\n"
             "\n"
-            "其余专家子命令: evolver internal <cmd> --help (旧顶层写法仍兼容)\n"
+            "其余专家子命令: evolver internal --help (全表) | "
+            "evolver internal <cmd> --help (旧顶层写法仍兼容)\n"
         )
 
     def error(self, message: str) -> NoReturn:
@@ -1037,11 +1039,35 @@ def _bind_option_values(argv: list[str], options: set[str]) -> list[str]:
     return out
 
 
+def _ensure_utf8_stdio(*, force: bool = False) -> None:
+    """Ensure stdout/stderr use UTF-8 on Windows consoles (avoid GBK garbling/errors)."""
+    if not force and (sys.platform != "win32" or os.environ.get("PYTEST_CURRENT_TEST")):
+        return
+    for stream_name in ("stdout", "stderr"):
+        stream = getattr(sys, stream_name, None)
+        reconf = getattr(stream, "reconfigure", None)
+        if not callable(reconf):
+            continue
+        enc = str(getattr(stream, "encoding", "") or "").lower().replace("_", "-")
+        if enc != "utf-8":
+            with contextlib.suppress(Exception):
+                reconf(encoding="utf-8", errors="replace")
+
+
 def main(argv: Sequence[str] | None = None) -> int:
+    _ensure_utf8_stdio()
     _load_dotenv()
     raw_args = list(argv) if argv is not None else sys.argv[1:]
     # Options whose values may be urlsafe tokens starting with '-'.
     raw_args = _bind_option_values(raw_args, {"--revoke"})
+    # Bypass root subparser REMAINDER so `evolver internal --help` prints the
+    # full expert catalog instead of triggering argparse's unknown-flag error.
+    if raw_args and raw_args[0] == "internal":
+        rest = raw_args[1:]
+        if not rest or rest in (["-h"], ["--help"]):
+            _build_parser(hide_expert_listing=False).print_help()
+            return 0
+        return main(rest)
     contract_result = _run_cli_contract(raw_args)
     if contract_result is not None:
         return contract_result
@@ -1311,9 +1337,8 @@ async def _cmd_up(args: argparse.Namespace) -> int:
     """支柱零 (P0-2): one-touch autopilot daemon (sliding session + dormancy)."""
     import signal
 
-    from evolver.evolve.runner import request_shutdown, run_loop
-    from evolver.evolve.runner import run as run_cycle
-    from evolver.gep.paths import get_repo_root
+    from evolver.evolve.runner import _run_single_cycle, request_shutdown, run_loop
+    from evolver.gep.paths import get_evolution_dir, get_repo_root
 
     project_arg = getattr(args, "project", None)
     prev_repo_env = os.environ.get("EVOLVER_REPO_ROOT")
@@ -1330,7 +1355,31 @@ async def _cmd_up(args: argparse.Namespace) -> int:
 
             slider = SessionSlider()
             slider.ensure()
-            await run_cycle()
+            if getattr(args, "verbose", False):
+                ctx = await _run_single_cycle(is_loop=False)
+            else:
+                with contextlib.redirect_stdout(io.StringIO()):
+                    ctx = await _run_single_cycle(is_loop=False)
+                sigs = list(ctx.get("signals") or [])
+                gene = (
+                    ctx.get("selected_gene") if isinstance(ctx.get("selected_gene"), dict) else {}
+                )
+                gene_label = str((gene or {}).get("id") or "无匹配算子")
+                timings = (
+                    ctx.get("cycle_phase_timings")
+                    if isinstance(ctx.get("cycle_phase_timings"), dict)
+                    else {}
+                )
+                total_s = round(sum(float(v) for v in timings.values()), 2) if timings else 0.0
+                prompt_file = get_evolution_dir() / "last_prompt.md"
+                sig_detail = f" ({', '.join(str(s) for s in sigs[:3])})" if sigs else ""
+                print(
+                    f"Evolver 单轮巡检完成 ({total_s}s | 项目: {root})\n"
+                    f"  • 发现信号 : {len(sigs)} 项{sig_detail}\n"
+                    f"  • 匹配算子 : {gene_label}\n"
+                    f"  • 提示存档 : {prompt_file} "
+                    "(传 -v 可在终端查看全文；IDE 内通过 MCP 自动闭环)"
+                )
             slider.after_cycle()
             return 0
 

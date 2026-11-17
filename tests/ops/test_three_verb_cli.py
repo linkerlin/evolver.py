@@ -48,6 +48,71 @@ class TestRootHelp:
         out = capsys.readouterr().out
         assert "gate-report" in out  # the full expert listing is one hop away
 
+    def test_internal_dash_help_works_without_error(
+        self, temp_workspace: Path, capsys: pytest.CaptureFixture
+    ) -> None:
+        assert main(["internal", "--help"]) == 0
+        out = capsys.readouterr().out
+        assert "gate-report" in out
+
+        assert main(["internal", "-h"]) == 0
+        out_short = capsys.readouterr().out
+        assert "gate-report" in out_short
+
+        with pytest.raises(SystemExit) as exc:
+            main(["internal", "doctor", "--help"])
+        assert exc.value.code == 0
+        doc_out = capsys.readouterr().out
+        assert "--fix" in doc_out
+
+    def test_ensure_utf8_stdio_reconfigures_cp936_stream(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        import sys
+
+        from evolver.cli import _ensure_utf8_stdio
+
+        class _FakeStream:
+            def __init__(self, enc: str) -> None:
+                self.encoding = enc
+                self.errors = "strict"
+                self.calls: list[tuple[str | None, str | None]] = []
+
+            def reconfigure(
+                self, *, encoding: str | None = None, errors: str | None = None
+            ) -> None:
+                self.calls.append((encoding, errors))
+                if encoding:
+                    self.encoding = encoding
+                if errors:
+                    self.errors = errors
+
+        fake_out = _FakeStream("cp936")
+        fake_err = _FakeStream("gbk")
+        monkeypatch.setattr(sys, "stdout", fake_out)
+        monkeypatch.setattr(sys, "stderr", fake_err)
+
+        _ensure_utf8_stdio(force=True)
+        assert fake_out.encoding == "utf-8" and fake_out.errors == "replace"
+        assert fake_err.encoding == "utf-8" and fake_err.errors == "replace"
+
+    def test_up_once_prints_concise_human_summary_not_prompt_dump(
+        self,
+        temp_workspace: Path,
+        monkeypatch: pytest.MonkeyPatch,
+        capsys: pytest.CaptureFixture,
+    ) -> None:
+        import subprocess
+
+        subprocess.run(["git", "init", "-q"], cwd=temp_workspace, check=True)
+        monkeypatch.setenv("A2A_HUB_URL", "http://127.0.0.1:9")
+        rc = main(["up", "--once", "--project", str(temp_workspace)])
+        assert rc == 0
+        out = capsys.readouterr().out
+        assert "单轮巡检完成" in out
+        assert "BUILT_PROMPT" not in out
+        assert "SOLIDIFY REQUIRED" not in out
+
     def test_old_top_level_spelling_still_routes(
         self, temp_workspace: Path, capsys: pytest.CaptureFixture
     ) -> None:
@@ -100,6 +165,48 @@ class TestHumanStatus:
 
     def test_status_command_exit_zero(self, temp_workspace: Path) -> None:
         assert main(["status"]) == 0
+
+    def test_status_separates_unverified_soft_accept_from_promoted(
+        self, temp_workspace: Path
+    ) -> None:
+        from evolver.gep.paths import get_workspace_state_dir
+        from evolver.ops.status_human import human_status, render_human
+
+        state_dir = get_workspace_state_dir(temp_workspace)
+        events_path = state_dir / "gep" / "events.jsonl"
+        events_path.parent.mkdir(parents=True, exist_ok=True)
+        events_path.write_text(
+            "\n".join(
+                [
+                    json.dumps(
+                        {
+                            "id": "evt_soft",
+                            "run_id": "run_soft",
+                            "outcome": {"status": "success"},
+                            "bench_pack": {"verdict": "soft_accept", "soft_accept": True},
+                            "validation_report": {"commands": ["ruff check a.py"]},
+                        }
+                    ),
+                    json.dumps(
+                        {
+                            "id": "evt_real",
+                            "run_id": "run_real",
+                            "outcome": {"status": "success"},
+                            "bench_pack": {"verdict": "soft_accept", "soft_accept": True},
+                            "validation_report": {"commands": ["pytest -q tests/test_a.py"]},
+                        }
+                    ),
+                ]
+            )
+            + "\n",
+            encoding="utf-8",
+        )
+        panel = human_status(project=temp_workspace)
+        assert panel["promoted"] == 1
+        assert panel["soft_accepted"] == 1
+        text = render_human(panel)
+        assert "未验软放行" in text
+        assert "已晋升修复   : 1 轮" in text
 
 
 class TestDormancy:

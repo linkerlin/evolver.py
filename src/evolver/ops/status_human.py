@@ -48,9 +48,27 @@ def _daemon_light() -> str:
         return "未知"
 
 
+def _event_ran_test_suite(event: dict[str, Any]) -> bool:
+    """True when validation commands/stages actually invoked pytest or unittest."""
+    report = event.get("validation_report")
+    if isinstance(report, dict):
+        for cmd in report.get("commands") or []:
+            low = str(cmd or "").lower()
+            if "pytest" in low or "unittest" in low:
+                return True
+    timing = event.get("validation_timing")
+    if isinstance(timing, dict):
+        for stage in timing.get("stages") or []:
+            if isinstance(stage, dict):
+                low = str(stage.get("command") or "").lower()
+                if "pytest" in low or "unittest" in low:
+                    return True
+    return False
+
+
 def _settle_ledger(state_dir: Path) -> tuple[dict[str, int], set[str], set[str], set[str], float]:
     """Read settled counts, run sets, and real saved validation time."""
-    counts = {"promoted": 0, "intercepted": 0}
+    counts = {"promoted": 0, "soft_accepted": 0, "intercepted": 0}
     succeeded_runs: set[str] = set()
     seen_runs: set[str] = set()
     active_failed_runs: set[str] = set()
@@ -75,7 +93,15 @@ def _settle_ledger(state_dir: Path) -> tuple[dict[str, int], set[str], set[str],
                 if run_id:
                     seen_runs.add(run_id)
                 if status == "success":
-                    counts["promoted"] += 1
+                    bp = event.get("bench_pack")
+                    bp_dict = bp if isinstance(bp, dict) else {}
+                    is_bench_soft = str(bp_dict.get("verdict") or "") == "soft_accept" or bool(
+                        bp_dict.get("soft_accept")
+                    )
+                    if is_bench_soft and not _event_ran_test_suite(event):
+                        counts["soft_accepted"] += 1
+                    else:
+                        counts["promoted"] += 1
                     if run_id:
                         succeeded_runs.add(run_id)
                     # A subsequent green promotion settles prior in-place workbench drafts.
@@ -227,6 +253,7 @@ def human_status(*, project: str | Path | None = None) -> dict[str, Any]:
         "ready": _bootstrap_light(state_dir),
         "daemon": _daemon_light(),
         "promoted": counts["promoted"],
+        "soft_accepted": counts["soft_accepted"],
         "intercepted": counts["intercepted"],
         "saved_validation_seconds": saved_s,
         "vault_operators": _vault_operators(state_dir),
@@ -245,11 +272,18 @@ def render_human(report: dict[str, Any]) -> str:
         f"  就绪灯       : {report.get('ready')}",
         f"  守护进程     : {report.get('daemon')}",
         f"  已晋升修复   : {report.get('promoted')} 轮",
-        f"  已拦截问题   : {report.get('intercepted')} 轮（改动已保留，未进金库）",
-        f"  节省验证耗时 : {saved_text}",
-        f"  金库算子     : {report.get('vault_operators')} 个",
-        f"  工作台草稿   : {report.get('workbench_drafts')} 个",
     ]
+    soft_n = int(report.get("soft_accepted") or 0)
+    if soft_n > 0:
+        lines.append(f"  未验软放行   : {soft_n} 轮（无测试/无基线首轮放行，未计入晋升）")
+    lines.extend(
+        [
+            f"  已拦截问题   : {report.get('intercepted')} 轮（改动已保留，未进金库）",
+            f"  节省验证耗时 : {saved_text}",
+            f"  金库算子     : {report.get('vault_operators')} 个",
+            f"  工作台草稿   : {report.get('workbench_drafts')} 个",
+        ]
+    )
     note = report.get("draft_note")
     if note:
         lines.append(f"  提示         : {note}")
